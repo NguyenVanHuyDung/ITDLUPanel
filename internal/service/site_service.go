@@ -21,9 +21,9 @@ import (
 // CreateSiteRequest holds the data needed to create a new site.
 type CreateSiteRequest struct {
 	Name       string `json:"name" validate:"required,min=1,max=128"`
-	Domain     string `json:"domain" validate:"required,domain"`
+	Domain     string `json:"domain" validate:"required,min=1,max=253"`
 	Webserver  string `json:"webserver" validate:"required,oneof=nginx apache openlitespeed"`
-	PHPVersion string `json:"php_version" validate:"required"`
+	PHPVersion string `json:"php_version" validate:"omitempty"`
 	CreateDB   bool   `json:"create_db"`
 	DBName     string `json:"db_name" validate:"omitempty,min=1,max=64"`
 	DBUser     string `json:"db_user" validate:"omitempty,min=1,max=32"`

@@ -34,6 +34,7 @@ function WebsitesContent() {
   const handleCreate = async () => {
     try {
       const values = await form.validateFields();
+      if (!values.name) values.name = values.domain;
       setSubmitting(true);
       await api.post('/sites', values);
       message.success(t('common.success'));
@@ -141,6 +142,9 @@ function WebsitesContent() {
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           <Form.Item name="domain" label={t('websites.domain')} rules={[{ required: true, message: 'Domain is required' }]}>
+            <Input placeholder="example.com" onChange={(e) => { if (!form.getFieldValue('name')) form.setFieldsValue({ name: e.target.value }); }} />
+          </Form.Item>
+          <Form.Item name="name" label="Site Name" rules={[{ required: true, message: 'Site name is required' }]} extra="Auto-filled from domain">
             <Input placeholder="example.com" />
           </Form.Item>
           <Form.Item name="webserver" label={t('websites.web_server')} initialValue="nginx" rules={[{ required: true }]}>
