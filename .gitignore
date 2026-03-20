@@ -1,0 +1,37 @@
+# Binaries
+bin/
+*.exe
+*.so
+
+# Build
+dist/
+
+# Config & data (runtime)
+config/panel.json
+data/
+*.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (frontend)
+web/node_modules/
+web/dist/
+
+# Go
+vendor/
+
+# Logs
+*.log
+logs/
+
+# Env
+.env
+.env.local

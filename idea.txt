@@ -1,0 +1,37 @@
+Tôi muốn tạo 1 website để quản lý server Linux (Ubuntu 22, 24); AlmaLinux
+    + Techstack: Tùy chọn gợi ý, lưu trữ Sqlite
+    + User đăng nhập vào và quản lý một số dịch vụ quan trọng của server linux
+        + Dashboard: Hiển thị các thông tin quan trọng của server CPU, Smooth operation, RAM, Disk
+            Overview 
+                Site: running
+                FTP
+                Database
+                ...
+            Software: Hiển thị các software đã cài trên hệ thống (VD: MariaDB, Nginx/apache/openlitespeed); Pure-FTP, phpMyadmin, PHP...
+            Traffic
+        Khi mới cài dasnboard: user chưa cài software gì thì hiển thị cửa sổ gợi ý cài theo stack (LAMP, LEMP hay LOMP); cho tùy chọn nhiều phiên bản (user chọn phiên bản nào thì cài theo phiên bản )
+        + Website:  Quản lý  hiện tại đã cài, chưa có thể hiển thị thông tin để user 
+            PHP Project: hiển thị và quản lý các websit đã cài đặt (status, backup, Folder chứa webiste, php đang sử dung, SSL, lượng request...); config; log)
+        + Database: Quản lý database hiện tại đã cài, chưa có thể hiển thị thông tin để user 
+        + Monitor
+        + Security:
+        + Files: Quản lý file
+        + Logs: Quản lý log
+        + Account: Quản lý tài khoản
+        + Terminal: Connect terminal (giao diện đẹp và hiện đạ)
+        + Cron
+        + App Store:
+        + Settings:
+        + Logout:
+        Hỗ trợ 2 ngôn ngữ Tiếng anh và tiếng việt
+    Dựa vào các hình ảnh chụp trong folder capture để lên ý tưởng thực hiện
+    Giao dịện và màu sắc phù hợp với môi trường đại học, xanh dương, xanh lá; giao dịện hiện đại, dễ thao tác và quản lý
+    Đọc các file md trong aaPanel-aaPanel-DeepWiki để học hỏi và lên kiến trúc dự án.
+    Dự án đang code khởi đầu trên Ubuntu 22.04
+
+    => tìm Techstack phù hợp để build trên nhiều môi trường Linux khác nhau
+    Khi build, dự án chạy trên /ITDLUPane/
+        /ITDLUPane/backup => Backup lưu ở đây
+        /ITDLUPane/server => Project chính chạy ở đây, các software cài đặt và quản lý, cấu hình cũng chạy ở đây
+        /ITDLUPane/logs => Logs lưu ở đây
+        ITDLUPane/wwwroot => các website tạo và lưu trữ data

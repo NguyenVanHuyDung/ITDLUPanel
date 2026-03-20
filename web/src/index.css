@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+:root {
+  /* DLU University Theme */
+  --color-primary: #1565C0;
+  --color-primary-light: #1E88E5;
+  --color-primary-dark: #0D47A1;
+  --color-secondary: #2E7D32;
+  --color-secondary-light: #43A047;
+  --color-accent: #0288D1;
+  --color-sidebar: #1B2A4A;
+  --color-sidebar-hover: #243656;
+  --color-bg: #F5F7FA;
+  --color-surface: #FFFFFF;
+  --color-text: #1A1A2E;
+  --color-text-secondary: #64748B;
+  --color-success: #4CAF50;
+  --color-warning: #FF9800;
+  --color-error: #F44336;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* Ant Design theme overrides */
+.ant-layout-sider {
+  background: var(--color-sidebar) !important;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #a1a1a1; }
+
+/* Terminal font */
+.terminal-font {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+}
