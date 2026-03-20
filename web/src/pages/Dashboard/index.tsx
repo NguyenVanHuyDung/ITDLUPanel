@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Card, Col, Progress, Row, Statistic, Typography, Spin, Descriptions } from 'antd';
+import { Card, Col, Progress, Row, Statistic, Typography, Spin, Descriptions, Button, Select, Space } from 'antd';
 import {
   CloudServerOutlined,
   DatabaseOutlined,
@@ -7,6 +7,7 @@ import {
   ClockCircleOutlined,
   DesktopOutlined,
   ReloadOutlined,
+  SyncOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -19,6 +20,12 @@ const formatBytes = (bytes: number) => (bytes / 1024 / 1024 / 1024).toFixed(1) +
 const formatUptime = (seconds: number) =>
   Math.floor(seconds / 86400) + 'd ' + Math.floor((seconds % 86400) / 3600) + 'h';
 
+const REFRESH_OPTIONS = [
+  { value: 5, label: '5s' },
+  { value: 10, label: '10s' },
+  { value: 30, label: '30s' },
+];
+
 interface ChartPoint {
   time: string;
   cpu: number;
@@ -30,9 +37,12 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [info, setInfo] = useState<SystemInfo | null>(null);
   const [chartData, setChartData] = useState<ChartPoint[]>([]);
+  const [refreshInterval, setRefreshInterval] = useState(5);
+  const [refreshing, setRefreshing] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchData = useCallback(async (isInitial = false) => {
+    if (!isInitial) setRefreshing(true);
     try {
       const { data: resp } = await api.get<{ code: number; data: SystemInfo }>('/dashboard');
       const d = resp.data;
@@ -43,20 +53,25 @@ export default function Dashboard() {
         now.getSeconds().toString().padStart(2, '0');
       setChartData(prev => {
         const next = [...prev, { time: timeStr, cpu: d.cpu.usage_percent, memory: d.memory.usage_percent }];
-        return next.length > 20 ? next.slice(-20) : next;
+        return next.length > 30 ? next.slice(-30) : next;
       });
     } catch {
       // silently retry on next interval
     } finally {
       if (isInitial) setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
     fetchData(true);
-    intervalRef.current = setInterval(() => fetchData(), 5000);
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [fetchData]);
+
+  useEffect(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => fetchData(), refreshInterval * 1000);
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [fetchData, refreshInterval]);
 
   if (loading) {
     return <div style={{ textAlign: 'center', padding: 100 }}><Spin size="large" /></div>;
@@ -72,7 +87,27 @@ export default function Dashboard() {
 
   return (
     <div>
-      <Title level={3} style={{ marginBottom: 24 }}>{t('dashboard.title')}</Title>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <Title level={3} style={{ margin: 0 }}>{t('dashboard.title')}</Title>
+        <Space>
+          <Select
+            value={refreshInterval}
+            onChange={setRefreshInterval}
+            options={REFRESH_OPTIONS}
+            size="small"
+            style={{ width: 70 }}
+            suffixIcon={<SyncOutlined spin={refreshing} />}
+          />
+          <Button
+            icon={<ReloadOutlined spin={refreshing} />}
+            size="small"
+            onClick={() => fetchData()}
+            loading={refreshing}
+          >
+            Refresh
+          </Button>
+        </Space>
+      </div>
 
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={24} sm={12} lg={6}>
