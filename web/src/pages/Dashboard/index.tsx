@@ -1,46 +1,86 @@
-import { Card, Col, Progress, Row, Statistic, Typography } from 'antd';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Card, Col, Progress, Row, Statistic, Typography, Spin, Descriptions } from 'antd';
 import {
   CloudServerOutlined,
   DatabaseOutlined,
   GlobalOutlined,
   ClockCircleOutlined,
+  DesktopOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import api from '@/services/api';
+import type { SystemInfo } from '@/types';
 
 const { Title, Text } = Typography;
 
-const mockChartData = [
-  { time: '00:00', cpu: 25, memory: 45 },
-  { time: '04:00', cpu: 30, memory: 48 },
-  { time: '08:00', cpu: 55, memory: 52 },
-  { time: '12:00', cpu: 70, memory: 60 },
-  { time: '16:00', cpu: 45, memory: 55 },
-  { time: '20:00', cpu: 35, memory: 50 },
-  { time: '24:00', cpu: 28, memory: 47 },
-];
+const formatBytes = (bytes: number) => (bytes / 1024 / 1024 / 1024).toFixed(1) + ' GB';
+const formatUptime = (seconds: number) =>
+  Math.floor(seconds / 86400) + 'd ' + Math.floor((seconds % 86400) / 3600) + 'h';
+
+interface ChartPoint {
+  time: string;
+  cpu: number;
+  memory: number;
+}
 
 export default function Dashboard() {
   const { t } = useTranslation();
+  const [loading, setLoading] = useState(true);
+  const [info, setInfo] = useState<SystemInfo | null>(null);
+  const [chartData, setChartData] = useState<ChartPoint[]>([]);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchData = useCallback(async (isInitial = false) => {
+    try {
+      const { data: resp } = await api.get<{ code: number; data: SystemInfo }>('/dashboard');
+      const d = resp.data;
+      setInfo(d);
+      const now = new Date();
+      const timeStr = now.getHours().toString().padStart(2, '0') + ':' +
+        now.getMinutes().toString().padStart(2, '0') + ':' +
+        now.getSeconds().toString().padStart(2, '0');
+      setChartData(prev => {
+        const next = [...prev, { time: timeStr, cpu: d.cpu.usage_percent, memory: d.memory.usage_percent }];
+        return next.length > 20 ? next.slice(-20) : next;
+      });
+    } catch {
+      // silently retry on next interval
+    } finally {
+      if (isInitial) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData(true);
+    intervalRef.current = setInterval(() => fetchData(), 5000);
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [fetchData]);
+
+  if (loading) {
+    return <div style={{ textAlign: 'center', padding: 100 }}><Spin size="large" /></div>;
+  }
+
+  if (!info) {
+    return <div style={{ textAlign: 'center', padding: 100 }}><Text type="secondary">Failed to load dashboard</Text></div>;
+  }
+
+  const networkPercent = info.network.bytes_recv > 0
+    ? Math.min(Math.round((info.network.bytes_sent / (info.network.bytes_sent + info.network.bytes_recv)) * 100), 100)
+    : 0;
 
   return (
     <div>
       <Title level={3} style={{ marginBottom: 24 }}>{t('dashboard.title')}</Title>
 
-      {/* Resource Usage Cards */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={24} sm={12} lg={6}>
           <Card>
             <div style={{ textAlign: 'center' }}>
               <Text type="secondary">{t('dashboard.cpu_usage')}</Text>
-              <Progress
-                type="circle"
-                percent={32}
-                strokeColor="#1565C0"
-                size={100}
-                style={{ display: 'block', margin: '16px auto' }}
-              />
-              <Text>4 Cores</Text>
+              <Progress type="circle" percent={Math.round(info.cpu.usage_percent)} strokeColor="#1565C0" size={100} style={{ display: 'block', margin: '16px auto' }} />
+              <Text>{info.cpu.cores} Cores</Text>
             </div>
           </Card>
         </Col>
@@ -48,14 +88,8 @@ export default function Dashboard() {
           <Card>
             <div style={{ textAlign: 'center' }}>
               <Text type="secondary">{t('dashboard.memory_usage')}</Text>
-              <Progress
-                type="circle"
-                percent={58}
-                strokeColor="#2E7D32"
-                size={100}
-                style={{ display: 'block', margin: '16px auto' }}
-              />
-              <Text>4.6 / 8 GB</Text>
+              <Progress type="circle" percent={Math.round(info.memory.usage_percent)} strokeColor="#2E7D32" size={100} style={{ display: 'block', margin: '16px auto' }} />
+              <Text>{formatBytes(info.memory.used)} / {formatBytes(info.memory.total)}</Text>
             </div>
           </Card>
         </Col>
@@ -63,14 +97,8 @@ export default function Dashboard() {
           <Card>
             <div style={{ textAlign: 'center' }}>
               <Text type="secondary">{t('dashboard.disk_usage')}</Text>
-              <Progress
-                type="circle"
-                percent={45}
-                strokeColor="#FF9800"
-                size={100}
-                style={{ display: 'block', margin: '16px auto' }}
-              />
-              <Text>90 / 200 GB</Text>
+              <Progress type="circle" percent={Math.round(info.disk.usage_percent)} strokeColor="#FF9800" size={100} style={{ display: 'block', margin: '16px auto' }} />
+              <Text>{formatBytes(info.disk.used)} / {formatBytes(info.disk.total)}</Text>
             </div>
           </Card>
         </Col>
@@ -78,85 +106,50 @@ export default function Dashboard() {
           <Card>
             <div style={{ textAlign: 'center' }}>
               <Text type="secondary">{t('dashboard.network_traffic')}</Text>
-              <Progress
-                type="circle"
-                percent={22}
-                strokeColor="#0288D1"
-                size={100}
-                style={{ display: 'block', margin: '16px auto' }}
-              />
-              <Text>↑ 1.2 GB ↓ 5.8 GB</Text>
+              <Progress type="circle" percent={networkPercent} strokeColor="#0288D1" size={100} style={{ display: 'block', margin: '16px auto' }} />
+              <Text>↑ {formatBytes(info.network.bytes_sent)} ↓ {formatBytes(info.network.bytes_recv)}</Text>
             </div>
           </Card>
         </Col>
       </Row>
 
-      {/* Quick Stats */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={12} sm={6}>
-          <Card>
-            <Statistic
-              title={t('dashboard.total_sites')}
-              value={5}
-              prefix={<GlobalOutlined style={{ color: '#1565C0' }} />}
-            />
-          </Card>
+          <Card><Statistic title={t('dashboard.total_sites')} value={info.counts.sites} prefix={<GlobalOutlined style={{ color: '#1565C0' }} />} /></Card>
         </Col>
         <Col xs={12} sm={6}>
-          <Card>
-            <Statistic
-              title={t('dashboard.total_databases')}
-              value={8}
-              prefix={<DatabaseOutlined style={{ color: '#2E7D32' }} />}
-            />
-          </Card>
+          <Card><Statistic title={t('dashboard.total_databases')} value={info.counts.databases} prefix={<DatabaseOutlined style={{ color: '#2E7D32' }} />} /></Card>
         </Col>
         <Col xs={12} sm={6}>
-          <Card>
-            <Statistic
-              title={t('dashboard.total_ftp')}
-              value={3}
-              prefix={<CloudServerOutlined style={{ color: '#FF9800' }} />}
-            />
-          </Card>
+          <Card><Statistic title={t('dashboard.total_ftp')} value={info.counts.ftp_accounts} prefix={<CloudServerOutlined style={{ color: '#FF9800' }} />} /></Card>
         </Col>
         <Col xs={12} sm={6}>
-          <Card>
-            <Statistic
-              title={t('dashboard.total_cron')}
-              value={12}
-              prefix={<ClockCircleOutlined style={{ color: '#0288D1' }} />}
-            />
-          </Card>
+          <Card><Statistic title={t('dashboard.total_cron')} value={info.counts.cron_jobs} prefix={<ClockCircleOutlined style={{ color: '#0288D1' }} />} /></Card>
         </Col>
       </Row>
 
-      {/* Resource Chart */}
-      <Card title={t('dashboard.resource_usage')} style={{ marginBottom: 24 }}>
+      <Card title={t('dashboard.resource_usage')} style={{ marginBottom: 24 }} extra={<ReloadOutlined onClick={() => fetchData()} />}>
         <ResponsiveContainer width="100%" height={300}>
-          <AreaChart data={mockChartData}>
+          <AreaChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="time" />
-            <YAxis unit="%" />
+            <YAxis unit="%" domain={[0, 100]} />
             <Tooltip />
-            <Area
-              type="monotone"
-              dataKey="cpu"
-              name={t('dashboard.cpu')}
-              stroke="#1565C0"
-              fill="#1565C0"
-              fillOpacity={0.15}
-            />
-            <Area
-              type="monotone"
-              dataKey="memory"
-              name={t('dashboard.memory')}
-              stroke="#2E7D32"
-              fill="#2E7D32"
-              fillOpacity={0.15}
-            />
+            <Area type="monotone" dataKey="cpu" name={t('dashboard.cpu')} stroke="#1565C0" fill="#1565C0" fillOpacity={0.15} />
+            <Area type="monotone" dataKey="memory" name={t('dashboard.memory')} stroke="#2E7D32" fill="#2E7D32" fillOpacity={0.15} />
           </AreaChart>
         </ResponsiveContainer>
+      </Card>
+
+      <Card title={t('dashboard.system_info')} style={{ marginBottom: 24 }}>
+        <Descriptions bordered column={{ xs: 1, sm: 2, lg: 4 }}>
+          <Descriptions.Item label={<><DesktopOutlined /> {t('dashboard.hostname')}</>}>{info.system.hostname}</Descriptions.Item>
+          <Descriptions.Item label={t('dashboard.os')}>{info.system.os}</Descriptions.Item>
+          <Descriptions.Item label={t('dashboard.kernel')}>{info.system.kernel}</Descriptions.Item>
+          <Descriptions.Item label={t('dashboard.uptime')}>{formatUptime(info.system.uptime)}</Descriptions.Item>
+          <Descriptions.Item label={t('dashboard.panel_version')}>{info.system.panel_version}</Descriptions.Item>
+          <Descriptions.Item label={t('dashboard.load_average')}>{info.cpu.load_average?.join(' / ')}</Descriptions.Item>
+        </Descriptions>
       </Card>
     </div>
   );
