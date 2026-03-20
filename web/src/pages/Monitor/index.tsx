@@ -24,9 +24,10 @@ interface MonitorData {
 interface ProcessInfo {
   pid: number;
   name: string;
-  cpu_percent: number;
-  memory_percent: number;
-  status: string;
+  cpu: number;
+  memory: number;
+  user: string;
+  command: string;
 }
 
 export default function Monitor() {
@@ -80,9 +81,10 @@ export default function Monitor() {
   const procColumns = [
     { title: 'PID', dataIndex: 'pid', key: 'pid', sorter: (a: ProcessInfo, b: ProcessInfo) => a.pid - b.pid },
     { title: 'Name', dataIndex: 'name', key: 'name' },
-    { title: 'CPU %', dataIndex: 'cpu_percent', key: 'cpu', sorter: (a: ProcessInfo, b: ProcessInfo) => a.cpu_percent - b.cpu_percent, render: (v: number) => v.toFixed(1) + '%' },
-    { title: 'MEM %', dataIndex: 'memory_percent', key: 'mem', sorter: (a: ProcessInfo, b: ProcessInfo) => a.memory_percent - b.memory_percent, render: (v: number) => v.toFixed(1) + '%' },
-    { title: t('common.status'), dataIndex: 'status', key: 'status', render: (s: string) => <Tag color={s === 'running' ? 'green' : s === 'sleeping' ? 'blue' : 'default'}>{s}</Tag> },
+    { title: 'CPU %', dataIndex: 'cpu', key: 'cpu', sorter: (a: ProcessInfo, b: ProcessInfo) => a.cpu - b.cpu, render: (v: number) => (v ?? 0).toFixed(1) + '%' },
+    { title: 'MEM %', dataIndex: 'memory', key: 'mem', sorter: (a: ProcessInfo, b: ProcessInfo) => a.memory - b.memory, render: (v: number) => (v ?? 0).toFixed(1) + '%' },
+    { title: 'User', dataIndex: 'user', key: 'user' },
+    { title: 'Command', dataIndex: 'command', key: 'cmd', ellipsis: true },
   ];
 
   const loadAvg = sysData.load_average || sysData.cpu.load_average || [0, 0, 0];
