@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Tabs, Card, Row, Col, Button, Tag, Badge, Space, Typography,
-  message, Modal, Select, Progress, Empty, Spin, Tooltip,
+  message, Modal, Select, Progress, Empty, Spin, Tooltip, Descriptions, Input,
 } from 'antd';
 import {
   AppstoreOutlined, CheckCircleOutlined, DownloadOutlined,
   PlayCircleOutlined, PauseCircleOutlined, ReloadOutlined,
   CloudServerOutlined, DatabaseOutlined, CodeOutlined,
-  ExclamationCircleOutlined, ThunderboltOutlined,
+  ExclamationCircleOutlined, ThunderboltOutlined, SettingOutlined, FileTextOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
@@ -75,6 +75,15 @@ export default function AppStore() {
   const [installVersion, setInstallVersion] = useState<string>('');
   const [installing, setInstalling] = useState(false);
   const [installTask, setInstallTask] = useState<TaskStatus | null>(null);
+
+  // Management modal
+  const [manageModalOpen, setManageModalOpen] = useState(false);
+  const [manageSW, setManageSW] = useState<Software | null>(null);
+  const [swStatus, setSwStatus] = useState<Record<string, string> | null>(null);
+  const [swConfig, setSwConfig] = useState('');
+  const [configLoading, setConfigLoading] = useState(false);
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [manageTab, setManageTab] = useState<'status' | 'config'>('status');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchInstalled = useCallback(async () => {
@@ -136,6 +145,47 @@ export default function AppStore() {
     setInstallVersion(sw.versions[sw.versions.length - 1] ?? '');
     setInstallTask(null);
     setInstallModalOpen(true);
+  };
+
+  const openManageModal = async (sw: Software) => {
+    setManageSW(sw);
+    setManageTab('status');
+    setSwStatus(null);
+    setSwConfig('');
+    setManageModalOpen(true);
+    // Fetch service status
+    try {
+      const { data } = await api.get(`/software/${sw.name}/status`);
+      setSwStatus(data.data);
+    } catch {
+      setSwStatus({ error: 'Could not fetch status' });
+    }
+  };
+
+  const fetchConfig = async () => {
+    if (!manageSW) return;
+    setConfigLoading(true);
+    try {
+      const { data } = await api.get(`/software/${manageSW.name}/config`);
+      setSwConfig(data.data?.content ?? '');
+    } catch {
+      setSwConfig('# Config file not found or not supported for this software');
+    } finally {
+      setConfigLoading(false);
+    }
+  };
+
+  const saveConfig = async () => {
+    if (!manageSW) return;
+    setSavingConfig(true);
+    try {
+      await api.put(`/software/${manageSW.name}/config`, { content: swConfig });
+      message.success('Configuration saved. Restart the service to apply changes.');
+    } catch {
+      message.error('Failed to save configuration');
+    } finally {
+      setSavingConfig(false);
+    }
   };
 
   const handleInstall = async () => {
@@ -201,6 +251,7 @@ export default function AppStore() {
                   <Card
                     hoverable
                     styles={{ body: { padding: 20 } }}
+                    onClick={() => openManageModal(sw)}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
                       <div style={{
@@ -217,7 +268,7 @@ export default function AppStore() {
                       </div>
                       {getStatusBadge(sw.status)}
                     </div>
-                    <Space wrap size="small">
+                    <Space wrap size="small" onClick={(e) => e.stopPropagation()}>
                       <Tooltip title={t('common.start')}>
                         <Button
                           size="small"
@@ -386,6 +437,122 @@ export default function AppStore() {
               />
             </div>
           </Space>
+        )}
+      </Modal>
+
+      {/* Software Management Modal */}
+      <Modal
+        title={
+          <Space>
+            <div style={{
+              width: 32, height: 32, borderRadius: 8,
+              background: SOFTWARE_COLORS[manageSW?.name ?? ''] ?? '#1565C0',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#fff', fontSize: 16, fontWeight: 700,
+            }}>
+              {manageSW?.display_name?.charAt(0).toUpperCase()}
+            </div>
+            <span>{manageSW?.display_name} Management</span>
+          </Space>
+        }
+        open={manageModalOpen}
+        onCancel={() => setManageModalOpen(false)}
+        width={700}
+        footer={null}
+      >
+        {manageSW && (
+          <Tabs
+            activeKey={manageTab}
+            onChange={(key) => {
+              setManageTab(key as 'status' | 'config');
+              if (key === 'config' && !swConfig) fetchConfig();
+            }}
+            items={[
+              {
+                key: 'status',
+                label: <span><SettingOutlined /> Status</span>,
+                children: (
+                  <div>
+                    <Descriptions bordered size="small" column={1} style={{ marginBottom: 16 }}>
+                      <Descriptions.Item label="Name">{manageSW.display_name}</Descriptions.Item>
+                      <Descriptions.Item label="Version">{manageSW.version}</Descriptions.Item>
+                      <Descriptions.Item label="Type"><Tag>{manageSW.type}</Tag></Descriptions.Item>
+                      <Descriptions.Item label="Status">{getStatusBadge(manageSW.status)}</Descriptions.Item>
+                      {swStatus && !swStatus.error && (
+                        <>
+                          {swStatus.ActiveState && <Descriptions.Item label="Active State"><Tag color={swStatus.ActiveState === 'active' ? 'success' : 'default'}>{swStatus.ActiveState}</Tag></Descriptions.Item>}
+                          {swStatus.SubState && <Descriptions.Item label="Sub State">{swStatus.SubState}</Descriptions.Item>}
+                          {swStatus.MainPID && swStatus.MainPID !== '0' && <Descriptions.Item label="Main PID">{swStatus.MainPID}</Descriptions.Item>}
+                          {swStatus.MemoryCurrent && swStatus.MemoryCurrent !== '18446744073709551615' && (
+                            <Descriptions.Item label="Memory">{(parseInt(swStatus.MemoryCurrent) / 1024 / 1024).toFixed(1)} MB</Descriptions.Item>
+                          )}
+                          {swStatus.ActiveEnterTimestamp && <Descriptions.Item label="Started">{swStatus.ActiveEnterTimestamp}</Descriptions.Item>}
+                        </>
+                      )}
+                      {swStatus?.error && <Descriptions.Item label="Error"><Text type="danger">{swStatus.error}</Text></Descriptions.Item>}
+                    </Descriptions>
+                    <Space wrap>
+                      <Button
+                        type="primary"
+                        ghost
+                        icon={<PlayCircleOutlined />}
+                        loading={actionLoading[manageSW.name]}
+                        disabled={manageSW.status === 1}
+                        onClick={async () => {
+                          await doServiceAction(manageSW.name, 'start');
+                          openManageModal({ ...manageSW, status: 1 });
+                        }}
+                      >
+                        {t('common.start')}
+                      </Button>
+                      <Button
+                        danger
+                        ghost
+                        icon={<PauseCircleOutlined />}
+                        loading={actionLoading[manageSW.name]}
+                        disabled={manageSW.status !== 1}
+                        onClick={async () => {
+                          await doServiceAction(manageSW.name, 'stop');
+                          openManageModal({ ...manageSW, status: 0 });
+                        }}
+                      >
+                        {t('common.stop')}
+                      </Button>
+                      <Button
+                        icon={<ReloadOutlined />}
+                        loading={actionLoading[manageSW.name]}
+                        onClick={async () => {
+                          await doServiceAction(manageSW.name, 'restart');
+                          openManageModal({ ...manageSW, status: 1 });
+                        }}
+                      >
+                        {t('common.restart')}
+                      </Button>
+                    </Space>
+                  </div>
+                ),
+              },
+              {
+                key: 'config',
+                label: <span><FileTextOutlined /> Configuration</span>,
+                children: (
+                  <Spin spinning={configLoading}>
+                    <Input.TextArea
+                      value={swConfig}
+                      onChange={(e) => setSwConfig(e.target.value)}
+                      rows={18}
+                      style={{ fontFamily: '"Cascadia Code", "Fira Code", "JetBrains Mono", monospace', fontSize: 13 }}
+                    />
+                    <div style={{ marginTop: 12, textAlign: 'right' }}>
+                      <Button type="primary" loading={savingConfig} onClick={saveConfig}>
+                        Save Configuration
+                      </Button>
+                    </div>
+                  </Spin>
+                ),
+              },
+            ]}
+          />
         )}
       </Modal>
     </div>

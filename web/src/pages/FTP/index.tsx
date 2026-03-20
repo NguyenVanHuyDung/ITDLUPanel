@@ -4,6 +4,7 @@ import { PlusOutlined, DeleteOutlined, ReloadOutlined, LockOutlined, CheckCircle
 import { useTranslation } from 'react-i18next';
 import type { ApiResponse } from '@/types';
 import api from '@/services/api';
+import RequireSoftware from '@/components/RequireSoftware';
 
 interface FTPAccount {
   id: number;
@@ -13,7 +14,7 @@ interface FTPAccount {
   created_at: string;
 }
 
-export default function FTP() {
+function FTPContent() {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState<FTPAccount[]>([]);
@@ -70,7 +71,7 @@ export default function FTP() {
 
   const handleToggleStatus = async (record: FTPAccount) => {
     try {
-      await api.put(`/ftp/${record.id}/status`, { status: record.status === 1 ? 0 : 1 });
+      await api.put(`/ftp/${record.id}/status`, { enabled: record.status !== 1 });
       message.success(t('common.success'));
       fetchAccounts();
     } catch {
@@ -205,5 +206,14 @@ export default function FTP() {
         </Form>
       </Modal>
     </div>
+  );
+}
+
+export default function FTP() {
+  const { t } = useTranslation();
+  return (
+    <RequireSoftware softwareTypes={['ftp']} label={t('sidebar.ftp') || 'FTP Server (Pure-FTPd)'}>
+      <FTPContent />
+    </RequireSoftware>
   );
 }

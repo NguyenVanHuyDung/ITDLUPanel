@@ -4,10 +4,11 @@ import { PlusOutlined, DeleteOutlined, SettingOutlined, SafetyCertificateOutline
 import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
 import type { Site } from '@/types';
+import RequireSoftware from '@/components/RequireSoftware';
 
 const { Title } = Typography;
 
-export default function Websites() {
+function WebsitesContent() {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [sites, setSites] = useState<Site[]>([]);
@@ -158,5 +159,14 @@ export default function Websites() {
         </Form>
       </Modal>
     </div>
+  );
+}
+
+export default function Websites() {
+  const { t } = useTranslation();
+  return (
+    <RequireSoftware softwareTypes={['webserver']} label={t('websites.web_server') || 'Web Server (Nginx/Apache/OpenLiteSpeed)'}>
+      <WebsitesContent />
+    </RequireSoftware>
   );
 }

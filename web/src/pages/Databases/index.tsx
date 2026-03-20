@@ -4,6 +4,7 @@ import { PlusOutlined, DeleteOutlined, KeyOutlined, CloudDownloadOutlined, Reloa
 import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
 import type { Database } from '@/types';
+import RequireSoftware from '@/components/RequireSoftware';
 
 const { Title } = Typography;
 
@@ -19,7 +20,7 @@ const generatePassword = () => {
   return Array.from({ length: 16 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 };
 
-export default function Databases() {
+function DatabasesContent() {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [databases, setDatabases] = useState<Database[]>([]);
@@ -195,5 +196,14 @@ export default function Databases() {
         </Form>
       </Modal>
     </div>
+  );
+}
+
+export default function Databases() {
+  const { t } = useTranslation();
+  return (
+    <RequireSoftware softwareTypes={['database']} label={t('databases.title') || 'Database Server (MySQL/MariaDB)'}>
+      <DatabasesContent />
+    </RequireSoftware>
   );
 }
