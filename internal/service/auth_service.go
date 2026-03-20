@@ -126,10 +126,8 @@ func (s *AuthService) CreateDefaultAdmin() (string, error) {
 		return "", nil
 	}
 
-	password, err := crypto.GenerateRandomString(12)
-	if err != nil {
-		return "", apperrors.Wrap(err, apperrors.ErrInternal, "failed to generate password")
-	}
+	// Use fixed default password for development
+	password := "admin@123456"
 
 	cfg := config.Get()
 	hashed, err := crypto.HashPassword(password, cfg.Auth.BcryptCost)
