@@ -246,9 +246,17 @@ func CSRFMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// Skip CSRF check for API requests with Bearer token authentication,
-		// since CSRF attacks cannot set custom Authorization headers.
+		// Skip CSRF for API requests with Bearer token (CSRF can't set custom headers)
 		if authHeader := c.GetHeader("Authorization"); authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
+			c.Next()
+			return
+		}
+
+		// Skip CSRF for unauthenticated endpoints (login, refresh, 2fa verify)
+		path := c.Request.URL.Path
+		if strings.HasSuffix(path, "/auth/login") ||
+			strings.HasSuffix(path, "/auth/refresh") ||
+			strings.HasSuffix(path, "/auth/2fa/verify") {
 			c.Next()
 			return
 		}

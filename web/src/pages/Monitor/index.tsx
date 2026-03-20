@@ -14,11 +14,11 @@ const formatBytes = (bytes: number) => {
 };
 
 interface MonitorData {
-  cpu: { model: string; cores: number; usage_percent: number; load_average: number[]; per_core: number[] };
-  memory: { total: number; used: number; available: number; buffers: number; cached: number; usage_percent: number };
-  disks: { device: string; mount: string; fstype: string; total: number; used: number; available: number; usage_percent: number }[];
-  network: { name: string; bytes_sent: number; bytes_recv: number; packets_sent: number; packets_recv: number }[];
-  load_average: number[];
+  cpu: { model: string; cores: number; usage_percent: number; load_average: number[]; per_core?: number[] };
+  memory: { total: number; used: number; available: number; buffers?: number; cached?: number; usage_percent: number };
+  disk: { total: number; used: number; available: number; usage_percent: number };
+  network: { bytes_sent: number; bytes_recv: number };
+  load_average?: number[];
 }
 
 interface ProcessInfo {
@@ -60,23 +60,21 @@ export default function Monitor() {
   if (loading) return <div style={{ textAlign: 'center', padding: 100 }}><Spin size="large" /></div>;
   if (!sysData) return <div style={{ textAlign: 'center', padding: 100 }}><Text type="secondary">Failed to load</Text></div>;
 
+  const diskData = sysData.disk ? [{ key: 'root', ...sysData.disk }] : [];
+  const netData = sysData.network ? [{ key: 'total', ...sysData.network }] : [];
+
   const diskColumns = [
-    { title: 'Device', dataIndex: 'device', key: 'device' },
-    { title: 'Mount', dataIndex: 'mount', key: 'mount' },
-    { title: 'Type', dataIndex: 'fstype', key: 'fstype' },
-    { title: 'Total', key: 'total', render: (_: unknown, r: MonitorData['disks'][0]) => formatBytes(r.total) },
-    { title: 'Used', key: 'used', render: (_: unknown, r: MonitorData['disks'][0]) => formatBytes(r.used) },
-    { title: 'Usage', key: 'usage', width: 200, render: (_: unknown, r: MonitorData['disks'][0]) => (
+    { title: 'Total', key: 'total', render: (_: unknown, r: typeof diskData[0]) => formatBytes(r.total) },
+    { title: 'Used', key: 'used', render: (_: unknown, r: typeof diskData[0]) => formatBytes(r.used) },
+    { title: 'Available', key: 'avail', render: (_: unknown, r: typeof diskData[0]) => formatBytes(r.available) },
+    { title: 'Usage', key: 'usage', width: 200, render: (_: unknown, r: typeof diskData[0]) => (
       <Progress percent={Math.round(r.usage_percent)} size="small" strokeColor={r.usage_percent > 90 ? '#F44336' : r.usage_percent > 70 ? '#FF9800' : '#4CAF50'} />
     )},
   ];
 
   const netColumns = [
-    { title: 'Interface', dataIndex: 'name', key: 'name' },
-    { title: 'Sent', key: 'sent', render: (_: unknown, r: MonitorData['network'][0]) => formatBytes(r.bytes_sent) },
-    { title: 'Received', key: 'recv', render: (_: unknown, r: MonitorData['network'][0]) => formatBytes(r.bytes_recv) },
-    { title: 'Packets Sent', dataIndex: 'packets_sent', key: 'ps' },
-    { title: 'Packets Recv', dataIndex: 'packets_recv', key: 'pr' },
+    { title: 'Bytes Sent', key: 'sent', render: (_: unknown, r: typeof netData[0]) => formatBytes(r.bytes_sent) },
+    { title: 'Bytes Received', key: 'recv', render: (_: unknown, r: typeof netData[0]) => formatBytes(r.bytes_recv) },
   ];
 
   const procColumns = [
@@ -144,14 +142,14 @@ export default function Monitor() {
         </Row>
       </Card>
 
-      {/* Disk Partitions */}
+      {/* Disk Usage */}
       <Card title={t('dashboard.disk')} style={{ marginBottom: 24 }}>
-        <Table columns={diskColumns} dataSource={sysData.disks || []} rowKey="device" pagination={false} size="small" />
+        <Table columns={diskColumns} dataSource={diskData} rowKey="key" pagination={false} size="small" />
       </Card>
 
-      {/* Network Interfaces */}
+      {/* Network Traffic */}
       <Card title={t('dashboard.network')} style={{ marginBottom: 24 }}>
-        <Table columns={netColumns} dataSource={sysData.network || []} rowKey="name" pagination={false} size="small" />
+        <Table columns={netColumns} dataSource={netData} rowKey="key" pagination={false} size="small" />
       </Card>
 
       {/* Process List */}
