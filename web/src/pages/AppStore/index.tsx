@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Tabs, Card, Row, Col, Button, Tag, Badge, Space, Typography,
-  message, Modal, Select, Progress, Empty, Spin, Tooltip, Descriptions, Input,
+  message, Modal, Select, Progress, Empty, Spin, Tooltip, Descriptions, Input, Drawer,
 } from 'antd';
 import {
   AppstoreOutlined, CheckCircleOutlined, DownloadOutlined,
   PlayCircleOutlined, PauseCircleOutlined, ReloadOutlined,
   CloudServerOutlined, DatabaseOutlined, CodeOutlined,
   ExclamationCircleOutlined, ThunderboltOutlined, SettingOutlined, FileTextOutlined,
+  DeleteOutlined, CloseOutlined, MinusOutlined, LoadingOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
@@ -26,11 +27,17 @@ interface AvailableSoftware {
   icon?: string;
 }
 
-interface TaskStatus {
+interface TrackedTask {
   id: number;
-  status: string;
-  progress: number;
   name: string;
+  type: 'install' | 'uninstall';
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  progress: number;
+  log: string;
+  error?: string;
+  created_at?: string;
+  started_at?: string;
+  completed_at?: string;
 }
 
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
@@ -56,9 +63,28 @@ const SOFTWARE_COLORS: Record<string, string> = {
   mongodb: '#47A248',
 };
 
+const MONO_FONT = '"Cascadia Code", "Fira Code", "JetBrains Mono", monospace';
+
 function getStatusBadge(status: number) {
   if (status === 1) return <Badge status="success" text={<Text type="success">Running</Text>} />;
   return <Badge status="error" text={<Text type="secondary">Stopped</Text>} />;
+}
+
+function getTaskStatusColor(status: string) {
+  switch (status) {
+    case 'running': case 'pending': return '#1677ff';
+    case 'completed': return '#52c41a';
+    case 'failed': return '#ff4d4f';
+    default: return '#1677ff';
+  }
+}
+
+function getTaskProgressStatus(status: string): 'active' | 'success' | 'exception' {
+  switch (status) {
+    case 'completed': return 'success';
+    case 'failed': return 'exception';
+    default: return 'active';
+  }
 }
 
 export default function AppStore() {
@@ -74,7 +100,6 @@ export default function AppStore() {
   const [installTarget, setInstallTarget] = useState<AvailableSoftware | null>(null);
   const [installVersion, setInstallVersion] = useState<string>('');
   const [installing, setInstalling] = useState(false);
-  const [installTask, setInstallTask] = useState<TaskStatus | null>(null);
 
   // Management modal
   const [manageModalOpen, setManageModalOpen] = useState(false);
@@ -84,7 +109,20 @@ export default function AppStore() {
   const [configLoading, setConfigLoading] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [manageTab, setManageTab] = useState<'status' | 'config'>('status');
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Task tracking drawer
+  const [trackedTasks, setTrackedTasks] = useState<Record<number, TrackedTask>>({});
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerCollapsed, setDrawerCollapsed] = useState(false);
+  const [activeTaskId, setActiveTaskId] = useState<number | null>(null);
+
+  const pollIntervalsRef = useRef<Record<number, ReturnType<typeof setInterval>>>({});
+  const autoCloseTimersRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  const logContainerRef = useRef<HTMLDivElement>(null);
+
+  // ---------------------------------------------------------------------------
+  // Data fetching
+  // ---------------------------------------------------------------------------
 
   const fetchInstalled = useCallback(async () => {
     setInstalledLoading(true);
@@ -108,11 +146,126 @@ export default function AppStore() {
     fetchAvailable();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Cleanup all polling intervals and auto-close timers on unmount
   useEffect(() => {
     return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
+      Object.values(pollIntervalsRef.current).forEach(clearInterval);
+      Object.values(autoCloseTimersRef.current).forEach(clearTimeout);
     };
   }, []);
+
+  // Auto-scroll log to bottom when active task log updates
+  useEffect(() => {
+    if (logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    }
+  }, [trackedTasks, activeTaskId]);
+
+  // ---------------------------------------------------------------------------
+  // Task tracking (drawer)
+  // ---------------------------------------------------------------------------
+
+  const removeTrackedTask = useCallback((taskId: number) => {
+    if (pollIntervalsRef.current[taskId]) {
+      clearInterval(pollIntervalsRef.current[taskId]);
+      delete pollIntervalsRef.current[taskId];
+    }
+    if (autoCloseTimersRef.current[taskId]) {
+      clearTimeout(autoCloseTimersRef.current[taskId]);
+      delete autoCloseTimersRef.current[taskId];
+    }
+    setTrackedTasks((prev) => {
+      const next = { ...prev };
+      delete next[taskId];
+      return next;
+    });
+    setActiveTaskId((prev) => (prev === taskId ? null : prev));
+  }, []);
+
+  const startTaskPolling = useCallback((taskId: number) => {
+    if (pollIntervalsRef.current[taskId]) {
+      clearInterval(pollIntervalsRef.current[taskId]);
+    }
+
+    const poll = async () => {
+      try {
+        const [taskRes, logRes] = await Promise.all([
+          api.get<ApiResponse<TrackedTask>>(`/tasks/${taskId}`),
+          api.get<ApiResponse<{ log: string }>>(`/tasks/${taskId}/log`),
+        ]);
+
+        const taskData = taskRes.data.data;
+        const logContent = logRes.data.data?.log;
+
+        setTrackedTasks((prev) => {
+          const existing = prev[taskId];
+          if (!existing) return prev;
+          return {
+            ...prev,
+            [taskId]: {
+              ...existing,
+              status: (taskData?.status as TrackedTask['status']) ?? existing.status,
+              progress: taskData?.progress ?? existing.progress,
+              error: taskData?.error,
+              log: logContent ?? (taskData as unknown as { log?: string })?.log ?? existing.log,
+              started_at: taskData?.started_at,
+              completed_at: taskData?.completed_at,
+            },
+          };
+        });
+
+        if (taskData?.status === 'completed' || taskData?.status === 'failed') {
+          if (pollIntervalsRef.current[taskId]) {
+            clearInterval(pollIntervalsRef.current[taskId]);
+            delete pollIntervalsRef.current[taskId];
+          }
+          if (taskData.status === 'completed') {
+            fetchInstalled();
+          }
+          // Auto-remove badge 5 s after completion
+          autoCloseTimersRef.current[taskId] = setTimeout(() => {
+            setTrackedTasks((prev) => {
+              const next = { ...prev };
+              delete next[taskId];
+              return next;
+            });
+            setActiveTaskId((prev) => (prev === taskId ? null : prev));
+            delete autoCloseTimersRef.current[taskId];
+          }, 5000);
+        }
+      } catch {
+        // Silently ignore transient polling errors
+      }
+    };
+
+    poll();
+    pollIntervalsRef.current[taskId] = setInterval(poll, 2000);
+  }, [fetchInstalled]);
+
+  const addTrackedTask = useCallback(
+    (taskId: number, name: string, type: 'install' | 'uninstall') => {
+      setTrackedTasks((prev) => ({
+        ...prev,
+        [taskId]: { id: taskId, name, type, status: 'running', progress: 0, log: '' },
+      }));
+      setActiveTaskId(taskId);
+      setDrawerOpen(true);
+      setDrawerCollapsed(false);
+      startTaskPolling(taskId);
+    },
+    [startTaskPolling],
+  );
+
+  const taskList = Object.values(trackedTasks);
+  const hasActiveTasks = taskList.length > 0;
+  const activeTask =
+    activeTaskId != null && trackedTasks[activeTaskId]
+      ? trackedTasks[activeTaskId]
+      : taskList[0] ?? null;
+
+  // ---------------------------------------------------------------------------
+  // Service actions
+  // ---------------------------------------------------------------------------
 
   const handleServiceAction = async (name: string, action: 'start' | 'stop' | 'restart') => {
     if (action === 'stop') {
@@ -140,12 +293,75 @@ export default function AppStore() {
     }
   };
 
+  // ---------------------------------------------------------------------------
+  // Install / Uninstall
+  // ---------------------------------------------------------------------------
+
   const openInstallModal = (sw: AvailableSoftware) => {
     setInstallTarget(sw);
     setInstallVersion(sw.versions[sw.versions.length - 1] ?? '');
-    setInstallTask(null);
     setInstallModalOpen(true);
   };
+
+  const handleInstall = async () => {
+    if (!installTarget) return;
+    setInstalling(true);
+    try {
+      const { data } = await api.post<ApiResponse<{ task_id: number }>>('/software/install', {
+        name: installTarget.name,
+        version: installVersion,
+      });
+      const taskId = data.data?.task_id;
+      if (taskId) {
+        addTrackedTask(taskId, `Install ${installTarget.display_name}`, 'install');
+        setInstallModalOpen(false);
+        message.info(`Installation of ${installTarget.display_name} started`);
+      } else {
+        message.success(`${installTarget.display_name} installed`);
+        setInstallModalOpen(false);
+        fetchInstalled();
+      }
+    } catch {
+      message.error(t('common.error'));
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  const handleUninstall = useCallback(
+    (sw: Software | { name: string; display_name: string }) => {
+      Modal.confirm({
+        title: `Uninstall ${sw.display_name}?`,
+        icon: <ExclamationCircleOutlined />,
+        content: `This will completely remove ${sw.display_name} and all its configuration. This action cannot be undone.`,
+        okText: 'Uninstall',
+        okButtonProps: { danger: true },
+        onOk: async () => {
+          try {
+            const { data } = await api.delete<ApiResponse<{ task_id: number }>>(
+              `/software/${sw.name}`,
+            );
+            const taskId = data.data?.task_id;
+            if (taskId) {
+              addTrackedTask(taskId, `Uninstall ${sw.display_name}`, 'uninstall');
+              message.info(`Uninstalling ${sw.display_name}…`);
+              setManageModalOpen(false);
+            } else {
+              message.success(`${sw.display_name} uninstalled`);
+              fetchInstalled();
+            }
+          } catch {
+            message.error(`Failed to uninstall ${sw.display_name}`);
+          }
+        },
+      });
+    },
+    [addTrackedTask, fetchInstalled],
+  );
+
+  // ---------------------------------------------------------------------------
+  // Management modal
+  // ---------------------------------------------------------------------------
 
   const openManageModal = async (sw: Software) => {
     setManageSW(sw);
@@ -153,7 +369,6 @@ export default function AppStore() {
     setSwStatus(null);
     setSwConfig('');
     setManageModalOpen(true);
-    // Fetch service status
     try {
       const { data } = await api.get(`/software/${sw.name}/status`);
       setSwStatus(data.data);
@@ -188,53 +403,15 @@ export default function AppStore() {
     }
   };
 
-  const handleInstall = async () => {
-    if (!installTarget) return;
-    setInstalling(true);
-    try {
-      const { data } = await api.post<ApiResponse<{ task_id: number }>>('/software/install', {
-        name: installTarget.name,
-        version: installVersion,
-      });
-      const taskId = data.data?.task_id;
-      if (taskId) {
-        // Poll task status
-        setInstallTask({ id: taskId, status: 'running', progress: 0, name: installTarget.display_name });
-        pollRef.current = setInterval(async () => {
-          try {
-            const { data: taskData } = await api.get<ApiResponse<TaskStatus>>(`/tasks/${taskId}`);
-            const task = taskData.data;
-            setInstallTask(task);
-            if (task.status === 'completed' || task.status === 'failed') {
-              if (pollRef.current) clearInterval(pollRef.current);
-              pollRef.current = null;
-              setInstalling(false);
-              if (task.status === 'completed') {
-                message.success(`${installTarget.display_name} installed successfully`);
-                fetchInstalled();
-              } else {
-                message.error(`Installation of ${installTarget.display_name} failed`);
-              }
-            }
-          } catch {
-            if (pollRef.current) clearInterval(pollRef.current);
-            pollRef.current = null;
-            setInstalling(false);
-          }
-        }, 2000);
-      } else {
-        message.success(`${installTarget.display_name} installed`);
-        setInstalling(false);
-        setInstallModalOpen(false);
-        fetchInstalled();
-      }
-    } catch {
-      message.error(t('common.error'));
-      setInstalling(false);
-    }
-  };
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
 
   const isInstalled = (name: string) => installed.some((s) => s.name === name);
+
+  // ---------------------------------------------------------------------------
+  // Tab content
+  // ---------------------------------------------------------------------------
 
   const tabItems = [
     {
@@ -305,6 +482,16 @@ export default function AppStore() {
                           {t('common.restart')}
                         </Button>
                       </Tooltip>
+                      <Tooltip title="Uninstall">
+                        <Button
+                          size="small"
+                          danger
+                          icon={<DeleteOutlined />}
+                          onClick={() => handleUninstall(sw)}
+                        >
+                          Uninstall
+                        </Button>
+                      </Tooltip>
                     </Space>
                   </Card>
                 </Col>
@@ -372,6 +559,10 @@ export default function AppStore() {
     },
   ];
 
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
+
   return (
     <div>
       <Title level={3} style={{ marginBottom: 24 }}>{t('sidebar.appstore')}</Title>
@@ -384,13 +575,15 @@ export default function AppStore() {
         }
       />
 
-      {/* Install Modal */}
+      {/* ── Install Modal ─────────────────────────────────────────────────── */}
       <Modal
         title={<><DownloadOutlined /> Install {installTarget?.display_name}</>}
         open={installModalOpen}
         onCancel={() => { if (!installing) setInstallModalOpen(false); }}
-        footer={installTask ? null : [
-          <Button key="cancel" onClick={() => setInstallModalOpen(false)}>{t('common.cancel')}</Button>,
+        footer={[
+          <Button key="cancel" disabled={installing} onClick={() => setInstallModalOpen(false)}>
+            {t('common.cancel')}
+          </Button>,
           <Button key="install" type="primary" loading={installing} onClick={handleInstall}>
             {t('common.install')}
           </Button>,
@@ -398,49 +591,21 @@ export default function AppStore() {
         closable={!installing}
         maskClosable={!installing}
       >
-        {installTask ? (
-          <div style={{ textAlign: 'center', padding: 24 }}>
-            <Spin spinning={installTask.status === 'running'}>
-              <Title level={5}>
-                {installTask.status === 'completed' ? 'Installation Complete' :
-                 installTask.status === 'failed' ? 'Installation Failed' :
-                 `Installing ${installTarget?.display_name}...`}
-              </Title>
-              <Progress
-                percent={installTask.progress}
-                status={
-                  installTask.status === 'completed' ? 'success' :
-                  installTask.status === 'failed' ? 'exception' : 'active'
-                }
-              />
-            </Spin>
-            {(installTask.status === 'completed' || installTask.status === 'failed') && (
-              <Button
-                type="primary"
-                style={{ marginTop: 16 }}
-                onClick={() => setInstallModalOpen(false)}
-              >
-                {t('common.close')}
-              </Button>
-            )}
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <Paragraph>{installTarget?.description}</Paragraph>
+          <div>
+            <Text strong style={{ display: 'block', marginBottom: 8 }}>Select Version</Text>
+            <Select
+              value={installVersion}
+              onChange={setInstallVersion}
+              style={{ width: '100%' }}
+              options={installTarget?.versions.map((v) => ({ value: v, label: `v${v}` })) ?? []}
+            />
           </div>
-        ) : (
-          <Space direction="vertical" style={{ width: '100%' }} size="middle">
-            <Paragraph>{installTarget?.description}</Paragraph>
-            <div>
-              <Text strong style={{ display: 'block', marginBottom: 8 }}>Select Version</Text>
-              <Select
-                value={installVersion}
-                onChange={setInstallVersion}
-                style={{ width: '100%' }}
-                options={installTarget?.versions.map((v) => ({ value: v, label: `v${v}` })) ?? []}
-              />
-            </div>
-          </Space>
-        )}
+        </Space>
       </Modal>
 
-      {/* Software Management Modal */}
+      {/* ── Software Management Modal ─────────────────────────────────────── */}
       <Modal
         title={
           <Space>
@@ -528,6 +693,13 @@ export default function AppStore() {
                       >
                         {t('common.restart')}
                       </Button>
+                      <Button
+                        danger
+                        icon={<DeleteOutlined />}
+                        onClick={() => handleUninstall(manageSW)}
+                      >
+                        Uninstall
+                      </Button>
                     </Space>
                   </div>
                 ),
@@ -541,7 +713,7 @@ export default function AppStore() {
                       value={swConfig}
                       onChange={(e) => setSwConfig(e.target.value)}
                       rows={18}
-                      style={{ fontFamily: '"Cascadia Code", "Fira Code", "JetBrains Mono", monospace', fontSize: 13 }}
+                      style={{ fontFamily: MONO_FONT, fontSize: 13 }}
                     />
                     <div style={{ marginTop: 12, textAlign: 'right' }}>
                       <Button type="primary" loading={savingConfig} onClick={saveConfig}>
@@ -555,6 +727,190 @@ export default function AppStore() {
           />
         )}
       </Modal>
+
+      {/* ── Task Progress Drawer ──────────────────────────────────────────── */}
+      <Drawer
+        title={
+          <Space>
+            {taskList.some((tk) => tk.status === 'running' || tk.status === 'pending') && (
+              <LoadingOutlined />
+            )}
+            <span>Task Progress ({taskList.length})</span>
+          </Space>
+        }
+        extra={
+          <Space size={4}>
+            <Button
+              type="text"
+              size="small"
+              icon={<MinusOutlined />}
+              onClick={() => setDrawerCollapsed(true)}
+            />
+            <Button
+              type="text"
+              size="small"
+              icon={<CloseOutlined />}
+              onClick={() => {
+                taskList.forEach((tk) => removeTrackedTask(tk.id));
+                setDrawerOpen(false);
+              }}
+            />
+          </Space>
+        }
+        placement="bottom"
+        height={300}
+        open={hasActiveTasks && drawerOpen && !drawerCollapsed}
+        mask={false}
+        closable={false}
+        styles={{ body: { padding: 0 } }}
+      >
+        <div style={{ display: 'flex', height: '100%' }}>
+          {/* Task sidebar (shown when multiple tasks) */}
+          {taskList.length > 1 && (
+            <div style={{
+              width: 220,
+              borderRight: '1px solid #f0f0f0',
+              overflowY: 'auto',
+              flexShrink: 0,
+            }}>
+              {taskList.map((tk) => (
+                <div
+                  key={tk.id}
+                  onClick={() => setActiveTaskId(tk.id)}
+                  style={{
+                    padding: '10px 14px',
+                    cursor: 'pointer',
+                    background: activeTask?.id === tk.id ? '#f0f5ff' : 'transparent',
+                    borderBottom: '1px solid #f0f0f0',
+                    transition: 'background 0.2s',
+                  }}
+                >
+                  <Text strong ellipsis style={{ display: 'block', fontSize: 13 }}>
+                    {tk.name}
+                  </Text>
+                  <Progress
+                    percent={tk.progress}
+                    size="small"
+                    status={getTaskProgressStatus(tk.status)}
+                    style={{ marginBottom: 0 }}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Active task detail */}
+          {activeTask && (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+              <div style={{ padding: '10px 16px', borderBottom: '1px solid #f0f0f0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <Text strong>{activeTask.name}</Text>
+                  <Tag
+                    color={
+                      activeTask.status === 'running' ? 'processing' :
+                      activeTask.status === 'completed' ? 'success' :
+                      activeTask.status === 'failed' ? 'error' : 'default'
+                    }
+                  >
+                    {activeTask.status}
+                  </Tag>
+                </div>
+                <Progress
+                  percent={activeTask.progress}
+                  status={getTaskProgressStatus(activeTask.status)}
+                  size="small"
+                  style={{ marginBottom: 0, marginTop: 4 }}
+                />
+              </div>
+              <div
+                ref={logContainerRef}
+                style={{
+                  flex: 1,
+                  background: '#1a1a2e',
+                  color: '#e0e0e0',
+                  fontFamily: MONO_FONT,
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                  padding: '12px 16px',
+                  overflowY: 'auto',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-all',
+                }}
+              >
+                {activeTask.log ||
+                  (activeTask.status === 'pending'
+                    ? 'Waiting to start…'
+                    : 'Loading logs…')}
+                {activeTask.error && (
+                  <div style={{ color: '#ff4d4f', marginTop: 8 }}>
+                    Error: {activeTask.error}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </Drawer>
+
+      {/* ── Collapsed floating badges ─────────────────────────────────────── */}
+      {hasActiveTasks && drawerCollapsed && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 24,
+            right: 24,
+            zIndex: 1050,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            alignItems: 'flex-end',
+          }}
+        >
+          {taskList.map((tk) => (
+            <div
+              key={tk.id}
+              onClick={() => {
+                setActiveTaskId(tk.id);
+                setDrawerCollapsed(false);
+                setDrawerOpen(true);
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '6px 16px',
+                borderRadius: 20,
+                background: getTaskStatusColor(tk.status),
+                color: '#fff',
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
+                fontSize: 13,
+                fontWeight: 500,
+                transition: 'all 0.3s',
+                maxWidth: 280,
+              }}
+            >
+              {tk.status === 'running' || tk.status === 'pending' ? (
+                <LoadingOutlined />
+              ) : tk.status === 'completed' ? (
+                <CheckCircleOutlined />
+              ) : (
+                <ExclamationCircleOutlined />
+              )}
+              <span
+                style={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {tk.name}
+              </span>
+              <span>{tk.progress}%</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
