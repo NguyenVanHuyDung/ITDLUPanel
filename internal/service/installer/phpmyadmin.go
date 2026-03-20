@@ -29,7 +29,7 @@ func (i *PhpMyAdminInstaller) Install(ctx context.Context, version string, progr
 	progress(5)
 	logger.Info().Str("version", version).Msg("installing phpMyAdmin")
 
-	installDir := "/usr/share/phpmyadmin"
+	installDir := "/ITDLUPanel/server/phpmyadmin/www"
 
 	// Install dependencies (php, php-mbstring, php-zip, php-gd, php-json, php-curl, unzip, wget)
 	osInfo := system.GetOSInfo()
@@ -43,6 +43,9 @@ func (i *PhpMyAdminInstaller) Install(ctx context.Context, version string, progr
 	if _, err := system.Exec(ctx, osInfo.PkgManager, deps...); err != nil {
 		logger.Warn().Err(err).Msg("some php deps may have failed, continuing")
 	}
+
+	// Ensure parent server dir exists
+	os.MkdirAll("/ITDLUPanel/server/phpmyadmin", 0755)
 
 	progress(40)
 	// Download phpMyAdmin
@@ -103,13 +106,13 @@ $cfg['TempDir'] = '/tmp';
 
 func (i *PhpMyAdminInstaller) Uninstall(ctx context.Context) error {
 	logger.Info().Msg("uninstalling phpMyAdmin")
-	os.RemoveAll("/usr/share/phpmyadmin")
+	CleanupServerDir("phpmyadmin")
 	logger.Info().Msg("phpMyAdmin uninstalled")
 	return nil
 }
 
 func (i *PhpMyAdminInstaller) IsInstalled() bool {
-	_, err := os.Stat("/usr/share/phpmyadmin/index.php")
+	_, err := os.Stat("/ITDLUPanel/server/phpmyadmin/www/index.php")
 	return err == nil
 }
 

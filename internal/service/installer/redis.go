@@ -52,12 +52,28 @@ func (i *RedisInstaller) Install(ctx context.Context, version string, progress f
 		logger.Warn().Err(err).Msg("failed to start redis service")
 	}
 
+	if osInfo.PkgManager == "apt" {
+		SetupServerDir("redis", []SymlinkDef{
+			{Name: "conf", Target: "/etc/redis"},
+			{Name: "data", Target: "/var/lib/redis"},
+			{Name: "logs", Target: "/var/log/redis"},
+		})
+	} else {
+		SetupServerDir("redis", []SymlinkDef{
+			{Name: "conf", Target: "/etc"},
+			{Name: "data", Target: "/var/lib/redis"},
+			{Name: "logs", Target: "/var/log/redis"},
+		})
+	}
+
 	progress(100)
 	logger.Info().Msg("redis installed successfully")
 	return nil
 }
 
 func (i *RedisInstaller) Uninstall(ctx context.Context) error {
+	CleanupServerDir("redis")
+
 	osInfo := system.GetOSInfo()
 
 	for _, svc := range []string{"redis-server", "redis"} {

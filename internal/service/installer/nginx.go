@@ -50,12 +50,19 @@ func (i *NginxInstaller) Install(ctx context.Context, version string, progress f
 		logger.Warn().Err(err).Msg("failed to start nginx service")
 	}
 
+	SetupServerDir("nginx", []SymlinkDef{
+		{Name: "conf", Target: "/etc/nginx"},
+		{Name: "logs", Target: "/var/log/nginx"},
+	})
+
 	progress(100)
 	logger.Info().Msg("nginx installed successfully")
 	return nil
 }
 
 func (i *NginxInstaller) Uninstall(ctx context.Context) error {
+	CleanupServerDir("nginx")
+
 	osInfo := system.GetOSInfo()
 
 	// Stop service first

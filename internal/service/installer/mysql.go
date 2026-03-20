@@ -90,12 +90,20 @@ func (i *MySQLInstaller) Install(ctx context.Context, version string, progress f
 		}
 	}
 
+	SetupServerDir("mysql", []SymlinkDef{
+		{Name: "conf", Target: "/etc/mysql"},
+		{Name: "data", Target: "/var/lib/mysql"},
+		{Name: "logs", Target: "/var/log/mysql"},
+	})
+
 	progress(100)
 	logger.Info().Str("package", pkg).Msg("mysql/mariadb installed successfully")
 	return nil
 }
 
 func (i *MySQLInstaller) Uninstall(ctx context.Context) error {
+	CleanupServerDir("mysql")
+
 	osInfo := system.GetOSInfo()
 
 	// Stop all possible service names

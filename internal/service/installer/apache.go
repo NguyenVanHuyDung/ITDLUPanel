@@ -66,12 +66,26 @@ func (i *ApacheInstaller) Install(ctx context.Context, version string, progress 
 		logger.Warn().Err(err).Msg("failed to start apache service")
 	}
 
+	if osInfo.PkgManager == "apt" {
+		SetupServerDir("apache", []SymlinkDef{
+			{Name: "conf", Target: "/etc/apache2"},
+			{Name: "logs", Target: "/var/log/apache2"},
+		})
+	} else {
+		SetupServerDir("apache", []SymlinkDef{
+			{Name: "conf", Target: "/etc/httpd"},
+			{Name: "logs", Target: "/var/log/httpd"},
+		})
+	}
+
 	progress(100)
 	logger.Info().Msg("apache installed successfully")
 	return nil
 }
 
 func (i *ApacheInstaller) Uninstall(ctx context.Context) error {
+	CleanupServerDir("apache")
+
 	osInfo := system.GetOSInfo()
 
 	pkg := "apache2"

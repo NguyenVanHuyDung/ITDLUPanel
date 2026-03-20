@@ -2,9 +2,70 @@ package installer
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"sync"
+
+	"github.com/ITDLUPanel/panel/internal/pkg/logger"
 )
+
+const (
+	// ServerBaseDir is the root directory for all managed software.
+	ServerBaseDir = "/ITDLUPanel/server"
+)
+
+// SymlinkDef defines a symlink to create: Target is the real system path, Name is the local dir name.
+type SymlinkDef struct {
+	Name   string // subdirectory name under /ITDLUPanel/server/<software>/ (e.g. "conf", "logs", "data")
+	Target string // real system path to symlink to (e.g. "/etc/nginx")
+}
+
+// SetupServerDir creates /ITDLUPanel/server/<name>/ and symlinks to system paths.
+func SetupServerDir(name string, links []SymlinkDef) error {
+	baseDir := filepath.Join(ServerBaseDir, name)
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		return fmt.Errorf("failed to create %s: %w", baseDir, err)
+	}
+
+	for _, link := range links {
+		linkPath := filepath.Join(baseDir, link.Name)
+		// Remove existing (file, dir, or broken symlink)
+		os.RemoveAll(linkPath)
+
+		// Only create symlink if target exists
+		if _, err := os.Stat(link.Target); err == nil {
+			if err := os.Symlink(link.Target, linkPath); err != nil {
+				logger.Warn().Err(err).
+					Str("link", linkPath).
+					Str("target", link.Target).
+					Msg("failed to create symlink")
+			}
+		} else {
+			// Create empty dir as placeholder
+			os.MkdirAll(linkPath, 0755)
+			logger.Warn().Str("target", link.Target).Msg("symlink target does not exist, created empty dir")
+		}
+	}
+
+	logger.Info().Str("software", name).Str("path", baseDir).Msg("server directory setup complete")
+	return nil
+}
+
+// CleanupServerDir removes /ITDLUPanel/server/<name>/.
+func CleanupServerDir(name string) {
+	dir := filepath.Join(ServerBaseDir, name)
+	if err := os.RemoveAll(dir); err != nil {
+		logger.Warn().Err(err).Str("path", dir).Msg("failed to cleanup server directory")
+	}
+}
+
+// ServerDirExists checks if /ITDLUPanel/server/<name>/ exists.
+func ServerDirExists(name string) bool {
+	_, err := os.Stat(filepath.Join(ServerBaseDir, name))
+	return err == nil
+}
 
 // Installer defines the interface for software installers.
 type Installer interface {

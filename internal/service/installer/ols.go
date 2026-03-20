@@ -72,12 +72,19 @@ func (i *OLSInstaller) Install(ctx context.Context, version string, progress fun
 		logger.Warn().Err(err).Msg("failed to start openlitespeed service")
 	}
 
+	SetupServerDir("openlitespeed", []SymlinkDef{
+		{Name: "conf", Target: "/usr/local/lsws/conf"},
+		{Name: "logs", Target: "/usr/local/lsws/logs"},
+	})
+
 	progress(100)
 	logger.Info().Msg("openlitespeed installed successfully")
 	return nil
 }
 
 func (i *OLSInstaller) Uninstall(ctx context.Context) error {
+	CleanupServerDir("openlitespeed")
+
 	osInfo := system.GetOSInfo()
 
 	_, _ = system.Exec(ctx, "systemctl", "stop", "lsws")

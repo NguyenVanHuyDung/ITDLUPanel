@@ -30,64 +30,64 @@ var knownSoftware = map[string]softwareMeta{
 		DisplayName:    "Nginx",
 		Type:           "webserver",
 		ServiceName:    "nginx",
-		ConfigPath:     "/etc/nginx/nginx.conf",
-		InstallPath:    "/etc/nginx",
+		ConfigPath:     "/ITDLUPanel/server/nginx/conf/nginx.conf",
+		InstallPath:    "/ITDLUPanel/server/nginx",
 		DefaultVersion: "stable",
 	},
 	"apache": {
 		DisplayName:    "Apache",
 		Type:           "webserver",
 		ServiceName:    "apache2",
-		ConfigPath:     "/etc/apache2/apache2.conf",
-		InstallPath:    "/etc/apache2",
+		ConfigPath:     "/ITDLUPanel/server/apache/conf/apache2.conf",
+		InstallPath:    "/ITDLUPanel/server/apache",
 		DefaultVersion: "2.4",
 	},
 	"mysql": {
 		DisplayName:    "MySQL/MariaDB",
 		Type:           "database",
 		ServiceName:    "mysql",
-		ConfigPath:     "/etc/mysql/my.cnf",
-		InstallPath:    "/etc/mysql",
+		ConfigPath:     "/ITDLUPanel/server/mysql/conf/my.cnf",
+		InstallPath:    "/ITDLUPanel/server/mysql",
 		DefaultVersion: "mysql-8.0",
 	},
 	"php": {
 		DisplayName:    "PHP",
 		Type:           "runtime",
 		ServiceName:    "php8.2-fpm",
-		ConfigPath:     "/etc/php/8.2/fpm/php.ini",
-		InstallPath:    "/etc/php",
+		ConfigPath:     "/ITDLUPanel/server/php/conf/php.ini",
+		InstallPath:    "/ITDLUPanel/server/php",
 		DefaultVersion: "8.2",
 	},
 	"redis": {
 		DisplayName:    "Redis",
 		Type:           "cache",
 		ServiceName:    "redis-server",
-		ConfigPath:     "/etc/redis/redis.conf",
-		InstallPath:    "/etc/redis",
+		ConfigPath:     "/ITDLUPanel/server/redis/conf/redis.conf",
+		InstallPath:    "/ITDLUPanel/server/redis",
 		DefaultVersion: "stable",
 	},
 	"pureftpd": {
 		DisplayName:    "Pure-FTPd",
 		Type:           "ftp",
 		ServiceName:    "pure-ftpd",
-		ConfigPath:     "/etc/pure-ftpd/pure-ftpd.conf",
-		InstallPath:    "/etc/pure-ftpd",
+		ConfigPath:     "/ITDLUPanel/server/pureftpd/conf/pure-ftpd.conf",
+		InstallPath:    "/ITDLUPanel/server/pureftpd",
 		DefaultVersion: "stable",
 	},
 	"openlitespeed": {
 		DisplayName:    "OpenLiteSpeed",
 		Type:           "webserver",
 		ServiceName:    "lsws",
-		ConfigPath:     "/usr/local/lsws/conf/httpd_config.conf",
-		InstallPath:    "/usr/local/lsws",
+		ConfigPath:     "/ITDLUPanel/server/openlitespeed/conf/httpd_config.conf",
+		InstallPath:    "/ITDLUPanel/server/openlitespeed",
 		DefaultVersion: "stable",
 	},
 	"phpmyadmin": {
 		DisplayName:    "phpMyAdmin",
 		Type:           "tool",
 		ServiceName:    "",
-		ConfigPath:     "/usr/share/phpmyadmin/config.inc.php",
-		InstallPath:    "/usr/share/phpmyadmin",
+		ConfigPath:     "/ITDLUPanel/server/phpmyadmin/www/config.inc.php",
+		InstallPath:    "/ITDLUPanel/server/phpmyadmin",
 		DefaultVersion: "5.2.1",
 	},
 }
@@ -98,19 +98,19 @@ func init() {
 	if osInfo.PkgManager == "dnf" {
 		m := knownSoftware["apache"]
 		m.ServiceName = "httpd"
-		m.ConfigPath = "/etc/httpd/conf/httpd.conf"
-		m.InstallPath = "/etc/httpd"
+		m.ConfigPath = "/ITDLUPanel/server/apache/conf/httpd.conf"
+		m.InstallPath = "/ITDLUPanel/server/apache"
 		knownSoftware["apache"] = m
 
 		m2 := knownSoftware["redis"]
 		m2.ServiceName = "redis"
-		m2.ConfigPath = "/etc/redis.conf"
+		m2.ConfigPath = "/ITDLUPanel/server/redis/conf/redis.conf"
 		knownSoftware["redis"] = m2
 
 		m3 := knownSoftware["mysql"]
 		m3.ServiceName = "mysqld"
-		m3.ConfigPath = "/etc/my.cnf"
-		m3.InstallPath = "/etc"
+		m3.ConfigPath = "/ITDLUPanel/server/mysql/conf/my.cnf"
+		m3.InstallPath = "/ITDLUPanel/server/mysql"
 		knownSoftware["mysql"] = m3
 	}
 }

@@ -95,12 +95,18 @@ func (i *PHPInstaller) Install(ctx context.Context, version string, progress fun
 		logger.Warn().Err(err).Str("service", serviceName).Msg("failed to start php-fpm")
 	}
 
+	SetupServerDir("php", []SymlinkDef{
+		{Name: "conf", Target: "/etc/php"},
+	})
+
 	progress(100)
 	logger.Info().Str("version", version).Msg("php installed successfully")
 	return nil
 }
 
 func (i *PHPInstaller) Uninstall(ctx context.Context) error {
+	CleanupServerDir("php")
+
 	osInfo := system.GetOSInfo()
 
 	// Stop all known php-fpm versions

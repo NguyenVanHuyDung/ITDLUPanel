@@ -48,12 +48,18 @@ func (i *PureFTPdInstaller) Install(ctx context.Context, version string, progres
 		logger.Warn().Err(err).Msg("failed to start pure-ftpd service")
 	}
 
+	SetupServerDir("pureftpd", []SymlinkDef{
+		{Name: "conf", Target: "/etc/pure-ftpd"},
+	})
+
 	progress(100)
 	logger.Info().Msg("pure-ftpd installed successfully")
 	return nil
 }
 
 func (i *PureFTPdInstaller) Uninstall(ctx context.Context) error {
+	CleanupServerDir("pureftpd")
+
 	osInfo := system.GetOSInfo()
 
 	_, _ = system.Exec(ctx, "systemctl", "stop", "pure-ftpd")
