@@ -45,6 +45,8 @@ const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   database: <DatabaseOutlined />,
   runtime: <CodeOutlined />,
   cache: <ThunderboltOutlined />,
+  tool: <SettingOutlined />,
+  ftp: <CloudServerOutlined />,
   default: <AppstoreOutlined />,
 };
 
@@ -55,12 +57,15 @@ const SOFTWARE_COLORS: Record<string, string> = {
   mariadb: '#003545',
   postgresql: '#336791',
   php: '#777BB4',
+  phpmyadmin: '#F89C0E',
   nodejs: '#339933',
   redis: '#DC382D',
   memcached: '#3C7E31',
   python: '#3776AB',
   docker: '#2496ED',
   mongodb: '#47A248',
+  openlitespeed: '#3A7BD5',
+  pureftpd: '#6C757D',
 };
 
 const MONO_FONT = '"Cascadia Code", "Fira Code", "JetBrains Mono", monospace';

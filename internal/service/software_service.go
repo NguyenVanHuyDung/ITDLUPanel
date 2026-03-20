@@ -82,6 +82,14 @@ var knownSoftware = map[string]softwareMeta{
 		InstallPath:    "/usr/local/lsws",
 		DefaultVersion: "stable",
 	},
+	"phpmyadmin": {
+		DisplayName:    "phpMyAdmin",
+		Type:           "tool",
+		ServiceName:    "",
+		ConfigPath:     "/usr/share/phpmyadmin/config.inc.php",
+		InstallPath:    "/usr/share/phpmyadmin",
+		DefaultVersion: "5.2.1",
+	},
 }
 
 func init() {

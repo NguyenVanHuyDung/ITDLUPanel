@@ -71,5 +71,6 @@ func DefaultRegistry() *Registry {
 	r.Register(NewRedisInstaller())
 	r.Register(NewPureFTPdInstaller())
 	r.Register(NewOLSInstaller())
+	r.Register(NewPhpMyAdminInstaller())
 	return r
 }
