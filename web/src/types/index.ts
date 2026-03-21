@@ -66,6 +66,7 @@ export interface SystemInfo {
     inodes_total?: number; inodes_used?: number; inodes_free?: number; inodes_percent?: number;
   };
   network: { bytes_sent: number; bytes_recv: number };
+  disk_io: { read_bytes: number; write_bytes: number };
   counts: { sites: number; databases: number; ftp_accounts: number; cron_jobs: number; running_tasks: number };
 }
 

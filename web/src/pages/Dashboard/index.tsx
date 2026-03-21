@@ -321,24 +321,55 @@ export default function Dashboard() {
         <Col xs={24} lg={9}>
           <Card title={<><span role="img" aria-label="disk">💿</span> Disk</>} size="small"
             style={{ height: '100%' }}
-            styles={{ body: { padding: '24px 16px', display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 20, height: 'calc(100% - 40px)' }, header: { fontWeight: 600 } }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <Text strong style={{ fontSize: 13 }}>/</Text>
-                <Text type="secondary" style={{ fontSize: 12 }}>{diskPct}%</Text>
+            styles={{ body: { padding: '16px', height: 'calc(100% - 40px)' }, header: { fontWeight: 600 } }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 16 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <Text strong style={{ fontSize: 13 }}>{info.disk.mount_point || '/'}</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{diskPct}%</Text>
+                </div>
+                <Progress percent={diskPct} strokeColor={diskPct > 80 ? '#ff4d4f' : '#1565C0'} showInfo={false} size="small" />
+                <Text type="secondary" style={{ fontSize: 11, marginTop: 2, display: 'block' }}>
+                  {formatGB(info.disk.used)} / {formatGB(info.disk.total)} GB
+                </Text>
               </div>
-              <Progress percent={diskPct} strokeColor={diskPct > 80 ? '#ff4d4f' : '#1565C0'} showInfo={false} />
-              <Text type="secondary" style={{ fontSize: 12, marginTop: 4, display: 'block' }}>
-                {formatGB(info.disk.used)} / {formatGB(info.disk.total)} GB
-              </Text>
+              <Popover content={diskPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom">
+                <div style={{ cursor: 'pointer', display: 'inline-block', padding: 4 }}>
+                  <Progress type="circle" percent={diskPct} size={isMobile ? 70 : 90}
+                    strokeColor={diskPct > 80 ? '#ff4d4f' : '#1565C0'} strokeWidth={10}
+                    format={() => <span style={{ fontSize: isMobile ? 14 : 18, fontWeight: 700, color: diskPct > 80 ? '#ff4d4f' : '#1565C0' }}>{diskPct}%</span>} />
+                </div>
+              </Popover>
             </div>
-            <Popover content={diskPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom">
-              <div style={{ cursor: 'pointer', display: 'inline-block', padding: 4 }}>
-                <Progress type="circle" percent={diskPct} size={isMobile ? 80 : 110}
-                  strokeColor={diskPct > 80 ? '#ff4d4f' : '#1565C0'} strokeWidth={10}
-                  format={() => <span style={{ fontSize: isMobile ? 16 : 22, fontWeight: 700, color: diskPct > 80 ? '#ff4d4f' : '#1565C0' }}>{diskPct}%</span>} />
+            {/* Extra disk info */}
+            <div style={{ marginTop: 12, borderTop: '1px solid #f0f0f0', paddingTop: 10 }}>
+              <Row gutter={[8, 6]}>
+                <Col span={12}>
+                  <Text type="secondary" style={{ fontSize: 11 }}>Type</Text>
+                  <div style={{ fontSize: 13, fontWeight: 500 }}>{info.disk.fs_type || '—'}</div>
+                </Col>
+                <Col span={12}>
+                  <Text type="secondary" style={{ fontSize: 11 }}>Device</Text>
+                  <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{info.disk.device || '—'}</div>
+                </Col>
+                <Col span={12}>
+                  <Text type="secondary" style={{ fontSize: 11 }}>Available</Text>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: '#4CAF50' }}>{formatGB(info.disk.available)} GB</div>
+                </Col>
+                <Col span={12}>
+                  <Text type="secondary" style={{ fontSize: 11 }}>I/O Read / Write</Text>
+                  <div style={{ fontSize: 13, fontWeight: 500 }}>{formatGB(info.disk_io?.read_bytes ?? 0)} / {formatGB(info.disk_io?.write_bytes ?? 0)} GB</div>
+                </Col>
+              </Row>
+              {/* Inode bar */}
+              <div style={{ marginTop: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                  <Text type="secondary" style={{ fontSize: 11 }}>Inodes</Text>
+                  <Text type="secondary" style={{ fontSize: 11 }}>{(info.disk.inodes_percent ?? 0).toFixed(1)}%</Text>
+                </div>
+                <Progress percent={Math.round(info.disk.inodes_percent ?? 0)} strokeColor="#0288D1" showInfo={false} size="small" />
               </div>
-            </Popover>
+            </div>
           </Card>
         </Col>
       </Row>
