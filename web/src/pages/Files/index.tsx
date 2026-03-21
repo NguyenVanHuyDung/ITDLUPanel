@@ -494,17 +494,19 @@ export default function Files() {
   // Context menu
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; file: FileItem } | null>(null);
 
-  // Inline terminal
+  // Floating terminal window
   const { accessToken } = useAuthStore();
   const [termOpen, setTermOpen] = useState(false);
-  const [termHeight, setTermHeight] = useState(260);
+  const [termSize, setTermSize] = useState({ w: 720, h: 420 });
+  const [termPos, setTermPos] = useState({ x: -1, y: -1 }); // -1 = center
   const termContainerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const termDragging = useRef(false);
+  const termDragOffset = useRef({ x: 0, y: 0 });
   const termResizing = useRef(false);
-  const termStartY = useRef(0);
-  const termStartH = useRef(0);
+  const termResizeStart = useRef({ x: 0, y: 0, w: 0, h: 0 });
 
   /* ── Fetch files ── */
   const fetchFiles = useCallback(async (path: string) => {
@@ -537,10 +539,14 @@ export default function Files() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showHidden]);
 
-  /* ── Inline Terminal ── */
+  /* ── Floating Terminal ── */
   const openTerminal = useCallback(() => {
+    // Center on screen
+    const x = Math.max(0, Math.round((window.innerWidth - termSize.w) / 2));
+    const y = Math.max(0, Math.round((window.innerHeight - termSize.h) / 2));
+    setTermPos({ x, y });
     setTermOpen(true);
-  }, []);
+  }, [termSize]);
 
   const closeTerminal = useCallback(() => {
     if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
@@ -553,7 +559,6 @@ export default function Files() {
   useEffect(() => {
     if (!termOpen) return;
 
-    // Small delay so the container DOM is ready
     const timer = setTimeout(() => {
       const container = termContainerRef.current;
       if (!container) return;
@@ -590,7 +595,6 @@ export default function Files() {
       termRef.current = term;
       fitAddonRef.current = fitAddon;
 
-      // WebSocket with cwd
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const ws = new WebSocket(
         `${protocol}//${window.location.host}/api/v1/terminal?token=${accessToken}&cwd=${encodeURIComponent(currentPath)}`
@@ -613,7 +617,7 @@ export default function Files() {
       term.onResize(({ cols, rows }) => {
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'resize', cols, rows }));
       });
-    }, 50);
+    }, 80);
 
     return () => {
       clearTimeout(timer);
@@ -623,24 +627,50 @@ export default function Files() {
     };
   }, [termOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Refit terminal on height change
+  // Refit when size changes
   useEffect(() => {
     if (termOpen && fitAddonRef.current) {
       requestAnimationFrame(() => { try { fitAddonRef.current?.fit(); } catch { /* */ } });
     }
-  }, [termHeight, termOpen]);
+  }, [termSize, termOpen]);
 
-  // Resize handle drag
-  const onResizeMouseDown = useCallback((e: React.MouseEvent) => {
+  // Drag (title bar)
+  const onTitleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
+    termDragging.current = true;
+    termDragOffset.current = { x: e.clientX - termPos.x, y: e.clientY - termPos.y };
+
+    const onMove = (ev: MouseEvent) => {
+      if (!termDragging.current) return;
+      setTermPos({
+        x: Math.max(0, Math.min(window.innerWidth - 200, ev.clientX - termDragOffset.current.x)),
+        y: Math.max(0, Math.min(window.innerHeight - 50, ev.clientY - termDragOffset.current.y)),
+      });
+    };
+    const onUp = () => {
+      termDragging.current = false;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [termPos]);
+
+  // Resize (corner handle)
+  const onCornerMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     termResizing.current = true;
-    termStartY.current = e.clientY;
-    termStartH.current = termHeight;
+    termResizeStart.current = { x: e.clientX, y: e.clientY, w: termSize.w, h: termSize.h };
 
     const onMove = (ev: MouseEvent) => {
       if (!termResizing.current) return;
-      const delta = termStartY.current - ev.clientY;
-      setTermHeight(Math.max(120, Math.min(600, termStartH.current + delta)));
+      const dw = ev.clientX - termResizeStart.current.x;
+      const dh = ev.clientY - termResizeStart.current.y;
+      setTermSize({
+        w: Math.max(400, termResizeStart.current.w + dw),
+        h: Math.max(200, termResizeStart.current.h + dh),
+      });
     };
     const onUp = () => {
       termResizing.current = false;
@@ -649,7 +679,7 @@ export default function Files() {
     };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
-  }, [termHeight]);
+  }, [termSize]);
 
   /* ── Navigation ── */
   const navigateTo = useCallback((path: string) => {
@@ -1435,40 +1465,59 @@ export default function Files() {
         </Space>
       </div>
 
-      {/* ═══ 7. Inline Terminal ═══ */}
+      {/* ═══ 7. Floating Terminal Window ═══ */}
       {termOpen && (
-        <div style={{ flexShrink: 0, borderTop: `2px solid ${C.primary}`, display: 'flex', flexDirection: 'column' }}>
-          {/* Resize handle */}
+        <div style={{
+          position: 'fixed',
+          left: termPos.x,
+          top: termPos.y,
+          width: termSize.w,
+          height: termSize.h,
+          zIndex: 10000,
+          display: 'flex',
+          flexDirection: 'column',
+          borderRadius: 10,
+          overflow: 'hidden',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.06)',
+        }}>
+          {/* Title bar — draggable */}
           <div
-            onMouseDown={onResizeMouseDown}
+            onMouseDown={onTitleMouseDown}
             style={{
-              height: 6, cursor: 'row-resize', background: '#1B2A4A',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '0 12px', height: 36, background: '#1B2A4A',
+              cursor: 'move', userSelect: 'none', flexShrink: 0,
             }}
           >
-            <div style={{ width: 40, height: 2, borderRadius: 1, background: '#4a5568' }} />
-          </div>
-          {/* Terminal header */}
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '4px 12px', background: '#161b22', borderBottom: '1px solid #30363d',
-          }}>
-            <span style={{ color: '#8b949e', fontSize: 12, fontFamily: 'monospace' }}>
-              <CodeOutlined style={{ marginRight: 6 }} />
+            <span style={{ color: '#c9d1d9', fontSize: 13, fontWeight: 500, fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <CodeOutlined style={{ color: '#58a6ff' }} />
               Terminal — {currentPath}
             </span>
             <Button
               type="text" size="small"
-              icon={<CloseOutlined style={{ color: '#8b949e', fontSize: 11 }} />}
+              icon={<CloseOutlined style={{ color: '#8b949e', fontSize: 12 }} />}
               onClick={closeTerminal}
               style={{ minWidth: 0, padding: '0 4px' }}
+              onMouseDown={(e) => e.stopPropagation()}
             />
           </div>
-          {/* xterm container */}
+          {/* xterm body */}
           <div
             ref={termContainerRef}
-            style={{ height: termHeight, background: '#0d1117', padding: '4px 0 0 4px' }}
+            style={{ flex: 1, background: '#0d1117', padding: '4px 0 0 4px', overflow: 'hidden' }}
           />
+          {/* Resize corner handle */}
+          <div
+            onMouseDown={onCornerMouseDown}
+            style={{
+              position: 'absolute', right: 0, bottom: 0, width: 18, height: 18,
+              cursor: 'nwse-resize', zIndex: 1,
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" style={{ display: 'block' }}>
+              <path d="M14 18L18 14M10 18L18 10M6 18L18 6" stroke="#4a5568" strokeWidth="1.5" fill="none" />
+            </svg>
+          </div>
         </div>
       )}
 
