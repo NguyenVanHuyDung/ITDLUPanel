@@ -94,9 +94,10 @@ func (s *DatabaseService) Create(req CreateDBRequest) (*Database, error) {
 
 	// Create user and grant privileges.
 	host := req.RemoteAccess
+	escapedPassword := strings.ReplaceAll(req.Password, "'", "\\'")
 	userSQL := fmt.Sprintf(
 		"CREATE USER '%s'@'%s' IDENTIFIED BY '%s'; GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%s'; FLUSH PRIVILEGES;",
-		req.Username, host, req.Password, req.Name, req.Username, host,
+		req.Username, host, escapedPassword, req.Name, req.Username, host,
 	)
 	if _, err := system.Exec(ctx, "mysql", "-u", "root", "-e", userSQL); err != nil {
 		// Rollback: drop the database we just created.
@@ -146,11 +147,17 @@ func (s *DatabaseService) List(page, pageSize int) ([]*Database, int, error) {
 	defer rows.Close()
 
 	var databases []*Database
+	cfg := config.Get()
 	for rows.Next() {
 		d := &Database{}
 		if err := rows.Scan(&d.ID, &d.Name, &d.DBType, &d.Username, &d.Password, &d.Charset,
 			&d.Collation, &d.RemoteAccess, &d.Size, &d.CreatedBy, &d.CreatedAt); err != nil {
 			return nil, 0, apperrors.Wrap(err, apperrors.ErrInternal, "failed to scan database row")
+		}
+		if d.Password != "" {
+			if plain, err := crypto.DecryptAES(d.Password, cfg.Auth.JWTSecret); err == nil {
+				d.Password = plain
+			}
 		}
 		databases = append(databases, d)
 	}
@@ -171,6 +178,12 @@ func (s *DatabaseService) GetByID(id int64) (*Database, error) {
 			return nil, apperrors.New(apperrors.ErrNotFound, "database not found")
 		}
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get database")
+	}
+	if d.Password != "" {
+		cfg := config.Get()
+		if plain, err := crypto.DecryptAES(d.Password, cfg.Auth.JWTSecret); err == nil {
+			d.Password = plain
+		}
 	}
 	return d, nil
 }
@@ -210,8 +223,9 @@ func (s *DatabaseService) ChangePassword(id int64, newPassword string) error {
 	}
 
 	ctx := context.Background()
+	escapedPassword := strings.ReplaceAll(newPassword, "'", "\\'")
 	alterSQL := fmt.Sprintf("ALTER USER '%s'@'%s' IDENTIFIED BY '%s'; FLUSH PRIVILEGES;",
-		d.Username, d.RemoteAccess, newPassword)
+		d.Username, d.RemoteAccess, escapedPassword)
 	if _, err := system.Exec(ctx, "mysql", "-u", "root", "-e", alterSQL); err != nil {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to change database password")
 	}
