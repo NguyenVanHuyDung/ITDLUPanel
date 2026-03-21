@@ -141,8 +141,20 @@ func (s *TerminalService) CloseAllForUser(userID int64) {
 	}
 }
 
-// generateMOTD reads the cached MOTD from /run/motd.dynamic.
+// generateMOTD runs the system MOTD scripts to get fresh, dynamic output.
+// Falls back to cached /run/motd.dynamic if scripts are unavailable.
 func generateMOTD() string {
+	// Try running update-motd scripts for fresh output
+	if _, err := os.Stat("/etc/update-motd.d"); err == nil {
+		cmd := exec.Command("/bin/run-parts", "/etc/update-motd.d")
+		cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+		out, err := cmd.Output()
+		if err == nil && len(out) > 0 {
+			return string(out)
+		}
+	}
+
+	// Fallback: read cached MOTD
 	data, err := os.ReadFile("/run/motd.dynamic")
 	if err != nil {
 		return ""
