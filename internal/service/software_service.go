@@ -364,6 +364,33 @@ func (s *SoftwareService) GetServiceStatus(name string) (map[string]interface{},
 		"name":       name,
 		"service":    svcName,
 		"is_running": s.isServiceRunning(svcName),
+		"running":    s.isServiceRunning(svcName),
+	}
+
+	// Get version from binary
+	if name == "nginx" {
+		vRes, _ := system.ExecWithTimeout(5*time.Second, "nginx", "-v")
+		if vRes != nil {
+			// nginx -v outputs to stderr
+			vStr := strings.TrimSpace(vRes.Stderr)
+			if vStr == "" {
+				vStr = strings.TrimSpace(vRes.Stdout)
+			}
+			if strings.Contains(vStr, "/") {
+				parts := strings.SplitN(vStr, "/", 2)
+				if len(parts) == 2 {
+					result["version"] = strings.TrimSpace(parts[1])
+				}
+			}
+		}
+	}
+
+	// Also try DB version
+	var dbVersion string
+	if err := s.db.QueryRow("SELECT version FROM software WHERE name = ?", name).Scan(&dbVersion); err == nil && dbVersion != "" {
+		if _, exists := result["version"]; !exists {
+			result["version"] = dbVersion
+		}
 	}
 
 	// Get detailed status

@@ -165,7 +165,7 @@ function ServiceTab() {
     }
   };
 
-  const running = status?.running === true;
+  const running = status?.running === true || status?.is_running === true;
 
   return (
     <div>

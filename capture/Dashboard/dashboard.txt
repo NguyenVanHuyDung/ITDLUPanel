@@ -1,0 +1,4 @@
+Dashboard: Khi dua chuot vao Smooth Operation, CPU, RAM thi hien thi cac thong tin nhu cac hinh dinh kem
+
+Phan disk cung hang voi sys status ma chieu doc ngan hon
+Phan software voi phan traffic cung vay
