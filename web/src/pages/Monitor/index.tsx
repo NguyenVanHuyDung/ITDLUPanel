@@ -577,7 +577,7 @@ export default function Monitor() {
   const loadAvg = snapshot.load_average || snapshot.cpu.load_average || [0, 0, 0];
 
   return (
-    <div style={{ maxWidth: 1400 }}>
+    <div>
       {/* Status bar */}
       <div style={{ ...statusBarStyle, gap: isMobile ? 8 : 24, padding: isMobile ? '8px 12px' : '12px 20px' }}>
         <SyncOutlined

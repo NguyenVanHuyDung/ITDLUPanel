@@ -353,7 +353,7 @@ function DatabasesContent() {
   ];
 
   return (
-    <div style={{ maxWidth: 1400 }}>
+    <div>
       <div style={cardStyle}>
         {/* Tab bar */}
         <div style={tabBarStyle}>
