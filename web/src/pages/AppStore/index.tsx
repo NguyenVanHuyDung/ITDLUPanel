@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import api from '@/services/api';
 import type { ApiResponse, Software } from '@/types';
+import NginxManageModal from '@/components/NginxManageModal';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -111,6 +112,7 @@ export default function AppStore() {
   // Management modal
   const [manageModalOpen, setManageModalOpen] = useState(false);
   const [manageSW, setManageSW] = useState<Software | null>(null);
+  const [nginxModalOpen, setNginxModalOpen] = useState(false);
   const [swStatus, setSwStatus] = useState<Record<string, string> | null>(null);
   const [swConfig, setSwConfig] = useState('');
   const [configLoading, setConfigLoading] = useState(false);
@@ -371,6 +373,10 @@ export default function AppStore() {
   // ---------------------------------------------------------------------------
 
   const openManageModal = async (sw: Software) => {
+    if (sw.name === 'nginx') {
+      setNginxModalOpen(true);
+      return;
+    }
     setManageSW(sw);
     setManageTab('status');
     setSwStatus(null);
@@ -931,6 +937,8 @@ export default function AppStore() {
           ))}
         </div>
       )}
+
+      <NginxManageModal open={nginxModalOpen} onClose={() => setNginxModalOpen(false)} />
     </div>
   );
 }

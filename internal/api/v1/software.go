@@ -3,6 +3,7 @@ package v1
 import (
 	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -37,6 +38,11 @@ func (h *SoftwareHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gi
 		sw.GET("/:name/status", h.status)
 		sw.GET("/:name/config", h.getConfig)
 		sw.PUT("/:name/config", h.updateConfig)
+		sw.POST("/:name/reload", h.reload)
+		sw.GET("/:name/metrics", h.metrics)
+		sw.GET("/:name/error-log", h.errorLog)
+		sw.GET("/:name/optimization", h.getOptimization)
+		sw.PUT("/:name/optimization", h.updateOptimization)
 	}
 }
 
@@ -197,4 +203,86 @@ func (h *SoftwareHandler) updateConfig(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"message": name + " configuration updated"})
+}
+
+// reload gracefully reloads the service.
+func (h *SoftwareHandler) reload(c *gin.Context) {
+	name := c.Param("name")
+	if err := h.softwareService.ReloadService(name); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, gin.H{"message": name + " reloaded"})
+}
+
+// metrics returns nginx load status metrics.
+func (h *SoftwareHandler) metrics(c *gin.Context) {
+	name := c.Param("name")
+	if name != "nginx" {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "metrics only supported for nginx"))
+		return
+	}
+	m, err := h.softwareService.GetNginxMetrics()
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, m)
+}
+
+// errorLog returns the last N lines of a software's error log.
+func (h *SoftwareHandler) errorLog(c *gin.Context) {
+	name := c.Param("name")
+	lines := 100
+	if l := c.Query("lines"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 {
+			lines = n
+		}
+	}
+	content, logPath, err := h.softwareService.GetErrorLog(name, lines)
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, gin.H{
+		"content":  content,
+		"log_path": logPath,
+		"lines":    lines,
+	})
+}
+
+// getOptimization returns tunable nginx parameters.
+func (h *SoftwareHandler) getOptimization(c *gin.Context) {
+	name := c.Param("name")
+	if name != "nginx" {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "optimization only supported for nginx"))
+		return
+	}
+	opt, err := h.softwareService.GetNginxOptimization()
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, opt)
+}
+
+// updateOptimization updates tunable nginx parameters.
+func (h *SoftwareHandler) updateOptimization(c *gin.Context) {
+	name := c.Param("name")
+	if name != "nginx" {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "optimization only supported for nginx"))
+		return
+	}
+	var opt service.NginxOptimization
+	if err := c.ShouldBindJSON(&opt); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid optimization parameters"},
+		})
+		return
+	}
+	if err := h.softwareService.UpdateNginxOptimization(&opt); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, gin.H{"message": "nginx optimization updated"})
 }

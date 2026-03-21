@@ -4,7 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -441,4 +445,218 @@ func (s *SoftwareService) isServiceRunning(serviceName string) bool {
 		return false
 	}
 	return strings.TrimSpace(res.Stdout) == "active"
+}
+
+// ReloadService reloads a systemd service (graceful config reload).
+func (s *SoftwareService) ReloadService(name string) error {
+	svcName, err := s.resolveServiceName(name)
+	if err != nil {
+		return err
+	}
+	if _, err := system.ExecWithTimeout(30*time.Second, "systemctl", "reload", svcName); err != nil {
+		return fmt.Errorf("failed to reload %s: %w", svcName, err)
+	}
+	return nil
+}
+
+// NginxStubStatus holds parsed nginx stub_status metrics.
+type NginxStubStatus struct {
+	ActiveConnections int64 `json:"active_connections"`
+	TotalAccepts      int64 `json:"total_accepts"`
+	TotalHandled      int64 `json:"total_handled"`
+	TotalRequests     int64 `json:"total_requests"`
+	Reading           int64 `json:"reading"`
+	Writing           int64 `json:"writing"`
+	Waiting           int64 `json:"waiting"`
+}
+
+// NginxMetrics holds combined nginx metrics.
+type NginxMetrics struct {
+	NginxStubStatus
+	WorkerProcesses int    `json:"worker_processes"`
+	NginxCPU        string `json:"nginx_cpu_usage"`
+	NginxMemory     string `json:"nginx_memory_usage"`
+}
+
+// GetNginxMetrics fetches nginx stub_status and process metrics.
+func (s *SoftwareService) GetNginxMetrics() (*NginxMetrics, error) {
+	metrics := &NginxMetrics{}
+
+	// Try to fetch stub_status
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("http://127.0.0.1:19999/nginx_status")
+	if err != nil {
+		// stub_status might not be configured, return process info only
+		s.fillNginxProcessMetrics(metrics)
+		return metrics, nil
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err == nil {
+		s.parseStubStatus(string(body), metrics)
+	}
+
+	s.fillNginxProcessMetrics(metrics)
+	return metrics, nil
+}
+
+func (s *SoftwareService) parseStubStatus(body string, m *NginxMetrics) {
+	lines := strings.Split(strings.TrimSpace(body), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Active connections:") {
+			fmt.Sscanf(line, "Active connections: %d", &m.ActiveConnections)
+		} else if strings.Contains(line, "Reading:") {
+			fmt.Sscanf(line, " Reading: %d Writing: %d Waiting: %d", &m.Reading, &m.Writing, &m.Waiting)
+		} else if !strings.Contains(line, "server") {
+			parts := strings.Fields(line)
+			if len(parts) == 3 {
+				m.TotalAccepts, _ = strconv.ParseInt(parts[0], 10, 64)
+				m.TotalHandled, _ = strconv.ParseInt(parts[1], 10, 64)
+				m.TotalRequests, _ = strconv.ParseInt(parts[2], 10, 64)
+			}
+		}
+	}
+}
+
+func (s *SoftwareService) fillNginxProcessMetrics(m *NginxMetrics) {
+	// Worker process count
+	res, _ := system.ExecWithTimeout(5*time.Second, "bash", "-c", "pgrep -c 'nginx: worker'")
+	if res != nil {
+		count, _ := strconv.Atoi(strings.TrimSpace(res.Stdout))
+		m.WorkerProcesses = count
+	}
+
+	// CPU usage
+	res, _ = system.ExecWithTimeout(5*time.Second, "bash", "-c",
+		"ps aux | grep 'nginx' | grep -v grep | awk '{sum+=$3} END {printf \"%.1f\", sum}'")
+	if res != nil && res.Stdout != "" {
+		m.NginxCPU = strings.TrimSpace(res.Stdout)
+	} else {
+		m.NginxCPU = "0"
+	}
+
+	// Memory usage
+	res, _ = system.ExecWithTimeout(5*time.Second, "bash", "-c",
+		"ps aux | grep 'nginx' | grep -v grep | awk '{sum+=$6} END {printf \"%.0f\", sum}'")
+	if res != nil && res.Stdout != "" {
+		kb, _ := strconv.ParseFloat(strings.TrimSpace(res.Stdout), 64)
+		if kb > 1024*1024 {
+			m.NginxMemory = fmt.Sprintf("%.1fGB", kb/1024/1024)
+		} else if kb > 1024 {
+			m.NginxMemory = fmt.Sprintf("%.0fMB", kb/1024)
+		} else {
+			m.NginxMemory = fmt.Sprintf("%.0fKB", kb)
+		}
+	} else {
+		m.NginxMemory = "0KB"
+	}
+}
+
+// GetErrorLog reads the last N lines of a software's error log.
+func (s *SoftwareService) GetErrorLog(name string, lines int) (string, string, error) {
+	logPaths := map[string]string{
+		"nginx":  "/var/log/nginx/error.log",
+		"mysql":  "/var/log/mysql/error.log",
+		"php":    "/var/log/php8.2-fpm.log",
+		"redis":  "/var/log/redis/redis-server.log",
+		"apache": "/var/log/apache2/error.log",
+	}
+
+	logPath, ok := logPaths[name]
+	if !ok {
+		return "", "", fmt.Errorf("no error log path known for %s", name)
+	}
+
+	if lines <= 0 {
+		lines = 100
+	}
+	if lines > 1000 {
+		lines = 1000
+	}
+
+	res, err := system.ExecWithTimeout(10*time.Second, "tail", "-n", strconv.Itoa(lines), logPath)
+	if err != nil {
+		return "", logPath, fmt.Errorf("failed to read error log: %w", err)
+	}
+	return res.Stdout, logPath, nil
+}
+
+// NginxOptimization holds tunable nginx parameters.
+type NginxOptimization struct {
+	WorkerProcesses          string `json:"worker_processes"`
+	WorkerConnections        string `json:"worker_connections"`
+	KeepaliveTimeout         string `json:"keepalive_timeout"`
+	Gzip                     string `json:"gzip"`
+	GzipMinLength            string `json:"gzip_min_length"`
+	GzipCompLevel            string `json:"gzip_comp_level"`
+	ClientMaxBodySize        string `json:"client_max_body_size"`
+	ServerNamesHashBucketSize string `json:"server_names_hash_bucket_size"`
+	ClientHeaderBufferSize   string `json:"client_header_buffer_size"`
+	ClientBodyBufferSize     string `json:"client_body_buffer_size"`
+}
+
+// GetNginxOptimization reads tunable params from nginx.conf.
+func (s *SoftwareService) GetNginxOptimization() (*NginxOptimization, error) {
+	content, err := s.GetConfig("nginx")
+	if err != nil {
+		return nil, err
+	}
+
+	opt := &NginxOptimization{
+		WorkerProcesses:          extractDirective(content, "worker_processes", "auto"),
+		WorkerConnections:        extractDirective(content, "worker_connections", "1024"),
+		KeepaliveTimeout:         extractDirective(content, "keepalive_timeout", "65"),
+		Gzip:                     extractDirective(content, "gzip", "off"),
+		GzipMinLength:            extractDirective(content, "gzip_min_length", "1"),
+		GzipCompLevel:            extractDirective(content, "gzip_comp_level", "1"),
+		ClientMaxBodySize:        extractDirective(content, "client_max_body_size", "1m"),
+		ServerNamesHashBucketSize: extractDirective(content, "server_names_hash_bucket_size", "64"),
+		ClientHeaderBufferSize:   extractDirective(content, "client_header_buffer_size", "1k"),
+		ClientBodyBufferSize:     extractDirective(content, "client_body_buffer_size", "8k"),
+	}
+	return opt, nil
+}
+
+// UpdateNginxOptimization updates tunable params in nginx.conf.
+func (s *SoftwareService) UpdateNginxOptimization(opt *NginxOptimization) error {
+	content, err := s.GetConfig("nginx")
+	if err != nil {
+		return err
+	}
+
+	content = setDirective(content, "worker_processes", opt.WorkerProcesses)
+	content = setDirective(content, "worker_connections", opt.WorkerConnections)
+	content = setDirective(content, "keepalive_timeout", opt.KeepaliveTimeout)
+	content = setDirective(content, "gzip ", opt.Gzip) // trailing space to avoid matching gzip_*
+	content = setDirective(content, "gzip_min_length", opt.GzipMinLength)
+	content = setDirective(content, "gzip_comp_level", opt.GzipCompLevel)
+	content = setDirective(content, "client_max_body_size", opt.ClientMaxBodySize)
+	content = setDirective(content, "server_names_hash_bucket_size", opt.ServerNamesHashBucketSize)
+	content = setDirective(content, "client_header_buffer_size", opt.ClientHeaderBufferSize)
+	content = setDirective(content, "client_body_buffer_size", opt.ClientBodyBufferSize)
+
+	return s.UpdateConfig("nginx", content)
+}
+
+// extractDirective reads a directive value from nginx config text.
+func extractDirective(content, directive, defaultVal string) string {
+	d := strings.TrimSpace(directive)
+	re := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(d) + `\s+(.+?)\s*;`)
+	matches := re.FindStringSubmatch(content)
+	if len(matches) > 1 {
+		return strings.TrimSpace(matches[1])
+	}
+	return defaultVal
+}
+
+// setDirective replaces a directive's value in nginx config text.
+func setDirective(content, directive, value string) string {
+	d := strings.TrimSpace(directive)
+	re := regexp.MustCompile(`(?m)(^\s*` + regexp.QuoteMeta(d) + `\s+).+?(\s*;)`)
+	if re.MatchString(content) {
+		return re.ReplaceAllString(content, "${1}"+value+"${2}")
+	}
+	return content
 }

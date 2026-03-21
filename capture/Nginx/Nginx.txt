@@ -1,0 +1,9 @@
+Khi chon vao Nginx tren dashboard hoặc config trong appstore thi cua so quan ly nay hien len
++ Services
++ Config file
++ Switch version
++ Load status
++ Optimize
++ Error log
+Xem them trong cac file hinh anh capture
+Xem them file config mau va tinh chinh cho phu hop voi he thong hien tai
