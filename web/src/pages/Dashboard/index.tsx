@@ -159,20 +159,20 @@ export default function Dashboard() {
 
   // === CPU POPOVER ===
   const cpuPopoverContent = (
-    <div style={{ width: 400, maxHeight: 580, overflow: 'auto', paddingBottom: 8 }}>
+    <div style={{ width: 380, maxHeight: '70vh', overflow: 'auto', paddingBottom: 8 }}>
       <div style={{ padding: '12px 12px 8px', borderBottom: '2px solid #E3F2FD' }}>
         <span style={{ fontSize: 15, fontWeight: 700 }}>CPU usage: <span style={{ color: '#1E88E5' }}>{info.cpu.usage_percent.toFixed(1)}%</span></span>
       </div>
       <div style={popSection}>🖥️ CPU information</div>
-      <div style={{ padding: '4px 12px 2px', fontSize: 13, color: '#333' }}>{info.cpu.model}</div>
+      <div style={{ padding: '4px 12px 2px', fontSize: 13, color: '#333', wordBreak: 'break-word' }}>{info.cpu.model}</div>
       <div style={{ padding: '2px 12px 8px', fontSize: 13, color: '#666' }}>
         {info.cpu.physical_cores ?? info.cpu.cores} Physical core, {info.cpu.cores} Logical core
       </div>
       {info.cpu.per_core_percent && info.cpu.per_core_percent.length > 0 && (<>
         <div style={popSection}>📈 Per-core usage</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0, overflow: 'hidden' }}>
           {info.cpu.per_core_percent.map((v, i) => (
-            <div key={i} style={{ ...popRow, padding: '6px 12px' }}>
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 12px', borderBottom: '1px solid #f0f0f0' }}>
               <span style={popLabel}>Core {i + 1}</span>
               <span style={popVal}>{v.toFixed(1)}%</span>
             </div>
@@ -276,7 +276,7 @@ export default function Dashboard() {
 
               {/* CPU usage ring */}
               <Col xs={24} sm={8} style={{ textAlign: 'center', marginBottom: 8 }}>
-                <Popover content={cpuPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom" overlayStyle={{ maxWidth: 440 }} overlayInnerStyle={{ padding: 0 }}>
+                <Popover content={cpuPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom" overlayStyle={{ maxWidth: 420 }} overlayInnerStyle={{ padding: 0 }}>
                   <div style={{ cursor: 'pointer', display: 'inline-block', padding: 4 }}>
                     <Progress type="circle" percent={cpuPct} size={isMobile ? 80 : 120} strokeColor="#1E88E5" strokeWidth={8}
                       format={() => <span style={{ fontSize: isMobile ? 18 : 26, fontWeight: 700, color: '#1E88E5' }}>{info.cpu.usage_percent.toFixed(1)}%</span>} />
