@@ -466,6 +466,70 @@ func (s *FirewallService) saveIptables(ctx context.Context) {
 	}
 }
 
+// PortStatus represents whether a port is listening.
+type PortStatus struct {
+	Port      string `json:"port"`
+	Listening bool   `json:"listening"`
+	Protocol  string `json:"protocol"`
+	Process   string `json:"process"`
+}
+
+// GetPortStatuses returns listening status for all ports.
+func (s *FirewallService) GetPortStatuses() ([]PortStatus, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var statuses []PortStatus
+
+	// Check TCP ports
+	result, err := system.Exec(ctx, "ss", "-tlnp")
+	if err == nil {
+		for _, line := range strings.Split(result.Stdout, "\n") {
+			fields := strings.Fields(line)
+			if len(fields) < 5 || fields[0] == "State" {
+				continue
+			}
+			addr := fields[3]
+			port := ""
+			if idx := strings.LastIndex(addr, ":"); idx >= 0 {
+				port = addr[idx+1:]
+			}
+			proc := ""
+			if len(fields) >= 6 {
+				proc = fields[5]
+			}
+			if port != "" {
+				statuses = append(statuses, PortStatus{Port: port, Listening: true, Protocol: "tcp", Process: proc})
+			}
+		}
+	}
+
+	// Check UDP ports
+	result, err = system.Exec(ctx, "ss", "-ulnp")
+	if err == nil {
+		for _, line := range strings.Split(result.Stdout, "\n") {
+			fields := strings.Fields(line)
+			if len(fields) < 5 || fields[0] == "State" {
+				continue
+			}
+			addr := fields[4]
+			port := ""
+			if idx := strings.LastIndex(addr, ":"); idx >= 0 {
+				port = addr[idx+1:]
+			}
+			proc := ""
+			if len(fields) >= 6 {
+				proc = fields[5]
+			}
+			if port != "" {
+				statuses = append(statuses, PortStatus{Port: port, Listening: true, Protocol: "udp", Process: proc})
+			}
+		}
+	}
+
+	return statuses, nil
+}
+
 // writeFileAtomic writes content to a file, creating parent dirs if needed.
 func writeFileAtomic(path, content string) error {
 	// Ensure parent directory exists.

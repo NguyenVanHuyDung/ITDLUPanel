@@ -33,6 +33,7 @@ func (h *SecurityHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, securityMW
 		firewall.DELETE("/rules/:id", h.DeleteRule)
 		firewall.PUT("/rules/:id/status", h.ToggleRule)
 
+		firewall.GET("/port-status", h.GetPortStatuses)
 		firewall.GET("/blocked-ips", h.GetBlockedIPs)
 		firewall.POST("/blocked-ips", h.BlockIP)
 		firewall.DELETE("/blocked-ips", h.UnblockIP)
@@ -128,6 +129,20 @@ func (h *SecurityHandler) ToggleRule(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"message": "firewall rule status updated successfully"})
+}
+
+// ---------------------------------------------------------------------------
+// Port status
+// ---------------------------------------------------------------------------
+
+// GetPortStatuses returns listening status for all ports.
+func (h *SecurityHandler) GetPortStatuses(c *gin.Context) {
+	statuses, err := h.firewallService.GetPortStatuses()
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, statuses)
 }
 
 // ---------------------------------------------------------------------------
