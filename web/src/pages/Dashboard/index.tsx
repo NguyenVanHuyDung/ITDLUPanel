@@ -131,6 +131,9 @@ export default function Dashboard() {
   const memPct = Math.round(info.memory.usage_percent);
   const diskPct = Math.round(info.disk.usage_percent);
   const loadAvg = info.cpu.load_average?.map(v => v.toFixed(2)).join(' / ') || '—';
+  const coreCount = info.cpu.physical_cores ?? info.cpu.cores ?? 1;
+  const load1 = info.cpu.load_average?.[0] ?? 0;
+  const loadPct = Math.min(Math.round((load1 / coreCount) * 100), 100);
 
   // Popover style helpers
   const popLabel: React.CSSProperties = { fontSize: 13, color: '#555' };
@@ -140,24 +143,17 @@ export default function Dashboard() {
 
   // === LOAD POPOVER ===
   const loadPopoverContent = (
-    <div style={{ width: 380, maxHeight: 580, overflow: 'auto', paddingBottom: 8 }}>
+    <div style={{ width: 380 }}>
       <div style={{ padding: '14px 12px 10px', borderBottom: '2px solid #E3F2FD' }}>
-        <span style={{ fontSize: 15, fontWeight: 700 }}>Load usage: <span style={{ color: '#4CAF50' }}>{info.cpu.usage_percent.toFixed(1)}%</span></span>
+        <span style={{ fontSize: 15, fontWeight: 700 }}>System Load: <span style={{ color: '#4CAF50' }}>{loadPct}%</span></span>
       </div>
-      <div style={popSection}>📊 Basic information</div>
-      <div style={popRow}><span style={popLabel}>Last 1/5/15 min average load</span><span style={popVal}>{loadAvg}</span></div>
-      <div style={popRow}><span style={popLabel}>Active / Total processes</span><span style={popVal}>{info.cpu.active_processes ?? 0} / {info.cpu.total_processes ?? 0}</span></div>
-      {info.cpu.cpu_times && (<>
-        <div style={popSection}>⏱️ CPU time breakdown</div>
-        {Object.entries(info.cpu.cpu_times).map(([k, v]) => (
-          <div key={k} style={popRow}>
-            <span style={popLabel}>{k}</span>
-            <span style={popVal}>{typeof v === 'number' ? v.toFixed(2) + '%' : v}</span>
-          </div>
-        ))}
-        <div style={popRow}><span style={popLabel}>total_processes</span><span style={popVal}>{info.cpu.total_processes ?? 0}</span></div>
-        <div style={{ ...popRow, borderBottom: 'none' }}><span style={popLabel}>active_processes</span><span style={popVal}>{info.cpu.active_processes ?? 0}</span></div>
-      </>)}
+      <div style={popSection}>📊 Load average</div>
+      <div style={popRow}><span style={popLabel}>1 min</span><span style={popVal}>{info.cpu.load_average?.[0]?.toFixed(2) ?? '—'}</span></div>
+      <div style={popRow}><span style={popLabel}>5 min</span><span style={popVal}>{info.cpu.load_average?.[1]?.toFixed(2) ?? '—'}</span></div>
+      <div style={popRow}><span style={popLabel}>15 min</span><span style={popVal}>{info.cpu.load_average?.[2]?.toFixed(2) ?? '—'}</span></div>
+      <div style={popSection}>⚙️ Process information</div>
+      <div style={popRow}><span style={popLabel}>Total processes</span><span style={popVal}>{info.cpu.total_processes ?? 0}</span></div>
+      <div style={{ ...popRow, borderBottom: 'none' }}><span style={popLabel}>Active processes</span><span style={popVal}>{info.cpu.active_processes ?? 0}</span></div>
     </div>
   );
 
@@ -182,6 +178,15 @@ export default function Dashboard() {
             </div>
           ))}
         </div>
+      </>)}
+      {info.cpu.cpu_times && (<>
+        <div style={popSection}>⏱️ CPU time breakdown</div>
+        {Object.entries(info.cpu.cpu_times).map(([k, v]) => (
+          <div key={k} style={popRow}>
+            <span style={popLabel}>{k}</span>
+            <span style={popVal}>{typeof v === 'number' ? v.toFixed(2) + '%' : v}</span>
+          </div>
+        ))}
       </>)}
     </div>
   );
@@ -228,14 +233,14 @@ export default function Dashboard() {
             styles={{ body: { padding: '24px 16px' }, header: { fontWeight: 600 } }}
             style={{ height: '100%' }}>
             <Row gutter={8} justify="space-around" align="middle">
-              {/* CPU Load ring */}
+              {/* Load ring */}
               <Col xs={24} sm={8} style={{ textAlign: 'center', marginBottom: 8 }}>
                 <Popover content={loadPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom" overlayStyle={{ maxWidth: 360 }}>
                   <div style={{ cursor: 'pointer', display: 'inline-block', padding: 4 }}>
-                    <Progress type="circle" percent={cpuPct} size={isMobile ? 80 : 120} strokeColor="#1565C0" strokeWidth={8}
-                      format={() => <span style={{ fontSize: isMobile ? 18 : 26, fontWeight: 700, color: '#1565C0' }}>{cpuPct}%</span>} />
+                    <Progress type="circle" percent={loadPct} size={isMobile ? 80 : 120} strokeColor="#1565C0" strokeWidth={8}
+                      format={() => <span style={{ fontSize: isMobile ? 18 : 26, fontWeight: 700, color: '#1565C0' }}>{loadPct}%</span>} />
                     <div style={{ marginTop: 8 }}>
-                      <Text type="secondary" style={{ fontSize: 12 }}>{getCpuStatusText(cpuPct)}</Text>
+                      <Text type="secondary" style={{ fontSize: 12 }}>{getCpuStatusText(loadPct)}</Text>
                     </div>
                     <Text type="secondary" style={{ fontSize: 11 }}>{loadAvg}</Text>
                   </div>
