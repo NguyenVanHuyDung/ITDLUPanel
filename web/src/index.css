@@ -41,3 +41,15 @@ body {
 .terminal-font {
   font-family: 'JetBrainsMono Nerd Font', 'JetBrains Mono', monospace;
 }
+
+/* Dashboard header select - white text */
+.header-select-white .ant-select-selector {
+  color: #fff !important;
+}
+.header-select-white .ant-select-selection-item {
+  color: #fff !important;
+  font-size: 13px;
+}
+.header-select-white .ant-select-arrow {
+  color: rgba(255,255,255,0.8) !important;
+}

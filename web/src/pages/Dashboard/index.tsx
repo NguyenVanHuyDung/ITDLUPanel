@@ -14,6 +14,10 @@ import {
   FolderOutlined,
   HddOutlined,
   CaretRightOutlined,
+  DesktopOutlined,
+  ClusterOutlined,
+  FieldTimeOutlined,
+  TagOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
@@ -131,11 +135,33 @@ export default function Dashboard() {
   return (
     <div>
       {/* ── Header bar ── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          {info.system.hostname} &nbsp;•&nbsp; {info.system.os} &nbsp;•&nbsp; {info.system.kernel}
-          &nbsp;•&nbsp; Uptime: {formatUptime(info.system.uptime)} &nbsp;•&nbsp; v{info.system.panel_version}
-        </Text>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16,
+        background: 'linear-gradient(135deg, #0D47A1 0%, #1565C0 60%, #1E88E5 100%)',
+        borderRadius: 10, padding: '14px 20px', color: '#fff',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <DesktopOutlined style={{ fontSize: 16, opacity: 0.9 }} />
+            <span style={{ fontWeight: 600, fontSize: 14 }}>{info.system.hostname}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <ClusterOutlined style={{ fontSize: 14, opacity: 0.8 }} />
+            <span style={{ fontSize: 13, opacity: 0.9 }}>{info.system.os}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <CodeOutlined style={{ fontSize: 14, opacity: 0.8 }} />
+            <span style={{ fontSize: 13, opacity: 0.9 }}>{info.system.kernel}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <FieldTimeOutlined style={{ fontSize: 14, opacity: 0.8 }} />
+            <span style={{ fontSize: 13, opacity: 0.9 }}>Uptime: {formatUptime(info.system.uptime)}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <TagOutlined style={{ fontSize: 14, opacity: 0.8 }} />
+            <span style={{ fontSize: 13, opacity: 0.9 }}>v{info.system.panel_version}</span>
+          </div>
+        </div>
         <Space>
           <Select
             value={refreshInterval}
@@ -143,9 +169,18 @@ export default function Dashboard() {
             options={REFRESH_OPTIONS}
             size="small"
             style={{ width: 70 }}
-            suffixIcon={<SyncOutlined spin={refreshing} />}
+            suffixIcon={<SyncOutlined spin={refreshing} style={{ color: '#fff' }} />}
+            variant="borderless"
+            popupMatchSelectWidth={false}
+            className="header-select-white"
           />
-          <Button icon={<ReloadOutlined spin={refreshing} />} size="small" onClick={() => fetchData()} loading={refreshing}>
+          <Button
+            icon={<ReloadOutlined spin={refreshing} />}
+            size="small"
+            onClick={() => fetchData()}
+            loading={refreshing}
+            style={{ background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1px solid rgba(255,255,255,0.3)' }}
+          >
             Refresh
           </Button>
         </Space>
