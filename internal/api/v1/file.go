@@ -51,6 +51,7 @@ func (h *FileHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gin.Ha
 		files.POST("/compress", h.compress)
 		files.POST("/decompress", h.decompress)
 		files.GET("/search", h.search)
+		files.POST("/calculate-size", h.calculateSize)
 	}
 }
 
@@ -678,6 +679,37 @@ func (h *FileHandler) search(c *gin.Context) {
 		"path":    q.Path,
 		"pattern": q.Pattern,
 		"results": results,
+	})
+}
+
+// ── Calculate directory size ───────────────────────────────────────────
+
+type calculateSizeRequest struct {
+	Path string `json:"path" validate:"required"`
+}
+
+func (h *FileHandler) calculateSize(c *gin.Context) {
+	var req calculateSizeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid request body"},
+		})
+		return
+	}
+	if errs := validator.Validate(req); errs != nil {
+		response.ValidationError(c, errs)
+		return
+	}
+
+	size, err := h.fileService.CalculateDirSize(req.Path)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{
+		"path": req.Path,
+		"size": size,
 	})
 }
 

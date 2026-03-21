@@ -201,6 +201,39 @@ func (s *FileService) Search(path, pattern string) ([]*FileInfo, error) {
 	return results, nil
 }
 
+// CalculateDirSize walks a directory tree and returns its total size in bytes.
+func (s *FileService) CalculateDirSize(path string) (int64, error) {
+	cleanPath, err := safePath(path)
+	if err != nil {
+		return 0, err
+	}
+	fi, err := os.Stat(cleanPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, apperrors.New(apperrors.ErrNotFound, "path not found: "+path)
+		}
+		return 0, apperrors.Wrap(err, apperrors.ErrInternal, "failed to stat path")
+	}
+	if !fi.IsDir() {
+		return fi.Size(), nil
+	}
+
+	var total int64
+	_ = filepath.WalkDir(cleanPath, func(_ string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		if !d.IsDir() {
+			info, err := d.Info()
+			if err == nil {
+				total += info.Size()
+			}
+		}
+		return nil
+	})
+	return total, nil
+}
+
 // ── File CRUD ──────────────────────────────────────────────────────────
 
 // ReadFile returns the contents of a file. For safety it caps reads at 10 MB.
