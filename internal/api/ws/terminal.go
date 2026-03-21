@@ -76,6 +76,11 @@ func HandleTerminal(termService *service.TerminalService, checkPerm PermissionCh
 
 		ptmx := session.PTY
 
+		// --- Send MOTD (Message of the Day) to client ---
+		if motd := termService.GetMOTD(); len(motd) > 0 {
+			_ = conn.WriteMessage(gorillaws.BinaryMessage, motd)
+		}
+
 		// --- cleanup on exit ---
 		defer func() {
 			_ = termService.CloseSession(session.ID)

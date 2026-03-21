@@ -48,7 +48,8 @@ func (s *TerminalService) CreateSession(userID int64, username string) (*Termina
 		shell = "/bin/sh"
 	}
 
-	cmd := exec.Command(shell)
+	// Use login shell to load /etc/profile and user profile
+	cmd := exec.Command(shell, "--login")
 	cmd.Env = append(os.Environ(),
 		"TERM=xterm-256color",
 		fmt.Sprintf("USER=%s", username),
@@ -138,4 +139,46 @@ func (s *TerminalService) CloseAllForUser(userID int64) {
 	for _, id := range ids {
 		_ = s.CloseSession(id)
 	}
+}
+
+// generateMOTD reads the cached MOTD from /run/motd.dynamic.
+func generateMOTD() string {
+	data, err := os.ReadFile("/run/motd.dynamic")
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+// GetMOTD returns the system MOTD (Message of the Day) for display on terminal connect.
+func (s *TerminalService) GetMOTD() []byte {
+	motd := generateMOTD()
+	if motd == "" {
+		return nil
+	}
+	// Convert \n to \r\n for proper terminal display
+	result := ""
+	for _, line := range splitLines(motd) {
+		result += line + "\r\n"
+	}
+	return []byte(result)
+}
+
+func splitLines(s string) []string {
+	var lines []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			line := s[start:i]
+			if len(line) > 0 && line[len(line)-1] == '\r' {
+				line = line[:len(line)-1]
+			}
+			lines = append(lines, line)
+			start = i + 1
+		}
+	}
+	if start < len(s) {
+		lines = append(lines, s[start:])
+	}
+	return lines
 }
