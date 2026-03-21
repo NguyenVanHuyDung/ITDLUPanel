@@ -227,52 +227,53 @@ export default function Dashboard() {
       {/* ══════ TOP ROW: Sys Status + Disk ══════ */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         {/* — Sys Status — */}
-        <Col xs={24} lg={15}>
+        <Col xs={24} lg={15} style={{ marginBottom: isMobile ? 16 : 0 }}>
           <Card title={<><span role="img" aria-label="sys">🖥</span> Sys Status</>} size="small"
-            styles={{ body: { padding: '24px 16px' }, header: { fontWeight: 600 } }}>
+            styles={{ body: { padding: '24px 16px' }, header: { fontWeight: 600 } }}
+            style={{ height: '100%' }}>
             <Row gutter={8} justify="space-around" align="middle">
               {/* CPU Load ring */}
               <Col xs={24} sm={8} style={{ textAlign: 'center', marginBottom: 8 }}>
-                <Popover content={loadPopoverContent} title={null} trigger="hover" placement="bottom" overlayStyle={{ maxWidth: 360 }}>
-                  <div style={{ cursor: 'pointer', display: 'inline-block' }}>
+                <Popover content={loadPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom" overlayStyle={{ maxWidth: 360 }}>
+                  <div style={{ cursor: 'pointer', display: 'inline-block', padding: 4 }}>
                     <Progress type="circle" percent={cpuPct} size={isMobile ? 80 : 120} strokeColor="#1565C0" strokeWidth={8}
                       format={() => <span style={{ fontSize: isMobile ? 18 : 26, fontWeight: 700, color: '#1565C0' }}>{cpuPct}%</span>} />
+                    <div style={{ marginTop: 8 }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>{getCpuStatusText(cpuPct)}</Text>
+                    </div>
+                    <Text type="secondary" style={{ fontSize: 11 }}>{loadAvg}</Text>
                   </div>
                 </Popover>
-                <div style={{ marginTop: 8 }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>{getCpuStatusText(cpuPct)}</Text>
-                </div>
-                <Text type="secondary" style={{ fontSize: 11 }}>{loadAvg}</Text>
               </Col>
 
               {/* CPU usage ring */}
               <Col xs={24} sm={8} style={{ textAlign: 'center', marginBottom: 8 }}>
-                <Popover content={cpuPopoverContent} title={null} trigger="hover" placement="bottom" overlayStyle={{ maxWidth: 380 }}>
-                  <div style={{ cursor: 'pointer', display: 'inline-block' }}>
+                <Popover content={cpuPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom" overlayStyle={{ maxWidth: 380 }}>
+                  <div style={{ cursor: 'pointer', display: 'inline-block', padding: 4 }}>
                     <Progress type="circle" percent={cpuPct} size={isMobile ? 80 : 120} strokeColor="#1E88E5" strokeWidth={8}
                       format={() => <span style={{ fontSize: isMobile ? 18 : 26, fontWeight: 700, color: '#1E88E5' }}>{info.cpu.usage_percent.toFixed(1)}%</span>} />
+                    <div style={{ marginTop: 8 }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>{info.cpu.cores} Core(s)</Text>
+                    </div>
+                    <Text style={{ fontSize: 12, fontWeight: 500 }}>CPU usage</Text>
                   </div>
                 </Popover>
-                <div style={{ marginTop: 8 }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>{info.cpu.cores} Core(s)</Text>
-                </div>
-                <Text style={{ fontSize: 12, fontWeight: 500 }}>CPU usage</Text>
               </Col>
 
               {/* RAM ring */}
               <Col xs={24} sm={8} style={{ textAlign: 'center', marginBottom: 8 }}>
-                <Popover content={ramPopoverContent} title={null} trigger="hover" placement="bottom" overlayStyle={{ maxWidth: 360 }}>
-                  <div style={{ cursor: 'pointer', display: 'inline-block' }}>
+                <Popover content={ramPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom" overlayStyle={{ maxWidth: 360 }}>
+                  <div style={{ cursor: 'pointer', display: 'inline-block', padding: 4 }}>
                     <Progress type="circle" percent={memPct} size={isMobile ? 80 : 120} strokeColor="#0288D1" strokeWidth={8}
                       format={() => <span style={{ fontSize: isMobile ? 18 : 26, fontWeight: 700, color: '#0288D1' }}>{info.memory.usage_percent.toFixed(1)}%</span>} />
+                    <div style={{ marginTop: 8 }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {formatMB(info.memory.used)} / {formatMB(info.memory.total)} (MB)
+                      </Text>
+                    </div>
+                    <Text style={{ fontSize: 12, fontWeight: 500 }}>RAM usage</Text>
                   </div>
                 </Popover>
-                <div style={{ marginTop: 8 }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    {formatMB(info.memory.used)} / {formatMB(info.memory.total)} (MB)
-                  </Text>
-                </div>
-                <Text style={{ fontSize: 12, fontWeight: 500 }}>RAM usage</Text>
               </Col>
             </Row>
           </Card>
@@ -281,7 +282,8 @@ export default function Dashboard() {
         {/* — Disk — */}
         <Col xs={24} lg={9}>
           <Card title={<><span role="img" aria-label="disk">💿</span> Disk</>} size="small"
-            styles={{ body: { padding: '24px 16px', display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 20, minHeight: 196 }, header: { fontWeight: 600 } }}>
+            style={{ height: '100%' }}
+            styles={{ body: { padding: '24px 16px', display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 20, height: 'calc(100% - 40px)' }, header: { fontWeight: 600 } }}>
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                 <Text strong style={{ fontSize: 13 }}>/</Text>
@@ -350,8 +352,9 @@ export default function Dashboard() {
       {/* ══════ BOTTOM ROW: Software + Traffic ══════ */}
       <Row gutter={16}>
         {/* — Software — */}
-        <Col xs={24} lg={12}>
+        <Col xs={24} lg={12} style={{ marginBottom: isMobile ? 16 : 0 }}>
           <Card title={<><span role="img" aria-label="sw">📦</span> Software</>} size="small"
+            style={{ height: '100%' }}
             styles={{ body: { padding: 16 }, header: { fontWeight: 600 } }}>
             {installedSoftware.length === 0 ? (
               <Text type="secondary">No software installed</Text>
@@ -399,6 +402,7 @@ export default function Dashboard() {
           <Card
             title={<><span role="img" aria-label="traffic">📈</span> Traffic</>}
             size="small"
+            style={{ height: '100%' }}
             extra={
               <Space size="middle">
                 <Text style={{ fontSize: 11 }}>
