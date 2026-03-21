@@ -133,26 +133,26 @@ export default function Dashboard() {
   const loadAvg = info.cpu.load_average?.map(v => v.toFixed(2)).join(' / ') || '—';
 
   // Popover style helpers
-  const popLabel: React.CSSProperties = { fontSize: 12, color: '#666', whiteSpace: 'nowrap' };
-  const popVal: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: '#1A1A2E', fontFamily: "'JetBrains Mono', monospace" };
-  const popRow: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', gap: 16, padding: '3px 0', borderBottom: '1px solid #f5f5f5' };
-  const popSection: React.CSSProperties = { fontWeight: 600, fontSize: 12, color: '#1565C0', margin: '10px 0 6px', cursor: 'pointer' };
+  const popLabel: React.CSSProperties = { fontSize: 13, color: '#555' };
+  const popVal: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: '#1A1A2E', fontFamily: "'JetBrains Mono', monospace" };
+  const popRow: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 20, padding: '8px 12px', borderBottom: '1px solid #f0f0f0' };
+  const popSection: React.CSSProperties = { fontWeight: 600, fontSize: 13, color: '#1565C0', margin: '14px 0 8px', padding: '0 12px' };
 
   // === LOAD POPOVER ===
   const loadPopoverContent = (
-    <div style={{ width: 320, maxHeight: 420, overflow: 'auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <span style={{ fontSize: 13, fontWeight: 600 }}>Load usage: <span style={{ color: '#4CAF50' }}>{info.cpu.usage_percent.toFixed(1)}%</span></span>
+    <div style={{ width: 380, maxHeight: 480, overflow: 'auto' }}>
+      <div style={{ padding: '12px 12px 8px', borderBottom: '2px solid #E3F2FD' }}>
+        <span style={{ fontSize: 15, fontWeight: 700 }}>Load usage: <span style={{ color: '#4CAF50' }}>{info.cpu.usage_percent.toFixed(1)}%</span></span>
       </div>
-      <div style={popSection}>Basic information</div>
+      <div style={popSection}>📊 Basic information</div>
       <div style={popRow}><span style={popLabel}>Last 1/5/15 min average load</span><span style={popVal}>{loadAvg}</span></div>
       <div style={popRow}><span style={popLabel}>Active / Total processes</span><span style={popVal}>{info.cpu.active_processes ?? 0} / {info.cpu.total_processes ?? 0}</span></div>
       {info.cpu.cpu_times && (<>
-        <div style={popSection}>CPU time breakdown</div>
+        <div style={popSection}>⏱️ CPU time breakdown</div>
         {Object.entries(info.cpu.cpu_times).map(([k, v]) => (
           <div key={k} style={popRow}>
             <span style={popLabel}>{k}</span>
-            <span style={popVal}>{typeof v === 'number' ? v.toFixed(1) : v}</span>
+            <span style={popVal}>{typeof v === 'number' ? v.toFixed(2) + '%' : v}</span>
           </div>
         ))}
         <div style={popRow}><span style={popLabel}>total_processes</span><span style={popVal}>{info.cpu.total_processes ?? 0}</span></div>
@@ -163,22 +163,22 @@ export default function Dashboard() {
 
   // === CPU POPOVER ===
   const cpuPopoverContent = (
-    <div style={{ width: 340, maxHeight: 420, overflow: 'auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <span style={{ fontSize: 13, fontWeight: 600 }}>CPU usage: <span style={{ color: '#4CAF50' }}>{info.cpu.usage_percent.toFixed(1)}%</span></span>
+    <div style={{ width: 400, maxHeight: 480, overflow: 'auto' }}>
+      <div style={{ padding: '12px 12px 8px', borderBottom: '2px solid #E3F2FD' }}>
+        <span style={{ fontSize: 15, fontWeight: 700 }}>CPU usage: <span style={{ color: '#1E88E5' }}>{info.cpu.usage_percent.toFixed(1)}%</span></span>
       </div>
-      <div style={popSection}>CPU information</div>
-      <div style={{ fontSize: 12, color: '#333', marginBottom: 4 }}>{info.cpu.model}</div>
-      <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
+      <div style={popSection}>🖥️ CPU information</div>
+      <div style={{ padding: '4px 12px 2px', fontSize: 13, color: '#333' }}>{info.cpu.model}</div>
+      <div style={{ padding: '2px 12px 8px', fontSize: 13, color: '#666' }}>
         {info.cpu.physical_cores ?? info.cpu.cores} Physical core, {info.cpu.cores} Logical core
       </div>
       {info.cpu.per_core_percent && info.cpu.per_core_percent.length > 0 && (<>
-        <div style={popSection}>Per-core usage</div>
+        <div style={popSection}>📈 Per-core usage</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
           {info.cpu.per_core_percent.map((v, i) => (
-            <div key={i} style={{ ...popRow, padding: '3px 4px' }}>
+            <div key={i} style={{ ...popRow, padding: '6px 12px' }}>
               <span style={popLabel}>Core {i + 1}</span>
-              <span style={popVal}>{v.toFixed(1)}</span>
+              <span style={popVal}>{v.toFixed(1)}%</span>
             </div>
           ))}
         </div>
@@ -188,20 +188,16 @@ export default function Dashboard() {
 
   // === RAM POPOVER ===
   const ramPopoverContent = (
-    <div style={{ width: 320 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <span style={{ fontSize: 13, fontWeight: 600 }}>RAM usage: <span style={{ color: '#0288D1' }}>{info.memory.usage_percent.toFixed(1)}%</span></span>
+    <div style={{ width: 380 }}>
+      <div style={{ padding: '12px 12px 8px', borderBottom: '2px solid #E3F2FD' }}>
+        <span style={{ fontSize: 15, fontWeight: 700 }}>RAM usage: <span style={{ color: '#0288D1' }}>{info.memory.usage_percent.toFixed(1)}%</span></span>
       </div>
-      <div style={popSection}>Memory information</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
-        <div style={popRow}><span style={popLabel}>Used</span><span style={popVal}>{formatMB(info.memory.used)}MB</span></div>
-        <div style={popRow}><span style={popLabel}>Total</span><span style={popVal}>{formatMB(info.memory.total)}MB</span></div>
-        <div style={popRow}><span style={popLabel}>Available</span><span style={popVal}>{formatMB(info.memory.available)}MB</span></div>
-        <div style={popRow}>
-          <span style={popLabel}>Buff/Cache</span>
-          <span style={popVal}>{formatMB(info.memory.buffers ?? 0)}/{formatMB(info.memory.cached ?? 0)}MB</span>
-        </div>
-      </div>
+      <div style={popSection}>💾 Memory information</div>
+      <div style={popRow}><span style={popLabel}>Used</span><span style={popVal}>{formatMB(info.memory.used)} MB</span></div>
+      <div style={popRow}><span style={popLabel}>Total</span><span style={popVal}>{formatMB(info.memory.total)} MB</span></div>
+      <div style={popRow}><span style={popLabel}>Available</span><span style={popVal}>{formatMB(info.memory.available)} MB</span></div>
+      <div style={popRow}><span style={popLabel}>Buffers</span><span style={popVal}>{formatMB(info.memory.buffers ?? 0)} MB</span></div>
+      <div style={popRow}><span style={popLabel}>Cached</span><span style={popVal}>{formatMB(info.memory.cached ?? 0)} MB</span></div>
     </div>
   );
 
