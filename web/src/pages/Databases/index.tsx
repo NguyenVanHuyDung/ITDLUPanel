@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Table, Card, Button, Modal, Form, Input, Select, Space, Tag, message, Typography, Popconfirm } from 'antd';
-import { PlusOutlined, DeleteOutlined, KeyOutlined, CloudDownloadOutlined, ReloadOutlined, DatabaseOutlined, CopyOutlined } from '@ant-design/icons';
+import { Table, Card, Button, Modal, Form, Input, Select, Space, Tag, message, Typography, Popconfirm, Alert } from 'antd';
+import { PlusOutlined, DeleteOutlined, KeyOutlined, CloudDownloadOutlined, ReloadOutlined, DatabaseOutlined, CopyOutlined, LinkOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
 import type { Database } from '@/types';
@@ -30,6 +30,18 @@ function DatabasesContent() {
   const [selectedDb, setSelectedDb] = useState<Database | null>(null);
   const [form] = Form.useForm();
   const [pwForm] = Form.useForm();
+  const [pmaInstalled, setPmaInstalled] = useState<boolean | null>(null);
+
+  const checkPma = useCallback(async () => {
+    try {
+      const { data: resp } = await api.get('/software');
+      const list = resp.data || [];
+      const pma = list.find((s: { name: string; installed: boolean }) => s.name === 'phpmyadmin');
+      setPmaInstalled(pma?.installed ?? false);
+    } catch {
+      setPmaInstalled(false);
+    }
+  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -43,7 +55,7 @@ function DatabasesContent() {
     }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { fetchData(); checkPma(); }, [fetchData, checkPma]);
 
   const handleCreate = async () => {
     try {
@@ -125,10 +137,33 @@ function DatabasesContent() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <Title level={3} style={{ margin: 0 }}>{t('databases.title')}</Title>
         <Space>
+          {pmaInstalled && (
+            <Button
+              icon={<LinkOutlined />}
+              onClick={() => {
+                const host = window.location.hostname;
+                window.open(`http://${host}/phpmyadmin/`, '_blank');
+              }}
+              style={{ background: '#ff9800', borderColor: '#ff9800', color: '#fff' }}
+            >
+              phpMyAdmin
+            </Button>
+          )}
           <Button icon={<ReloadOutlined />} onClick={fetchData} />
           <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.setFieldsValue({ password: generatePassword() }); setModalOpen(true); }}>{t('databases.add_database')}</Button>
         </Space>
       </div>
+
+      {pmaInstalled === false && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="phpMyAdmin not installed"
+          description="Install phpMyAdmin from the App Store to manage databases via a web interface."
+          closable
+        />
+      )}
 
       <Card>
         <Table columns={columns} dataSource={databases} rowKey="id" loading={loading} pagination={{ pageSize: 10, showTotal: total => `${t('common.total')}: ${total}` }} />

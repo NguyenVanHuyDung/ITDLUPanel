@@ -8,7 +8,7 @@ import {
   PlayCircleOutlined, PauseCircleOutlined, ReloadOutlined,
   CloudServerOutlined, DatabaseOutlined, CodeOutlined,
   ExclamationCircleOutlined, ThunderboltOutlined, SettingOutlined, FileTextOutlined,
-  DeleteOutlined, CloseOutlined, MinusOutlined, LoadingOutlined,
+  DeleteOutlined, CloseOutlined, MinusOutlined, LoadingOutlined, LinkOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
@@ -662,6 +662,19 @@ export default function AppStore() {
                       {swStatus?.error && <Descriptions.Item label="Error"><Text type="danger">{swStatus.error}</Text></Descriptions.Item>}
                     </Descriptions>
                     <Space wrap>
+                      {manageSW.name === 'phpmyadmin' && (
+                        <Button
+                          type="primary"
+                          icon={<LinkOutlined />}
+                          onClick={() => {
+                            const host = window.location.hostname;
+                            window.open(`http://${host}/phpmyadmin/`, '_blank');
+                          }}
+                          style={{ background: '#ff9800', borderColor: '#ff9800' }}
+                        >
+                          Open phpMyAdmin
+                        </Button>
+                      )}
                       <Button
                         type="primary"
                         ghost
