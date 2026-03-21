@@ -77,10 +77,10 @@ function getStatusBadge(status: number) {
 
 function getTaskStatusColor(status: string) {
   switch (status) {
-    case 'running': case 'pending': return '#1677ff';
-    case 'completed': return '#52c41a';
+    case 'running': case 'pending': return '#1565C0';
+    case 'completed': return '#4CAF50';
     case 'failed': return '#ff4d4f';
-    default: return '#1677ff';
+    default: return '#1565C0';
   }
 }
 
@@ -670,7 +670,7 @@ export default function AppStore() {
                             const host = window.location.hostname;
                             window.open(`http://${host}/phpmyadmin/`, '_blank');
                           }}
-                          style={{ background: '#ff9800', borderColor: '#ff9800' }}
+                          style={{ background: '#1565C0', borderColor: '#1565C0' }}
                         >
                           Open phpMyAdmin
                         </Button>

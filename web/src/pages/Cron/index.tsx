@@ -337,7 +337,7 @@ export default function Cron() {
         return (
           <Tooltip title={`Cron: ${val}`}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <ClockCircleOutlined style={{ color: '#1677ff', fontSize: 14 }} />
+              <ClockCircleOutlined style={{ color: '#1565C0', fontSize: 14 }} />
               <span style={{ fontWeight: 500 }}>{human}</span>
               {isHumanized && (
                 <code style={{ fontSize: 11, color: '#999', background: '#f5f5f5', padding: '1px 6px', borderRadius: 3 }}>{val}</code>
@@ -388,7 +388,7 @@ export default function Cron() {
               icon={<CaretRightOutlined />}
               loading={runningIds.has(record.id)}
               onClick={() => handleRunNow(record)}
-              style={{ background: '#52c41a', borderColor: '#52c41a' }}
+              style={{ background: '#1565C0', borderColor: '#1565C0' }}
             >
               Run
             </Button>
@@ -478,8 +478,8 @@ export default function Cron() {
       )}
 
       <div style={{ marginTop: 12, padding: '8px 12px', background: '#e6f4ff', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
-        <ClockCircleOutlined style={{ color: '#1677ff' }} />
-        <Text style={{ color: '#1677ff' }}>{cronToHuman(buildCronFromState(schedState))}</Text>
+        <ClockCircleOutlined style={{ color: '#1565C0' }} />
+        <Text style={{ color: '#1565C0' }}>{cronToHuman(buildCronFromState(schedState))}</Text>
         <code style={{ marginLeft: 'auto', fontSize: 12, color: '#666' }}>{buildCronFromState(schedState)}</code>
       </div>
     </div>
@@ -541,7 +541,7 @@ export default function Cron() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Tooltip title={`Cron: ${tpl.schedule}`}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <ClockCircleOutlined style={{ color: '#1677ff', fontSize: 12 }} />
+                          <ClockCircleOutlined style={{ color: '#1565C0', fontSize: 12 }} />
                           <span style={{ fontSize: 12, color: '#555' }}>{cronToHuman(tpl.schedule)}</span>
                         </div>
                       </Tooltip>

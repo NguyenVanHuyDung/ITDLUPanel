@@ -22,7 +22,7 @@ const theme = {
     colorError: '#F44336',
     colorInfo: '#0288D1',
     borderRadius: 6,
-    fontFamily: "'JetBrainsMono Nerd Font', 'JetBrains Mono', monospace",
+    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
   },
 };
 

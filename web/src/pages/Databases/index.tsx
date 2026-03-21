@@ -136,7 +136,7 @@ function DatabasesContent() {
         <Space size={4}>
           <Text code>{username}</Text>
           <Tooltip title="Copy username">
-            <CopyOutlined style={{ cursor: 'pointer', color: '#1677ff', fontSize: 12 }} onClick={() => copyToClipboard(username, 'Username')} />
+            <CopyOutlined style={{ cursor: 'pointer', color: '#1565C0', fontSize: 12 }} onClick={() => copyToClipboard(username, 'Username')} />
           </Tooltip>
         </Space>
       ),
@@ -158,7 +158,7 @@ function DatabasesContent() {
             </Tooltip>
             {r.password && (
               <Tooltip title="Copy password">
-                <CopyOutlined style={{ cursor: 'pointer', color: '#1677ff', fontSize: 12 }} onClick={() => copyToClipboard(r.password!, 'Password')} />
+                <CopyOutlined style={{ cursor: 'pointer', color: '#1565C0', fontSize: 12 }} onClick={() => copyToClipboard(r.password!, 'Password')} />
               </Tooltip>
             )}
           </Space>
@@ -194,7 +194,7 @@ function DatabasesContent() {
                 const host = window.location.hostname;
                 window.open(`http://${host}/phpmyadmin/`, '_blank');
               }}
-              style={{ background: '#ff9800', borderColor: '#ff9800', color: '#fff' }}
+              style={{ background: '#1565C0', borderColor: '#1565C0', color: '#fff' }}
             >
               phpMyAdmin
             </Button>

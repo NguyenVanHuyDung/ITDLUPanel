@@ -157,7 +157,7 @@ export default function Docker() {
   };
 
   const stateColor = (state: string): string => {
-    if (state === 'running') return '#52c41a';
+    if (state === 'running') return '#4CAF50';
     if (state === 'paused') return '#faad14';
     return '#ff4d4f';
   };

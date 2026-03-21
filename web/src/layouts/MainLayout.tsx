@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Menu, Dropdown, Button, Avatar, Space, Typography } from 'antd';
 import {
@@ -20,20 +20,62 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   TranslationOutlined,
+  DesktopOutlined,
+  ClusterOutlined,
+  FieldTimeOutlined,
+  TagOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/stores/auth';
+import api from '@/services/api';
 import type { MenuProps } from 'antd';
 
-const { Sider, Header, Content } = Layout;
+const { Sider, Content } = Layout;
 const { Text } = Typography;
+
+const formatUptime = (seconds: number) => {
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return `${d}d ${h}h ${m}m`;
+};
+
+interface SystemBrief {
+  hostname: string;
+  os: string;
+  kernel: string;
+  uptime: number;
+  panel_version: string;
+}
 
 export default function MainLayout() {
   const [collapsed, setCollapsed] = useState(false);
+  const [sysInfo, setSysInfo] = useState<SystemBrief | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
   const { t, i18n } = useTranslation();
   const { user, logout } = useAuthStore();
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchSysInfo = useCallback(async () => {
+    try {
+      const { data: resp } = await api.get('/dashboard');
+      const d = resp.data;
+      setSysInfo({
+        hostname: d.system.hostname,
+        os: d.system.os,
+        kernel: d.system.kernel,
+        uptime: d.system.uptime,
+        panel_version: d.system.panel_version,
+      });
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    fetchSysInfo();
+    intervalRef.current = setInterval(fetchSysInfo, 30000);
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [fetchSysInfo]);
 
   const handleLogout = () => {
     logout();
@@ -124,13 +166,49 @@ export default function MainLayout() {
         />
       </Sider>
       <Layout style={{ marginLeft: collapsed ? 80 : 250, transition: 'margin-left 0.2s' }}>
-        <Header style={{
+        {/* ── System Info Header Bar ── */}
+        <div style={{
+          background: 'linear-gradient(135deg, #0D47A1 0%, #1565C0 50%, #1E88E5 100%)',
+          padding: '8px 24px',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          color: '#fff', fontSize: 13, flexWrap: 'wrap', gap: 8,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+            {sysInfo && (
+              <>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <DesktopOutlined style={{ fontSize: 13, opacity: 0.85 }} />
+                  <strong>{sysInfo.hostname}</strong>
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: 0.9 }}>
+                  <ClusterOutlined style={{ fontSize: 12 }} />
+                  {sysInfo.os}
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: 0.9 }}>
+                  <CodeOutlined style={{ fontSize: 12 }} />
+                  {sysInfo.kernel}
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: 0.9 }}>
+                  <FieldTimeOutlined style={{ fontSize: 12 }} />
+                  Uptime: {formatUptime(sysInfo.uptime)}
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: 0.9 }}>
+                  <TagOutlined style={{ fontSize: 12 }} />
+                  v{sysInfo.panel_version}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+        {/* ── Action Header ── */}
+        <div style={{
           background: '#fff',
           padding: '0 24px',
+          height: 48,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+          boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
           position: 'sticky',
           top: 0,
           zIndex: 9,
@@ -143,7 +221,7 @@ export default function MainLayout() {
           />
           <Space size="middle">
             <Dropdown menu={{ items: languageItems, onClick: ({ key }) => i18n.changeLanguage(key) }}>
-              <Button type="text" icon={<TranslationOutlined />}>
+              <Button type="text" icon={<TranslationOutlined />} size="small">
                 {i18n.language === 'vi' ? '🇻🇳' : '🇺🇸'}
               </Button>
             </Dropdown>
@@ -154,7 +232,7 @@ export default function MainLayout() {
               </Space>
             </Dropdown>
           </Space>
-        </Header>
+        </div>
         <Content style={{ margin: 24 }}>
           <Outlet />
         </Content>
