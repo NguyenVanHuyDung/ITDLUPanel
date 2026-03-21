@@ -58,36 +58,162 @@ const DEFAULT_BOOKMARKS: Bookmark[] = [
   { path: '/var/log', label: 'log' },
 ];
 
+/* ──────────────── File Icons ──────────────── */
+
+// Badge-style icon: colored rounded rect with extension text
+const ExtBadge = ({ text, bg, fg = '#fff' }: { text: string; bg: string; fg?: string }) => (
+  <span style={{
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    width: 20, height: 20, borderRadius: 4, background: bg,
+    color: fg, fontSize: 8, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace",
+    lineHeight: 1, letterSpacing: -0.3, flexShrink: 0,
+  }}>{text}</span>
+);
+
+// SVG mini-icons for specific types
+const SvgHtml = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect width="20" height="20" rx="4" fill="#e44d26"/><path d="M5 4l1 11 4 1.5 4-1.5 1-11H5zm8.2 3.4H7.5l.2 2h5.3l-.4 4.4L10 15l-2.6-.8-.2-2h1.6l.1 1 1.1.3 1.1-.3.1-1.5H7.8L7.5 7.4h5l-.3 0z" fill="#fff"/></svg>
+);
+const SvgCss = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect width="20" height="20" rx="4" fill="#264de4"/><path d="M5 4l1 11 4 1.5 4-1.5 1-11H5zm8.1 3.4l-.1.6H8l.1 1.4h4.7l-.4 4.4L10 15l-2.4-.8-.2-1.6h1.5l.1.8.9.3 1-.3.1-1.3H7.8L7.4 7.4h5.1l-.4 0z" fill="#fff"/></svg>
+);
+const SvgJs = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect width="20" height="20" rx="4" fill="#f7df1e"/><text x="10" y="14.5" textAnchor="middle" fill="#323330" fontSize="10" fontWeight="700" fontFamily="monospace">JS</text></svg>
+);
+const SvgTs = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect width="20" height="20" rx="4" fill="#3178c6"/><text x="10" y="14.5" textAnchor="middle" fill="#fff" fontSize="10" fontWeight="700" fontFamily="monospace">TS</text></svg>
+);
+const SvgPy = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect width="20" height="20" rx="4" fill="#3572a5"/><text x="10" y="14.5" textAnchor="middle" fill="#ffd43b" fontSize="10" fontWeight="700" fontFamily="monospace">PY</text></svg>
+);
+const SvgGo = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect width="20" height="20" rx="4" fill="#00add8"/><text x="10" y="14.5" textAnchor="middle" fill="#fff" fontSize="10" fontWeight="700" fontFamily="monospace">GO</text></svg>
+);
+const SvgPhp = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect width="20" height="20" rx="4" fill="#777bb4"/><text x="10" y="14" textAnchor="middle" fill="#fff" fontSize="9" fontWeight="700" fontFamily="monospace">PHP</text></svg>
+);
+const SvgRust = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect width="20" height="20" rx="4" fill="#dea584"/><text x="10" y="14.5" textAnchor="middle" fill="#000" fontSize="10" fontWeight="700" fontFamily="monospace">RS</text></svg>
+);
+const SvgJson = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect width="20" height="20" rx="4" fill="#5b5b5b"/><text x="10" y="13" textAnchor="middle" fill="#f7df1e" fontSize="12" fontWeight="700" fontFamily="monospace">{'{}'}</text></svg>
+);
+const SvgMd = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect width="20" height="20" rx="4" fill="#083fa1"/><text x="10" y="14.5" textAnchor="middle" fill="#fff" fontSize="10" fontWeight="700" fontFamily="monospace">MD</text></svg>
+);
+const SvgSql = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect width="20" height="20" rx="4" fill="#e38c00"/><text x="10" y="14" textAnchor="middle" fill="#fff" fontSize="9" fontWeight="700" fontFamily="monospace">SQL</text></svg>
+);
+const SvgShell = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect width="20" height="20" rx="4" fill="#2b2b2b"/><text x="10" y="14.5" textAnchor="middle" fill="#89e051" fontSize="10" fontWeight="700" fontFamily="monospace">&gt;_</text></svg>
+);
+const SvgDocker = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect width="20" height="20" rx="4" fill="#2496ed"/><text x="10" y="14.5" textAnchor="middle" fill="#fff" fontSize="7" fontWeight="700" fontFamily="monospace">🐳</text></svg>
+);
+const SvgYaml = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect width="20" height="20" rx="4" fill="#cb171e"/><text x="10" y="14" textAnchor="middle" fill="#fff" fontSize="8" fontWeight="700" fontFamily="monospace">YML</text></svg>
+);
+const SvgXml = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect width="20" height="20" rx="4" fill="#e44d26"/><text x="10" y="14" textAnchor="middle" fill="#fff" fontSize="8" fontWeight="700" fontFamily="monospace">XML</text></svg>
+);
+
 const EXT_ICON_MAP: Record<string, { icon: React.ReactNode; color: string }> = {
-  html: { icon: <Html5Outlined />, color: '#e44d26' },
-  htm: { icon: <Html5Outlined />, color: '#e44d26' },
-  js: { icon: <FileTextOutlined />, color: '#f7df1e' },
-  jsx: { icon: <FileTextOutlined />, color: '#f7df1e' },
-  ts: { icon: <FileTextOutlined />, color: '#3178c6' },
-  tsx: { icon: <FileTextOutlined />, color: '#3178c6' },
-  css: { icon: <FileTextOutlined />, color: '#264de4' },
-  scss: { icon: <FileTextOutlined />, color: '#c6538c' },
-  less: { icon: <FileTextOutlined />, color: '#1d365d' },
-  php: { icon: <CodeOutlined />, color: '#777bb4' },
-  py: { icon: <CodeOutlined />, color: '#3572a5' },
-  go: { icon: <CodeOutlined />, color: '#00add8' },
-  rs: { icon: <CodeOutlined />, color: '#dea584' },
-  java: { icon: <CodeOutlined />, color: '#b07219' },
-  rb: { icon: <CodeOutlined />, color: '#cc342d' },
-  sh: { icon: <CodeOutlined />, color: '#89e051' },
-  bash: { icon: <CodeOutlined />, color: '#89e051' },
-  json: { icon: <FileTextOutlined />, color: '#a0a0a0' },
-  yaml: { icon: <FileTextOutlined />, color: '#cb171e' },
-  yml: { icon: <FileTextOutlined />, color: '#cb171e' },
-  xml: { icon: <FileTextOutlined />, color: '#e44d26' },
-  toml: { icon: <FileTextOutlined />, color: '#9c4221' },
-  ini: { icon: <FileTextOutlined />, color: '#a0a0a0' },
-  conf: { icon: <FileTextOutlined />, color: '#a0a0a0' },
-  cfg: { icon: <FileTextOutlined />, color: '#a0a0a0' },
-  env: { icon: <FileTextOutlined />, color: '#ecd53f' },
-  md: { icon: <FileTextOutlined />, color: '#083fa1' },
+  // Web
+  html: { icon: <SvgHtml />, color: '#e44d26' },
+  htm: { icon: <SvgHtml />, color: '#e44d26' },
+  css: { icon: <SvgCss />, color: '#264de4' },
+  scss: { icon: <ExtBadge text="SC" bg="#c6538c" />, color: '#c6538c' },
+  sass: { icon: <ExtBadge text="SA" bg="#c6538c" />, color: '#c6538c' },
+  less: { icon: <ExtBadge text="LE" bg="#1d365d" />, color: '#1d365d' },
+  vue: { icon: <ExtBadge text="VU" bg="#42b883" />, color: '#42b883' },
+  svelte: { icon: <ExtBadge text="SV" bg="#ff3e00" />, color: '#ff3e00' },
+
+  // JavaScript / TypeScript
+  js: { icon: <SvgJs />, color: '#f7df1e' },
+  mjs: { icon: <SvgJs />, color: '#f7df1e' },
+  cjs: { icon: <SvgJs />, color: '#f7df1e' },
+  jsx: { icon: <ExtBadge text="JSX" bg="#61dafb" fg="#000" />, color: '#61dafb' },
+  ts: { icon: <SvgTs />, color: '#3178c6' },
+  tsx: { icon: <ExtBadge text="TSX" bg="#3178c6" />, color: '#3178c6' },
+
+  // Programming languages
+  php: { icon: <SvgPhp />, color: '#777bb4' },
+  py: { icon: <SvgPy />, color: '#3572a5' },
+  pyw: { icon: <SvgPy />, color: '#3572a5' },
+  go: { icon: <SvgGo />, color: '#00add8' },
+  rs: { icon: <SvgRust />, color: '#dea584' },
+  java: { icon: <ExtBadge text="JA" bg="#b07219" />, color: '#b07219' },
+  kt: { icon: <ExtBadge text="KT" bg="#A97BFF" />, color: '#A97BFF' },
+  kts: { icon: <ExtBadge text="KT" bg="#A97BFF" />, color: '#A97BFF' },
+  rb: { icon: <ExtBadge text="RB" bg="#cc342d" />, color: '#cc342d' },
+  c: { icon: <ExtBadge text="C" bg="#555555" />, color: '#555555' },
+  h: { icon: <ExtBadge text="H" bg="#555555" />, color: '#555555' },
+  cpp: { icon: <ExtBadge text="C+" bg="#f34b7d" />, color: '#f34b7d' },
+  cc: { icon: <ExtBadge text="C+" bg="#f34b7d" />, color: '#f34b7d' },
+  hpp: { icon: <ExtBadge text="H+" bg="#f34b7d" />, color: '#f34b7d' },
+  cs: { icon: <ExtBadge text="C#" bg="#178600" />, color: '#178600' },
+  swift: { icon: <ExtBadge text="SW" bg="#F05138" />, color: '#F05138' },
+  dart: { icon: <ExtBadge text="DA" bg="#00B4AB" />, color: '#00B4AB' },
+  r: { icon: <ExtBadge text="R" bg="#276DC3" />, color: '#276DC3' },
+  lua: { icon: <ExtBadge text="LU" bg="#000080" />, color: '#000080' },
+  perl: { icon: <ExtBadge text="PL" bg="#0298c3" />, color: '#0298c3' },
+  pl: { icon: <ExtBadge text="PL" bg="#0298c3" />, color: '#0298c3' },
+  scala: { icon: <ExtBadge text="SC" bg="#DC322F" />, color: '#DC322F' },
+  ex: { icon: <ExtBadge text="EX" bg="#6e4a7e" />, color: '#6e4a7e' },
+  exs: { icon: <ExtBadge text="EX" bg="#6e4a7e" />, color: '#6e4a7e' },
+  erl: { icon: <ExtBadge text="ER" bg="#B83998" />, color: '#B83998' },
+  zig: { icon: <ExtBadge text="ZG" bg="#f7a41d" fg="#000" />, color: '#f7a41d' },
+  nim: { icon: <ExtBadge text="NM" bg="#ffc200" fg="#000" />, color: '#ffc200' },
+  v: { icon: <ExtBadge text="V" bg="#5d87bf" />, color: '#5d87bf' },
+  asm: { icon: <ExtBadge text="AS" bg="#6E4C13" />, color: '#6E4C13' },
+  s: { icon: <ExtBadge text="AS" bg="#6E4C13" />, color: '#6E4C13' },
+
+  // Shell / Scripts
+  sh: { icon: <SvgShell />, color: '#89e051' },
+  bash: { icon: <SvgShell />, color: '#89e051' },
+  zsh: { icon: <SvgShell />, color: '#89e051' },
+  fish: { icon: <SvgShell />, color: '#89e051' },
+  ps1: { icon: <ExtBadge text="PS" bg="#012456" />, color: '#012456' },
+  bat: { icon: <ExtBadge text="BA" bg="#C1F12E" fg="#000" />, color: '#C1F12E' },
+  cmd: { icon: <ExtBadge text="CM" bg="#C1F12E" fg="#000" />, color: '#C1F12E' },
+
+  // Data / Config
+  json: { icon: <SvgJson />, color: '#5b5b5b' },
+  jsonc: { icon: <SvgJson />, color: '#5b5b5b' },
+  json5: { icon: <SvgJson />, color: '#5b5b5b' },
+  yaml: { icon: <SvgYaml />, color: '#cb171e' },
+  yml: { icon: <SvgYaml />, color: '#cb171e' },
+  xml: { icon: <SvgXml />, color: '#e44d26' },
+  toml: { icon: <ExtBadge text="TM" bg="#9c4221" />, color: '#9c4221' },
+  ini: { icon: <ExtBadge text="INI" bg="#8e8e8e" />, color: '#8e8e8e' },
+  conf: { icon: <ExtBadge text="CF" bg="#6d8086" />, color: '#6d8086' },
+  cfg: { icon: <ExtBadge text="CF" bg="#6d8086" />, color: '#6d8086' },
+  env: { icon: <ExtBadge text="ENV" bg="#ecd53f" fg="#000" />, color: '#ecd53f' },
+  properties: { icon: <ExtBadge text="PR" bg="#2d6b3e" />, color: '#2d6b3e' },
+  csv: { icon: <ExtBadge text="CSV" bg="#237346" />, color: '#237346' },
+  tsv: { icon: <ExtBadge text="TSV" bg="#237346" />, color: '#237346' },
+
+  // SQL / Database
+  sql: { icon: <SvgSql />, color: '#e38c00' },
+  db: { icon: <ExtBadge text="DB" bg="#e38c00" />, color: '#e38c00' },
+  sqlite: { icon: <ExtBadge text="SQ" bg="#003B57" />, color: '#003B57' },
+  sqlite3: { icon: <ExtBadge text="SQ" bg="#003B57" />, color: '#003B57' },
+
+  // Markdown / Docs
+  md: { icon: <SvgMd />, color: '#083fa1' },
+  mdx: { icon: <SvgMd />, color: '#083fa1' },
+  rst: { icon: <ExtBadge text="RST" bg="#141414" />, color: '#141414' },
+  tex: { icon: <ExtBadge text="TEX" bg="#3D6117" />, color: '#3D6117' },
   txt: { icon: <FileTextOutlined />, color: '#666' },
   log: { icon: <FileTextOutlined />, color: '#999' },
+  diff: { icon: <ExtBadge text="DIF" bg="#41b883" />, color: '#41b883' },
+  patch: { icon: <ExtBadge text="PAT" bg="#41b883" />, color: '#41b883' },
+
+  // Docker / DevOps
+  dockerfile: { icon: <SvgDocker />, color: '#2496ed' },
+  dockerignore: { icon: <SvgDocker />, color: '#2496ed' },
+
+  // Images
   jpg: { icon: <FileImageOutlined />, color: '#e91e63' },
   jpeg: { icon: <FileImageOutlined />, color: '#e91e63' },
   png: { icon: <FileImageOutlined />, color: '#e91e63' },
@@ -96,17 +222,71 @@ const EXT_ICON_MAP: Record<string, { icon: React.ReactNode; color: string }> = {
   ico: { icon: <FileImageOutlined />, color: '#e91e63' },
   webp: { icon: <FileImageOutlined />, color: '#e91e63' },
   bmp: { icon: <FileImageOutlined />, color: '#e91e63' },
+  tiff: { icon: <FileImageOutlined />, color: '#e91e63' },
+  tif: { icon: <FileImageOutlined />, color: '#e91e63' },
+  avif: { icon: <FileImageOutlined />, color: '#e91e63' },
+  psd: { icon: <ExtBadge text="PSD" bg="#31A8FF" />, color: '#31A8FF' },
+  ai: { icon: <ExtBadge text="AI" bg="#FF9A00" />, color: '#FF9A00' },
+  fig: { icon: <ExtBadge text="FIG" bg="#F24E1E" />, color: '#F24E1E' },
+  sketch: { icon: <ExtBadge text="SK" bg="#FDB300" fg="#000" />, color: '#FDB300' },
+
+  // Audio / Video
+  mp3: { icon: <ExtBadge text="MP3" bg="#e91e63" />, color: '#e91e63' },
+  wav: { icon: <ExtBadge text="WAV" bg="#e91e63" />, color: '#e91e63' },
+  ogg: { icon: <ExtBadge text="OGG" bg="#e91e63" />, color: '#e91e63' },
+  flac: { icon: <ExtBadge text="FLC" bg="#e91e63" />, color: '#e91e63' },
+  mp4: { icon: <ExtBadge text="MP4" bg="#9c27b0" />, color: '#9c27b0' },
+  avi: { icon: <ExtBadge text="AVI" bg="#9c27b0" />, color: '#9c27b0' },
+  mkv: { icon: <ExtBadge text="MKV" bg="#9c27b0" />, color: '#9c27b0' },
+  mov: { icon: <ExtBadge text="MOV" bg="#9c27b0" />, color: '#9c27b0' },
+  webm: { icon: <ExtBadge text="WBM" bg="#9c27b0" />, color: '#9c27b0' },
+
+  // Archives
   zip: { icon: <FileZipOutlined />, color: '#795548' },
   tar: { icon: <FileZipOutlined />, color: '#795548' },
   gz: { icon: <FileZipOutlined />, color: '#795548' },
+  tgz: { icon: <FileZipOutlined />, color: '#795548' },
   bz2: { icon: <FileZipOutlined />, color: '#795548' },
   xz: { icon: <FileZipOutlined />, color: '#795548' },
   rar: { icon: <FileZipOutlined />, color: '#795548' },
   '7z': { icon: <FileZipOutlined />, color: '#795548' },
+  deb: { icon: <ExtBadge text="DEB" bg="#A80030" />, color: '#A80030' },
+  rpm: { icon: <ExtBadge text="RPM" bg="#e95420" />, color: '#e95420' },
+
+  // Documents
   pdf: { icon: <FilePdfOutlined />, color: '#f44336' },
-  sql: { icon: <CodeOutlined />, color: '#e38c00' },
-  db: { icon: <CodeOutlined />, color: '#e38c00' },
-  sqlite: { icon: <CodeOutlined />, color: '#e38c00' },
+  doc: { icon: <ExtBadge text="DOC" bg="#2b579a" />, color: '#2b579a' },
+  docx: { icon: <ExtBadge text="DOC" bg="#2b579a" />, color: '#2b579a' },
+  xls: { icon: <ExtBadge text="XLS" bg="#217346" />, color: '#217346' },
+  xlsx: { icon: <ExtBadge text="XLS" bg="#217346" />, color: '#217346' },
+  ppt: { icon: <ExtBadge text="PPT" bg="#d24726" />, color: '#d24726' },
+  pptx: { icon: <ExtBadge text="PPT" bg="#d24726" />, color: '#d24726' },
+
+  // Fonts
+  ttf: { icon: <ExtBadge text="TTF" bg="#4a86c8" />, color: '#4a86c8' },
+  otf: { icon: <ExtBadge text="OTF" bg="#4a86c8" />, color: '#4a86c8' },
+  woff: { icon: <ExtBadge text="WF" bg="#4a86c8" />, color: '#4a86c8' },
+  woff2: { icon: <ExtBadge text="WF2" bg="#4a86c8" />, color: '#4a86c8' },
+  eot: { icon: <ExtBadge text="EOT" bg="#4a86c8" />, color: '#4a86c8' },
+
+  // Certificates / Keys
+  pem: { icon: <ExtBadge text="PEM" bg="#50ae54" />, color: '#50ae54' },
+  crt: { icon: <ExtBadge text="CRT" bg="#50ae54" />, color: '#50ae54' },
+  cer: { icon: <ExtBadge text="CER" bg="#50ae54" />, color: '#50ae54' },
+  key: { icon: <ExtBadge text="KEY" bg="#c0392b" />, color: '#c0392b' },
+  pub: { icon: <ExtBadge text="PUB" bg="#50ae54" />, color: '#50ae54' },
+
+  // Package / Lock files
+  lock: { icon: <ExtBadge text="LCK" bg="#8e8e8e" />, color: '#8e8e8e' },
+
+  // Binary / Executable
+  bin: { icon: <ExtBadge text="BIN" bg="#424242" />, color: '#424242' },
+  exe: { icon: <ExtBadge text="EXE" bg="#424242" />, color: '#424242' },
+  so: { icon: <ExtBadge text="SO" bg="#424242" />, color: '#424242' },
+  dll: { icon: <ExtBadge text="DLL" bg="#424242" />, color: '#424242' },
+  o: { icon: <ExtBadge text="OBJ" bg="#424242" />, color: '#424242' },
+  a: { icon: <ExtBadge text="LIB" bg="#424242" />, color: '#424242' },
+  wasm: { icon: <ExtBadge text="WA" bg="#654ff0" />, color: '#654ff0' },
 };
 
 /* ──────────────── Helpers ──────────────── */
@@ -115,10 +295,43 @@ function getFileIcon(file: FileItem): React.ReactNode {
   if (file.is_dir) {
     return <FolderFilled style={{ color: '#faad14', fontSize: 18 }} />;
   }
+  const name = file.name.toLowerCase();
+  // Special filenames
+  if (name === 'dockerfile' || name.startsWith('dockerfile.'))
+    return <SvgDocker />;
+  if (name === '.dockerignore')
+    return <SvgDocker />;
+  if (name === 'makefile' || name === 'gnumakefile')
+    return <ExtBadge text="MK" bg="#6d8086" />;
+  if (name === '.gitignore' || name === '.gitattributes' || name === '.gitmodules')
+    return <ExtBadge text="GIT" bg="#f05032" />;
+  if (name === '.editorconfig')
+    return <ExtBadge text="EC" bg="#e0efef" fg="#000" />;
+  if (name === '.prettierrc' || name === '.prettierignore')
+    return <ExtBadge text="PTR" bg="#c596c7" />;
+  if (name === '.eslintrc' || name.startsWith('.eslint'))
+    return <ExtBadge text="ESL" bg="#4b32c3" />;
+  if (name === 'package.json')
+    return <ExtBadge text="NPM" bg="#cb3837" />;
+  if (name === 'tsconfig.json' || name.startsWith('tsconfig.'))
+    return <SvgTs />;
+  if (name === 'go.mod' || name === 'go.sum')
+    return <SvgGo />;
+  if (name === 'cargo.toml' || name === 'cargo.lock')
+    return <SvgRust />;
+  if (name === 'requirements.txt' || name === 'setup.py' || name === 'pyproject.toml' || name === 'pipfile')
+    return <SvgPy />;
+  if (name === 'license' || name === 'licence' || name.startsWith('license.') || name.startsWith('licence.'))
+    return <ExtBadge text="LIC" bg="#f9a825" fg="#000" />;
+  if (name === 'readme' || name.startsWith('readme.'))
+    return <SvgMd />;
+  if (name === 'nginx.conf' || name.endsWith('.nginx'))
+    return <ExtBadge text="NGX" bg="#009639" />;
+
   const ext = file.name.includes('.') ? file.name.split('.').pop()!.toLowerCase() : '';
   const mapping = EXT_ICON_MAP[ext];
   if (mapping) {
-    return <span style={{ color: mapping.color, fontSize: 16 }}>{mapping.icon}</span>;
+    return mapping.icon;
   }
   return <FileOutlined style={{ color: '#5b9bd5', fontSize: 16 }} />;
 }
