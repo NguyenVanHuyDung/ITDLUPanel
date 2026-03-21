@@ -291,7 +291,7 @@ function ConfigEditorPanel({ siteId, webserver }: { siteId: number; webserver: s
 // ---------------------------------------------------------------------------
 // PHP version sub-component
 // ---------------------------------------------------------------------------
-function PHPVersionPanel({ siteId, currentVersion }: { siteId: number; currentVersion?: string }) {
+function PHPVersionPanel({ siteId, currentVersion, phpVersions }: { siteId: number; currentVersion?: string; phpVersions: string[] }) {
   const [version, setVersion] = useState(currentVersion || '');
   const [saving, setSaving] = useState(false);
 
@@ -317,13 +317,9 @@ function PHPVersionPanel({ siteId, currentVersion }: { siteId: number; currentVe
           value={version}
           onChange={setVersion}
           style={{ flex: 1 }}
-          options={[
-            { value: '8.3', label: 'PHP 8.3' },
-            { value: '8.2', label: 'PHP 8.2' },
-            { value: '8.1', label: 'PHP 8.1' },
-            { value: '8.0', label: 'PHP 8.0' },
-            { value: '7.4', label: 'PHP 7.4' },
-          ]}
+          disabled={phpVersions.length === 0}
+          placeholder={phpVersions.length ? "Select PHP version" : "No PHP installed"}
+          options={phpVersions.map(v => ({ value: v, label: `PHP ${v}` }))}
         />
         <Button type="primary" onClick={handleSwitch} loading={saving}
           style={{ background: PRIMARY, borderColor: PRIMARY }}
@@ -376,7 +372,7 @@ function PlaceholderPanel({ title }: { title: string }) {
 // ---------------------------------------------------------------------------
 // Site config modal (matches website2.png)
 // ---------------------------------------------------------------------------
-function SiteConfigModal({ site, open, onClose }: { site: Site | null; open: boolean; onClose: () => void }) {
+function SiteConfigModal({ site, open, onClose, phpVersions }: { site: Site | null; open: boolean; onClose: () => void; phpVersions: string[] }) {
   const [section, setSection] = useState<ConfigSection>('domain');
   const isMobile = useIsMobile();
 
@@ -391,7 +387,7 @@ function SiteConfigModal({ site, open, onClose }: { site: Site | null; open: boo
       case 'config':
         return <ConfigEditorPanel siteId={site.id} webserver={site.webserver} />;
       case 'php':
-        return <PHPVersionPanel siteId={site.id} currentVersion={site.php_version} />;
+        return <PHPVersionPanel siteId={site.id} currentVersion={site.php_version} phpVersions={phpVersions} />;
       case 'ssl':
         return <PlaceholderPanel title="SSL Certificate Management" />;
       case 'redirect':
@@ -476,6 +472,7 @@ function WebsitesContent() {
   const [configSite, setConfigSite] = useState<Site | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
   const [nginxVersion, setNginxVersion] = useState('');
+  const [phpVersions, setPhpVersions] = useState<string[]>([]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -501,7 +498,14 @@ function WebsitesContent() {
     } catch { /* ignore */ }
   }, []);
 
-  useEffect(() => { fetchData(); fetchNginxVersion(); }, [fetchData, fetchNginxVersion]);
+  const fetchPhpVersions = useCallback(async () => {
+    try {
+      const { data: resp } = await api.get('/sites/php-versions');
+      setPhpVersions(resp.data?.versions || []);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { fetchData(); fetchNginxVersion(); fetchPhpVersions(); }, [fetchData, fetchNginxVersion, fetchPhpVersions]);
 
   const handleCreate = async () => {
     try {
@@ -797,11 +801,10 @@ function WebsitesContent() {
             ]} />
           </Form.Item>
           <Form.Item name="php_version" label={t('websites.php_version')}>
-            <Select allowClear placeholder="Select PHP version" options={[
-              { value: '8.3', label: 'PHP 8.3' }, { value: '8.2', label: 'PHP 8.2' },
-              { value: '8.1', label: 'PHP 8.1' }, { value: '8.0', label: 'PHP 8.0' },
-              { value: '7.4', label: 'PHP 7.4' },
-            ]} />
+            <Select allowClear placeholder={phpVersions.length ? "Select PHP version" : "No PHP installed"}
+              disabled={phpVersions.length === 0}
+              options={phpVersions.map(v => ({ value: v, label: `PHP ${v}` }))}
+            />
           </Form.Item>
           <Form.Item name="create_database" label="Create Database" valuePropName="checked">
             <Switch />
@@ -814,6 +817,7 @@ function WebsitesContent() {
         site={configSite}
         open={configOpen}
         onClose={() => { setConfigOpen(false); setConfigSite(null); }}
+        phpVersions={phpVersions}
       />
     </div>
   );

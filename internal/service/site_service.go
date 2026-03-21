@@ -672,3 +672,17 @@ func defaultIndexHTML(domain string) string {
 </body>
 </html>`, domain, domain)
 }
+
+// DetectInstalledPHPVersions checks common PHP-FPM binaries and returns
+// the version strings that are present on the system (e.g. ["8.2"]).
+func DetectInstalledPHPVersions() []string {
+	candidates := []string{"7.4", "8.0", "8.1", "8.2", "8.3", "8.4"}
+	var installed []string
+	for _, v := range candidates {
+		bin := fmt.Sprintf("/usr/sbin/php-fpm%s", v)
+		if _, err := os.Stat(bin); err == nil {
+			installed = append(installed, v)
+		}
+	}
+	return installed
+}

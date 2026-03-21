@@ -28,6 +28,7 @@ func (h *SiteHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, sitesMW gin.Ha
 	{
 		sites.GET("", h.ListSites)
 		sites.POST("", h.CreateSite)
+		sites.GET("/php-versions", h.ListPHPVersions)
 		sites.GET("/:id", h.GetSite)
 		sites.PUT("/:id", h.UpdateSite)
 		sites.DELETE("/:id", h.DeleteSite)
@@ -358,6 +359,16 @@ func (h *SiteHandler) ListDomains(c *gin.Context) {
 	}
 
 	response.Success(c, domains)
+}
+
+// ---------------------------------------------------------------------------
+// PHP versions
+// ---------------------------------------------------------------------------
+
+// ListPHPVersions returns the PHP versions currently installed on the system.
+func (h *SiteHandler) ListPHPVersions(c *gin.Context) {
+	versions := service.DetectInstalledPHPVersions()
+	response.Success(c, gin.H{"versions": versions})
 }
 
 // ---------------------------------------------------------------------------
