@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import type * as monacoType from 'monaco-editor';
+import '@/lib/monaco-setup';
 import { Tree, Dropdown, Tooltip, Input, Modal, message, Spin } from 'antd';
 import {
   SaveOutlined,
@@ -291,7 +292,8 @@ export default function CodeEditor({ initialFiles, onClose, visible, initialDir 
       const { data: resp } = await api.get<ApiResponse<{ path: string; content: string }>>('/files/content', {
         params: { path: filePath },
       });
-      return { content: resp.data.content, language: detectLanguage(filePath) };
+      const content = resp?.data?.content ?? '';
+      return { content, language: detectLanguage(filePath) };
     } catch {
       message.error(`Failed to load file: ${fileName(filePath)}`);
       return null;
@@ -530,6 +532,17 @@ export default function CodeEditor({ initialFiles, onClose, visible, initialDir 
       initialFiles.forEach(f => openFile(f));
     }
   }, [visible, initialDir, initialFiles, defaultRect, loadRootDir, openFile]);
+
+  // Open new files when initialFiles changes while editor is already visible
+  useEffect(() => {
+    if (!visible || !initializedRef.current) return;
+    if (!initialFiles?.length) return;
+    initialFiles.forEach(f => {
+      if (!openFiles.find(of => of.path === f)) {
+        openFile(f);
+      }
+    });
+  }, [initialFiles]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reset on hide
   useEffect(() => {
@@ -938,7 +951,7 @@ export default function CodeEditor({ initialFiles, onClose, visible, initialDir 
           </div>
 
           {/* Monaco Editor */}
-          <div style={{ flex: 1, position: 'relative', minHeight: 0, height: editorH > 0 ? editorH : undefined }}>
+          <div style={{ flex: 1, position: 'relative', minHeight: 0, overflow: 'hidden', userSelect: 'text' }}>
             {loading && (
               <div style={{
                 position: 'absolute', inset: 0, display: 'flex',
@@ -951,7 +964,7 @@ export default function CodeEditor({ initialFiles, onClose, visible, initialDir 
             {activeFile ? (
               <Editor
                 key={activeFile.path}
-                height="100%"
+                height={editorH > 0 ? `${editorH}px` : '100%'}
                 theme={theme}
                 language={activeFile.language}
                 value={activeFile.content}
