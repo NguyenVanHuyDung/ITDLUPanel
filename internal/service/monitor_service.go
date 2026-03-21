@@ -89,10 +89,17 @@ type MemoryInfo struct {
 
 // DiskInfo holds disk usage metrics.
 type DiskInfo struct {
-	Total        uint64  `json:"total"`
-	Used         uint64  `json:"used"`
-	Available    uint64  `json:"available"`
-	UsagePercent float64 `json:"usage_percent"`
+	Total          uint64  `json:"total"`
+	Used           uint64  `json:"used"`
+	Available      uint64  `json:"available"`
+	UsagePercent   float64 `json:"usage_percent"`
+	FsType         string  `json:"fs_type"`
+	MountPoint     string  `json:"mount_point"`
+	Device         string  `json:"device"`
+	InodesTotal    uint64  `json:"inodes_total"`
+	InodesUsed     uint64  `json:"inodes_used"`
+	InodesFree     uint64  `json:"inodes_free"`
+	InodesPercent  float64 `json:"inodes_percent"`
 }
 
 // NetworkInfo holds network traffic counters.
@@ -260,10 +267,27 @@ func (s *MonitorService) GetOverview(db *sql.DB) (*SystemOverview, error) {
 	diskStat, _ := disk.Usage("/")
 	if diskStat != nil {
 		overview.Disk = DiskInfo{
-			Total:        diskStat.Total,
-			Used:         diskStat.Used,
-			Available:    diskStat.Free,
-			UsagePercent: diskStat.UsedPercent,
+			Total:         diskStat.Total,
+			Used:          diskStat.Used,
+			Available:     diskStat.Free,
+			UsagePercent:  diskStat.UsedPercent,
+			FsType:        diskStat.Fstype,
+			MountPoint:    diskStat.Path,
+			InodesTotal:   diskStat.InodesTotal,
+			InodesUsed:    diskStat.InodesUsed,
+			InodesFree:    diskStat.InodesFree,
+			InodesPercent: diskStat.InodesUsedPercent,
+		}
+		// Find device name from partitions
+		parts, _ := disk.Partitions(false)
+		for _, p := range parts {
+			if p.Mountpoint == "/" {
+				overview.Disk.Device = p.Device
+				if overview.Disk.FsType == "" {
+					overview.Disk.FsType = p.Fstype
+				}
+				break
+			}
 		}
 	}
 

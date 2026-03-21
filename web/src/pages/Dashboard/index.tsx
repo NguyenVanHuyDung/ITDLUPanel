@@ -206,6 +206,33 @@ export default function Dashboard() {
     </div>
   );
 
+  // === DISK POPOVER ===
+  const formatInodes = (n: number) => {
+    if (n >= 1e9) return (n / 1e9).toFixed(2) + 'G';
+    if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(2) + 'K';
+    return String(n);
+  };
+  const diskPopoverContent = (
+    <div style={{ width: 380 }}>
+      <div style={{ padding: '14px 12px 10px', borderBottom: '2px solid #E3F2FD' }}>
+        <span style={{ fontSize: 15, fontWeight: 700 }}>Disk space: <span style={{ color: diskPct > 80 ? '#F44336' : '#1565C0' }}>{diskPct}%</span></span>
+      </div>
+      <div style={popSection}>📊 Basic information</div>
+      <div style={popRow}><span style={popLabel}>Type</span><span style={popVal}>{info.disk.fs_type || '—'}</span></div>
+      <div style={popRow}><span style={popLabel}>Mount point</span><span style={popVal}>{info.disk.mount_point || '/'}</span></div>
+      <div style={popRow}><span style={popLabel}>Available</span><span style={popVal}>{formatGB(info.disk.available)}G</span></div>
+      <div style={popRow}><span style={popLabel}>Total</span><span style={popVal}>{formatGB(info.disk.total)}G</span></div>
+      <div style={popRow}><span style={popLabel}>Used</span><span style={popVal}>{formatGB(info.disk.used)}G</span></div>
+      <div style={popSection}>📁 Inode information</div>
+      <div style={popRow}><span style={popLabel}>File system</span><span style={popVal}>{info.disk.device || '—'}</span></div>
+      <div style={popRow}><span style={popLabel}>Total Inodes</span><span style={popVal}>{formatInodes(info.disk.inodes_total ?? 0)}</span></div>
+      <div style={popRow}><span style={popLabel}>Used Inodes</span><span style={popVal}>{formatInodes(info.disk.inodes_used ?? 0)}</span></div>
+      <div style={popRow}><span style={popLabel}>Available Inodes</span><span style={popVal}>{formatInodes(info.disk.inodes_free ?? 0)}</span></div>
+      <div style={{ ...popRow, borderBottom: 'none' }}><span style={popLabel}>Usage Inodes</span><span style={popVal}>{(info.disk.inodes_percent ?? 0).toFixed(1)}%</span></div>
+    </div>
+  );
+
   return (
     <div>
       {/* ── Refresh bar ── */}
@@ -282,8 +309,9 @@ export default function Dashboard() {
 
         {/* — Disk — */}
         <Col xs={24} lg={9}>
+          <Popover content={diskPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom" overlayStyle={{ maxWidth: 400 }}>
           <Card title={<><span role="img" aria-label="disk">💿</span> Disk</>} size="small"
-            style={{ height: '100%' }}
+            style={{ height: '100%', cursor: 'pointer' }}
             styles={{ body: { padding: '24px 16px', display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 20, height: 'calc(100% - 40px)' }, header: { fontWeight: 600 } }}>
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -299,6 +327,7 @@ export default function Dashboard() {
               strokeColor={diskPct > 80 ? '#ff4d4f' : '#1565C0'} strokeWidth={10}
               format={() => <span style={{ fontSize: isMobile ? 16 : 22, fontWeight: 700, color: diskPct > 80 ? '#ff4d4f' : '#1565C0' }}>{diskPct}%</span>} />
           </Card>
+          </Popover>
         </Col>
       </Row>
 

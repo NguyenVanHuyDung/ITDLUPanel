@@ -60,7 +60,11 @@ export interface SystemInfo {
     total_processes: number; active_processes: number;
   };
   memory: { total: number; used: number; available: number; usage_percent: number; buffers: number; cached: number };
-  disk: { total: number; used: number; available: number; usage_percent: number };
+  disk: {
+    total: number; used: number; available: number; usage_percent: number;
+    fs_type?: string; mount_point?: string; device?: string;
+    inodes_total?: number; inodes_used?: number; inodes_free?: number; inodes_percent?: number;
+  };
   network: { bytes_sent: number; bytes_recv: number };
   counts: { sites: number; databases: number; ftp_accounts: number; cron_jobs: number; running_tasks: number };
 }
