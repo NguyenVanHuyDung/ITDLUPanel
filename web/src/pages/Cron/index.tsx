@@ -273,8 +273,9 @@ export default function Cron() {
     setLogLoading(true);
     setLogContent('');
     try {
-      const { data } = await api.get<ApiResponse<string>>(`/crons/${id}/log`);
-      setLogContent(data.data ?? 'No logs available');
+      const { data } = await api.get<ApiResponse<{content: string}>>(`/crons/${id}/log`);
+      const content = typeof data.data === 'string' ? data.data : data.data?.content;
+      setLogContent(content || 'No logs available');
     } catch {
       setLogContent('Failed to load logs');
     } finally {

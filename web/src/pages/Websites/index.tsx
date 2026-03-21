@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Table, Card, Button, Modal, Form, Input, Select, Space, Tag, message, Typography, Popconfirm, Switch } from 'antd';
-import { PlusOutlined, DeleteOutlined, SettingOutlined, SafetyCertificateOutlined, PlayCircleOutlined, PauseCircleOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Table, Card, Button, Modal, Form, Input, Select, Space, Tag, message, Typography, Popconfirm, Switch, Drawer, Tabs } from 'antd';
+import { PlusOutlined, DeleteOutlined, SettingOutlined, SafetyCertificateOutlined, PlayCircleOutlined, PauseCircleOutlined, SearchOutlined, ReloadOutlined, GlobalOutlined, CodeOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
 import type { Site } from '@/types';
 import RequireSoftware from '@/components/RequireSoftware';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 
 function WebsitesContent() {
   const { t } = useTranslation();
@@ -16,6 +16,14 @@ function WebsitesContent() {
   const [submitting, setSubmitting] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [form] = Form.useForm();
+
+  // Config drawer state
+  const [configDrawerOpen, setConfigDrawerOpen] = useState(false);
+  const [configSite, setConfigSite] = useState<Site | null>(null);
+  const [configContent, setConfigContent] = useState('');
+  const [configLoading, setConfigLoading] = useState(false);
+  const [configSaving, setConfigSaving] = useState(false);
+  const [siteDetail, setSiteDetail] = useState<Site | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -58,6 +66,41 @@ function WebsitesContent() {
       fetchData();
     } catch {
       message.error('Failed to delete website');
+    }
+  };
+
+  const openConfig = async (site: Site) => {
+    setConfigSite(site);
+    setConfigDrawerOpen(true);
+    setConfigLoading(true);
+    setConfigContent('');
+    setSiteDetail(null);
+    try {
+      const [configResp, detailResp] = await Promise.all([
+        api.get(`/sites/${site.id}/config`),
+        api.get(`/sites/${site.id}`),
+      ]);
+      const cfg = configResp.data?.data;
+      setConfigContent(typeof cfg === 'string' ? cfg : cfg?.content ?? cfg?.config ?? JSON.stringify(cfg, null, 2));
+      setSiteDetail(detailResp.data?.data ?? site);
+    } catch {
+      setConfigContent('# Failed to load configuration');
+      setSiteDetail(site);
+    } finally {
+      setConfigLoading(false);
+    }
+  };
+
+  const saveConfig = async () => {
+    if (!configSite) return;
+    setConfigSaving(true);
+    try {
+      await api.put(`/sites/${configSite.id}/config`, { content: configContent });
+      message.success('Configuration saved');
+    } catch {
+      message.error('Failed to save configuration');
+    } finally {
+      setConfigSaving(false);
     }
   };
 
@@ -106,7 +149,7 @@ function WebsitesContent() {
               } catch { message.error('Action failed'); }
             }}
           />
-          <Button type="text" size="small" icon={<SettingOutlined />} />
+          <Button type="text" size="small" icon={<SettingOutlined />} onClick={() => openConfig(r)} />
           <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(r.id)} okText={t('common.yes')} cancelText={t('common.no')}>
             <Button type="text" size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
@@ -162,6 +205,80 @@ function WebsitesContent() {
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* Site Config Drawer */}
+      <Drawer
+        title={configSite ? `${configSite.domain} — Settings` : 'Site Settings'}
+        open={configDrawerOpen}
+        onClose={() => setConfigDrawerOpen(false)}
+        width={720}
+        extra={
+          <Button type="primary" onClick={saveConfig} loading={configSaving}>
+            Save Config
+          </Button>
+        }
+      >
+        {configSite && (
+          <Tabs items={[
+            {
+              key: 'info',
+              label: <span><GlobalOutlined /> Info</span>,
+              children: (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <Card size="small" title="Site Details">
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '8px 16px' }}>
+                      <Text type="secondary">Domain:</Text>
+                      <Text strong>{siteDetail?.domain || configSite.domain}</Text>
+                      <Text type="secondary">Web Server:</Text>
+                      <Tag>{(siteDetail?.webserver || configSite.webserver)?.toUpperCase()}</Tag>
+                      <Text type="secondary">PHP Version:</Text>
+                      <Text>{siteDetail?.php_version || configSite.php_version || '—'}</Text>
+                      <Text type="secondary">SSL:</Text>
+                      {(siteDetail || configSite).ssl_enabled
+                        ? <Tag color="success" icon={<SafetyCertificateOutlined />}>Enabled</Tag>
+                        : <Tag color="default">Disabled</Tag>
+                      }
+                      <Text type="secondary">Status:</Text>
+                      {(siteDetail || configSite).status === 1
+                        ? <Tag color="success">Running</Tag>
+                        : <Tag color="error">Stopped</Tag>
+                      }
+                      <Text type="secondary">Document Root:</Text>
+                      <Text code>{siteDetail?.path || `/ITDLUPanel/wwwroot/${configSite.domain}`}</Text>
+                    </div>
+                  </Card>
+                </div>
+              ),
+            },
+            {
+              key: 'config',
+              label: <span><CodeOutlined /> Config File</span>,
+              children: (
+                <div>
+                  <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+                    {configSite.webserver?.toUpperCase()} virtual host configuration
+                  </Text>
+                  <Input.TextArea
+                    value={configContent}
+                    onChange={e => setConfigContent(e.target.value)}
+                    rows={24}
+                    style={{
+                      fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                      fontSize: 13,
+                      background: '#1e1e1e',
+                      color: '#d4d4d4',
+                      border: '1px solid #333',
+                      borderRadius: 8,
+                    }}
+                    disabled={configLoading}
+                    placeholder={configLoading ? 'Loading configuration...' : ''}
+                  />
+                </div>
+              ),
+            },
+          ]} />
+        )}
+      </Drawer>
     </div>
   );
 }
