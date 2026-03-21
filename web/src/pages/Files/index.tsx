@@ -48,8 +48,19 @@ interface Bookmark {
 
 /* ──────────────── Constants ──────────────── */
 
-const BLUE = '#1565C0';
-const BLUE_DARK = '#0D47A1';
+const C = {
+  primary: '#1565C0',
+  primaryLight: '#1E88E5',
+  primaryDark: '#0D47A1',
+  success: '#4CAF50',
+  warning: '#FF9800',
+  error: '#F44336',
+  bg: '#E3F2FD',
+  text: '#1A1A2E',
+  textSecondary: '#64748B',
+  border: '#E8EDF2',
+  white: '#FFFFFF',
+};
 const BOOKMARK_KEY = 'itdlu_file_bookmarks';
 const PAGE_SIZE_KEY = 'itdlu_file_page_size';
 const DEFAULT_BOOKMARKS: Bookmark[] = [
@@ -906,9 +917,9 @@ export default function Files() {
           onDoubleClick={() => { if (!record.is_dir) handleEdit(record); }}
         >
           {getFileIcon(record)}
-          <span style={{ fontWeight: record.is_dir ? 500 : 400, color: record.is_dir ? '#333' : '#555' }}>
+          <span style={{ fontWeight: record.is_dir ? 500 : 400, color: record.is_dir ? C.text : C.textSecondary }}>
             {name}
-            {record.is_symlink && <span style={{ color: '#999', fontSize: 12, marginLeft: 4 }}>→ {record.link_target}</span>}
+            {record.is_symlink && <span style={{ color: C.textSecondary, fontSize: 12, marginLeft: 4 }}>→ {record.link_target}</span>}
           </span>
         </Space>
       ),
@@ -918,7 +929,7 @@ export default function Files() {
       width: 140,
       render: (_, record) => (
         <span
-          style={{ cursor: 'pointer', color: BLUE }}
+          style={{ cursor: 'pointer', color: C.primary }}
           onClick={() => openPermModal(record)}
         >
           {record.mode_octal || '---'} / {record.owner}
@@ -931,14 +942,14 @@ export default function Files() {
       width: 120,
       sorter: (a, b) => a.size - b.size,
       render: (size: number, record) =>
-        record.is_dir ? <span style={{ color: BLUE, cursor: 'pointer' }}>-</span> : formatSize(size),
+        record.is_dir ? <span style={{ color: C.primary, cursor: 'pointer' }}>-</span> : formatSize(size),
     },
     {
       title: 'Modified',
       dataIndex: 'mod_time',
       width: 180,
       sorter: (a, b) => new Date(a.mod_time).getTime() - new Date(b.mod_time).getTime(),
-      render: (v: string) => <span style={{ color: '#888', fontSize: 13 }}>{formatDate(v)}</span>,
+      render: (v: string) => <span style={{ color: C.textSecondary, fontSize: 13 }}>{formatDate(v)}</span>,
     },
     {
       title: 'Operations',
@@ -992,15 +1003,15 @@ export default function Files() {
 
   /* ────────── RENDER ────────── */
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#fff', borderRadius: 8, overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: C.white, borderRadius: 8, overflow: 'hidden' }}>
 
       {/* ═══ 1. Quick-Access Tab Bar ═══ */}
       <div style={{
-        display: 'flex', alignItems: 'center', background: '#e8f0fe', borderBottom: '1px solid #e0e0e0',
+        display: 'flex', alignItems: 'center', background: C.bg, borderBottom: `1px solid ${C.border}`,
         padding: '6px 12px', gap: 4, minHeight: 42,
       }}>
         <Button type="text" size="small" icon={<LeftOutlined />} onClick={() => scrollBookmarks('left')}
-          style={{ flexShrink: 0, color: BLUE_DARK }} />
+          style={{ flexShrink: 0, color: C.primaryDark }} />
         <div ref={bookmarkBarRef} style={{
           display: 'flex', gap: 4, overflowX: 'auto', flex: 1, scrollBehavior: 'smooth', flexWrap: 'nowrap',
         }}>
@@ -1008,13 +1019,13 @@ export default function Files() {
             <div key={bm.path} style={{
               display: 'flex', alignItems: 'center', gap: 4,
               padding: '3px 10px', borderRadius: 4, cursor: 'pointer', whiteSpace: 'nowrap',
-              background: currentPath === bm.path ? BLUE : '#e3f2fd',
-              color: currentPath === bm.path ? '#fff' : '#333',
+              background: currentPath === bm.path ? C.primary : C.white,
+              color: currentPath === bm.path ? C.white : C.text,
               fontSize: 13, transition: 'all 0.2s',
             }}
               onClick={() => navigateTo(bm.path)}
             >
-              <FolderFilled style={{ fontSize: 13, color: currentPath === bm.path ? '#fff' : BLUE }} />
+              <FolderFilled style={{ fontSize: 13, color: currentPath === bm.path ? C.white : C.primary }} />
               <span style={{ maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis' }}>{bm.label}</span>
               <CloseOutlined
                 style={{ fontSize: 10, opacity: 0.6 }}
@@ -1024,17 +1035,17 @@ export default function Files() {
           ))}
         </div>
         <Button type="text" size="small" icon={<RightOutlined />} onClick={() => scrollBookmarks('right')}
-          style={{ flexShrink: 0, color: BLUE_DARK }} />
+          style={{ flexShrink: 0, color: C.primaryDark }} />
         <Tooltip title="Bookmark current folder">
           <Button type="text" size="small" icon={<StarOutlined />} onClick={addBookmark}
-            style={{ flexShrink: 0, color: BLUE_DARK }} />
+            style={{ flexShrink: 0, color: C.primaryDark }} />
         </Tooltip>
       </div>
 
       {/* ═══ 2. Breadcrumb Navigation Row ═══ */}
       <div style={{
         display: 'flex', alignItems: 'center', padding: '6px 12px',
-        borderBottom: '1px solid #f0f0f0', gap: 8, background: '#fafafa',
+        borderBottom: `1px solid ${C.border}`, gap: 8, background: C.white,
       }}>
         <Space size={4}>
           <Tooltip title="Back">
@@ -1046,7 +1057,7 @@ export default function Files() {
         </Space>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, flexWrap: 'wrap', fontSize: 13 }}>
           <span
-            style={{ cursor: 'pointer', color: BLUE, fontWeight: 500 }}
+            style={{ cursor: 'pointer', color: C.primary, fontWeight: 500 }}
             onClick={() => navigateTo('/')}
           >
             <HomeOutlined /> Root
@@ -1056,9 +1067,9 @@ export default function Files() {
             const isLast = i === pathSegments.length - 1;
             return (
               <span key={fullPath} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ color: '#ccc' }}>/</span>
+                <span style={{ color: C.textSecondary }}>/</span>
                 <span
-                  style={{ cursor: 'pointer', color: isLast ? '#333' : BLUE, fontWeight: isLast ? 600 : 400 }}
+                  style={{ cursor: 'pointer', color: isLast ? C.text : C.primary, fontWeight: isLast ? 600 : 400 }}
                   onClick={() => navigateTo(fullPath)}
                 >
                   {seg}
@@ -1075,7 +1086,7 @@ export default function Files() {
       {/* ═══ 3. Toolbar Row ═══ */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '8px 12px', borderBottom: '1px solid #f0f0f0', gap: isMobile ? 4 : 8, flexWrap: 'wrap',
+        padding: '8px 12px', borderBottom: `1px solid ${C.border}`, gap: isMobile ? 4 : 8, flexWrap: 'wrap',
       }}>
         <Space size={6} wrap>
           <Upload
@@ -1097,7 +1108,7 @@ export default function Files() {
               }
             }}
           >
-            <Button size="small" icon={<UploadOutlined />} style={{ background: BLUE, color: '#fff', border: 'none' }}>
+            <Button size="small" icon={<UploadOutlined />} style={{ background: C.primary, color: C.white, border: 'none' }}>
               {t('common.upload')}
             </Button>
           </Upload>
@@ -1109,7 +1120,7 @@ export default function Files() {
           <Button size="small" icon={<SearchOutlined />}
             type={searchVisible ? 'primary' : 'default'}
             onClick={() => { setSearchVisible(!searchVisible); if (searchVisible) clearSearch(); }}
-            style={searchVisible ? { background: BLUE, borderColor: BLUE } : {}}
+            style={searchVisible ? { background: C.primary, borderColor: C.primary } : {}}
           >
             {t('common.search')}
           </Button>
@@ -1128,7 +1139,7 @@ export default function Files() {
               type={showHidden ? 'primary' : 'default'}
               icon={showHidden ? <EyeOutlined /> : <EyeInvisibleOutlined />}
               onClick={() => setShowHidden(!showHidden)}
-              style={showHidden ? { background: BLUE, borderColor: BLUE } : {}}
+              style={showHidden ? { background: C.primary, borderColor: C.primary } : {}}
             />
           </Tooltip>
 
@@ -1149,12 +1160,12 @@ export default function Files() {
           <Tooltip title="List view">
             <Button type={viewMode === 'list' ? 'primary' : 'default'} size="small"
               icon={<UnorderedListOutlined />} onClick={() => setViewMode('list')}
-              style={viewMode === 'list' ? { background: BLUE, borderColor: BLUE } : {}} />
+              style={viewMode === 'list' ? { background: C.primary, borderColor: C.primary } : {}} />
           </Tooltip>
           <Tooltip title="Grid view">
             <Button type={viewMode === 'grid' ? 'primary' : 'default'} size="small"
               icon={<AppstoreOutlined />} onClick={() => setViewMode('grid')}
-              style={viewMode === 'grid' ? { background: BLUE, borderColor: BLUE } : {}} />
+              style={viewMode === 'grid' ? { background: C.primary, borderColor: C.primary } : {}} />
           </Tooltip>
         </Space>
       </div>
@@ -1163,7 +1174,7 @@ export default function Files() {
       {searchVisible && (
         <div style={{
           display: 'flex', alignItems: 'center', padding: '8px 12px',
-          borderBottom: '1px solid #f0f0f0', gap: 8, background: '#fafafa',
+          borderBottom: `1px solid ${C.border}`, gap: 8, background: C.white,
         }}>
           <Input
             placeholder="Search files..."
@@ -1172,18 +1183,18 @@ export default function Files() {
             onPressEnter={handleSearch}
             style={{ maxWidth: 400 }}
             size="small"
-            prefix={<SearchOutlined style={{ color: '#bbb' }} />}
+            prefix={<SearchOutlined style={{ color: C.textSecondary }} />}
             allowClear
           />
           <Button size="small" type="primary" loading={searchLoading} onClick={handleSearch}
-            style={{ background: BLUE, borderColor: BLUE }}>
+            style={{ background: C.primary, borderColor: C.primary }}>
             {t('common.search')}
           </Button>
           {searchResults && (
             <Button size="small" onClick={clearSearch}>Clear results</Button>
           )}
           {searchResults && (
-            <span style={{ fontSize: 12, color: '#888' }}>Found {searchResults.length} result(s)</span>
+            <span style={{ fontSize: 12, color: C.textSecondary }}>Found {searchResults.length} result(s)</span>
           )}
         </div>
       )}
@@ -1225,8 +1236,8 @@ export default function Files() {
                 style={{
                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                   padding: '12px 8px', borderRadius: 8, cursor: 'pointer', textAlign: 'center',
-                  border: selectedRowKeys.includes(file.path) ? `2px solid ${BLUE}` : '2px solid transparent',
-                  background: selectedRowKeys.includes(file.path) ? '#e8f0fe' : '#fafafa',
+                  border: selectedRowKeys.includes(file.path) ? `2px solid ${C.primary}` : '2px solid transparent',
+                  background: selectedRowKeys.includes(file.path) ? C.bg : C.white,
                   transition: 'all 0.15s',
                 }}
                 onClick={(e) => {
@@ -1258,12 +1269,12 @@ export default function Files() {
       {/* ═══ 6. Footer Bar ═══ */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '6px 12px', borderTop: '1px solid #e0e0e0', background: '#fafafa',
-        fontSize: 13, color: '#666', flexWrap: 'wrap', gap: 8,
+        padding: '6px 12px', borderTop: `1px solid ${C.border}`, background: C.white,
+        fontSize: 13, color: C.textSecondary, flexWrap: 'wrap', gap: 8,
       }}>
         <span>
           Total <strong>{dirCount}</strong> director{dirCount !== 1 ? 'ies' : 'y'}, <strong>{fileCount}</strong> file{fileCount !== 1 ? 's' : ''}.
-          {' '}File size: <strong style={{ color: BLUE }}>{totalSize > 0 ? formatSize(totalSize) : 'N/A'}</strong>
+          {' '}File size: <strong style={{ color: C.primary }}>{totalSize > 0 ? formatSize(totalSize) : 'N/A'}</strong>
         </span>
         <Space size={8}>
           <Select
@@ -1296,8 +1307,8 @@ export default function Files() {
         <div
           style={{
             position: 'fixed', left: ctxMenu.x, top: ctxMenu.y,
-            zIndex: 9999, background: '#fff', borderRadius: 8,
-            boxShadow: '0 6px 16px rgba(0,0,0,0.12)', border: '1px solid #e8e8e8',
+            zIndex: 9999, background: C.white, borderRadius: 8,
+            boxShadow: '0 6px 16px rgba(0,0,0,0.12)', border: `1px solid ${C.border}`,
             padding: 4, minWidth: 180,
           }}
           onClick={() => setCtxMenu(null)}
@@ -1305,7 +1316,7 @@ export default function Files() {
           {(getContextMenuItems(ctxMenu.file) ?? []).map((item, idx) => {
             if (!item) return null;
             if ('type' in item && item.type === 'divider') {
-              return <div key={`d-${idx}`} style={{ height: 1, background: '#f0f0f0', margin: '4px 0' }} />;
+              return <div key={`d-${idx}`} style={{ height: 1, background: C.border, margin: '4px 0' }} />;
             }
             const menuItem = item as { key: string; icon?: React.ReactNode; label?: React.ReactNode; danger?: boolean; onClick?: () => void };
             return (
@@ -1314,9 +1325,9 @@ export default function Files() {
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px',
                   cursor: 'pointer', borderRadius: 4, fontSize: 13,
-                  color: menuItem.danger ? '#ff4d4f' : '#333',
+                  color: menuItem.danger ? C.error : C.text,
                 }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = menuItem.danger ? '#fff2f0' : '#f5f5f5'; }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = menuItem.danger ? '#fff2f0' : C.bg; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
                 onClick={() => menuItem.onClick?.()}
               >
@@ -1335,7 +1346,7 @@ export default function Files() {
         onCancel={() => setPermModalOpen(false)}
         onOk={handleSavePermissions}
         okText="Apply"
-        okButtonProps={{ style: { background: BLUE, borderColor: BLUE } }}
+        okButtonProps={{ style: { background: C.primary, borderColor: C.primary } }}
         width={480}
       >
         <div style={{ marginBottom: 16 }}>
@@ -1350,19 +1361,19 @@ export default function Files() {
         <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 16 }}>
           <thead>
-            <tr style={{ background: '#fafafa' }}>
-              <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid #e8e8e8' }}></th>
+            <tr style={{ background: C.bg }}>
+              <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: `1px solid ${C.border}` }}></th>
               {permLabels.map(l => (
-                <th key={l} style={{ padding: '6px 8px', textAlign: 'center', borderBottom: '1px solid #e8e8e8', fontSize: 13 }}>{l}</th>
+                <th key={l} style={{ padding: '6px 8px', textAlign: 'center', borderBottom: `1px solid ${C.border}`, fontSize: 13 }}>{l}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {permGroups.map((group, gi) => (
               <tr key={group}>
-                <td style={{ padding: '6px 8px', fontWeight: 500, borderBottom: '1px solid #f0f0f0' }}>{group}</td>
+                <td style={{ padding: '6px 8px', fontWeight: 500, borderBottom: `1px solid ${C.border}` }}>{group}</td>
                 {[0, 1, 2].map(pi => (
-                  <td key={pi} style={{ textAlign: 'center', padding: '6px 8px', borderBottom: '1px solid #f0f0f0' }}>
+                  <td key={pi} style={{ textAlign: 'center', padding: '6px 8px', borderBottom: `1px solid ${C.border}` }}>
                     <Checkbox
                       checked={permPerms[gi * 3 + pi]}
                       onChange={(e) => handlePermCheckChange(gi * 3 + pi, e.target.checked)}
@@ -1376,11 +1387,11 @@ export default function Files() {
         </div>
         <Space style={{ marginBottom: 12 }} size={12}>
           <div>
-            <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>Owner</div>
+            <div style={{ fontSize: 12, color: C.textSecondary, marginBottom: 4 }}>Owner</div>
             <Input value={permOwner} onChange={(e) => setPermOwner(e.target.value)} style={{ width: isMobile ? 100 : 140 }} size="small" />
           </div>
           <div>
-            <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>Group</div>
+            <div style={{ fontSize: 12, color: C.textSecondary, marginBottom: 4 }}>Group</div>
             <Input value={permGroup} onChange={(e) => setPermGroup(e.target.value)} style={{ width: isMobile ? 100 : 140 }} size="small" />
           </div>
         </Space>
@@ -1408,9 +1419,9 @@ export default function Files() {
         onCancel={() => setRenameModalOpen(false)}
         onOk={handleRename}
         okText={t('common.save')}
-        okButtonProps={{ style: { background: BLUE, borderColor: BLUE } }}
+        okButtonProps={{ style: { background: C.primary, borderColor: C.primary } }}
       >
-        <div style={{ marginBottom: 8, fontSize: 13, color: '#888' }}>Current: {renameFile?.name}</div>
+        <div style={{ marginBottom: 8, fontSize: 13, color: C.textSecondary }}>Current: {renameFile?.name}</div>
         <Input
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
@@ -1427,9 +1438,9 @@ export default function Files() {
         onCancel={() => setNewFolderModalOpen(false)}
         onOk={handleNewFolder}
         okText={t('common.create')}
-        okButtonProps={{ style: { background: BLUE, borderColor: BLUE } }}
+        okButtonProps={{ style: { background: C.primary, borderColor: C.primary } }}
       >
-        <div style={{ marginBottom: 8, fontSize: 13, color: '#888' }}>In: {currentPath}</div>
+        <div style={{ marginBottom: 8, fontSize: 13, color: C.textSecondary }}>In: {currentPath}</div>
         <Input
           placeholder="Folder name"
           value={newFolderName}
@@ -1446,9 +1457,9 @@ export default function Files() {
         onCancel={() => setNewFileModalOpen(false)}
         onOk={handleNewFile}
         okText={t('common.create')}
-        okButtonProps={{ style: { background: BLUE, borderColor: BLUE } }}
+        okButtonProps={{ style: { background: C.primary, borderColor: C.primary } }}
       >
-        <div style={{ marginBottom: 8, fontSize: 13, color: '#888' }}>In: {currentPath}</div>
+        <div style={{ marginBottom: 8, fontSize: 13, color: C.textSecondary }}>In: {currentPath}</div>
         <Input
           placeholder="File name"
           value={newFileName}
@@ -1465,9 +1476,9 @@ export default function Files() {
         onCancel={() => setMoveModalOpen(false)}
         onOk={handleCopyMove}
         okText={moveMode === 'copy' ? 'Copy' : 'Move'}
-        okButtonProps={{ style: { background: BLUE, borderColor: BLUE } }}
+        okButtonProps={{ style: { background: C.primary, borderColor: C.primary } }}
       >
-        <div style={{ marginBottom: 8, fontSize: 13, color: '#888' }}>Source: {moveFile?.path}</div>
+        <div style={{ marginBottom: 8, fontSize: 13, color: C.textSecondary }}>Source: {moveFile?.path}</div>
         <div style={{ marginBottom: 8, fontSize: 13 }}>Destination path:</div>
         <Input
           value={moveDest}
@@ -1484,9 +1495,9 @@ export default function Files() {
         onCancel={() => setCompressModalOpen(false)}
         onOk={handleCompress}
         okText="Compress"
-        okButtonProps={{ style: { background: BLUE, borderColor: BLUE } }}
+        okButtonProps={{ style: { background: C.primary, borderColor: C.primary } }}
       >
-        <div style={{ marginBottom: 8, fontSize: 13, color: '#888' }}>
+        <div style={{ marginBottom: 8, fontSize: 13, color: C.textSecondary }}>
           {compressPaths.length} item(s) selected
         </div>
         <div style={{ marginBottom: 8 }}>
@@ -1514,9 +1525,9 @@ export default function Files() {
         onCancel={() => setDecompressModalOpen(false)}
         onOk={handleDecompress}
         okText="Decompress"
-        okButtonProps={{ style: { background: BLUE, borderColor: BLUE } }}
+        okButtonProps={{ style: { background: C.primary, borderColor: C.primary } }}
       >
-        <div style={{ marginBottom: 8, fontSize: 13, color: '#888' }}>File: {decompressPath}</div>
+        <div style={{ marginBottom: 8, fontSize: 13, color: C.textSecondary }}>File: {decompressPath}</div>
         <div style={{ marginBottom: 4, fontSize: 13 }}>Extract to:</div>
         <Input
           value={decompressDest}
