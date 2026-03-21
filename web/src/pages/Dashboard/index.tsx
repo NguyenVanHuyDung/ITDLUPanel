@@ -160,8 +160,8 @@ export default function Dashboard() {
             <Row gutter={8} justify="space-around" align="middle">
               {/* CPU Load ring */}
               <Col xs={24} sm={8} style={{ textAlign: 'center', marginBottom: 8 }}>
-                <Progress type="circle" percent={cpuPct} size={120} strokeColor="#52c41a" strokeWidth={8}
-                  format={() => <span style={{ fontSize: 26, fontWeight: 700, color: '#52c41a' }}>{cpuPct}%</span>} />
+                <Progress type="circle" percent={cpuPct} size={120} strokeColor="#1565C0" strokeWidth={8}
+                  format={() => <span style={{ fontSize: 26, fontWeight: 700, color: '#1565C0' }}>{cpuPct}%</span>} />
                 <div style={{ marginTop: 8 }}>
                   <Text type="secondary" style={{ fontSize: 12 }}>{getCpuStatusText(cpuPct)}</Text>
                 </div>
@@ -170,8 +170,8 @@ export default function Dashboard() {
 
               {/* CPU usage ring */}
               <Col xs={24} sm={8} style={{ textAlign: 'center', marginBottom: 8 }}>
-                <Progress type="circle" percent={cpuPct} size={120} strokeColor="#1677ff" strokeWidth={8}
-                  format={() => <span style={{ fontSize: 26, fontWeight: 700, color: '#1677ff' }}>{info.cpu.usage_percent.toFixed(1)}%</span>} />
+                <Progress type="circle" percent={cpuPct} size={120} strokeColor="#1E88E5" strokeWidth={8}
+                  format={() => <span style={{ fontSize: 26, fontWeight: 700, color: '#1E88E5' }}>{info.cpu.usage_percent.toFixed(1)}%</span>} />
                 <div style={{ marginTop: 8 }}>
                   <Text type="secondary" style={{ fontSize: 12 }}>{info.cpu.cores} Core(s)</Text>
                 </div>
@@ -180,8 +180,8 @@ export default function Dashboard() {
 
               {/* RAM ring */}
               <Col xs={24} sm={8} style={{ textAlign: 'center', marginBottom: 8 }}>
-                <Progress type="circle" percent={memPct} size={120} strokeColor="#fa8c16" strokeWidth={8}
-                  format={() => <span style={{ fontSize: 26, fontWeight: 700, color: '#fa8c16' }}>{info.memory.usage_percent.toFixed(1)}%</span>} />
+                <Progress type="circle" percent={memPct} size={120} strokeColor="#0288D1" strokeWidth={8}
+                  format={() => <span style={{ fontSize: 26, fontWeight: 700, color: '#0288D1' }}>{info.memory.usage_percent.toFixed(1)}%</span>} />
                 <div style={{ marginTop: 8 }}>
                   <Text type="secondary" style={{ fontSize: 12 }}>
                     {formatMB(info.memory.used)} / {formatMB(info.memory.total)} (MB)
@@ -202,14 +202,14 @@ export default function Dashboard() {
                 <Text strong style={{ fontSize: 13 }}>/</Text>
                 <Text type="secondary" style={{ fontSize: 12 }}>{diskPct}%</Text>
               </div>
-              <Progress percent={diskPct} strokeColor={diskPct > 80 ? '#ff4d4f' : '#52c41a'} showInfo={false} />
+              <Progress percent={diskPct} strokeColor={diskPct > 80 ? '#ff4d4f' : '#1565C0'} showInfo={false} />
               <Text type="secondary" style={{ fontSize: 12, marginTop: 4, display: 'block' }}>
                 {formatGB(info.disk.used)} / {formatGB(info.disk.total)} GB
               </Text>
             </div>
             <Progress type="circle" percent={diskPct} size={110}
-              strokeColor={diskPct > 80 ? '#ff4d4f' : '#52c41a'} strokeWidth={10}
-              format={() => <span style={{ fontSize: 22, fontWeight: 700, color: diskPct > 80 ? '#ff4d4f' : '#52c41a' }}>{diskPct}%</span>} />
+              strokeColor={diskPct > 80 ? '#ff4d4f' : '#1565C0'} strokeWidth={10}
+              format={() => <span style={{ fontSize: 22, fontWeight: 700, color: diskPct > 80 ? '#ff4d4f' : '#1565C0' }}>{diskPct}%</span>} />
           </Card>
         </Col>
       </Row>
@@ -221,18 +221,18 @@ export default function Dashboard() {
         <Row>
           {/* Sites */}
           <Col xs={12} sm={6} style={{ textAlign: 'center', padding: '8px 16px' }}>
-            <GlobalOutlined style={{ fontSize: 22, color: '#1677ff', marginBottom: 6 }} />
+            <GlobalOutlined style={{ fontSize: 22, color: '#1565C0', marginBottom: 6 }} />
             <div><Text strong style={{ fontSize: 14 }}>Site – ALL</Text></div>
             <div style={{ marginTop: 8, lineHeight: '26px' }}>
-              <div><Text style={{ color: '#52c41a' }}>Running: {info.counts.sites}</Text></div>
-              <div><Text style={{ color: '#ff4d4f' }}>Stopped: 0</Text></div>
+              <div><Text style={{ color: '#4CAF50' }}>Running: {info.counts.sites}</Text></div>
+              <div><Text style={{ color: '#F44336' }}>Stopped: 0</Text></div>
               <div><Text type="secondary">ALL: {info.counts.sites}</Text></div>
             </div>
           </Col>
 
           {/* FTP */}
           <Col xs={12} sm={6} style={{ textAlign: 'center', padding: '8px 16px', borderLeft: '1px solid #f0f0f0' }}>
-            <FolderOutlined style={{ fontSize: 22, color: '#fa8c16', marginBottom: 6 }} />
+            <FolderOutlined style={{ fontSize: 22, color: '#1E88E5', marginBottom: 6 }} />
             <div><Text strong style={{ fontSize: 14 }}>FTP</Text></div>
             <div style={{ marginTop: 8, lineHeight: '26px' }}>
               <div><Text type="secondary">Accounts: {info.counts.ftp_accounts}</Text></div>
@@ -241,7 +241,7 @@ export default function Dashboard() {
 
           {/* Database */}
           <Col xs={12} sm={6} style={{ textAlign: 'center', padding: '8px 16px', borderLeft: '1px solid #f0f0f0' }}>
-            <DatabaseOutlined style={{ fontSize: 22, color: '#722ed1', marginBottom: 6 }} />
+            <DatabaseOutlined style={{ fontSize: 22, color: '#0D47A1', marginBottom: 6 }} />
             <div><Text strong style={{ fontSize: 14 }}>Database</Text></div>
             <div style={{ marginTop: 8, lineHeight: '26px' }}>
               <div><Text type="secondary">ALL: {info.counts.databases}</Text></div>
@@ -250,7 +250,7 @@ export default function Dashboard() {
 
           {/* Security */}
           <Col xs={12} sm={6} style={{ textAlign: 'center', padding: '8px 16px', borderLeft: '1px solid #f0f0f0' }}>
-            <SafetyOutlined style={{ fontSize: 22, color: '#52c41a', marginBottom: 6 }} />
+            <SafetyOutlined style={{ fontSize: 22, color: '#0288D1', marginBottom: 6 }} />
             <div><Text strong style={{ fontSize: 14 }}>Security</Text></div>
             <div style={{ marginTop: 8, lineHeight: '26px' }}>
               <div><Text type="secondary">Security Risk: 0</Text></div>
@@ -294,7 +294,7 @@ export default function Dashboard() {
                         </div>
                         <div style={{ fontSize: 11, color: '#999' }}>{sw.version}</div>
                       </div>
-                      <CaretRightOutlined style={{ color: running ? '#52c41a' : '#d9d9d9', fontSize: 16, flexShrink: 0 }} />
+                      <CaretRightOutlined style={{ color: running ? '#4CAF50' : '#d9d9d9', fontSize: 16, flexShrink: 0 }} />
                     </div>
                   );
                 })}
@@ -311,11 +311,11 @@ export default function Dashboard() {
             extra={
               <Space size="middle">
                 <Text style={{ fontSize: 11 }}>
-                  <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#1677ff', marginRight: 4, verticalAlign: 'middle' }} />
+                  <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#1565C0', marginRight: 4, verticalAlign: 'middle' }} />
                   Upstream
                 </Text>
                 <Text style={{ fontSize: 11 }}>
-                  <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#52c41a', marginRight: 4, verticalAlign: 'middle' }} />
+                  <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#42A5F5', marginRight: 4, verticalAlign: 'middle' }} />
                   Downstream
                 </Text>
               </Space>
@@ -336,8 +336,8 @@ export default function Dashboard() {
                 <XAxis dataKey="time" tick={{ fontSize: 10 }} />
                 <YAxis tick={{ fontSize: 10 }} tickFormatter={formatNetworkSize} width={65} />
                 <RechartsTooltip formatter={(value: unknown) => formatNetworkSize(Number(value ?? 0))} labelStyle={{ fontSize: 11 }} contentStyle={{ fontSize: 12 }} />
-                <Area type="monotone" dataKey="upstream" name="Upstream" stroke="#1677ff" fill="#1677ff" fillOpacity={0.15} />
-                <Area type="monotone" dataKey="downstream" name="Downstream" stroke="#52c41a" fill="#52c41a" fillOpacity={0.15} />
+                <Area type="monotone" dataKey="upstream" name="Upstream" stroke="#1565C0" fill="#1565C0" fillOpacity={0.15} />
+                <Area type="monotone" dataKey="downstream" name="Downstream" stroke="#42A5F5" fill="#42A5F5" fillOpacity={0.15} />
               </AreaChart>
             </ResponsiveContainer>
           </Card>

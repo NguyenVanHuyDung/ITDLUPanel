@@ -21,7 +21,7 @@
 
 body {
   margin: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'JetBrainsMono Nerd Font', 'JetBrains Mono', monospace;
   background-color: var(--color-bg);
   color: var(--color-text);
 }
@@ -39,5 +39,5 @@ body {
 
 /* Terminal font */
 .terminal-font {
-  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-family: 'JetBrainsMono Nerd Font', 'JetBrains Mono', monospace;
 }
