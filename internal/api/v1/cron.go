@@ -30,6 +30,7 @@ func (h *CronHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, cronMW gin.Han
 		crons.DELETE("/:id", h.DeleteCron)
 		crons.PUT("/:id/status", h.SetStatus)
 		crons.GET("/:id/log", h.GetLog)
+		crons.POST("/:id/run", h.RunNow)
 	}
 }
 
@@ -203,4 +204,20 @@ func (h *CronHandler) GetLog(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"content": log})
+}
+
+// RunNow executes a cron job immediately and returns the output.
+func (h *CronHandler) RunNow(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+
+	output, err := h.cronService.RunNow(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"output": output})
 }

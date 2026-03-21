@@ -294,6 +294,37 @@ func (s *CronService) GetLog(id int64) (string, error) {
 	return string(data), nil
 }
 
+// RunNow executes a cron job immediately in the background and returns the output.
+func (s *CronService) RunNow(id int64) (string, error) {
+	job, err := s.GetByID(id)
+	if err != nil {
+		return "", err
+	}
+
+	fullCmd := s.buildCommand(job.Type, job.Command, id)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	res, err := system.Exec(ctx, "bash", "-c", fullCmd)
+
+	// Update last_run
+	now := time.Now()
+	status := 0
+	if err == nil {
+		status = 1
+	}
+	s.db.Exec("UPDATE cron_jobs SET last_run = ?, last_status = ? WHERE id = ?", now, status, id)
+
+	output := ""
+	if res != nil {
+		output = res.Stdout + res.Stderr
+	}
+	if err != nil {
+		return output, apperrors.Wrap(err, apperrors.ErrInternal, "command execution failed")
+	}
+	return output, nil
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------

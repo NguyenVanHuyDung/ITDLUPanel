@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Table, Card, Button, Modal, Form, Input, Select, Tabs, Space, Tag, Drawer, Typography, message, Popconfirm, Row, Col } from 'antd';
+import { Table, Card, Button, Modal, Form, Input, Select, Tabs, Space, Tag, Drawer, Typography, message, Popconfirm, Row, Col, Tooltip, InputNumber } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, ReloadOutlined, EditOutlined, FileTextOutlined,
   CheckCircleOutlined, StopOutlined, ThunderboltOutlined, DatabaseOutlined,
   CloudServerOutlined, SafetyCertificateOutlined, ClearOutlined, FolderOutlined,
+  PlayCircleOutlined, ClockCircleOutlined, CaretRightOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import type { ApiResponse } from '@/types';
@@ -30,6 +31,79 @@ interface CronTemplate {
   type: string;
   icon: React.ReactNode;
   color: string;
+}
+
+// Human-readable cron description
+function cronToHuman(expr: string): string {
+  const parts = expr.trim().split(/\s+/);
+  if (parts.length !== 5) return expr;
+  const [minute, hour, dom, month, dow] = parts;
+
+  const dayNames: Record<string, string> = { '0': 'Sunday', '1': 'Monday', '2': 'Tuesday', '3': 'Wednesday', '4': 'Thursday', '5': 'Friday', '6': 'Saturday', '7': 'Sunday' };
+  const monthNames: Record<string, string> = { '1': 'Jan', '2': 'Feb', '3': 'Mar', '4': 'Apr', '5': 'May', '6': 'Jun', '7': 'Jul', '8': 'Aug', '9': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dec' };
+
+  const pad = (v: string) => v.padStart(2, '0');
+  const timeStr = (h: string, m: string) => `${pad(h)}:${pad(m)}`;
+
+  // Every minute
+  if (expr === '* * * * *') return 'Every minute';
+  // Every N minutes
+  if (minute.startsWith('*/') && hour === '*' && dom === '*' && month === '*' && dow === '*')
+    return `Every ${minute.slice(2)} minutes`;
+  // Every N hours
+  if (minute !== '*' && hour.startsWith('*/') && dom === '*' && month === '*' && dow === '*')
+    return `Every ${hour.slice(2)} hours at :${pad(minute)}`;
+  // Every hour at :MM
+  if (minute !== '*' && !minute.includes('/') && hour === '*' && dom === '*' && month === '*' && dow === '*')
+    return `Every hour at :${pad(minute)}`;
+  // Daily at HH:MM
+  if (minute !== '*' && hour !== '*' && !minute.includes('/') && !hour.includes('/') && dom === '*' && month === '*' && dow === '*')
+    return `Every day at ${timeStr(hour, minute)}`;
+  // Weekly on DOW at HH:MM
+  if (minute !== '*' && hour !== '*' && dom === '*' && month === '*' && dow !== '*' && !dow.includes('/')) {
+    const dayList = dow.split(',').map(d => dayNames[d] || d).join(', ');
+    return `Every ${dayList} at ${timeStr(hour, minute)}`;
+  }
+  // Monthly on DOM at HH:MM
+  if (minute !== '*' && hour !== '*' && dom !== '*' && !dom.includes('/') && month === '*' && dow === '*') {
+    const suffix = dom === '1' ? 'st' : dom === '2' ? 'nd' : dom === '3' ? 'rd' : 'th';
+    return `Monthly on the ${dom}${suffix} at ${timeStr(hour, minute)}`;
+  }
+  // Yearly
+  if (minute !== '*' && hour !== '*' && dom !== '*' && month !== '*' && dow === '*') {
+    return `Yearly on ${monthNames[month] || month} ${dom} at ${timeStr(hour, minute)}`;
+  }
+  return expr;
+}
+
+// Build cron expression from schedule builder state
+interface ScheduleState {
+  mode: 'preset' | 'custom' | 'builder';
+  preset: string;
+  custom: string;
+  freq: 'minute' | 'hour' | 'day' | 'week' | 'month';
+  minute: number;
+  hour: number;
+  dom: number;
+  dow: number;
+  interval: number;
+}
+
+function buildCronFromState(s: ScheduleState): string {
+  switch (s.freq) {
+    case 'minute':
+      return s.interval <= 1 ? '* * * * *' : `*/${s.interval} * * * *`;
+    case 'hour':
+      return `${s.minute} * * * *`;
+    case 'day':
+      return `${s.minute} ${s.hour} * * *`;
+    case 'week':
+      return `${s.minute} ${s.hour} * * ${s.dow}`;
+    case 'month':
+      return `${s.minute} ${s.hour} ${s.dom} * *`;
+    default:
+      return '* * * * *';
+  }
 }
 
 const CRON_TEMPLATES: CronTemplate[] = [
@@ -117,7 +191,12 @@ export default function Cron() {
   const [logContent, setLogContent] = useState('');
   const [logLoading, setLogLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [runningIds, setRunningIds] = useState<Set<number>>(new Set());
   const [form] = Form.useForm();
+  const [schedMode, setSchedMode] = useState<'builder' | 'custom'>('builder');
+  const [schedState, setSchedState] = useState<ScheduleState>({
+    mode: 'builder', preset: '', custom: '', freq: 'day', minute: 0, hour: 2, dom: 1, dow: 0, interval: 5,
+  });
 
   const fetchJobs = useCallback(async () => {
     setLoading(true);
@@ -134,12 +213,15 @@ export default function Cron() {
   useEffect(() => { fetchJobs(); }, [fetchJobs]);
 
   const handleSubmit = async (values: Record<string, string>) => {
+    // Build schedule from builder or custom
+    const schedule = schedMode === 'builder' ? buildCronFromState(schedState) : values.schedule;
     setSubmitting(true);
     try {
+      const payload = { ...values, schedule };
       if (editingJob) {
-        await api.put(`/crons/${editingJob.id}`, values);
+        await api.put(`/crons/${editingJob.id}`, payload);
       } else {
-        await api.post('/crons', values);
+        await api.post('/crons', payload);
       }
       message.success(t('common.success'));
       setModalOpen(false);
@@ -155,7 +237,7 @@ export default function Cron() {
 
   const handleToggleStatus = async (record: CronJob) => {
     try {
-      await api.put(`/crons/${record.id}`, { ...record, status: record.status === 1 ? 0 : 1 });
+      await api.put(`/crons/${record.id}/status`, { enabled: record.status !== 1 });
       message.success(t('common.success'));
       fetchJobs();
     } catch {
@@ -170,6 +252,19 @@ export default function Cron() {
       fetchJobs();
     } catch {
       message.error(t('common.error'));
+    }
+  };
+
+  const handleRunNow = async (record: CronJob) => {
+    setRunningIds(prev => new Set(prev).add(record.id));
+    try {
+      await api.post(`/crons/${record.id}/run`);
+      message.success(`"${record.name}" executed successfully`);
+      fetchJobs();
+    } catch {
+      message.error(`Failed to run "${record.name}"`);
+    } finally {
+      setRunningIds(prev => { const s = new Set(prev); s.delete(record.id); return s; });
     }
   };
 
@@ -190,22 +285,39 @@ export default function Cron() {
   const openEdit = (record: CronJob) => {
     setEditingJob(record);
     form.setFieldsValue(record);
+    // Try to detect if it's a common pattern for builder mode
+    setSchedMode('custom');
+    form.setFieldsValue({ schedule: record.schedule });
     setModalOpen(true);
   };
 
   const openCreate = (template?: CronTemplate) => {
     setEditingJob(null);
     form.resetFields();
+    setSchedMode('builder');
+    setSchedState({ mode: 'builder', preset: '', custom: '', freq: 'day', minute: 0, hour: 2, dom: 1, dow: 0, interval: 5 });
     if (template) {
       form.setFieldsValue({
         name: template.name,
-        schedule: template.schedule,
         command: template.command,
         type: template.type,
       });
+      // Set schedule in custom mode for templates
+      setSchedMode('custom');
+      form.setFieldsValue({ schedule: template.schedule });
     }
     setModalOpen(true);
   };
+
+  const dayOptions = [
+    { label: 'Sunday', value: 0 },
+    { label: 'Monday', value: 1 },
+    { label: 'Tuesday', value: 2 },
+    { label: 'Wednesday', value: 3 },
+    { label: 'Thursday', value: 4 },
+    { label: 'Friday', value: 5 },
+    { label: 'Saturday', value: 6 },
+  ];
 
   const columns = [
     {
@@ -218,7 +330,21 @@ export default function Cron() {
       title: 'Schedule',
       dataIndex: 'schedule',
       key: 'schedule',
-      render: (val: string) => <code style={{ fontFamily: 'monospace', background: '#f5f5f5', padding: '2px 8px', borderRadius: 4 }}>{val}</code>,
+      render: (val: string) => {
+        const human = cronToHuman(val);
+        const isHumanized = human !== val;
+        return (
+          <Tooltip title={`Cron: ${val}`}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <ClockCircleOutlined style={{ color: '#1677ff', fontSize: 14 }} />
+              <span style={{ fontWeight: 500 }}>{human}</span>
+              {isHumanized && (
+                <code style={{ fontSize: 11, color: '#999', background: '#f5f5f5', padding: '1px 6px', borderRadius: 3 }}>{val}</code>
+              )}
+            </div>
+          </Tooltip>
+        );
+      },
     },
     {
       title: 'Command',
@@ -251,9 +377,21 @@ export default function Cron() {
     {
       title: t('common.actions'),
       key: 'actions',
-      width: 280,
+      width: 320,
       render: (_: unknown, record: CronJob) => (
         <Space size="small" wrap>
+          <Tooltip title="Run now">
+            <Button
+              size="small"
+              type="primary"
+              icon={<CaretRightOutlined />}
+              loading={runningIds.has(record.id)}
+              onClick={() => handleRunNow(record)}
+              style={{ background: '#52c41a', borderColor: '#52c41a' }}
+            >
+              Run
+            </Button>
+          </Tooltip>
           <Button size="small" type={record.status === 1 ? 'default' : 'primary'} onClick={() => handleToggleStatus(record)}>
             {record.status === 1 ? t('common.disable') : t('common.enable')}
           </Button>
@@ -269,25 +407,82 @@ export default function Cron() {
     },
   ];
 
-  const cronHelperText = (
-    <div style={{ fontFamily: 'monospace', fontSize: 12, color: '#888', lineHeight: '1.8' }}>
-      ┌──────────── minute (0–59)<br />
-      │ ┌────────── hour (0–23)<br />
-      │ │ ┌──────── day of month (1–31)<br />
-      │ │ │ ┌────── month (1–12)<br />
-      │ │ │ │ ┌──── day of week (0–7, Sun=0 or 7)<br />
-      * &nbsp;* &nbsp;* &nbsp;* &nbsp;*
+  const scheduleBuilder = (
+    <div style={{ border: '1px solid #d9d9d9', borderRadius: 8, padding: 16, background: '#fafafa' }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16 }}>
+        <Text strong>Run every:</Text>
+        <Select
+          value={schedState.freq}
+          style={{ width: 140 }}
+          onChange={(v) => setSchedState(prev => ({ ...prev, freq: v }))}
+          options={[
+            { label: 'N minutes', value: 'minute' },
+            { label: 'Hour', value: 'hour' },
+            { label: 'Day', value: 'day' },
+            { label: 'Week', value: 'week' },
+            { label: 'Month', value: 'month' },
+          ]}
+        />
+      </div>
+
+      {schedState.freq === 'minute' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Text>Every</Text>
+          <InputNumber min={1} max={59} value={schedState.interval} onChange={(v) => setSchedState(prev => ({ ...prev, interval: v ?? 5 }))} style={{ width: 80 }} />
+          <Text>minutes</Text>
+        </div>
+      )}
+
+      {schedState.freq === 'hour' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Text>At minute</Text>
+          <InputNumber min={0} max={59} value={schedState.minute} onChange={(v) => setSchedState(prev => ({ ...prev, minute: v ?? 0 }))} style={{ width: 80 }} />
+        </div>
+      )}
+
+      {schedState.freq === 'day' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <Text>At</Text>
+          <InputNumber min={0} max={23} value={schedState.hour} onChange={(v) => setSchedState(prev => ({ ...prev, hour: v ?? 0 }))} style={{ width: 70 }} addonAfter="h" />
+          <InputNumber min={0} max={59} value={schedState.minute} onChange={(v) => setSchedState(prev => ({ ...prev, minute: v ?? 0 }))} style={{ width: 70 }} addonAfter="m" />
+        </div>
+      )}
+
+      {schedState.freq === 'week' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Text>On</Text>
+            <Select value={schedState.dow} options={dayOptions} style={{ width: 140 }} onChange={(v) => setSchedState(prev => ({ ...prev, dow: v }))} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Text>At</Text>
+            <InputNumber min={0} max={23} value={schedState.hour} onChange={(v) => setSchedState(prev => ({ ...prev, hour: v ?? 0 }))} style={{ width: 70 }} addonAfter="h" />
+            <InputNumber min={0} max={59} value={schedState.minute} onChange={(v) => setSchedState(prev => ({ ...prev, minute: v ?? 0 }))} style={{ width: 70 }} addonAfter="m" />
+          </div>
+        </div>
+      )}
+
+      {schedState.freq === 'month' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Text>On day</Text>
+            <InputNumber min={1} max={31} value={schedState.dom} onChange={(v) => setSchedState(prev => ({ ...prev, dom: v ?? 1 }))} style={{ width: 80 }} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Text>At</Text>
+            <InputNumber min={0} max={23} value={schedState.hour} onChange={(v) => setSchedState(prev => ({ ...prev, hour: v ?? 0 }))} style={{ width: 70 }} addonAfter="h" />
+            <InputNumber min={0} max={59} value={schedState.minute} onChange={(v) => setSchedState(prev => ({ ...prev, minute: v ?? 0 }))} style={{ width: 70 }} addonAfter="m" />
+          </div>
+        </div>
+      )}
+
+      <div style={{ marginTop: 12, padding: '8px 12px', background: '#e6f4ff', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <ClockCircleOutlined style={{ color: '#1677ff' }} />
+        <Text style={{ color: '#1677ff' }}>{cronToHuman(buildCronFromState(schedState))}</Text>
+        <code style={{ marginLeft: 'auto', fontSize: 12, color: '#666' }}>{buildCronFromState(schedState)}</code>
+      </div>
     </div>
   );
-
-  const presets = [
-    { label: 'Every minute', value: '* * * * *' },
-    { label: 'Every 5 minutes', value: '*/5 * * * *' },
-    { label: 'Every hour', value: '0 * * * *' },
-    { label: 'Every day at midnight', value: '0 0 * * *' },
-    { label: 'Every Sunday', value: '0 0 * * 0' },
-    { label: 'Every month', value: '0 0 1 * *' },
-  ];
 
   return (
     <div>
@@ -343,7 +538,12 @@ export default function Cron() {
                       </div>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <code style={{ fontSize: 12, background: '#f5f5f5', padding: '2px 8px', borderRadius: 4 }}>{tpl.schedule}</code>
+                      <Tooltip title={`Cron: ${tpl.schedule}`}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <ClockCircleOutlined style={{ color: '#1677ff', fontSize: 12 }} />
+                          <span style={{ fontSize: 12, color: '#555' }}>{cronToHuman(tpl.schedule)}</span>
+                        </div>
+                      </Tooltip>
                       <Button type="primary" size="small" icon={<PlusOutlined />} onClick={(e) => { e.stopPropagation(); openCreate(tpl); }}>
                         Use
                       </Button>
@@ -362,7 +562,7 @@ export default function Cron() {
         onCancel={() => { setModalOpen(false); setEditingJob(null); form.resetFields(); }}
         onOk={() => form.submit()}
         confirmLoading={submitting}
-        width={560}
+        width={600}
       >
         <Form form={form} layout="vertical" onFinish={handleSubmit} initialValues={{ type: 'shell' }}>
           <Form.Item name="name" label={t('common.name')} rules={[{ required: true }]}>
@@ -371,16 +571,39 @@ export default function Cron() {
           <Form.Item name="type" label={t('common.type')} rules={[{ required: true }]}>
             <Select options={[{ label: 'Shell Command', value: 'shell' }, { label: 'URL (wget/curl)', value: 'url' }]} />
           </Form.Item>
-          <Form.Item name="schedule" label="Schedule" rules={[{ required: true }]} extra={cronHelperText}>
-            <Select
-              mode="tags"
-              maxCount={1}
-              placeholder="Select a preset or type custom schedule"
-              options={presets}
-              onChange={(vals: string[]) => form.setFieldsValue({ schedule: vals[vals.length - 1] ?? '' })}
-              // Allow user to type custom cron expression
+
+          <Form.Item label="Schedule" required>
+            <Tabs
+              activeKey={schedMode}
+              onChange={(k) => setSchedMode(k as 'builder' | 'custom')}
+              size="small"
+              items={[
+                {
+                  key: 'builder',
+                  label: <span><ClockCircleOutlined /> Visual</span>,
+                  children: scheduleBuilder,
+                },
+                {
+                  key: 'custom',
+                  label: <span><EditOutlined /> Cron Expression</span>,
+                  children: (
+                    <div>
+                      <Form.Item name="schedule" noStyle rules={schedMode === 'custom' ? [{ required: true, message: 'Enter cron expression' }] : []}>
+                        <Input
+                          placeholder="* * * * *"
+                          style={{ fontFamily: 'monospace' }}
+                        />
+                      </Form.Item>
+                      <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#999', marginTop: 8, lineHeight: 1.6 }}>
+                        minute(0-59) hour(0-23) day(1-31) month(1-12) weekday(0-7)
+                      </div>
+                    </div>
+                  ),
+                },
+              ]}
             />
           </Form.Item>
+
           <Form.Item
             noStyle
             shouldUpdate={(prev: Record<string, string>, cur: Record<string, string>) => prev.type !== cur.type}
