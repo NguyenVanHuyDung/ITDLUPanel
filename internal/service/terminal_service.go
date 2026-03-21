@@ -57,11 +57,14 @@ func (s *TerminalService) CreateSession(userID int64, username, cwd string) (*Te
 		fmt.Sprintf("HOME=%s", os.Getenv("HOME")),
 	)
 
-	// Start in the requested working directory if provided and valid.
+	// Start in the requested working directory, defaulting to user home.
 	if cwd != "" {
 		if info, err := os.Stat(cwd); err == nil && info.IsDir() {
 			cmd.Dir = cwd
 		}
+	}
+	if cmd.Dir == "" {
+		cmd.Dir = os.Getenv("HOME")
 	}
 
 	ptmx, err := pty.Start(cmd)
