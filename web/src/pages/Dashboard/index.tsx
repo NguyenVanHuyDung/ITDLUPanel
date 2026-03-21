@@ -309,10 +309,8 @@ export default function Dashboard() {
 
         {/* — Disk — */}
         <Col xs={24} lg={9}>
-          <Popover content={diskPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom" overlayStyle={{ maxWidth: 400 }}>
-          <div style={{ height: '100%' }}>
           <Card title={<><span role="img" aria-label="disk">💿</span> Disk</>} size="small"
-            style={{ height: '100%', cursor: 'pointer' }}
+            style={{ height: '100%' }}
             styles={{ body: { padding: '24px 16px', display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 20, height: 'calc(100% - 40px)' }, header: { fontWeight: 600 } }}>
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -324,12 +322,14 @@ export default function Dashboard() {
                 {formatGB(info.disk.used)} / {formatGB(info.disk.total)} GB
               </Text>
             </div>
-            <Progress type="circle" percent={diskPct} size={isMobile ? 80 : 110}
-              strokeColor={diskPct > 80 ? '#ff4d4f' : '#1565C0'} strokeWidth={10}
-              format={() => <span style={{ fontSize: isMobile ? 16 : 22, fontWeight: 700, color: diskPct > 80 ? '#ff4d4f' : '#1565C0' }}>{diskPct}%</span>} />
+            <Popover content={diskPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom" overlayStyle={{ maxWidth: 400 }}>
+              <div style={{ cursor: 'pointer', display: 'inline-block', padding: 4 }}>
+                <Progress type="circle" percent={diskPct} size={isMobile ? 80 : 110}
+                  strokeColor={diskPct > 80 ? '#ff4d4f' : '#1565C0'} strokeWidth={10}
+                  format={() => <span style={{ fontSize: isMobile ? 16 : 22, fontWeight: 700, color: diskPct > 80 ? '#ff4d4f' : '#1565C0' }}>{diskPct}%</span>} />
+              </div>
+            </Popover>
           </Card>
-          </div>
-          </Popover>
         </Col>
       </Row>
 
