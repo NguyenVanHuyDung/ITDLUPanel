@@ -41,7 +41,7 @@ type Database struct {
 	Name         string `json:"name"`
 	DBType       string `json:"db_type"`
 	Username     string `json:"username"`
-	Password     string `json:"-"`
+	Password     string `json:"password,omitempty"`
 	Charset      string `json:"charset"`
 	Collation    string `json:"collation"`
 	RemoteAccess string `json:"remote_access"`
@@ -136,7 +136,7 @@ func (s *DatabaseService) List(page, pageSize int) ([]*Database, int, error) {
 
 	offset := (page - 1) * pageSize
 	rows, err := s.db.Query(
-		`SELECT id, name, db_type, username, charset, collation, remote_access, size, created_by, created_at
+		`SELECT id, name, db_type, username, password, charset, collation, remote_access, size, created_by, created_at
 		 FROM databases ORDER BY id DESC LIMIT ? OFFSET ?`,
 		pageSize, offset,
 	)
@@ -148,7 +148,7 @@ func (s *DatabaseService) List(page, pageSize int) ([]*Database, int, error) {
 	var databases []*Database
 	for rows.Next() {
 		d := &Database{}
-		if err := rows.Scan(&d.ID, &d.Name, &d.DBType, &d.Username, &d.Charset,
+		if err := rows.Scan(&d.ID, &d.Name, &d.DBType, &d.Username, &d.Password, &d.Charset,
 			&d.Collation, &d.RemoteAccess, &d.Size, &d.CreatedBy, &d.CreatedAt); err != nil {
 			return nil, 0, apperrors.Wrap(err, apperrors.ErrInternal, "failed to scan database row")
 		}
@@ -162,9 +162,9 @@ func (s *DatabaseService) List(page, pageSize int) ([]*Database, int, error) {
 func (s *DatabaseService) GetByID(id int64) (*Database, error) {
 	d := &Database{}
 	err := s.db.QueryRow(
-		`SELECT id, name, db_type, username, charset, collation, remote_access, size, created_by, created_at
+		`SELECT id, name, db_type, username, password, charset, collation, remote_access, size, created_by, created_at
 		 FROM databases WHERE id = ?`, id,
-	).Scan(&d.ID, &d.Name, &d.DBType, &d.Username, &d.Charset,
+	).Scan(&d.ID, &d.Name, &d.DBType, &d.Username, &d.Password, &d.Charset,
 		&d.Collation, &d.RemoteAccess, &d.Size, &d.CreatedBy, &d.CreatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {

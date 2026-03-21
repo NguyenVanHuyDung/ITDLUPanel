@@ -68,7 +68,7 @@ export interface Site {
 
 export interface Database {
   id: number; name: string; db_type: string; username: string;
-  charset: string; size: number; created_at: string;
+  password?: string; charset: string; size: number; created_at: string;
 }
 
 export interface FTPAccount {

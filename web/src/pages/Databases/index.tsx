@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Table, Card, Button, Modal, Form, Input, Select, Space, Tag, message, Typography, Popconfirm, Alert } from 'antd';
-import { PlusOutlined, DeleteOutlined, KeyOutlined, CloudDownloadOutlined, ReloadOutlined, DatabaseOutlined, CopyOutlined, LinkOutlined } from '@ant-design/icons';
+import { Table, Card, Button, Modal, Form, Input, Select, Space, Tag, message, Typography, Popconfirm, Alert, Tooltip } from 'antd';
+import { PlusOutlined, DeleteOutlined, KeyOutlined, CloudDownloadOutlined, ReloadOutlined, DatabaseOutlined, CopyOutlined, LinkOutlined, EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
 import type { Database } from '@/types';
 import RequireSoftware from '@/components/RequireSoftware';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 
 const formatSize = (bytes: number) => {
   if (bytes < 1024) return bytes + ' B';
@@ -31,12 +31,27 @@ function DatabasesContent() {
   const [form] = Form.useForm();
   const [pwForm] = Form.useForm();
   const [pmaInstalled, setPmaInstalled] = useState<boolean | null>(null);
+  const [visiblePasswords, setVisiblePasswords] = useState<Set<number>>(new Set());
+
+  const togglePasswordVisibility = (id: number) => {
+    setVisiblePasswords(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    message.success(`${label} copied`);
+  };
 
   const checkPma = useCallback(async () => {
     try {
       const { data: resp } = await api.get('/software');
-      const list = resp.data || [];
-      const pma = list.find((s: { name: string; installed: boolean }) => s.name === 'phpmyadmin');
+      const sw = resp.data || {};
+      const available = sw.available || [];
+      const pma = available.find((s: { name: string; installed: boolean }) => s.name === 'phpmyadmin');
       setPmaInstalled(pma?.installed ?? false);
     } catch {
       setPmaInstalled(false);
@@ -113,10 +128,45 @@ function DatabasesContent() {
   const columns = [
     { title: t('databases.db_name'), dataIndex: 'name', key: 'name', render: (name: string) => <><DatabaseOutlined style={{ marginRight: 8 }} />{name}</> },
     { title: t('databases.db_type'), dataIndex: 'db_type', key: 'type', render: (v: string) => <Tag color={v === 'mysql' ? 'blue' : v === 'postgresql' ? 'cyan' : 'default'}>{v?.toUpperCase()}</Tag> },
-    { title: t('databases.db_user'), dataIndex: 'username', key: 'username' },
+    {
+      title: t('databases.db_user'),
+      dataIndex: 'username',
+      key: 'username',
+      render: (username: string) => (
+        <Space size={4}>
+          <Text code>{username}</Text>
+          <Tooltip title="Copy username">
+            <CopyOutlined style={{ cursor: 'pointer', color: '#1677ff', fontSize: 12 }} onClick={() => copyToClipboard(username, 'Username')} />
+          </Tooltip>
+        </Space>
+      ),
+    },
+    {
+      title: 'Password',
+      key: 'password',
+      width: 200,
+      render: (_: unknown, r: Database) => {
+        const visible = visiblePasswords.has(r.id);
+        const pw = r.password || '••••••••';
+        return (
+          <Space size={4}>
+            <Text code style={{ minWidth: 80, display: 'inline-block' }}>
+              {visible ? r.password || '—' : '••••••••'}
+            </Text>
+            <Tooltip title={visible ? 'Hide' : 'Show'}>
+              <Button type="text" size="small" icon={visible ? <EyeInvisibleOutlined /> : <EyeOutlined />} onClick={() => togglePasswordVisibility(r.id)} />
+            </Tooltip>
+            {r.password && (
+              <Tooltip title="Copy password">
+                <CopyOutlined style={{ cursor: 'pointer', color: '#1677ff', fontSize: 12 }} onClick={() => copyToClipboard(r.password!, 'Password')} />
+              </Tooltip>
+            )}
+          </Space>
+        );
+      },
+    },
     { title: t('common.size'), key: 'size', render: (_: unknown, r: Database) => formatSize(r.size) },
     { title: t('databases.charset'), dataIndex: 'charset', key: 'charset' },
-    { title: t('common.date'), dataIndex: 'created_at', key: 'created_at', render: (v: string) => v ? new Date(v).toLocaleDateString() : '—' },
     {
       title: t('common.actions'),
       key: 'actions',
