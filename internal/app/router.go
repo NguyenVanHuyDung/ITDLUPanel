@@ -266,6 +266,10 @@ func setupSPAHandler(engine *gin.Engine) {
 		}
 
 		// SPA fallback: serve index.html for all other routes.
+		// Prevent caching so browser always gets the latest build.
+		c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+		c.Header("Pragma", "no-cache")
+		c.Header("Expires", "0")
 		c.Request.URL.Path = "/"
 		fileServer.ServeHTTP(c.Writer, c.Request)
 	})
