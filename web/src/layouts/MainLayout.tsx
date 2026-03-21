@@ -223,77 +223,72 @@ export default function MainLayout() {
         display: 'flex',
         flexDirection: 'column',
       }}>
-        {/* ── System Info Header Bar ── */}
-        <div className="sys-info-bar" style={{
-          background: 'linear-gradient(135deg, #0D47A1 0%, #1565C0 50%, #1E88E5 100%)',
-          padding: isMobile ? '6px 12px' : '8px 24px',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          color: '#fff', fontSize: isMobile ? 11 : 13, flexWrap: 'wrap', gap: isMobile ? 4 : 8,
-          minHeight: isMobile ? 28 : 'auto',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 16, flexWrap: 'wrap' }}>
-            {sysInfo && (
-              <>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <DesktopOutlined style={{ fontSize: isMobile ? 11 : 13, opacity: 0.85 }} />
-                  <strong>{sysInfo.hostname}</strong>
-                </span>
-                {!isMobile && (
-                  <>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: 0.9 }}>
-                      <ClusterOutlined style={{ fontSize: 12 }} />
-                      {sysInfo.os}
-                    </span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: 0.9 }}>
-                      <CodeOutlined style={{ fontSize: 12 }} />
-                      {sysInfo.kernel}
-                    </span>
-                  </>
-                )}
-                <span style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: 0.9 }}>
-                  <FieldTimeOutlined style={{ fontSize: isMobile ? 10 : 12 }} />
-                  {formatUptime(sysInfo.uptime)}
-                </span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: 0.9 }}>
-                  <TagOutlined style={{ fontSize: isMobile ? 10 : 12 }} />
-                  v{sysInfo.panel_version}
-                </span>
-              </>
-            )}
-          </div>
-        </div>
-        {/* ── Action Header ── */}
+        {/* ── Unified Header Bar ── */}
         <div style={{
-          background: '#fff',
-          padding: isMobile ? '0 12px' : '0 24px',
+          background: 'linear-gradient(135deg, #0D47A1 0%, #1565C0 50%, #1E88E5 100%)',
+          padding: isMobile ? '0 10px' : '0 20px',
           height: 48,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+          color: '#fff',
+          fontSize: isMobile ? 11 : 13,
           position: 'sticky',
           top: 0,
           zIndex: 9,
+          boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
         }}>
-          <Button
-            type="text"
-            icon={isMobile ? <MenuUnfoldOutlined /> : (collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />)}
-            onClick={() => isMobile ? setMobileDrawerOpen(true) : setCollapsed(!collapsed)}
-            style={{ fontSize: 16 }}
-          />
-          <Space size={isMobile ? 'small' : 'middle'}>
+          {/* Left: hamburger + system info */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 12, minWidth: 0 }}>
+            <Button
+              type="text"
+              icon={isMobile ? <MenuUnfoldOutlined /> : (collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />)}
+              onClick={() => isMobile ? setMobileDrawerOpen(true) : setCollapsed(!collapsed)}
+              style={{ fontSize: 16, color: '#fff', flexShrink: 0 }}
+            />
+            {sysInfo && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 14, overflow: 'hidden' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                  <DesktopOutlined style={{ fontSize: 12, opacity: 0.85 }} />
+                  <strong style={{ fontSize: isMobile ? 12 : 13 }}>{sysInfo.hostname}</strong>
+                </span>
+                {!isMobile && (
+                  <>
+                    <span style={{ opacity: 0.4 }}>|</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, opacity: 0.9, whiteSpace: 'nowrap' }}>
+                      <ClusterOutlined style={{ fontSize: 11 }} />
+                      {sysInfo.os}
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, opacity: 0.9, whiteSpace: 'nowrap' }}>
+                      <CodeOutlined style={{ fontSize: 11 }} />
+                      {sysInfo.kernel}
+                    </span>
+                  </>
+                )}
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4, opacity: 0.9, flexShrink: 0 }}>
+                  <FieldTimeOutlined style={{ fontSize: 11 }} />
+                  {formatUptime(sysInfo.uptime)}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Right: language + user */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 8, flexShrink: 0 }}>
             <Dropdown menu={{ items: languageItems, onClick: ({ key }) => i18n.changeLanguage(key) }}>
-              <Button type="text" icon={<TranslationOutlined />} size="small">
+              <Button type="text" icon={<TranslationOutlined />} size="small"
+                style={{ color: 'rgba(255,255,255,0.9)', fontSize: 13 }}
+              >
                 {i18n.language === 'vi' ? '🇻🇳' : '🇺🇸'}
               </Button>
             </Dropdown>
             <Dropdown menu={{ items: userMenuItems, onClick: handleUserMenu }}>
               <Space style={{ cursor: 'pointer' }}>
-                <Avatar size="small" icon={<UserOutlined />} style={{ backgroundColor: '#1565C0' }} />
-                {!isMobile && <Text>{user?.username ?? 'Admin'}</Text>}
+                <Avatar size="small" icon={<UserOutlined />} style={{ backgroundColor: 'rgba(255,255,255,0.2)' }} />
+                {!isMobile && <Text style={{ color: '#fff' }}>{user?.username ?? 'Admin'}</Text>}
               </Space>
             </Dropdown>
-          </Space>
+          </div>
         </div>
         <Content style={{ margin: isMobile ? 8 : 24, flex: 1 }}>
           <Outlet />
