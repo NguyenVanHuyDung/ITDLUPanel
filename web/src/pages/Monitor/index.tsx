@@ -18,6 +18,7 @@ import {
 } from 'recharts';
 import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 const { Text } = Typography;
 
@@ -434,6 +435,7 @@ const chartTitles: Record<ChartKey, string> = {
 // ---------------------------------------------------------------------------
 export default function Monitor() {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [loading, setLoading] = useState(true);
   const [snapshot, setSnapshot] = useState<MonitorSnapshot | null>(null);
   const [history, setHistory] = useState<TimePoint[]>([]);
@@ -577,27 +579,27 @@ export default function Monitor() {
   return (
     <div style={{ maxWidth: 1400 }}>
       {/* Status bar */}
-      <div style={statusBarStyle}>
+      <div style={{ ...statusBarStyle, gap: isMobile ? 8 : 24, padding: isMobile ? '8px 12px' : '12px 20px' }}>
         <SyncOutlined
           spin={polling}
           style={{ fontSize: 14, color: polling ? colors.primary : '#94A3B8', cursor: 'pointer' }}
           onClick={() => setPolling((p) => !p)}
         />
-        <span style={statusItemStyle}>
+        <span style={{ ...statusItemStyle, fontSize: isMobile ? 11 : 13 }}>
           CPU: <strong>{snapshot.cpu.usage_percent.toFixed(1)}%</strong>
         </span>
         <span style={{ color: '#90CAF9' }}>|</span>
-        <span style={statusItemStyle}>
+        <span style={{ ...statusItemStyle, fontSize: isMobile ? 11 : 13 }}>
           Memory: <strong>{snapshot.memory.usage_percent.toFixed(1)}%</strong>{' '}
           ({formatBytesGB(snapshot.memory.used)}/{formatBytesGB(snapshot.memory.total)} GB)
         </span>
         <span style={{ color: '#90CAF9' }}>|</span>
-        <span style={statusItemStyle}>
+        <span style={{ ...statusItemStyle, fontSize: isMobile ? 11 : 13 }}>
           Disk: <strong>{snapshot.disk.usage_percent.toFixed(1)}%</strong>{' '}
           ({formatBytesGB(snapshot.disk.used)}/{formatBytesGB(snapshot.disk.total)} GB)
         </span>
         <span style={{ color: '#90CAF9' }}>|</span>
-        <span style={statusItemStyle}>
+        <span style={{ ...statusItemStyle, fontSize: isMobile ? 11 : 13 }}>
           Load: <strong>{loadAvg[0]?.toFixed(2)} {loadAvg[1]?.toFixed(2)} {loadAvg[2]?.toFixed(2)}</strong>
         </span>
       </div>
@@ -718,7 +720,7 @@ export default function Monitor() {
               size: 'small',
               showTotal: (total) => `${total} processes`,
             }}
-            scroll={{ y: 420 }}
+            scroll={{ x: 600, y: isMobile ? 300 : 420 }}
             style={{ fontSize: 13 }}
           />
         </div>

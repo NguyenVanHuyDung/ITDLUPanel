@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Table, Card, Button, Modal, Form, Input, Select, Space, Tag, message, Typography, Popconfirm, Badge } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, KeyOutlined, ReloadOutlined, UserOutlined, LockOutlined, UnlockOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import api from '@/services/api';
 import type { User } from '@/types';
 
@@ -11,6 +12,7 @@ const roleColors: Record<string, string> = { admin: 'red', operator: 'blue', vie
 
 export default function Users() {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<User[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
@@ -140,7 +142,7 @@ export default function Users() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 8 }}>
         <Title level={3} style={{ margin: 0 }}>{t('sidebar.users')}</Title>
         <Space>
           <Button icon={<ReloadOutlined />} onClick={fetchData} />
@@ -149,7 +151,7 @@ export default function Users() {
       </div>
 
       <Card>
-        <Table columns={columns} dataSource={users} rowKey="id" loading={loading} pagination={{ pageSize: 10, showTotal: total => `${t('common.total')}: ${total}` }} />
+        <Table columns={columns} dataSource={users} rowKey="id" loading={loading} pagination={{ pageSize: 10, showTotal: total => `${t('common.total')}: ${total}` }} scroll={{ x: 500 }} />
       </Card>
 
       {/* Create User Modal */}

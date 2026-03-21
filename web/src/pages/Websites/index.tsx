@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
 import type { Site } from '@/types';
 import RequireSoftware from '@/components/RequireSoftware';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 const { Text } = Typography;
 
@@ -377,6 +378,7 @@ function PlaceholderPanel({ title }: { title: string }) {
 // ---------------------------------------------------------------------------
 function SiteConfigModal({ site, open, onClose }: { site: Site | null; open: boolean; onClose: () => void }) {
   const [section, setSection] = useState<ConfigSection>('domain');
+  const isMobile = useIsMobile();
 
   if (!site) return null;
 
@@ -406,7 +408,7 @@ function SiteConfigModal({ site, open, onClose }: { site: Site | null; open: boo
       open={open}
       onCancel={onClose}
       footer={null}
-      width={860}
+      width={isMobile ? '95%' : 860}
       centered
       destroyOnHidden
       title={
@@ -419,14 +421,18 @@ function SiteConfigModal({ site, open, onClose }: { site: Site | null; open: boo
       }
       styles={{ body: { padding: 0 } }}
     >
-      <div style={{ display: 'flex', minHeight: 480 }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', minHeight: isMobile ? 'auto' : 480 }}>
         {/* Left sidebar */}
         <div style={{
-          width: 180,
-          borderRight: `1px solid ${BORDER}`,
+          width: isMobile ? '100%' : 180,
+          borderRight: isMobile ? 'none' : `1px solid ${BORDER}`,
+          borderBottom: isMobile ? `1px solid ${BORDER}` : 'none',
+          display: 'flex',
+          flexDirection: isMobile ? 'row' : 'column',
+          overflowX: isMobile ? 'auto' : 'visible',
           background: '#FAFBFC',
           flexShrink: 0,
-          paddingTop: 8,
+          paddingTop: isMobile ? 0 : 8,
         }}>
           {CONFIG_SECTIONS.map(s => (
             <div
@@ -460,6 +466,7 @@ function SiteConfigModal({ site, open, onClose }: { site: Site | null; open: boo
 // ---------------------------------------------------------------------------
 function WebsitesContent() {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [loading, setLoading] = useState(true);
   const [sites, setSites] = useState<Site[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
@@ -707,10 +714,10 @@ function WebsitesContent() {
             onClick={() => setModalOpen(true)}
             style={{ background: PRIMARY, borderColor: PRIMARY, fontWeight: 500 }}
           >
-            {t('websites.add_site')}
+            {!isMobile && t('websites.add_site')}
           </Button>
           <Button icon={<EditOutlined />} onClick={() => message.info('Advanced setup coming soon')}>
-            Advanced Setup
+            {!isMobile && 'Advanced Setup'}
           </Button>
 
           <div style={{ flex: 1 }} />
@@ -732,7 +739,8 @@ function WebsitesContent() {
         {/* Table */}
         <div>
           <Table
-            columns={columns}
+            columns={isMobile ? columns.filter(c => !['expiry', 'ssl'].includes(c.key as string)) : columns}
+            scroll={{ x: 750 }}
             dataSource={filteredSites}
             rowKey="id"
             loading={{ spinning: loading, indicator: <Spin /> }}
@@ -764,7 +772,7 @@ function WebsitesContent() {
         okText={t('common.create')}
         cancelText={t('common.cancel')}
         destroyOnHidden
-        width={520}
+        width={isMobile ? '95%' : 520}
         okButtonProps={{ style: { background: PRIMARY, borderColor: PRIMARY } }}
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>

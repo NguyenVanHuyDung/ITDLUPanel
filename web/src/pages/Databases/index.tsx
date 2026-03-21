@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
 import type { Database } from '@/types';
 import RequireSoftware from '@/components/RequireSoftware';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 const { Text } = Typography;
 
@@ -97,6 +98,7 @@ const actionLinkStyle: React.CSSProperties = {
 // ---------------------------------------------------------------------------
 function DatabasesContent() {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [loading, setLoading] = useState(true);
   const [databases, setDatabases] = useState<Database[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
@@ -246,7 +248,6 @@ function DatabasesContent() {
     {
       title: 'Password',
       key: 'password',
-      width: 200,
       render: (_: unknown, r: Database) => {
         const visible = visiblePasswords.has(r.id);
         return (
@@ -256,7 +257,7 @@ function DatabasesContent() {
               fontSize: 12,
               color: visible ? TEXT_PRIMARY : TEXT_SECONDARY,
               letterSpacing: visible ? 0 : 2,
-              minWidth: 80,
+              minWidth: isMobile ? 50 : 80,
               display: 'inline-block',
             }}>
               {visible ? (r.password || '—') : '••••••••'}
@@ -284,7 +285,7 @@ function DatabasesContent() {
     {
       title: t('common.size'),
       key: 'size',
-      width: 100,
+      width: 80,
       render: (_: unknown, r: Database) => (
         <span style={{ fontSize: 13, color: TEXT_SECONDARY }}>{formatSize(r.size)}</span>
       ),
@@ -292,7 +293,7 @@ function DatabasesContent() {
     {
       title: 'Backup',
       key: 'backup',
-      width: 120,
+      width: 100,
       render: (_: unknown, r: Database) => (
         <Space size={4}>
           <Button type="link" size="small" style={{ fontSize: 12, padding: 0, color: PRIMARY }}
@@ -312,7 +313,7 @@ function DatabasesContent() {
     {
       title: 'Location',
       key: 'location',
-      width: 100,
+      width: 90,
       render: (_: unknown, r: Database) => (
         <span style={{ fontSize: 13, color: TEXT_SECONDARY }}>
           <GlobalOutlined style={{ marginRight: 4, fontSize: 11 }} />
@@ -323,18 +324,18 @@ function DatabasesContent() {
     {
       title: t('common.actions'),
       key: 'actions',
-      width: 240,
+      width: isMobile ? 120 : 240,
       render: (_: unknown, r: Database) => (
         <Space size={0} split={<span style={{ color: '#E0E0E0', margin: '0 2px' }}>|</span>}>
           {pmaInstalled && (
             <Button type="link" size="small" style={actionLinkStyle} onClick={openPma}>
-              phpMyAdmin
+              {isMobile ? 'PMA' : 'phpMyAdmin'}
             </Button>
           )}
           <Button type="link" size="small" style={actionLinkStyle}
             onClick={() => { setSelectedDb(r); setPasswordModalOpen(true); }}
           >
-            Password
+            {isMobile ? 'Pwd' : 'Password'}
           </Button>
           <Popconfirm
             title={t('common.confirm_delete')}
@@ -386,25 +387,25 @@ function DatabasesContent() {
             onClick={() => { form.setFieldsValue({ password: generatePassword() }); setModalOpen(true); }}
             style={{ background: PRIMARY, borderColor: PRIMARY, fontWeight: 500 }}
           >
-            {t('databases.add_database')}
+            {!isMobile && t('databases.add_database')}
           </Button>
           <Button icon={<SafetyCertificateOutlined />} onClick={() => message.info('Root password management coming soon')}>
-            Root password
+            {!isMobile && 'Root password'}
           </Button>
           {pmaInstalled ? (
             <Button icon={<LinkOutlined />} onClick={openPma}>
-              phpMyAdmin
+              {!isMobile && 'phpMyAdmin'}
             </Button>
           ) : (
             <Tooltip title="Install phpMyAdmin from App Store">
-              <Button icon={<LinkOutlined />} disabled>phpMyAdmin</Button>
+              <Button icon={<LinkOutlined />} disabled>{!isMobile && 'phpMyAdmin'}</Button>
             </Tooltip>
           )}
           <Button icon={<CloudDownloadOutlined />} onClick={() => message.info('Backup all coming soon')}>
-            Backup All
+            {!isMobile && 'Backup All'}
           </Button>
           <Button icon={<ImportOutlined />} onClick={() => message.info('Import coming soon')}>
-            Import
+            {!isMobile && 'Import'}
           </Button>
 
           <div style={{ flex: 1 }} />
@@ -415,7 +416,7 @@ function DatabasesContent() {
             value={searchText}
             onChange={e => setSearchText(e.target.value)}
             allowClear
-            style={{ width: 200 }}
+            style={{ width: isMobile ? 140 : 200 }}
             size="middle"
           />
           <Tooltip title="Refresh">
@@ -431,6 +432,7 @@ function DatabasesContent() {
             rowKey="id"
             loading={{ spinning: loading, indicator: <Spin /> }}
             size="middle"
+            scroll={{ x: 800 }}
             pagination={{
               pageSize: 20,
               showSizeChanger: true,

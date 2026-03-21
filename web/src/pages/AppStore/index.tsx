@@ -11,6 +11,7 @@ import {
   DeleteOutlined, CloseOutlined, MinusOutlined, LoadingOutlined, LinkOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import api from '@/services/api';
 import type { ApiResponse, Software } from '@/types';
 
@@ -94,6 +95,7 @@ function getTaskProgressStatus(status: string): 'active' | 'success' | 'exceptio
 
 export default function AppStore() {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [installed, setInstalled] = useState<Software[]>([]);
   const [available, setAvailable] = useState<AvailableSoftware[]>([]);
   const [installedLoading, setInstalledLoading] = useState(false);
@@ -627,7 +629,7 @@ export default function AppStore() {
         }
         open={manageModalOpen}
         onCancel={() => setManageModalOpen(false)}
-        width={700}
+        width={isMobile ? '95%' : 700}
         footer={null}
       >
         {manageSW && (
@@ -786,7 +788,7 @@ export default function AppStore() {
           {/* Task sidebar (shown when multiple tasks) */}
           {taskList.length > 1 && (
             <div style={{
-              width: 220,
+              width: isMobile ? 140 : 220,
               borderRight: '1px solid #f0f0f0',
               overflowY: 'auto',
               flexShrink: 0,

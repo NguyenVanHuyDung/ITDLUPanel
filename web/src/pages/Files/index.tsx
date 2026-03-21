@@ -22,6 +22,7 @@ import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
 import type { ApiResponse } from '@/types';
 import CodeEditor from './CodeEditor';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 /* ──────────────── Types ──────────────── */
 
@@ -187,6 +188,7 @@ function loadPageSize(): number {
 
 export default function Files() {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
 
   // Navigation state
   const [currentPath, setCurrentPath] = useState('/root');
@@ -787,7 +789,7 @@ export default function Files() {
         <Button type="text" size="small" icon={<LeftOutlined />} onClick={() => scrollBookmarks('left')}
           style={{ flexShrink: 0, color: BLUE_DARK }} />
         <div ref={bookmarkBarRef} style={{
-          display: 'flex', gap: 4, overflow: 'hidden', flex: 1, scrollBehavior: 'smooth',
+          display: 'flex', gap: 4, overflowX: 'auto', flex: 1, scrollBehavior: 'smooth', flexWrap: 'nowrap',
         }}>
           {bookmarks.map(bm => (
             <div key={bm.path} style={{
@@ -860,7 +862,7 @@ export default function Files() {
       {/* ═══ 3. Toolbar Row ═══ */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '8px 12px', borderBottom: '1px solid #f0f0f0', gap: 8, flexWrap: 'wrap',
+        padding: '8px 12px', borderBottom: '1px solid #f0f0f0', gap: isMobile ? 4 : 8, flexWrap: 'wrap',
       }}>
         <Space size={6} wrap>
           <Upload
@@ -996,7 +998,7 @@ export default function Files() {
               style: { cursor: 'default' },
             })}
             style={{ minHeight: 200 }}
-            scroll={{ y: 'calc(100vh - 380px)' }}
+            scroll={{ x: 700, y: 'calc(100vh - 380px)' }}
           />
         ) : (
           /* Grid view */
@@ -1061,7 +1063,7 @@ export default function Files() {
               { value: 100, label: '100 / page' },
               { value: 200, label: '200 / page' },
             ]}
-            style={{ width: 110 }}
+            style={{ width: isMobile ? 80 : 110 }}
           />
           <Pagination
             size="small"
@@ -1128,10 +1130,11 @@ export default function Files() {
           <Input
             value={permOctal}
             onChange={(e) => handlePermOctalChange(e.target.value)}
-            style={{ width: 120, fontFamily: 'monospace', fontSize: 18, textAlign: 'center' }}
+            style={{ width: isMobile ? 90 : 120, fontFamily: 'monospace', fontSize: 18, textAlign: 'center' }}
             maxLength={3}
           />
         </div>
+        <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 16 }}>
           <thead>
             <tr style={{ background: '#fafafa' }}>
@@ -1157,14 +1160,15 @@ export default function Files() {
             ))}
           </tbody>
         </table>
+        </div>
         <Space style={{ marginBottom: 12 }} size={12}>
           <div>
             <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>Owner</div>
-            <Input value={permOwner} onChange={(e) => setPermOwner(e.target.value)} style={{ width: 140 }} size="small" />
+            <Input value={permOwner} onChange={(e) => setPermOwner(e.target.value)} style={{ width: isMobile ? 100 : 140 }} size="small" />
           </div>
           <div>
             <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>Group</div>
-            <Input value={permGroup} onChange={(e) => setPermGroup(e.target.value)} style={{ width: 140 }} size="small" />
+            <Input value={permGroup} onChange={(e) => setPermGroup(e.target.value)} style={{ width: isMobile ? 100 : 140 }} size="small" />
           </div>
         </Space>
         {permFile?.is_dir && (
@@ -1274,7 +1278,7 @@ export default function Files() {
         </div>
         <div style={{ marginBottom: 8 }}>
           <div style={{ marginBottom: 4, fontSize: 13 }}>Format:</div>
-          <Select value={compressFormat} onChange={setCompressFormat} size="small" style={{ width: 120 }}
+          <Select value={compressFormat} onChange={setCompressFormat} size="small" style={{ width: isMobile ? 90 : 120 }}
             options={[
               { value: 'zip', label: 'ZIP' },
               { value: 'tar.gz', label: 'TAR.GZ' },

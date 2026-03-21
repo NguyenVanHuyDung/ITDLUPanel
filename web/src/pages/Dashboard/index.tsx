@@ -18,6 +18,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import api from '@/services/api';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import type { SystemInfo, Software } from '@/types';
 
 const { Text } = Typography;
@@ -67,6 +68,7 @@ interface NetworkChartPoint {
 
 export default function Dashboard() {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [loading, setLoading] = useState(true);
   const [info, setInfo] = useState<SystemInfo | null>(null);
   const [chartData, setChartData] = useState<NetworkChartPoint[]>([]);
@@ -156,8 +158,8 @@ export default function Dashboard() {
             <Row gutter={8} justify="space-around" align="middle">
               {/* CPU Load ring */}
               <Col xs={24} sm={8} style={{ textAlign: 'center', marginBottom: 8 }}>
-                <Progress type="circle" percent={cpuPct} size={120} strokeColor="#1565C0" strokeWidth={8}
-                  format={() => <span style={{ fontSize: 26, fontWeight: 700, color: '#1565C0' }}>{cpuPct}%</span>} />
+                <Progress type="circle" percent={cpuPct} size={isMobile ? 80 : 120} strokeColor="#1565C0" strokeWidth={8}
+                  format={() => <span style={{ fontSize: isMobile ? 18 : 26, fontWeight: 700, color: '#1565C0' }}>{cpuPct}%</span>} />
                 <div style={{ marginTop: 8 }}>
                   <Text type="secondary" style={{ fontSize: 12 }}>{getCpuStatusText(cpuPct)}</Text>
                 </div>
@@ -166,8 +168,8 @@ export default function Dashboard() {
 
               {/* CPU usage ring */}
               <Col xs={24} sm={8} style={{ textAlign: 'center', marginBottom: 8 }}>
-                <Progress type="circle" percent={cpuPct} size={120} strokeColor="#1E88E5" strokeWidth={8}
-                  format={() => <span style={{ fontSize: 26, fontWeight: 700, color: '#1E88E5' }}>{info.cpu.usage_percent.toFixed(1)}%</span>} />
+                <Progress type="circle" percent={cpuPct} size={isMobile ? 80 : 120} strokeColor="#1E88E5" strokeWidth={8}
+                  format={() => <span style={{ fontSize: isMobile ? 18 : 26, fontWeight: 700, color: '#1E88E5' }}>{info.cpu.usage_percent.toFixed(1)}%</span>} />
                 <div style={{ marginTop: 8 }}>
                   <Text type="secondary" style={{ fontSize: 12 }}>{info.cpu.cores} Core(s)</Text>
                 </div>
@@ -176,8 +178,8 @@ export default function Dashboard() {
 
               {/* RAM ring */}
               <Col xs={24} sm={8} style={{ textAlign: 'center', marginBottom: 8 }}>
-                <Progress type="circle" percent={memPct} size={120} strokeColor="#0288D1" strokeWidth={8}
-                  format={() => <span style={{ fontSize: 26, fontWeight: 700, color: '#0288D1' }}>{info.memory.usage_percent.toFixed(1)}%</span>} />
+                <Progress type="circle" percent={memPct} size={isMobile ? 80 : 120} strokeColor="#0288D1" strokeWidth={8}
+                  format={() => <span style={{ fontSize: isMobile ? 18 : 26, fontWeight: 700, color: '#0288D1' }}>{info.memory.usage_percent.toFixed(1)}%</span>} />
                 <div style={{ marginTop: 8 }}>
                   <Text type="secondary" style={{ fontSize: 12 }}>
                     {formatMB(info.memory.used)} / {formatMB(info.memory.total)} (MB)
@@ -192,7 +194,7 @@ export default function Dashboard() {
         {/* — Disk — */}
         <Col xs={24} lg={9}>
           <Card title={<><span role="img" aria-label="disk">💿</span> Disk</>} size="small"
-            styles={{ body: { padding: '24px 16px', display: 'flex', alignItems: 'center', gap: 20, minHeight: 196 }, header: { fontWeight: 600 } }}>
+            styles={{ body: { padding: '24px 16px', display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 20, minHeight: 196 }, header: { fontWeight: 600 } }}>
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                 <Text strong style={{ fontSize: 13 }}>/</Text>
@@ -203,9 +205,9 @@ export default function Dashboard() {
                 {formatGB(info.disk.used)} / {formatGB(info.disk.total)} GB
               </Text>
             </div>
-            <Progress type="circle" percent={diskPct} size={110}
+            <Progress type="circle" percent={diskPct} size={isMobile ? 80 : 110}
               strokeColor={diskPct > 80 ? '#ff4d4f' : '#1565C0'} strokeWidth={10}
-              format={() => <span style={{ fontSize: 22, fontWeight: 700, color: diskPct > 80 ? '#ff4d4f' : '#1565C0' }}>{diskPct}%</span>} />
+              format={() => <span style={{ fontSize: isMobile ? 16 : 22, fontWeight: 700, color: diskPct > 80 ? '#ff4d4f' : '#1565C0' }}>{diskPct}%</span>} />
           </Card>
         </Col>
       </Row>
@@ -267,7 +269,7 @@ export default function Dashboard() {
             {installedSoftware.length === 0 ? (
               <Text type="secondary">No software installed</Text>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '140px' : '180px'}, 1fr))`, gap: 10 }}>
                 {installedSoftware.map(sw => {
                   const { icon: Icon, color } = SOFTWARE_ICONS[sw.name] || DEFAULT_SW_ICON;
                   const running = sw.status === 1;
@@ -318,7 +320,7 @@ export default function Dashboard() {
             }
             styles={{ body: { padding: '12px 16px' }, header: { fontWeight: 600 } }}
           >
-            <div style={{ display: 'flex', gap: 24, marginBottom: 12 }}>
+            <div style={{ display: 'flex', gap: isMobile ? 8 : 24, marginBottom: 12 }}>
               <Text type="secondary" style={{ fontSize: 12 }}>
                 Total sent: <Text strong style={{ fontSize: 12 }}>{formatNetworkSize(info.network.bytes_sent)}</Text>
               </Text>
@@ -330,7 +332,7 @@ export default function Dashboard() {
               <AreaChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="time" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} tickFormatter={formatNetworkSize} width={65} />
+                <YAxis tick={{ fontSize: 10 }} tickFormatter={formatNetworkSize} width={isMobile ? 40 : 65} />
                 <RechartsTooltip formatter={(value: unknown) => formatNetworkSize(Number(value ?? 0))} labelStyle={{ fontSize: 11 }} contentStyle={{ fontSize: 12 }} />
                 <Area type="monotone" dataKey="upstream" name="Upstream" stroke="#1565C0" fill="#1565C0" fillOpacity={0.15} />
                 <Area type="monotone" dataKey="downstream" name="Downstream" stroke="#42A5F5" fill="#42A5F5" fillOpacity={0.15} />

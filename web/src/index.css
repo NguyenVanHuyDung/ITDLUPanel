@@ -54,7 +54,7 @@ body {
   color: rgba(255,255,255,0.8) !important;
 }
 
-/* ── Responsive ── */
+/* ── Responsive Utilities ── */
 
 /* Tables: horizontal scroll on small screens */
 .ant-table-wrapper {
@@ -66,8 +66,17 @@ body {
   background: transparent !important;
 }
 
+/* Responsive toolbar: flex-wrap with gap */
+.responsive-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Tablet breakpoint (≤768px) ── */
 @media (max-width: 768px) {
-  /* Toolbars: wrap and reduce padding */
+  /* Card body padding */
   .ant-card-body {
     padding: 12px !important;
   }
@@ -86,7 +95,7 @@ body {
     border-radius: 8px !important;
   }
 
-  /* Drawer: full width */
+  /* Drawer: max 85vw */
   .ant-drawer-content-wrapper {
     max-width: 85vw !important;
   }
@@ -106,8 +115,31 @@ body {
   .recharts-responsive-container {
     min-height: 160px;
   }
+
+  /* Touch targets: min 40px for buttons/links */
+  .ant-btn-sm {
+    min-height: 36px;
+    min-width: 36px;
+  }
+
+  /* Toolbar: stack on mobile */
+  .responsive-toolbar {
+    gap: 6px;
+  }
+
+  /* Form items: full width inputs */
+  .ant-input,
+  .ant-select {
+    max-width: 100% !important;
+  }
+
+  /* Popconfirm: don't overflow */
+  .ant-popover {
+    max-width: calc(100vw - 24px) !important;
+  }
 }
 
+/* ── Small phone breakpoint (≤480px) ── */
 @media (max-width: 480px) {
   .ant-table {
     font-size: 11px;
@@ -120,5 +152,16 @@ body {
   }
   .ant-table-tbody > tr > td {
     padding: 8px 4px !important;
+  }
+  .ant-card-head-title {
+    font-size: 13px !important;
+  }
+  /* Stack toolbar completely */
+  .responsive-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .responsive-toolbar > * {
+    width: 100%;
   }
 }

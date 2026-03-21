@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { useAuthStore } from '@/stores/auth';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { Tooltip } from 'antd';
 import {
   ExpandOutlined, CompressOutlined, PlusOutlined, CloseOutlined,
@@ -25,6 +26,7 @@ let tabCounter = 0;
 
 export default function TerminalPage() {
   const termRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
   const { accessToken } = useAuthStore();
   const [tabs, setTabs] = useState<TabSession[]>([]);
   const [activeTabId, setActiveTabId] = useState<string>('');
@@ -260,7 +262,7 @@ export default function TerminalPage() {
 
   const containerStyle: React.CSSProperties = fullscreen
     ? { position: 'fixed', inset: 0, zIndex: 999, display: 'flex', flexDirection: 'column', background: '#0d1117' }
-    : { height: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column', borderRadius: 8, overflow: 'hidden', border: '1px solid #30363d' };
+    : { height: isMobile ? 'calc(100vh - 160px)' : 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column', borderRadius: 8, overflow: 'hidden', border: '1px solid #30363d' };
 
   return (
     <div style={containerStyle}>
@@ -279,11 +281,11 @@ export default function TerminalPage() {
                 onClick={() => setActiveTabId(tab.id)}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 6,
-                  padding: '6px 12px', cursor: 'pointer',
+                  padding: isMobile ? '4px 8px' : '6px 12px', cursor: 'pointer',
                   background: isActive ? '#0d1117' : 'transparent',
                   borderBottom: isActive ? '2px solid #58a6ff' : '2px solid transparent',
                   borderRadius: '4px 4px 0 0',
-                  fontSize: 12, fontWeight: isActive ? 500 : 400,
+                  fontSize: isMobile ? 11 : 12, fontWeight: isActive ? 500 : 400,
                   color: isActive ? '#c9d1d9' : '#8b949e',
                   whiteSpace: 'nowrap', flexShrink: 0,
                   transition: 'all 0.15s',
@@ -298,7 +300,7 @@ export default function TerminalPage() {
                     onClick={(e) => closeTab(tab.id, e)}
                     style={{
                       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                      width: 16, height: 16, borderRadius: 3, fontSize: 9,
+                      width: isMobile ? 20 : 16, height: isMobile ? 20 : 16, borderRadius: 3, fontSize: 9,
                       color: '#8b949e', cursor: 'pointer',
                     }}
                     onMouseEnter={e => { (e.target as HTMLSpanElement).style.background = '#30363d'; (e.target as HTMLSpanElement).style.color = '#f85149'; }}
@@ -317,7 +319,7 @@ export default function TerminalPage() {
               onClick={addTab}
               style={{
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                width: 28, height: 28, borderRadius: 4, cursor: 'pointer',
+                width: isMobile ? 36 : 28, height: isMobile ? 36 : 28, borderRadius: 4, cursor: 'pointer',
                 color: '#8b949e', fontSize: 12, flexShrink: 0,
               }}
               onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = '#30363d'; (e.currentTarget as HTMLDivElement).style.color = '#c9d1d9'; }}
@@ -345,7 +347,7 @@ export default function TerminalPage() {
               onClick={toggleFullscreen}
               style={{
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                width: 28, height: 28, borderRadius: 4, cursor: 'pointer',
+                width: isMobile ? 36 : 28, height: isMobile ? 36 : 28, borderRadius: 4, cursor: 'pointer',
                 color: '#8b949e', fontSize: 14,
               }}
               onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = '#30363d'; (e.currentTarget as HTMLDivElement).style.color = '#c9d1d9'; }}

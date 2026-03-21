@@ -9,6 +9,7 @@ import {
   CheckCircleOutlined, CloseCircleOutlined, GlobalOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import api from '@/services/api';
 import type { ApiResponse } from '@/types';
 
@@ -38,6 +39,7 @@ interface PanelInfo {
 
 export default function Settings() {
   const { t, i18n } = useTranslation();
+  const isMobile = useIsMobile();
   const [generalForm] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false);
@@ -136,7 +138,7 @@ export default function Settings() {
       label: <span><SettingOutlined /> {t('settings.general')}</span>,
       children: (
         <Spin spinning={loading}>
-          <Card style={{ maxWidth: 600 }}>
+          <Card style={{ maxWidth: 600, width: '100%' }}>
             <Form
               form={generalForm}
               layout="vertical"
@@ -169,7 +171,7 @@ export default function Settings() {
       label: <span><SafetyCertificateOutlined /> SSL</span>,
       children: (
         <Spin spinning={sslLoading}>
-          <Card title="Panel SSL" style={{ maxWidth: 600 }}>
+          <Card title="Panel SSL" style={{ maxWidth: 600, width: '100%' }}>
             <Space direction="vertical" style={{ width: '100%' }} size="middle">
               <Descriptions column={1} bordered size="small">
                 <Descriptions.Item label="Status">
@@ -233,7 +235,7 @@ export default function Settings() {
         <Spin spinning={infoLoading}>
           <Card
             title="Panel Information"
-            style={{ maxWidth: 600 }}
+            style={{ maxWidth: 600, width: '100%' }}
             extra={<Button icon={<ReloadOutlined />} size="small" onClick={fetchPanelInfo}>
               {t('common.refresh')}
             </Button>}
@@ -263,7 +265,7 @@ export default function Settings() {
       children: (
         <Card
           title={<Text type="danger"><WarningOutlined /> Danger Zone</Text>}
-          style={{ maxWidth: 600, borderColor: '#ff4d4f' }}
+          style={{ maxWidth: 600, width: '100%', borderColor: '#ff4d4f' }}
         >
           <Space direction="vertical" style={{ width: '100%' }} size="middle">
             <Alert
@@ -271,12 +273,12 @@ export default function Settings() {
               showIcon
               message="Changing the panel port will restart the panel. You will be disconnected and need to reconnect on the new port."
             />
-            <Form form={portForm} layout="inline" onFinish={handleChangePort}>
+            <Form form={portForm} layout={isMobile ? 'vertical' : 'inline'} onFinish={handleChangePort}>
               <Form.Item
                 name="port"
                 rules={[{ required: true, message: 'Required' }]}
               >
-                <InputNumber min={1} max={65535} placeholder="New port" style={{ width: 160 }} />
+                <InputNumber min={1} max={65535} placeholder="New port" style={{ width: isMobile ? '100%' : 160 }} />
               </Form.Item>
               <Form.Item>
                 <Button danger htmlType="submit" loading={portLoading}>

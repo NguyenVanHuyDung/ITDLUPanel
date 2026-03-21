@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Table, Card, Button, Modal, Form, Input, InputNumber, Select, Tabs, Space, Tag, Switch, Typography, message, Popconfirm, Spin } from 'antd';
 import { PlusOutlined, DeleteOutlined, ReloadOutlined, SafetyOutlined, LockOutlined, SecurityScanOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import type { ApiResponse } from '@/types';
 import api from '@/services/api';
 
@@ -32,6 +33,7 @@ interface Fail2banConfig {
 // Firewall Tab
 function FirewallTab() {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [rules, setRules] = useState<FirewallRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -123,14 +125,14 @@ function FirewallTab() {
 
   return (
     <>
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
+      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
         <Button icon={<ReloadOutlined />} onClick={fetchRules}>{t('common.refresh')}</Button>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setModalOpen(true); }}>
           Add Rule
         </Button>
       </div>
       <Table columns={columns} dataSource={rules} rowKey="id" loading={loading}
-        pagination={{ pageSize: 10, showSizeChanger: true }} />
+        pagination={{ pageSize: 10, showSizeChanger: true }} scroll={{ x: 600 }} />
 
       <Modal
         title="Add Firewall Rule"
@@ -165,6 +167,7 @@ function FirewallTab() {
 // SSH Tab
 function SSHTab() {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
@@ -198,7 +201,7 @@ function SSHTab() {
   if (loading) return <div style={{ textAlign: 'center', padding: 48 }}><Spin size="large" /></div>;
 
   return (
-    <Card style={{ maxWidth: 600 }}>
+    <Card style={{ maxWidth: 600, width: '100%' }}>
       <Form form={form} layout="vertical" onFinish={handleSave}
         initialValues={{ port: 22, permit_root_login: false, password_auth: true, max_auth_tries: 6 }}>
         <Form.Item name="port" label="SSH Port" rules={[{ required: true }]}
@@ -258,7 +261,7 @@ function Fail2banTab() {
   if (loading) return <div style={{ textAlign: 'center', padding: 48 }}><Spin size="large" /></div>;
 
   return (
-    <Card style={{ maxWidth: 600 }}>
+    <Card style={{ maxWidth: 600, width: '100%' }}>
       <Form form={form} layout="vertical" onFinish={handleSave}
         initialValues={{ enabled: false, max_retry: 5, ban_time: 600, find_time: 600 }}>
         <Form.Item name="enabled" label={t('common.enabled')} valuePropName="checked">

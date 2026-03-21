@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Table, Card, Button, Tabs, Space, Input, Select, Typography, message, Popconfirm, Tag, Tooltip } from 'antd';
 import { ReloadOutlined, SearchOutlined, ClearOutlined, InfoCircleOutlined, WarningOutlined, BugOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import type { ApiResponse } from '@/types';
 import api from '@/services/api';
 
@@ -85,6 +86,7 @@ function StatusTag({ status }: { status?: number }) {
 
 export default function Logs() {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [panelLines, setPanelLines] = useState<string[]>([]);
   const [sshLines, setSshLines] = useState<string[]>([]);
   const [auditData, setAuditData] = useState<AuditEntry[]>([]);
@@ -181,7 +183,7 @@ export default function Logs() {
       title: 'Time',
       dataIndex: 'time',
       key: 'time',
-      width: 110,
+      width: isMobile ? 80 : 110,
       render: (v: string) => <Text type="secondary" style={{ fontSize: 12, fontFamily: 'monospace' }}>{formatTime(v)}</Text>,
     },
     {
@@ -226,7 +228,7 @@ export default function Logs() {
       title: 'IP',
       dataIndex: 'ip',
       key: 'ip',
-      width: 120,
+      width: isMobile ? 90 : 120,
       render: (v?: string) => v ? <Text style={{ fontSize: 12, fontFamily: 'monospace' }}>{v}</Text> : null,
     },
   ];
@@ -276,13 +278,13 @@ export default function Logs() {
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         allowClear
-        style={{ width: 220 }}
+        style={{ width: isMobile ? 160 : 220 }}
       />
       {activeTab !== 'audit' && (
         <Select
           value={levelFilter}
           onChange={setLevelFilter}
-          style={{ width: 110 }}
+          style={{ width: isMobile ? 80 : 110 }}
           options={[
             { label: 'All Levels', value: 'all' },
             { label: '🔴 Error', value: 'error' },
@@ -301,7 +303,7 @@ export default function Logs() {
           { label: '500 lines', value: 500 },
           { label: '1000 lines', value: 1000 },
         ]}
-        style={{ width: 130 }}
+        style={{ width: isMobile ? 90 : 130 }}
       />
       <Button icon={<ReloadOutlined />} onClick={refresh} loading={loading}>
         {t('common.refresh')}
@@ -318,7 +320,7 @@ export default function Logs() {
     <div>
       <Typography.Title level={3} style={{ marginBottom: 24 }}>{t('sidebar.logs')}</Typography.Title>
       <Card>
-        <div style={{ marginBottom: 16 }}>{logToolbar}</div>
+        <div style={{ marginBottom: 16, flexWrap: 'wrap' }}>{logToolbar}</div>
         <Tabs
           activeKey={activeTab}
           onChange={(key) => { setActiveTab(key); setSearch(''); setLevelFilter('all'); }}
@@ -334,7 +336,7 @@ export default function Logs() {
                   loading={loading}
                   size="small"
                   pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (total) => `${total} entries` }}
-                  scroll={{ y: 'calc(100vh - 380px)' }}
+                  scroll={{ x: 600, y: 'calc(100vh - 380px)' }}
                   rowClassName={(r) => r.level === 'error' || r.level === 'fatal' ? 'log-row-error' : ''}
                 />
               ),
@@ -350,7 +352,7 @@ export default function Logs() {
                   loading={loading}
                   size="small"
                   pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (total) => `${total} entries` }}
-                  scroll={{ y: 'calc(100vh - 380px)' }}
+                  scroll={{ x: 600, y: 'calc(100vh - 380px)' }}
                 />
               ) : (
                 <Table
@@ -360,7 +362,7 @@ export default function Logs() {
                   loading={loading}
                   size="small"
                   pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (total) => `${total} entries` }}
-                  scroll={{ y: 'calc(100vh - 380px)' }}
+                  scroll={{ x: 600, y: 'calc(100vh - 380px)' }}
                 />
               ),
             },
@@ -376,6 +378,7 @@ export default function Logs() {
                   rowKey="id"
                   loading={loading}
                   pagination={{ pageSize: 20, showSizeChanger: true }}
+                  scroll={{ x: 600 }}
                 />
               ),
             },

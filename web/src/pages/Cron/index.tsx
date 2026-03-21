@@ -9,6 +9,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import type { ApiResponse } from '@/types';
 import api from '@/services/api';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 const { Text } = Typography;
 
@@ -182,6 +183,7 @@ const CRON_TEMPLATES: CronTemplate[] = [
 ];
 
 export default function Cron() {
+  const isMobile = useIsMobile();
   const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [jobs, setJobs] = useState<CronJob[]>([]);
@@ -352,7 +354,7 @@ export default function Cron() {
       dataIndex: 'command',
       key: 'command',
       ellipsis: true,
-      width: 200,
+      width: isMobile ? undefined : 200,
     },
     {
       title: t('common.type'),
@@ -410,11 +412,11 @@ export default function Cron() {
 
   const scheduleBuilder = (
     <div style={{ border: '1px solid #d9d9d9', borderRadius: 8, padding: 16, background: '#fafafa' }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
         <Text strong>Run every:</Text>
         <Select
           value={schedState.freq}
-          style={{ width: 140 }}
+          style={{ width: isMobile ? 100 : 140 }}
           onChange={(v) => setSchedState(prev => ({ ...prev, freq: v }))}
           options={[
             { label: 'N minutes', value: 'minute' },
@@ -427,25 +429,25 @@ export default function Cron() {
       </div>
 
       {schedState.freq === 'minute' && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <Text>Every</Text>
-          <InputNumber min={1} max={59} value={schedState.interval} onChange={(v) => setSchedState(prev => ({ ...prev, interval: v ?? 5 }))} style={{ width: 80 }} />
+          <InputNumber min={1} max={59} value={schedState.interval} onChange={(v) => setSchedState(prev => ({ ...prev, interval: v ?? 5 }))} style={{ width: isMobile ? 60 : 80 }} />
           <Text>minutes</Text>
         </div>
       )}
 
       {schedState.freq === 'hour' && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <Text>At minute</Text>
-          <InputNumber min={0} max={59} value={schedState.minute} onChange={(v) => setSchedState(prev => ({ ...prev, minute: v ?? 0 }))} style={{ width: 80 }} />
+          <InputNumber min={0} max={59} value={schedState.minute} onChange={(v) => setSchedState(prev => ({ ...prev, minute: v ?? 0 }))} style={{ width: isMobile ? 60 : 80 }} />
         </div>
       )}
 
       {schedState.freq === 'day' && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <Text>At</Text>
-          <InputNumber min={0} max={23} value={schedState.hour} onChange={(v) => setSchedState(prev => ({ ...prev, hour: v ?? 0 }))} style={{ width: 70 }} addonAfter="h" />
-          <InputNumber min={0} max={59} value={schedState.minute} onChange={(v) => setSchedState(prev => ({ ...prev, minute: v ?? 0 }))} style={{ width: 70 }} addonAfter="m" />
+          <InputNumber min={0} max={23} value={schedState.hour} onChange={(v) => setSchedState(prev => ({ ...prev, hour: v ?? 0 }))} style={{ width: isMobile ? 55 : 70 }} addonAfter="h" />
+          <InputNumber min={0} max={59} value={schedState.minute} onChange={(v) => setSchedState(prev => ({ ...prev, minute: v ?? 0 }))} style={{ width: isMobile ? 55 : 70 }} addonAfter="m" />
         </div>
       )}
 
@@ -453,26 +455,26 @@ export default function Cron() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Text>On</Text>
-            <Select value={schedState.dow} options={dayOptions} style={{ width: 140 }} onChange={(v) => setSchedState(prev => ({ ...prev, dow: v }))} />
+            <Select value={schedState.dow} options={dayOptions} style={{ width: isMobile ? 100 : 140 }} onChange={(v) => setSchedState(prev => ({ ...prev, dow: v }))} />
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <Text>At</Text>
-            <InputNumber min={0} max={23} value={schedState.hour} onChange={(v) => setSchedState(prev => ({ ...prev, hour: v ?? 0 }))} style={{ width: 70 }} addonAfter="h" />
-            <InputNumber min={0} max={59} value={schedState.minute} onChange={(v) => setSchedState(prev => ({ ...prev, minute: v ?? 0 }))} style={{ width: 70 }} addonAfter="m" />
+            <InputNumber min={0} max={23} value={schedState.hour} onChange={(v) => setSchedState(prev => ({ ...prev, hour: v ?? 0 }))} style={{ width: isMobile ? 55 : 70 }} addonAfter="h" />
+            <InputNumber min={0} max={59} value={schedState.minute} onChange={(v) => setSchedState(prev => ({ ...prev, minute: v ?? 0 }))} style={{ width: isMobile ? 55 : 70 }} addonAfter="m" />
           </div>
         </div>
       )}
 
       {schedState.freq === 'month' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <Text>On day</Text>
-            <InputNumber min={1} max={31} value={schedState.dom} onChange={(v) => setSchedState(prev => ({ ...prev, dom: v ?? 1 }))} style={{ width: 80 }} />
+            <InputNumber min={1} max={31} value={schedState.dom} onChange={(v) => setSchedState(prev => ({ ...prev, dom: v ?? 1 }))} style={{ width: isMobile ? 60 : 80 }} />
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <Text>At</Text>
-            <InputNumber min={0} max={23} value={schedState.hour} onChange={(v) => setSchedState(prev => ({ ...prev, hour: v ?? 0 }))} style={{ width: 70 }} addonAfter="h" />
-            <InputNumber min={0} max={59} value={schedState.minute} onChange={(v) => setSchedState(prev => ({ ...prev, minute: v ?? 0 }))} style={{ width: 70 }} addonAfter="m" />
+            <InputNumber min={0} max={23} value={schedState.hour} onChange={(v) => setSchedState(prev => ({ ...prev, hour: v ?? 0 }))} style={{ width: isMobile ? 55 : 70 }} addonAfter="h" />
+            <InputNumber min={0} max={59} value={schedState.minute} onChange={(v) => setSchedState(prev => ({ ...prev, minute: v ?? 0 }))} style={{ width: isMobile ? 55 : 70 }} addonAfter="m" />
           </div>
         </div>
       )}
@@ -487,7 +489,7 @@ export default function Cron() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 8 }}>
         <Typography.Title level={3} style={{ margin: 0 }}>{t('sidebar.cron')}</Typography.Title>
         <Space>
           <Button icon={<ReloadOutlined />} onClick={fetchJobs}>{t('common.refresh')}</Button>
@@ -509,6 +511,7 @@ export default function Cron() {
                 rowKey="id"
                 loading={loading}
                 pagination={{ pageSize: 10, showSizeChanger: true }}
+                scroll={{ x: 700 }}
               />
             </Card>
           ),
@@ -563,7 +566,7 @@ export default function Cron() {
         onCancel={() => { setModalOpen(false); setEditingJob(null); form.resetFields(); }}
         onOk={() => form.submit()}
         confirmLoading={submitting}
-        width={600}
+        width={isMobile ? '95%' : 600}
       >
         <Form form={form} layout="vertical" onFinish={handleSubmit} initialValues={{ type: 'shell' }}>
           <Form.Item name="name" label={t('common.name')} rules={[{ required: true }]}>

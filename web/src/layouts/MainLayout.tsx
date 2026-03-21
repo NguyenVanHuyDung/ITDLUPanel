@@ -34,7 +34,8 @@ import type { MenuProps } from 'antd';
 const { Sider, Content } = Layout;
 const { Text } = Typography;
 
-const MOBILE_BREAKPOINT = 768;
+import { useIsMobile } from '@/hooks/useIsMobile';
+
 const SIDER_WIDTH = 250;
 const SIDER_COLLAPSED = 80;
 
@@ -51,16 +52,6 @@ interface SystemBrief {
   kernel: string;
   uptime: number;
   panel_version: string;
-}
-
-function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(window.innerWidth < MOBILE_BREAKPOINT);
-  useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
-    window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
-  }, []);
-  return isMobile;
 }
 
 export default function MainLayout() {

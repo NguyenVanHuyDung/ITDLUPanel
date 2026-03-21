@@ -6,6 +6,7 @@ import {
   InfoCircleOutlined, DownloadOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import type { ApiResponse } from '@/types';
 import api from '@/services/api';
 
@@ -42,6 +43,7 @@ const defaultInfo: DockerInfo = {
 
 export default function Docker() {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [info, setInfo] = useState<DockerInfo>(defaultInfo);
   const [containers, setContainers] = useState<DockerContainer[]>([]);
   const [images, setImages] = useState<DockerImage[]>([]);
@@ -329,7 +331,7 @@ export default function Docker() {
         open={logsOpen}
         onCancel={() => setLogsOpen(false)}
         footer={<Button onClick={() => setLogsOpen(false)}>{t('common.close')}</Button>}
-        width={720}
+        width={isMobile ? '95%' : 720}
       >
         <pre style={{
           background: '#1e1e1e',
@@ -338,7 +340,7 @@ export default function Docker() {
           borderRadius: 8,
           maxHeight: '60vh',
           overflow: 'auto',
-          fontSize: 13,
+          fontSize: isMobile ? 11 : 13,
           fontFamily: 'monospace',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-all',
