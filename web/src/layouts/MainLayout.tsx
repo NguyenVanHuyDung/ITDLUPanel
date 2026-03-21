@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Menu, Dropdown, Button, Avatar, Space, Typography } from 'antd';
+import { Layout, Menu, Dropdown, Button, Avatar, Space, Typography, Drawer } from 'antd';
 import {
   DashboardOutlined,
   GlobalOutlined,
@@ -24,6 +24,7 @@ import {
   ClusterOutlined,
   FieldTimeOutlined,
   TagOutlined,
+  CloseOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/stores/auth';
@@ -32,6 +33,10 @@ import type { MenuProps } from 'antd';
 
 const { Sider, Content } = Layout;
 const { Text } = Typography;
+
+const MOBILE_BREAKPOINT = 768;
+const SIDER_WIDTH = 250;
+const SIDER_COLLAPSED = 80;
 
 const formatUptime = (seconds: number) => {
   const d = Math.floor(seconds / 86400);
@@ -48,8 +53,20 @@ interface SystemBrief {
   panel_version: string;
 }
 
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < MOBILE_BREAKPOINT);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+  return isMobile;
+}
+
 export default function MainLayout() {
+  const isMobile = useIsMobile();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [sysInfo, setSysInfo] = useState<SystemBrief | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
@@ -76,6 +93,11 @@ export default function MainLayout() {
     intervalRef.current = setInterval(fetchSysInfo, 30000);
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [fetchSysInfo]);
+
+  // Close mobile drawer on navigation
+  useEffect(() => {
+    setMobileDrawerOpen(false);
+  }, [location.pathname]);
 
   const handleLogout = () => {
     logout();
@@ -117,83 +139,132 @@ export default function MainLayout() {
     else if (key === 'settings') navigate('/settings');
   };
 
-  return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Sider
-        trigger={null}
-        collapsible
-        collapsed={collapsed}
-        width={250}
-        breakpoint="lg"
-        onBreakpoint={(broken) => setCollapsed(broken)}
-        style={{
-          background: '#1B2A4A',
-          overflow: 'auto',
-          height: '100vh',
-          position: 'fixed',
-          left: 0,
-          top: 0,
-          bottom: 0,
-          zIndex: 10,
-        }}
-      >
-        <div style={{
-          height: 64,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: collapsed ? 'center' : 'flex-start',
-          padding: collapsed ? '0' : '0 20px',
-          borderBottom: '1px solid rgba(255,255,255,0.1)',
-        }}>
-          <span style={{ fontSize: collapsed ? 24 : 20, lineHeight: 1 }}>🎓</span>
-          {!collapsed && (
+  const handleMenuClick: MenuProps['onClick'] = ({ key }) => {
+    navigate(key);
+    if (isMobile) setMobileDrawerOpen(false);
+  };
+
+  const siderContent = (
+    <>
+      <div style={{
+        height: 64,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: isMobile ? 'space-between' : (collapsed ? 'center' : 'flex-start'),
+        padding: (isMobile || !collapsed) ? '0 20px' : '0',
+        borderBottom: '1px solid rgba(255,255,255,0.1)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <span style={{ fontSize: collapsed && !isMobile ? 24 : 20, lineHeight: 1 }}>🎓</span>
+          {(!collapsed || isMobile) && (
             <Text strong style={{ color: '#fff', fontSize: 18, marginLeft: 10 }}>
               ITDLUPanel
             </Text>
           )}
         </div>
-        <Menu
-          mode="inline"
-          selectedKeys={[location.pathname]}
-          items={menuItems}
-          onClick={({ key }) => navigate(key)}
+        {isMobile && (
+          <Button
+            type="text"
+            icon={<CloseOutlined />}
+            onClick={() => setMobileDrawerOpen(false)}
+            style={{ color: 'rgba(255,255,255,0.65)', fontSize: 16 }}
+          />
+        )}
+      </div>
+      <Menu
+        mode="inline"
+        selectedKeys={[location.pathname]}
+        items={menuItems}
+        onClick={handleMenuClick}
+        style={{ background: 'transparent', borderRight: 0, color: 'rgba(255,255,255,0.85)' }}
+        theme="dark"
+      />
+    </>
+  );
+
+  const contentMarginLeft = isMobile ? 0 : (collapsed ? SIDER_COLLAPSED : SIDER_WIDTH);
+
+  return (
+    <Layout style={{ minHeight: '100vh' }}>
+      {/* Desktop sidebar */}
+      {!isMobile && (
+        <Sider
+          trigger={null}
+          collapsible
+          collapsed={collapsed}
+          width={SIDER_WIDTH}
+          breakpoint="lg"
+          onBreakpoint={(broken) => setCollapsed(broken)}
           style={{
-            background: 'transparent',
-            borderRight: 0,
-            color: 'rgba(255,255,255,0.85)',
+            background: '#1B2A4A',
+            overflow: 'auto',
+            height: '100vh',
+            position: 'fixed',
+            left: 0,
+            top: 0,
+            bottom: 0,
+            zIndex: 10,
           }}
-          theme="dark"
-        />
-      </Sider>
-      <Layout style={{ marginLeft: collapsed ? 80 : 250, transition: 'margin-left 0.2s', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+        >
+          {siderContent}
+        </Sider>
+      )}
+
+      {/* Mobile sidebar drawer */}
+      {isMobile && (
+        <Drawer
+          open={mobileDrawerOpen}
+          onClose={() => setMobileDrawerOpen(false)}
+          placement="left"
+          width={SIDER_WIDTH}
+          closable={false}
+          styles={{ body: { padding: 0, background: '#1B2A4A' } }}
+          style={{ zIndex: 1001 }}
+        >
+          {siderContent}
+        </Drawer>
+      )}
+
+      <Layout style={{
+        marginLeft: contentMarginLeft,
+        transition: 'margin-left 0.2s',
+        minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+      }}>
         {/* ── System Info Header Bar ── */}
-        <div style={{
+        <div className="sys-info-bar" style={{
           background: 'linear-gradient(135deg, #0D47A1 0%, #1565C0 50%, #1E88E5 100%)',
-          padding: '8px 24px',
+          padding: isMobile ? '6px 12px' : '8px 24px',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          color: '#fff', fontSize: 13, flexWrap: 'wrap', gap: 8,
+          color: '#fff', fontSize: isMobile ? 11 : 13, flexWrap: 'wrap', gap: isMobile ? 4 : 8,
+          minHeight: isMobile ? 28 : 'auto',
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 16, flexWrap: 'wrap' }}>
             {sysInfo && (
               <>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <DesktopOutlined style={{ fontSize: 13, opacity: 0.85 }} />
+                  <DesktopOutlined style={{ fontSize: isMobile ? 11 : 13, opacity: 0.85 }} />
                   <strong>{sysInfo.hostname}</strong>
                 </span>
+                {!isMobile && (
+                  <>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: 0.9 }}>
+                      <ClusterOutlined style={{ fontSize: 12 }} />
+                      {sysInfo.os}
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: 0.9 }}>
+                      <CodeOutlined style={{ fontSize: 12 }} />
+                      {sysInfo.kernel}
+                    </span>
+                  </>
+                )}
                 <span style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: 0.9 }}>
-                  <ClusterOutlined style={{ fontSize: 12 }} />
-                  {sysInfo.os}
+                  <FieldTimeOutlined style={{ fontSize: isMobile ? 10 : 12 }} />
+                  {formatUptime(sysInfo.uptime)}
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: 0.9 }}>
-                  <CodeOutlined style={{ fontSize: 12 }} />
-                  {sysInfo.kernel}
-                </span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: 0.9 }}>
-                  <FieldTimeOutlined style={{ fontSize: 12 }} />
-                  Uptime: {formatUptime(sysInfo.uptime)}
-                </span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: 0.9 }}>
-                  <TagOutlined style={{ fontSize: 12 }} />
+                  <TagOutlined style={{ fontSize: isMobile ? 10 : 12 }} />
                   v{sysInfo.panel_version}
                 </span>
               </>
@@ -203,7 +274,7 @@ export default function MainLayout() {
         {/* ── Action Header ── */}
         <div style={{
           background: '#fff',
-          padding: '0 24px',
+          padding: isMobile ? '0 12px' : '0 24px',
           height: 48,
           display: 'flex',
           alignItems: 'center',
@@ -215,11 +286,11 @@ export default function MainLayout() {
         }}>
           <Button
             type="text"
-            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            onClick={() => setCollapsed(!collapsed)}
+            icon={isMobile ? <MenuUnfoldOutlined /> : (collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />)}
+            onClick={() => isMobile ? setMobileDrawerOpen(true) : setCollapsed(!collapsed)}
             style={{ fontSize: 16 }}
           />
-          <Space size="middle">
+          <Space size={isMobile ? 'small' : 'middle'}>
             <Dropdown menu={{ items: languageItems, onClick: ({ key }) => i18n.changeLanguage(key) }}>
               <Button type="text" icon={<TranslationOutlined />} size="small">
                 {i18n.language === 'vi' ? '🇻🇳' : '🇺🇸'}
@@ -228,19 +299,19 @@ export default function MainLayout() {
             <Dropdown menu={{ items: userMenuItems, onClick: handleUserMenu }}>
               <Space style={{ cursor: 'pointer' }}>
                 <Avatar size="small" icon={<UserOutlined />} style={{ backgroundColor: '#1565C0' }} />
-                <Text>{user?.username ?? 'Admin'}</Text>
+                {!isMobile && <Text>{user?.username ?? 'Admin'}</Text>}
               </Space>
             </Dropdown>
           </Space>
         </div>
-        <Content style={{ margin: 24, flex: 1 }}>
+        <Content style={{ margin: isMobile ? 8 : 24, flex: 1 }}>
           <Outlet />
         </Content>
         {/* ── Footer ── */}
         <div style={{
           textAlign: 'center',
-          padding: '16px 24px',
-          fontSize: 12,
+          padding: isMobile ? '12px 8px' : '16px 24px',
+          fontSize: isMobile ? 11 : 12,
           color: '#94A3B8',
           borderTop: '1px solid #E8EDF2',
           background: '#FAFBFC',
@@ -250,8 +321,12 @@ export default function MainLayout() {
             Đại học Đà Lạt
           </a>
           <span> — ITDLUPanel v{sysInfo?.panel_version || '1.0.0'}</span>
-          <span style={{ margin: '0 8px', color: '#CBD5E1' }}>|</span>
-          <span>Powered by Go + React</span>
+          {!isMobile && (
+            <>
+              <span style={{ margin: '0 8px', color: '#CBD5E1' }}>|</span>
+              <span>Powered by Go + React</span>
+            </>
+          )}
         </div>
       </Layout>
     </Layout>

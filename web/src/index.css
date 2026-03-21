@@ -53,3 +53,72 @@ body {
 .header-select-white .ant-select-arrow {
   color: rgba(255,255,255,0.8) !important;
 }
+
+/* ── Responsive ── */
+
+/* Tables: horizontal scroll on small screens */
+.ant-table-wrapper {
+  overflow-x: auto;
+}
+
+/* Mobile drawer sidebar styling */
+.ant-drawer .ant-drawer-body .ant-menu-dark {
+  background: transparent !important;
+}
+
+@media (max-width: 768px) {
+  /* Toolbars: wrap and reduce padding */
+  .ant-card-body {
+    padding: 12px !important;
+  }
+
+  /* Tables: smaller font, compact */
+  .ant-table {
+    font-size: 12px;
+  }
+
+  /* Modal: full width on mobile */
+  .ant-modal {
+    max-width: calc(100vw - 16px) !important;
+    margin: 8px auto !important;
+  }
+  .ant-modal-content {
+    border-radius: 8px !important;
+  }
+
+  /* Drawer: full width */
+  .ant-drawer-content-wrapper {
+    max-width: 85vw !important;
+  }
+
+  /* Typography: reduce heading sizes */
+  .ant-typography h3,
+  h3.ant-typography {
+    font-size: 18px !important;
+  }
+
+  /* Button groups: wrap */
+  .ant-space-horizontal {
+    flex-wrap: wrap;
+  }
+
+  /* Recharts: reduce min height */
+  .recharts-responsive-container {
+    min-height: 160px;
+  }
+}
+
+@media (max-width: 480px) {
+  .ant-table {
+    font-size: 11px;
+  }
+  .ant-btn {
+    font-size: 12px;
+  }
+  .ant-table-thead > tr > th {
+    padding: 8px 4px !important;
+  }
+  .ant-table-tbody > tr > td {
+    padding: 8px 4px !important;
+  }
+}
