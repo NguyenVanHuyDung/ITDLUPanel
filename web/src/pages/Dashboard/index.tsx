@@ -262,7 +262,7 @@ export default function Dashboard() {
             <Row gutter={8} justify="space-around" align="middle">
               {/* Load ring */}
               <Col xs={24} sm={8} style={{ textAlign: 'center', marginBottom: 8 }}>
-                <Popover content={loadPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom" overlayStyle={{ maxWidth: 360 }}>
+                <Popover content={loadPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom" overlayStyle={{ maxWidth: 420 }} overlayInnerStyle={{ padding: 0 }}>
                   <div style={{ cursor: 'pointer', display: 'inline-block', padding: 4 }}>
                     <Progress type="circle" percent={loadPct} size={isMobile ? 80 : 120} strokeColor="#1565C0" strokeWidth={8}
                       format={() => <span style={{ fontSize: isMobile ? 18 : 26, fontWeight: 700, color: '#1565C0' }}>{loadPct}%</span>} />
@@ -276,7 +276,7 @@ export default function Dashboard() {
 
               {/* CPU usage ring */}
               <Col xs={24} sm={8} style={{ textAlign: 'center', marginBottom: 8 }}>
-                <Popover content={cpuPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom" overlayStyle={{ maxWidth: 380 }}>
+                <Popover content={cpuPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom" overlayStyle={{ maxWidth: 440 }} overlayInnerStyle={{ padding: 0 }}>
                   <div style={{ cursor: 'pointer', display: 'inline-block', padding: 4 }}>
                     <Progress type="circle" percent={cpuPct} size={isMobile ? 80 : 120} strokeColor="#1E88E5" strokeWidth={8}
                       format={() => <span style={{ fontSize: isMobile ? 18 : 26, fontWeight: 700, color: '#1E88E5' }}>{info.cpu.usage_percent.toFixed(1)}%</span>} />
@@ -290,7 +290,7 @@ export default function Dashboard() {
 
               {/* RAM ring */}
               <Col xs={24} sm={8} style={{ textAlign: 'center', marginBottom: 8 }}>
-                <Popover content={ramPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom" overlayStyle={{ maxWidth: 360 }}>
+                <Popover content={ramPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom" overlayStyle={{ maxWidth: 420 }} overlayInnerStyle={{ padding: 0 }}>
                   <div style={{ cursor: 'pointer', display: 'inline-block', padding: 4 }}>
                     <Progress type="circle" percent={memPct} size={isMobile ? 80 : 120} strokeColor="#0288D1" strokeWidth={8}
                       format={() => <span style={{ fontSize: isMobile ? 18 : 26, fontWeight: 700, color: '#0288D1' }}>{info.memory.usage_percent.toFixed(1)}%</span>} />
@@ -322,7 +322,7 @@ export default function Dashboard() {
                 {formatGB(info.disk.used)} / {formatGB(info.disk.total)} GB
               </Text>
             </div>
-            <Popover content={diskPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom" overlayStyle={{ maxWidth: 400 }}>
+            <Popover content={diskPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom" overlayStyle={{ maxWidth: 420 }} overlayInnerStyle={{ padding: 0 }}>
               <div style={{ cursor: 'pointer', display: 'inline-block', padding: 4 }}>
                 <Progress type="circle" percent={diskPct} size={isMobile ? 80 : 110}
                   strokeColor={diskPct > 80 ? '#ff4d4f' : '#1565C0'} strokeWidth={10}
