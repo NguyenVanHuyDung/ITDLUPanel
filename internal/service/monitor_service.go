@@ -34,7 +34,9 @@ type SystemOverview struct {
 	System  SystemInfo  `json:"system"`
 	CPU     CPUInfo     `json:"cpu"`
 	Memory  MemoryInfo  `json:"memory"`
+	Swap    SwapInfo    `json:"swap"`
 	Disk    DiskInfo    `json:"disk"`
+	DiskIO  DiskIOInfo  `json:"disk_io"`
 	Network NetworkInfo `json:"network"`
 	Counts  CountInfo   `json:"counts"`
 }
@@ -76,6 +78,20 @@ type DiskInfo struct {
 type NetworkInfo struct {
 	BytesSent uint64 `json:"bytes_sent"`
 	BytesRecv uint64 `json:"bytes_recv"`
+}
+
+// SwapInfo holds swap memory metrics.
+type SwapInfo struct {
+	Total        uint64  `json:"total"`
+	Used         uint64  `json:"used"`
+	Free         uint64  `json:"free"`
+	UsagePercent float64 `json:"usage_percent"`
+}
+
+// DiskIOInfo holds cumulative disk I/O counters (all disks aggregate).
+type DiskIOInfo struct {
+	ReadBytes  uint64 `json:"read_bytes"`
+	WriteBytes uint64 `json:"write_bytes"`
 }
 
 // CountInfo holds counts of managed resources.
@@ -188,6 +204,29 @@ func (s *MonitorService) GetOverview(db *sql.DB) (*SystemOverview, error) {
 			BytesSent: netCounters[0].BytesSent,
 			BytesRecv: netCounters[0].BytesRecv,
 		}
+	}
+
+	// Swap info
+	swapStat, _ := mem.SwapMemory()
+	if swapStat != nil {
+		overview.Swap = SwapInfo{
+			Total:        swapStat.Total,
+			Used:         swapStat.Used,
+			Free:         swapStat.Free,
+			UsagePercent: swapStat.UsedPercent,
+		}
+	}
+
+	// Disk I/O counters (aggregate all disks)
+	diskCounters, _ := disk.IOCounters()
+	var totalRead, totalWrite uint64
+	for _, d := range diskCounters {
+		totalRead += d.ReadBytes
+		totalWrite += d.WriteBytes
+	}
+	overview.DiskIO = DiskIOInfo{
+		ReadBytes:  totalRead,
+		WriteBytes: totalWrite,
 	}
 
 	// Resource counts from database
