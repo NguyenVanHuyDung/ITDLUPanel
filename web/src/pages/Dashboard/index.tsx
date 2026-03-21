@@ -310,6 +310,7 @@ export default function Dashboard() {
         {/* — Disk — */}
         <Col xs={24} lg={9}>
           <Popover content={diskPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom" overlayStyle={{ maxWidth: 400 }}>
+          <div style={{ height: '100%' }}>
           <Card title={<><span role="img" aria-label="disk">💿</span> Disk</>} size="small"
             style={{ height: '100%', cursor: 'pointer' }}
             styles={{ body: { padding: '24px 16px', display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 20, height: 'calc(100% - 40px)' }, header: { fontWeight: 600 } }}>
@@ -327,6 +328,7 @@ export default function Dashboard() {
               strokeColor={diskPct > 80 ? '#ff4d4f' : '#1565C0'} strokeWidth={10}
               format={() => <span style={{ fontSize: isMobile ? 16 : 22, fontWeight: 700, color: diskPct > 80 ? '#ff4d4f' : '#1565C0' }}>{diskPct}%</span>} />
           </Card>
+          </div>
           </Popover>
         </Col>
       </Row>
