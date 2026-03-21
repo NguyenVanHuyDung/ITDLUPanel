@@ -145,13 +145,35 @@ function DatabasesContent() {
         destroyOnHidden
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
-          <Form.Item name="name" label={t('databases.db_name')} rules={[{ required: true, message: 'Database name is required' }]}>
+          <Form.Item name="db_type" label={t('databases.db_type') || 'Database Type'} initialValue="mysql" rules={[{ required: true }]}>
+            <Select options={[
+              { value: 'mysql', label: 'MySQL' },
+              { value: 'mariadb', label: 'MariaDB' },
+            ]} />
+          </Form.Item>
+          <Form.Item
+            name="name"
+            label={t('databases.db_name')}
+            rules={[
+              { required: true, message: 'Database name is required' },
+              { pattern: /^[a-zA-Z0-9_]+$/, message: 'Only letters, numbers and underscores allowed' },
+              { max: 64, message: 'Maximum 64 characters' },
+            ]}
+          >
             <Input placeholder="my_database" />
           </Form.Item>
-          <Form.Item name="username" label={t('databases.db_user')} rules={[{ required: true, message: 'Username is required' }]}>
+          <Form.Item
+            name="username"
+            label={t('databases.db_user')}
+            rules={[
+              { required: true, message: 'Username is required' },
+              { pattern: /^[a-zA-Z0-9_]+$/, message: 'Only letters, numbers and underscores allowed' },
+              { max: 32, message: 'Maximum 32 characters' },
+            ]}
+          >
             <Input placeholder="db_user" />
           </Form.Item>
-          <Form.Item name="password" label={t('auth.password')} rules={[{ required: true }]}>
+          <Form.Item name="password" label={t('auth.password')} rules={[{ required: true }, { min: 6, message: 'Minimum 6 characters' }]}>
             <Input.Password
               addonAfter={
                 <CopyOutlined onClick={() => {
