@@ -1,18 +1,34 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Table, Card, Button, Modal, Form, Input, Select, Space, Tag, message, Typography, Popconfirm, Alert, Tooltip } from 'antd';
-import { PlusOutlined, DeleteOutlined, KeyOutlined, CloudDownloadOutlined, ReloadOutlined, DatabaseOutlined, CopyOutlined, LinkOutlined, EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons';
+import { Table, Button, Modal, Form, Input, Select, Space, message, Typography, Popconfirm, Tooltip, Badge, Spin } from 'antd';
+import {
+  PlusOutlined, DeleteOutlined, KeyOutlined, CloudDownloadOutlined,
+  ReloadOutlined, DatabaseOutlined, CopyOutlined, LinkOutlined,
+  EyeOutlined, EyeInvisibleOutlined, SearchOutlined, ImportOutlined,
+  SafetyCertificateOutlined, GlobalOutlined,
+} from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
 import type { Database } from '@/types';
 import RequireSoftware from '@/components/RequireSoftware';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
+
+// ---------------------------------------------------------------------------
+// Constants & palette (unified blue theme)
+// ---------------------------------------------------------------------------
+const PRIMARY = '#1565C0';
+const PRIMARY_DARK = '#0D47A1';
+const PRIMARY_LIGHT = '#E3F2FD';
+const BORDER = '#E8EDF2';
+const TEXT_PRIMARY = '#1A1A2E';
+const TEXT_SECONDARY = '#64748B';
+const SUCCESS = '#4CAF50';
 
 const formatSize = (bytes: number) => {
   if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-  if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
-  return (bytes / 1024 / 1024 / 1024).toFixed(1) + ' GB';
+  if (bytes < 1024 ** 2) return (bytes / 1024).toFixed(1) + ' KB';
+  if (bytes < 1024 ** 3) return (bytes / 1024 ** 2).toFixed(1) + ' MB';
+  return (bytes / 1024 ** 3).toFixed(1) + ' GB';
 };
 
 const generatePassword = () => {
@@ -20,6 +36,65 @@ const generatePassword = () => {
   return Array.from({ length: 16 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 };
 
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
+const cardStyle: React.CSSProperties = {
+  background: '#fff',
+  borderRadius: 8,
+  border: `1px solid ${BORDER}`,
+  overflow: 'hidden',
+};
+
+const tabBarStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 0,
+  borderBottom: `1px solid ${BORDER}`,
+  padding: '0 20px',
+  background: '#FAFBFC',
+};
+
+const activeTabStyle: React.CSSProperties = {
+  padding: '12px 20px',
+  fontSize: 14,
+  fontWeight: 600,
+  color: PRIMARY,
+  borderBottom: `2px solid ${PRIMARY}`,
+  cursor: 'pointer',
+  background: 'transparent',
+  marginBottom: -1,
+};
+
+const inactiveTabStyle: React.CSSProperties = {
+  padding: '12px 20px',
+  fontSize: 14,
+  fontWeight: 500,
+  color: TEXT_SECONDARY,
+  cursor: 'not-allowed',
+  opacity: 0.5,
+  background: 'transparent',
+};
+
+const toolbarStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+  gap: 8,
+  padding: '12px 20px',
+  borderBottom: `1px solid ${BORDER}`,
+};
+
+const actionLinkStyle: React.CSSProperties = {
+  fontSize: 12,
+  padding: '0 4px',
+  height: 'auto',
+  color: PRIMARY,
+};
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 function DatabasesContent() {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
@@ -32,6 +107,8 @@ function DatabasesContent() {
   const [pwForm] = Form.useForm();
   const [pmaInstalled, setPmaInstalled] = useState<boolean | null>(null);
   const [visiblePasswords, setVisiblePasswords] = useState<Set<number>>(new Set());
+  const [searchText, setSearchText] = useState('');
+  const [dbVersion, setDbVersion] = useState('');
 
   const togglePasswordVisibility = (id: number) => {
     setVisiblePasswords(prev => {
@@ -53,6 +130,10 @@ function DatabasesContent() {
       const available = sw.available || [];
       const pma = available.find((s: { name: string; installed: boolean }) => s.name === 'phpmyadmin');
       setPmaInstalled(pma?.installed ?? false);
+      const mysql = available.find((s: { name: string; installed: boolean; version?: string }) =>
+        (s.name === 'mysql' || s.name === 'mariadb') && s.installed
+      );
+      if (mysql) setDbVersion(`${mysql.name === 'mariadb' ? 'MariaDB' : 'MySQL'} ${(mysql as { version?: string }).version || ''}`);
     } catch {
       setPmaInstalled(false);
     }
@@ -118,6 +199,7 @@ function DatabasesContent() {
       message.success('Password changed');
       setPasswordModalOpen(false);
       pwForm.resetFields();
+      fetchData();
     } catch {
       message.error('Failed to change password');
     } finally {
@@ -125,18 +207,38 @@ function DatabasesContent() {
     }
   };
 
+  const openPma = () => {
+    const host = window.location.hostname;
+    window.open(`http://${host}/phpmyadmin/`, '_blank');
+  };
+
+  const filteredDatabases = searchText
+    ? databases.filter(d =>
+        d.name.toLowerCase().includes(searchText.toLowerCase()) ||
+        d.username.toLowerCase().includes(searchText.toLowerCase())
+      )
+    : databases;
+
   const columns = [
-    { title: t('databases.db_name'), dataIndex: 'name', key: 'name', render: (name: string) => <><DatabaseOutlined style={{ marginRight: 8 }} />{name}</> },
-    { title: t('databases.db_type'), dataIndex: 'db_type', key: 'type', render: (v: string) => <Tag color={v === 'mysql' ? 'blue' : v === 'postgresql' ? 'cyan' : 'default'}>{v?.toUpperCase()}</Tag> },
+    {
+      title: t('databases.db_name'),
+      dataIndex: 'name',
+      key: 'name',
+      render: (name: string) => (
+        <span style={{ fontWeight: 500, color: TEXT_PRIMARY }}>
+          <DatabaseOutlined style={{ marginRight: 6, color: PRIMARY }} />{name}
+        </span>
+      ),
+    },
     {
       title: t('databases.db_user'),
       dataIndex: 'username',
       key: 'username',
       render: (username: string) => (
         <Space size={4}>
-          <Text code>{username}</Text>
-          <Tooltip title="Copy username">
-            <CopyOutlined style={{ cursor: 'pointer', color: '#1565C0', fontSize: 12 }} onClick={() => copyToClipboard(username, 'Username')} />
+          <Text code style={{ fontSize: 12, background: PRIMARY_LIGHT, color: PRIMARY_DARK, border: 'none' }}>{username}</Text>
+          <Tooltip title="Copy">
+            <CopyOutlined style={{ cursor: 'pointer', color: TEXT_SECONDARY, fontSize: 11 }} onClick={() => copyToClipboard(username, 'Username')} />
           </Tooltip>
         </Space>
       ),
@@ -147,35 +249,102 @@ function DatabasesContent() {
       width: 200,
       render: (_: unknown, r: Database) => {
         const visible = visiblePasswords.has(r.id);
-        const pw = r.password || '••••••••';
         return (
-          <Space size={4}>
-            <Text code style={{ minWidth: 80, display: 'inline-block' }}>
-              {visible ? r.password || '—' : '••••••••'}
-            </Text>
+          <Space size={2}>
+            <span style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 12,
+              color: visible ? TEXT_PRIMARY : TEXT_SECONDARY,
+              letterSpacing: visible ? 0 : 2,
+              minWidth: 80,
+              display: 'inline-block',
+            }}>
+              {visible ? (r.password || '—') : '••••••••'}
+            </span>
             <Tooltip title={visible ? 'Hide' : 'Show'}>
-              <Button type="text" size="small" icon={visible ? <EyeInvisibleOutlined /> : <EyeOutlined />} onClick={() => togglePasswordVisibility(r.id)} />
+              <Button
+                type="text" size="small"
+                icon={visible ? <EyeInvisibleOutlined /> : <EyeOutlined />}
+                style={{ color: TEXT_SECONDARY, fontSize: 12 }}
+                onClick={() => togglePasswordVisibility(r.id)}
+              />
             </Tooltip>
             {r.password && (
-              <Tooltip title="Copy password">
-                <CopyOutlined style={{ cursor: 'pointer', color: '#1565C0', fontSize: 12 }} onClick={() => copyToClipboard(r.password!, 'Password')} />
+              <Tooltip title="Copy">
+                <CopyOutlined
+                  style={{ cursor: 'pointer', color: TEXT_SECONDARY, fontSize: 11 }}
+                  onClick={() => copyToClipboard(r.password!, 'Password')}
+                />
               </Tooltip>
             )}
           </Space>
         );
       },
     },
-    { title: t('common.size'), key: 'size', render: (_: unknown, r: Database) => formatSize(r.size) },
-    { title: t('databases.charset'), dataIndex: 'charset', key: 'charset' },
+    {
+      title: t('common.size'),
+      key: 'size',
+      width: 100,
+      render: (_: unknown, r: Database) => (
+        <span style={{ fontSize: 13, color: TEXT_SECONDARY }}>{formatSize(r.size)}</span>
+      ),
+    },
+    {
+      title: 'Backup',
+      key: 'backup',
+      width: 120,
+      render: (_: unknown, r: Database) => (
+        <Space size={4}>
+          <Button type="link" size="small" style={{ fontSize: 12, padding: 0, color: PRIMARY }}
+            onClick={() => handleBackup(r.id)}
+          >
+            Backup
+          </Button>
+          <span style={{ color: BORDER }}>|</span>
+          <Button type="link" size="small" style={{ fontSize: 12, padding: 0, color: PRIMARY }}
+            onClick={() => { message.info('Import feature coming soon'); }}
+          >
+            Import
+          </Button>
+        </Space>
+      ),
+    },
+    {
+      title: 'Location',
+      key: 'location',
+      width: 100,
+      render: (_: unknown, r: Database) => (
+        <span style={{ fontSize: 13, color: TEXT_SECONDARY }}>
+          <GlobalOutlined style={{ marginRight: 4, fontSize: 11 }} />
+          {r.remote_access || 'localhost'}
+        </span>
+      ),
+    },
     {
       title: t('common.actions'),
       key: 'actions',
+      width: 240,
       render: (_: unknown, r: Database) => (
-        <Space>
-          <Button type="text" size="small" icon={<CloudDownloadOutlined />} title="Backup" onClick={() => handleBackup(r.id)} />
-          <Button type="text" size="small" icon={<KeyOutlined />} title="Change Password" onClick={() => { setSelectedDb(r); setPasswordModalOpen(true); }} />
-          <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(r.id)} okText={t('common.yes')} cancelText={t('common.no')}>
-            <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+        <Space size={0} split={<span style={{ color: '#E0E0E0', margin: '0 2px' }}>|</span>}>
+          {pmaInstalled && (
+            <Button type="link" size="small" style={actionLinkStyle} onClick={openPma}>
+              phpMyAdmin
+            </Button>
+          )}
+          <Button type="link" size="small" style={actionLinkStyle}
+            onClick={() => { setSelectedDb(r); setPasswordModalOpen(true); }}
+          >
+            Password
+          </Button>
+          <Popconfirm
+            title={t('common.confirm_delete')}
+            onConfirm={() => handleDelete(r.id)}
+            okText={t('common.yes')} cancelText={t('common.no')}
+            okButtonProps={{ danger: true }}
+          >
+            <Button type="link" size="small" style={{ ...actionLinkStyle, color: '#F44336' }}>
+              Delete
+            </Button>
           </Popconfirm>
         </Space>
       ),
@@ -183,44 +352,106 @@ function DatabasesContent() {
   ];
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <Title level={3} style={{ margin: 0 }}>{t('databases.title')}</Title>
-        <Space>
-          {pmaInstalled && (
-            <Button
-              icon={<LinkOutlined />}
-              onClick={() => {
-                const host = window.location.hostname;
-                window.open(`http://${host}/phpmyadmin/`, '_blank');
+    <div style={{ maxWidth: 1400 }}>
+      <div style={cardStyle}>
+        {/* Tab bar */}
+        <div style={tabBarStyle}>
+          <div style={activeTabStyle}>
+            <DatabaseOutlined style={{ marginRight: 6 }} /> MySQL
+          </div>
+          <div style={inactiveTabStyle}>PostgreSQL</div>
+          <div style={inactiveTabStyle}>Redis</div>
+          <div style={{ flex: 1 }} />
+          {dbVersion && (
+            <Badge
+              count={dbVersion}
+              style={{
+                background: PRIMARY_LIGHT,
+                color: PRIMARY,
+                fontSize: 11,
+                fontWeight: 600,
+                borderRadius: 4,
+                padding: '0 8px',
+                boxShadow: 'none',
               }}
-              style={{ background: '#1565C0', borderColor: '#1565C0', color: '#fff' }}
-            >
+            />
+          )}
+        </div>
+
+        {/* Toolbar */}
+        <div style={toolbarStyle}>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => { form.setFieldsValue({ password: generatePassword() }); setModalOpen(true); }}
+            style={{ background: PRIMARY, borderColor: PRIMARY, fontWeight: 500 }}
+          >
+            {t('databases.add_database')}
+          </Button>
+          <Button icon={<SafetyCertificateOutlined />} onClick={() => message.info('Root password management coming soon')}>
+            Root password
+          </Button>
+          {pmaInstalled ? (
+            <Button icon={<LinkOutlined />} onClick={openPma}>
               phpMyAdmin
             </Button>
+          ) : (
+            <Tooltip title="Install phpMyAdmin from App Store">
+              <Button icon={<LinkOutlined />} disabled>phpMyAdmin</Button>
+            </Tooltip>
           )}
-          <Button icon={<ReloadOutlined />} onClick={fetchData} />
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.setFieldsValue({ password: generatePassword() }); setModalOpen(true); }}>{t('databases.add_database')}</Button>
-        </Space>
+          <Button icon={<CloudDownloadOutlined />} onClick={() => message.info('Backup all coming soon')}>
+            Backup All
+          </Button>
+          <Button icon={<ImportOutlined />} onClick={() => message.info('Import coming soon')}>
+            Import
+          </Button>
+
+          <div style={{ flex: 1 }} />
+
+          <Input
+            placeholder="Database search"
+            prefix={<SearchOutlined style={{ color: TEXT_SECONDARY }} />}
+            value={searchText}
+            onChange={e => setSearchText(e.target.value)}
+            allowClear
+            style={{ width: 200 }}
+            size="middle"
+          />
+          <Tooltip title="Refresh">
+            <Button icon={<ReloadOutlined />} onClick={fetchData} />
+          </Tooltip>
+        </div>
+
+        {/* Table */}
+        <div style={{ padding: 0 }}>
+          <Table
+            columns={columns}
+            dataSource={filteredDatabases}
+            rowKey="id"
+            loading={{ spinning: loading, indicator: <Spin /> }}
+            size="middle"
+            pagination={{
+              pageSize: 20,
+              showSizeChanger: true,
+              size: 'small',
+              showTotal: (total) => <span style={{ color: TEXT_SECONDARY, fontSize: 13 }}>Total {total}</span>,
+              style: { padding: '8px 16px', margin: 0 },
+            }}
+            style={{ fontSize: 13 }}
+            rowClassName={() => 'db-table-row'}
+          />
+        </div>
       </div>
 
-      {pmaInstalled === false && (
-        <Alert
-          type="info"
-          showIcon
-          style={{ marginBottom: 16 }}
-          message="phpMyAdmin not installed"
-          description="Install phpMyAdmin from the App Store to manage databases via a web interface."
-          closable
-        />
-      )}
-
-      <Card>
-        <Table columns={columns} dataSource={databases} rowKey="id" loading={loading} pagination={{ pageSize: 10, showTotal: total => `${t('common.total')}: ${total}` }} />
-      </Card>
-
+      {/* Add Database Modal */}
       <Modal
-        title={t('databases.add_database')}
+        title={
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <DatabaseOutlined style={{ color: PRIMARY }} />
+            {t('databases.add_database')}
+          </span>
+        }
         open={modalOpen}
         onOk={handleCreate}
         onCancel={() => { setModalOpen(false); form.resetFields(); }}
@@ -228,6 +459,8 @@ function DatabasesContent() {
         okText={t('common.create')}
         cancelText={t('common.cancel')}
         destroyOnHidden
+        width={520}
+        okButtonProps={{ style: { background: PRIMARY, borderColor: PRIMARY } }}
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           <Form.Item name="db_type" label={t('databases.db_type') || 'Database Type'} initialValue="mysql" rules={[{ required: true }]}>
@@ -241,7 +474,7 @@ function DatabasesContent() {
             label={t('databases.db_name')}
             rules={[
               { required: true, message: 'Database name is required' },
-              { pattern: /^[a-zA-Z0-9_]+$/, message: 'Only letters, numbers and underscores allowed' },
+              { pattern: /^[a-zA-Z0-9_]+$/, message: 'Only letters, numbers and underscores' },
               { max: 64, message: 'Maximum 64 characters' },
             ]}
           >
@@ -252,7 +485,7 @@ function DatabasesContent() {
             label={t('databases.db_user')}
             rules={[
               { required: true, message: 'Username is required' },
-              { pattern: /^[a-zA-Z0-9_]+$/, message: 'Only letters, numbers and underscores allowed' },
+              { pattern: /^[a-zA-Z0-9_]+$/, message: 'Only letters, numbers and underscores' },
               { max: 32, message: 'Maximum 32 characters' },
             ]}
           >
@@ -261,24 +494,46 @@ function DatabasesContent() {
           <Form.Item name="password" label={t('auth.password')} rules={[{ required: true }, { min: 6, message: 'Minimum 6 characters' }]}>
             <Input.Password
               addonAfter={
-                <CopyOutlined onClick={() => {
-                  const pw = form.getFieldValue('password');
-                  if (pw) { navigator.clipboard.writeText(pw); message.success(t('common.copied')); }
-                }} style={{ cursor: 'pointer' }} />
+                <Space size={8}>
+                  <Tooltip title="Generate new password">
+                    <ReloadOutlined onClick={() => form.setFieldsValue({ password: generatePassword() })} style={{ cursor: 'pointer' }} />
+                  </Tooltip>
+                  <Tooltip title="Copy password">
+                    <CopyOutlined onClick={() => {
+                      const pw = form.getFieldValue('password');
+                      if (pw) { navigator.clipboard.writeText(pw); message.success(t('common.copied')); }
+                    }} style={{ cursor: 'pointer' }} />
+                  </Tooltip>
+                </Space>
               }
             />
           </Form.Item>
           <Form.Item name="charset" label={t('databases.charset')} initialValue="utf8mb4">
             <Select options={[
-              { value: 'utf8mb4', label: 'utf8mb4' }, { value: 'utf8', label: 'utf8' },
-              { value: 'latin1', label: 'latin1' }, { value: 'ascii', label: 'ascii' },
+              { value: 'utf8mb4', label: 'utf8mb4 (Recommended)' },
+              { value: 'utf8', label: 'utf8' },
+              { value: 'latin1', label: 'latin1' },
+              { value: 'ascii', label: 'ascii' },
+            ]} />
+          </Form.Item>
+          <Form.Item name="remote_access" label="Access Permission" initialValue="localhost">
+            <Select options={[
+              { value: 'localhost', label: 'Localhost — Local access only' },
+              { value: '%', label: 'All — Allow remote connections' },
+              { value: 'ip', label: 'Specific IP' },
             ]} />
           </Form.Item>
         </Form>
       </Modal>
 
+      {/* Change Password Modal */}
       <Modal
-        title="Change Database Password"
+        title={
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <KeyOutlined style={{ color: PRIMARY }} />
+            Change Password — {selectedDb?.name}
+          </span>
+        }
         open={passwordModalOpen}
         onOk={handleChangePassword}
         onCancel={() => { setPasswordModalOpen(false); pwForm.resetFields(); }}
@@ -286,17 +541,28 @@ function DatabasesContent() {
         okText={t('common.update')}
         cancelText={t('common.cancel')}
         destroyOnHidden
+        okButtonProps={{ style: { background: PRIMARY, borderColor: PRIMARY } }}
       >
         <Form form={pwForm} layout="vertical" style={{ marginTop: 16 }}>
           <Form.Item name="password" label={t('auth.new_password')} rules={[{ required: true, min: 8 }]}>
             <Input.Password
               addonAfter={
-                <CopyOutlined onClick={() => {
-                  const pw = generatePassword();
-                  pwForm.setFieldsValue({ password: pw });
-                  navigator.clipboard.writeText(pw);
-                  message.success(t('common.copied'));
-                }} style={{ cursor: 'pointer' }} title="Generate & Copy" />
+                <Space size={8}>
+                  <Tooltip title="Generate & copy">
+                    <ReloadOutlined onClick={() => {
+                      const pw = generatePassword();
+                      pwForm.setFieldsValue({ password: pw });
+                      navigator.clipboard.writeText(pw);
+                      message.success('Generated & copied');
+                    }} style={{ cursor: 'pointer' }} />
+                  </Tooltip>
+                  <Tooltip title="Copy">
+                    <CopyOutlined onClick={() => {
+                      const pw = pwForm.getFieldValue('password');
+                      if (pw) { navigator.clipboard.writeText(pw); message.success(t('common.copied')); }
+                    }} style={{ cursor: 'pointer' }} />
+                  </Tooltip>
+                </Space>
               }
             />
           </Form.Item>
