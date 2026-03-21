@@ -140,8 +140,8 @@ export default function Dashboard() {
 
   // === LOAD POPOVER ===
   const loadPopoverContent = (
-    <div style={{ width: 380, maxHeight: 480, overflow: 'auto' }}>
-      <div style={{ padding: '12px 12px 8px', borderBottom: '2px solid #E3F2FD' }}>
+    <div style={{ width: 380, maxHeight: 580, overflow: 'auto', paddingBottom: 8 }}>
+      <div style={{ padding: '14px 12px 10px', borderBottom: '2px solid #E3F2FD' }}>
         <span style={{ fontSize: 15, fontWeight: 700 }}>Load usage: <span style={{ color: '#4CAF50' }}>{info.cpu.usage_percent.toFixed(1)}%</span></span>
       </div>
       <div style={popSection}>📊 Basic information</div>
@@ -156,14 +156,14 @@ export default function Dashboard() {
           </div>
         ))}
         <div style={popRow}><span style={popLabel}>total_processes</span><span style={popVal}>{info.cpu.total_processes ?? 0}</span></div>
-        <div style={popRow}><span style={popLabel}>active_processes</span><span style={popVal}>{info.cpu.active_processes ?? 0}</span></div>
+        <div style={{ ...popRow, borderBottom: 'none' }}><span style={popLabel}>active_processes</span><span style={popVal}>{info.cpu.active_processes ?? 0}</span></div>
       </>)}
     </div>
   );
 
   // === CPU POPOVER ===
   const cpuPopoverContent = (
-    <div style={{ width: 400, maxHeight: 480, overflow: 'auto' }}>
+    <div style={{ width: 400, maxHeight: 580, overflow: 'auto', paddingBottom: 8 }}>
       <div style={{ padding: '12px 12px 8px', borderBottom: '2px solid #E3F2FD' }}>
         <span style={{ fontSize: 15, fontWeight: 700 }}>CPU usage: <span style={{ color: '#1E88E5' }}>{info.cpu.usage_percent.toFixed(1)}%</span></span>
       </div>
