@@ -334,10 +334,12 @@ export default function TerminalPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px' }}>
           {activeTab && (
             <span style={{
-              fontSize: 11, color: '#8b949e', padding: '2px 8px',
-              background: activeTab.status === 'connected' ? 'rgba(63, 185, 80, 0.1)' : 'rgba(248, 81, 73, 0.1)',
+              fontSize: 11,
+              color: activeTab.status === 'connected' ? '#3fb950' : activeTab.status === 'connecting' ? '#58a6ff' : '#f85149',
+              padding: '2px 8px',
+              background: activeTab.status === 'connected' ? 'rgba(63, 185, 80, 0.1)' : activeTab.status === 'connecting' ? 'rgba(88, 166, 255, 0.1)' : 'rgba(248, 81, 73, 0.1)',
               borderRadius: 10,
-              border: `1px solid ${activeTab.status === 'connected' ? 'rgba(63, 185, 80, 0.3)' : 'rgba(248, 81, 73, 0.3)'}`,
+              border: `1px solid ${activeTab.status === 'connected' ? 'rgba(63, 185, 80, 0.3)' : activeTab.status === 'connecting' ? 'rgba(88, 166, 255, 0.3)' : 'rgba(248, 81, 73, 0.3)'}`,
             }}>
               {activeTab.status === 'connected' ? '● Connected' : activeTab.status === 'connecting' ? '◌ Connecting...' : '○ Disconnected'}
             </span>
