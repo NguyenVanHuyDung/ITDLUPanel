@@ -23,6 +23,11 @@ import api from '@/services/api';
 import type { ApiResponse } from '@/types';
 import CodeEditor from './CodeEditor';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { useAuthStore } from '@/stores/auth';
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import { WebLinksAddon } from '@xterm/addon-web-links';
+import '@xterm/xterm/css/xterm.css';
 
 /* ──────────────── Types ──────────────── */
 
@@ -489,6 +494,18 @@ export default function Files() {
   // Context menu
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; file: FileItem } | null>(null);
 
+  // Inline terminal
+  const { accessToken } = useAuthStore();
+  const [termOpen, setTermOpen] = useState(false);
+  const [termHeight, setTermHeight] = useState(260);
+  const termContainerRef = useRef<HTMLDivElement>(null);
+  const termRef = useRef<Terminal | null>(null);
+  const fitAddonRef = useRef<FitAddon | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const termResizing = useRef(false);
+  const termStartY = useRef(0);
+  const termStartH = useRef(0);
+
   /* ── Fetch files ── */
   const fetchFiles = useCallback(async (path: string) => {
     setLoading(true);
@@ -519,6 +536,120 @@ export default function Files() {
     fetchFiles(currentPath);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showHidden]);
+
+  /* ── Inline Terminal ── */
+  const openTerminal = useCallback(() => {
+    setTermOpen(true);
+  }, []);
+
+  const closeTerminal = useCallback(() => {
+    if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
+    if (termRef.current) { termRef.current.dispose(); termRef.current = null; }
+    fitAddonRef.current = null;
+    setTermOpen(false);
+  }, []);
+
+  // Mount/unmount xterm when termOpen changes
+  useEffect(() => {
+    if (!termOpen) return;
+
+    // Small delay so the container DOM is ready
+    const timer = setTimeout(() => {
+      const container = termContainerRef.current;
+      if (!container) return;
+
+      const term = new Terminal({
+        cursorBlink: true,
+        fontSize: 13,
+        fontFamily: '"JetBrains Mono", "Fira Code", Menlo, Monaco, "Courier New", monospace',
+        fontWeight: '400',
+        lineHeight: 1.2,
+        theme: {
+          background: '#0d1117',
+          foreground: '#c9d1d9',
+          cursor: '#58a6ff',
+          cursorAccent: '#0d1117',
+          selectionBackground: 'rgba(56, 139, 253, 0.3)',
+          black: '#484f58', red: '#ff7b72', green: '#3fb950', yellow: '#d29922',
+          blue: '#58a6ff', magenta: '#bc8cff', cyan: '#39d353', white: '#b1bac4',
+          brightBlack: '#6e7681', brightRed: '#ffa198', brightGreen: '#56d364',
+          brightYellow: '#e3b341', brightBlue: '#79c0ff', brightMagenta: '#d2a8ff',
+          brightCyan: '#56d364', brightWhite: '#f0f6fc',
+        },
+        scrollback: 5000,
+        convertEol: true,
+        allowProposedApi: true,
+      });
+
+      const fitAddon = new FitAddon();
+      term.loadAddon(fitAddon);
+      term.loadAddon(new WebLinksAddon());
+      term.open(container);
+      requestAnimationFrame(() => { try { fitAddon.fit(); } catch { /* */ } });
+
+      termRef.current = term;
+      fitAddonRef.current = fitAddon;
+
+      // WebSocket with cwd
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(
+        `${protocol}//${window.location.host}/api/v1/terminal?token=${accessToken}&cwd=${encodeURIComponent(currentPath)}`
+      );
+      ws.binaryType = 'arraybuffer';
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+      };
+      ws.onmessage = (e) => {
+        if (e.data instanceof ArrayBuffer) term.write(new Uint8Array(e.data));
+        else term.write(e.data);
+      };
+      ws.onclose = () => {
+        term.write('\r\n\x1b[38;5;241m── Connection closed ──\x1b[0m\r\n');
+      };
+
+      term.onData((data) => { if (ws.readyState === WebSocket.OPEN) ws.send(data); });
+      term.onResize(({ cols, rows }) => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+      });
+    }, 50);
+
+    return () => {
+      clearTimeout(timer);
+      if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
+      if (termRef.current) { termRef.current.dispose(); termRef.current = null; }
+      fitAddonRef.current = null;
+    };
+  }, [termOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Refit terminal on height change
+  useEffect(() => {
+    if (termOpen && fitAddonRef.current) {
+      requestAnimationFrame(() => { try { fitAddonRef.current?.fit(); } catch { /* */ } });
+    }
+  }, [termHeight, termOpen]);
+
+  // Resize handle drag
+  const onResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    termResizing.current = true;
+    termStartY.current = e.clientY;
+    termStartH.current = termHeight;
+
+    const onMove = (ev: MouseEvent) => {
+      if (!termResizing.current) return;
+      const delta = termStartY.current - ev.clientY;
+      setTermHeight(Math.max(120, Math.min(600, termStartH.current + delta)));
+    };
+    const onUp = () => {
+      termResizing.current = false;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [termHeight]);
 
   /* ── Navigation ── */
   const navigateTo = useCallback((path: string) => {
@@ -1126,7 +1257,9 @@ export default function Files() {
           </Button>
 
           <Button size="small" icon={<CodeOutlined />}
-            onClick={() => { window.open('/terminal', '_blank'); }}
+            type={termOpen ? 'primary' : 'default'}
+            onClick={() => termOpen ? closeTerminal() : openTerminal()}
+            style={termOpen ? { background: C.primary, borderColor: C.primary } : {}}
           >
             Terminal
           </Button>
@@ -1301,6 +1434,43 @@ export default function Files() {
           />
         </Space>
       </div>
+
+      {/* ═══ 7. Inline Terminal ═══ */}
+      {termOpen && (
+        <div style={{ flexShrink: 0, borderTop: `2px solid ${C.primary}`, display: 'flex', flexDirection: 'column' }}>
+          {/* Resize handle */}
+          <div
+            onMouseDown={onResizeMouseDown}
+            style={{
+              height: 6, cursor: 'row-resize', background: '#1B2A4A',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <div style={{ width: 40, height: 2, borderRadius: 1, background: '#4a5568' }} />
+          </div>
+          {/* Terminal header */}
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '4px 12px', background: '#161b22', borderBottom: '1px solid #30363d',
+          }}>
+            <span style={{ color: '#8b949e', fontSize: 12, fontFamily: 'monospace' }}>
+              <CodeOutlined style={{ marginRight: 6 }} />
+              Terminal — {currentPath}
+            </span>
+            <Button
+              type="text" size="small"
+              icon={<CloseOutlined style={{ color: '#8b949e', fontSize: 11 }} />}
+              onClick={closeTerminal}
+              style={{ minWidth: 0, padding: '0 4px' }}
+            />
+          </div>
+          {/* xterm container */}
+          <div
+            ref={termContainerRef}
+            style={{ height: termHeight, background: '#0d1117', padding: '4px 0 0 4px' }}
+          />
+        </div>
+      )}
 
       {/* ═══ Context Menu ═══ */}
       {ctxMenu && (

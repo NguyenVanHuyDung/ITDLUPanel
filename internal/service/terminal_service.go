@@ -42,7 +42,8 @@ func NewTerminalService() *TerminalService {
 }
 
 // CreateSession spawns a bash shell with a PTY and tracks it.
-func (s *TerminalService) CreateSession(userID int64, username string) (*TerminalSession, error) {
+// If cwd is non-empty the shell starts in that directory.
+func (s *TerminalService) CreateSession(userID int64, username, cwd string) (*TerminalSession, error) {
 	shell := "/bin/bash"
 	if _, err := os.Stat(shell); err != nil {
 		shell = "/bin/sh"
@@ -55,6 +56,13 @@ func (s *TerminalService) CreateSession(userID int64, username string) (*Termina
 		fmt.Sprintf("USER=%s", username),
 		fmt.Sprintf("HOME=%s", os.Getenv("HOME")),
 	)
+
+	// Start in the requested working directory if provided and valid.
+	if cwd != "" {
+		if info, err := os.Stat(cwd); err == nil && info.IsDir() {
+			cmd.Dir = cwd
+		}
+	}
 
 	ptmx, err := pty.Start(cmd)
 	if err != nil {

@@ -64,8 +64,9 @@ func HandleTerminal(termService *service.TerminalService, checkPerm PermissionCh
 			return
 		}
 
-		// --- create PTY session ---
-		session, err := termService.CreateSession(claims.UserID, claims.Username)
+		// --- create PTY session (optional cwd from query string) ---
+		cwd := c.Query("cwd")
+		session, err := termService.CreateSession(claims.UserID, claims.Username, cwd)
 		if err != nil {
 			logger.Error().Err(err).Msg("Failed to create terminal session")
 			_ = conn.WriteMessage(gorillaws.CloseMessage,
