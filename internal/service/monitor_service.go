@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math"
 	"os"
 	"strings"
 	"time"
@@ -52,10 +53,28 @@ type SystemInfo struct {
 
 // CPUInfo holds CPU metrics.
 type CPUInfo struct {
-	Model        string    `json:"model"`
-	Cores        int       `json:"cores"`
-	UsagePercent float64   `json:"usage_percent"`
-	LoadAverage  []float64 `json:"load_average"`
+	Model            string       `json:"model"`
+	Cores            int          `json:"cores"`
+	PhysicalCores    int          `json:"physical_cores"`
+	UsagePercent     float64      `json:"usage_percent"`
+	LoadAverage      []float64    `json:"load_average"`
+	PerCorePercent   []float64    `json:"per_core_percent"`
+	CPUTimes         *CPUTimesInfo `json:"cpu_times,omitempty"`
+	TotalProcesses   int          `json:"total_processes"`
+	ActiveProcesses  int          `json:"active_processes"`
+}
+
+// CPUTimesInfo holds per-state CPU time percentages.
+type CPUTimesInfo struct {
+	User    float64 `json:"user"`
+	Nice    float64 `json:"nice"`
+	System  float64 `json:"system"`
+	Idle    float64 `json:"idle"`
+	Iowait  float64 `json:"iowait"`
+	Irq     float64 `json:"irq"`
+	Softirq float64 `json:"softirq"`
+	Steal   float64 `json:"steal"`
+	Guest   float64 `json:"guest"`
 }
 
 // MemoryInfo holds memory metrics.
@@ -64,6 +83,8 @@ type MemoryInfo struct {
 	Used         uint64  `json:"used"`
 	Available    uint64  `json:"available"`
 	UsagePercent float64 `json:"usage_percent"`
+	Buffers      uint64  `json:"buffers"`
+	Cached       uint64  `json:"cached"`
 }
 
 // DiskInfo holds disk usage metrics.
@@ -158,21 +179,68 @@ func (s *MonitorService) GetOverview(db *sql.DB) (*SystemOverview, error) {
 		cpuModel = cpuInfos[0].ModelName
 	}
 	cpuCores, _ := cpu.Counts(true)
+	cpuPhysical, _ := cpu.Counts(false)
 	cpuPercents, _ := cpu.Percent(500*time.Millisecond, false)
 	cpuUsage := 0.0
 	if len(cpuPercents) > 0 {
 		cpuUsage = cpuPercents[0]
 	}
+
+	// Per-core usage
+	perCorePercents, _ := cpu.Percent(500*time.Millisecond, true)
+
+	// CPU times
+	cpuTimes, _ := cpu.Times(false)
+	var cpuTimesInfo *CPUTimesInfo
+	if len(cpuTimes) > 0 {
+		t := cpuTimes[0]
+		total := t.User + t.Nice + t.System + t.Idle + t.Iowait + t.Irq + t.Softirq + t.Steal + t.Guest
+		if total > 0 {
+			cpuTimesInfo = &CPUTimesInfo{
+				User:    round2(t.User / total * 100),
+				Nice:    round2(t.Nice / total * 100),
+				System:  round2(t.System / total * 100),
+				Idle:    round2(t.Idle / total * 100),
+				Iowait:  round2(t.Iowait / total * 100),
+				Irq:     round2(t.Irq / total * 100),
+				Softirq: round2(t.Softirq / total * 100),
+				Steal:   round2(t.Steal / total * 100),
+				Guest:   round2(t.Guest / total * 100),
+			}
+		}
+	}
+
+	// Process counts
+	totalProcs := 0
+	activeProcs := 0
+	procs, _ := process.Processes()
+	totalProcs = len(procs)
+	for _, p := range procs {
+		if st, err := p.Status(); err == nil {
+			for _, s := range st {
+				if s == "R" {
+					activeProcs++
+					break
+				}
+			}
+		}
+	}
+
 	loadAvg, _ := load.Avg()
 	var loadAvgSlice []float64
 	if loadAvg != nil {
 		loadAvgSlice = []float64{loadAvg.Load1, loadAvg.Load5, loadAvg.Load15}
 	}
 	overview.CPU = CPUInfo{
-		Model:        cpuModel,
-		Cores:        cpuCores,
-		UsagePercent: cpuUsage,
-		LoadAverage:  loadAvgSlice,
+		Model:           cpuModel,
+		Cores:           cpuCores,
+		PhysicalCores:   cpuPhysical,
+		UsagePercent:    cpuUsage,
+		LoadAverage:     loadAvgSlice,
+		PerCorePercent:  perCorePercents,
+		CPUTimes:        cpuTimesInfo,
+		TotalProcesses:  totalProcs,
+		ActiveProcesses: activeProcs,
 	}
 
 	// Memory info
@@ -183,6 +251,8 @@ func (s *MonitorService) GetOverview(db *sql.DB) (*SystemOverview, error) {
 			Used:         vmStat.Used,
 			Available:    vmStat.Available,
 			UsagePercent: vmStat.UsedPercent,
+			Buffers:      vmStat.Buffers,
+			Cached:       vmStat.Cached,
 		}
 	}
 
@@ -397,4 +467,8 @@ func checkServiceStatus(ctx context.Context, name string) ServiceStatus {
 		return ServiceStatus{Name: name, Status: "running", IsRunning: true}
 	}
 	return ServiceStatus{Name: name, Status: "stopped", IsRunning: false}
+}
+
+func round2(v float64) float64 {
+	return math.Round(v*100) / 100
 }

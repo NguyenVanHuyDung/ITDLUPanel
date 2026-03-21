@@ -52,8 +52,14 @@ export interface SystemInfo {
     uptime: number;
     panel_version: string;
   };
-  cpu: { model: string; cores: number; usage_percent: number; load_average: number[] };
-  memory: { total: number; used: number; available: number; usage_percent: number };
+  cpu: {
+    model: string; cores: number; physical_cores: number;
+    usage_percent: number; load_average: number[];
+    per_core_percent: number[];
+    cpu_times?: { user: number; nice: number; system: number; idle: number; iowait: number; irq: number; softirq: number; steal: number; guest: number };
+    total_processes: number; active_processes: number;
+  };
+  memory: { total: number; used: number; available: number; usage_percent: number; buffers: number; cached: number };
   disk: { total: number; used: number; available: number; usage_percent: number };
   network: { bytes_sent: number; bytes_recv: number };
   counts: { sites: number; databases: number; ftp_accounts: number; cron_jobs: number; running_tasks: number };

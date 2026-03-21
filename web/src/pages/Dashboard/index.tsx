@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Card, Col, Progress, Row, Typography, Spin, Button, Select, Space } from 'antd';
+import { Card, Col, Progress, Row, Typography, Spin, Button, Select, Space, Popover } from 'antd';
 import {
   CloudServerOutlined,
   DatabaseOutlined,
@@ -132,6 +132,79 @@ export default function Dashboard() {
   const diskPct = Math.round(info.disk.usage_percent);
   const loadAvg = info.cpu.load_average?.map(v => v.toFixed(2)).join(' / ') || '—';
 
+  // Popover style helpers
+  const popLabel: React.CSSProperties = { fontSize: 12, color: '#666', whiteSpace: 'nowrap' };
+  const popVal: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: '#1A1A2E', fontFamily: "'JetBrains Mono', monospace" };
+  const popRow: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', gap: 16, padding: '3px 0', borderBottom: '1px solid #f5f5f5' };
+  const popSection: React.CSSProperties = { fontWeight: 600, fontSize: 12, color: '#1565C0', margin: '10px 0 6px', cursor: 'pointer' };
+
+  // === LOAD POPOVER ===
+  const loadPopoverContent = (
+    <div style={{ width: 320, maxHeight: 420, overflow: 'auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>Load usage: <span style={{ color: '#4CAF50' }}>{info.cpu.usage_percent.toFixed(1)}%</span></span>
+      </div>
+      <div style={popSection}>Basic information</div>
+      <div style={popRow}><span style={popLabel}>Last 1/5/15 min average load</span><span style={popVal}>{loadAvg}</span></div>
+      <div style={popRow}><span style={popLabel}>Active / Total processes</span><span style={popVal}>{info.cpu.active_processes ?? 0} / {info.cpu.total_processes ?? 0}</span></div>
+      {info.cpu.cpu_times && (<>
+        <div style={popSection}>CPU time breakdown</div>
+        {Object.entries(info.cpu.cpu_times).map(([k, v]) => (
+          <div key={k} style={popRow}>
+            <span style={popLabel}>{k}</span>
+            <span style={popVal}>{typeof v === 'number' ? v.toFixed(1) : v}</span>
+          </div>
+        ))}
+        <div style={popRow}><span style={popLabel}>total_processes</span><span style={popVal}>{info.cpu.total_processes ?? 0}</span></div>
+        <div style={popRow}><span style={popLabel}>active_processes</span><span style={popVal}>{info.cpu.active_processes ?? 0}</span></div>
+      </>)}
+    </div>
+  );
+
+  // === CPU POPOVER ===
+  const cpuPopoverContent = (
+    <div style={{ width: 340, maxHeight: 420, overflow: 'auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>CPU usage: <span style={{ color: '#4CAF50' }}>{info.cpu.usage_percent.toFixed(1)}%</span></span>
+      </div>
+      <div style={popSection}>CPU information</div>
+      <div style={{ fontSize: 12, color: '#333', marginBottom: 4 }}>{info.cpu.model}</div>
+      <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
+        {info.cpu.physical_cores ?? info.cpu.cores} Physical core, {info.cpu.cores} Logical core
+      </div>
+      {info.cpu.per_core_percent && info.cpu.per_core_percent.length > 0 && (<>
+        <div style={popSection}>Per-core usage</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
+          {info.cpu.per_core_percent.map((v, i) => (
+            <div key={i} style={{ ...popRow, padding: '3px 4px' }}>
+              <span style={popLabel}>Core {i + 1}</span>
+              <span style={popVal}>{v.toFixed(1)}</span>
+            </div>
+          ))}
+        </div>
+      </>)}
+    </div>
+  );
+
+  // === RAM POPOVER ===
+  const ramPopoverContent = (
+    <div style={{ width: 320 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>RAM usage: <span style={{ color: '#0288D1' }}>{info.memory.usage_percent.toFixed(1)}%</span></span>
+      </div>
+      <div style={popSection}>Memory information</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
+        <div style={popRow}><span style={popLabel}>Used</span><span style={popVal}>{formatMB(info.memory.used)}MB</span></div>
+        <div style={popRow}><span style={popLabel}>Total</span><span style={popVal}>{formatMB(info.memory.total)}MB</span></div>
+        <div style={popRow}><span style={popLabel}>Available</span><span style={popVal}>{formatMB(info.memory.available)}MB</span></div>
+        <div style={popRow}>
+          <span style={popLabel}>Buff/Cache</span>
+          <span style={popVal}>{formatMB(info.memory.buffers ?? 0)}/{formatMB(info.memory.cached ?? 0)}MB</span>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div>
       {/* ── Refresh bar ── */}
@@ -160,8 +233,12 @@ export default function Dashboard() {
             <Row gutter={8} justify="space-around" align="middle">
               {/* CPU Load ring */}
               <Col xs={24} sm={8} style={{ textAlign: 'center', marginBottom: 8 }}>
-                <Progress type="circle" percent={cpuPct} size={isMobile ? 80 : 120} strokeColor="#1565C0" strokeWidth={8}
-                  format={() => <span style={{ fontSize: isMobile ? 18 : 26, fontWeight: 700, color: '#1565C0' }}>{cpuPct}%</span>} />
+                <Popover content={loadPopoverContent} title={null} trigger="hover" placement="bottom" overlayStyle={{ maxWidth: 360 }}>
+                  <div style={{ cursor: 'pointer', display: 'inline-block' }}>
+                    <Progress type="circle" percent={cpuPct} size={isMobile ? 80 : 120} strokeColor="#1565C0" strokeWidth={8}
+                      format={() => <span style={{ fontSize: isMobile ? 18 : 26, fontWeight: 700, color: '#1565C0' }}>{cpuPct}%</span>} />
+                  </div>
+                </Popover>
                 <div style={{ marginTop: 8 }}>
                   <Text type="secondary" style={{ fontSize: 12 }}>{getCpuStatusText(cpuPct)}</Text>
                 </div>
@@ -170,8 +247,12 @@ export default function Dashboard() {
 
               {/* CPU usage ring */}
               <Col xs={24} sm={8} style={{ textAlign: 'center', marginBottom: 8 }}>
-                <Progress type="circle" percent={cpuPct} size={isMobile ? 80 : 120} strokeColor="#1E88E5" strokeWidth={8}
-                  format={() => <span style={{ fontSize: isMobile ? 18 : 26, fontWeight: 700, color: '#1E88E5' }}>{info.cpu.usage_percent.toFixed(1)}%</span>} />
+                <Popover content={cpuPopoverContent} title={null} trigger="hover" placement="bottom" overlayStyle={{ maxWidth: 380 }}>
+                  <div style={{ cursor: 'pointer', display: 'inline-block' }}>
+                    <Progress type="circle" percent={cpuPct} size={isMobile ? 80 : 120} strokeColor="#1E88E5" strokeWidth={8}
+                      format={() => <span style={{ fontSize: isMobile ? 18 : 26, fontWeight: 700, color: '#1E88E5' }}>{info.cpu.usage_percent.toFixed(1)}%</span>} />
+                  </div>
+                </Popover>
                 <div style={{ marginTop: 8 }}>
                   <Text type="secondary" style={{ fontSize: 12 }}>{info.cpu.cores} Core(s)</Text>
                 </div>
@@ -180,8 +261,12 @@ export default function Dashboard() {
 
               {/* RAM ring */}
               <Col xs={24} sm={8} style={{ textAlign: 'center', marginBottom: 8 }}>
-                <Progress type="circle" percent={memPct} size={isMobile ? 80 : 120} strokeColor="#0288D1" strokeWidth={8}
-                  format={() => <span style={{ fontSize: isMobile ? 18 : 26, fontWeight: 700, color: '#0288D1' }}>{info.memory.usage_percent.toFixed(1)}%</span>} />
+                <Popover content={ramPopoverContent} title={null} trigger="hover" placement="bottom" overlayStyle={{ maxWidth: 360 }}>
+                  <div style={{ cursor: 'pointer', display: 'inline-block' }}>
+                    <Progress type="circle" percent={memPct} size={isMobile ? 80 : 120} strokeColor="#0288D1" strokeWidth={8}
+                      format={() => <span style={{ fontSize: isMobile ? 18 : 26, fontWeight: 700, color: '#0288D1' }}>{info.memory.usage_percent.toFixed(1)}%</span>} />
+                  </div>
+                </Popover>
                 <div style={{ marginTop: 8 }}>
                   <Text type="secondary" style={{ fontSize: 12 }}>
                     {formatMB(info.memory.used)} / {formatMB(info.memory.total)} (MB)
