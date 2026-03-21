@@ -165,7 +165,7 @@ export default function MainLayout() {
           theme="dark"
         />
       </Sider>
-      <Layout style={{ marginLeft: collapsed ? 80 : 250, transition: 'margin-left 0.2s' }}>
+      <Layout style={{ marginLeft: collapsed ? 80 : 250, transition: 'margin-left 0.2s', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
         {/* ── System Info Header Bar ── */}
         <div style={{
           background: 'linear-gradient(135deg, #0D47A1 0%, #1565C0 50%, #1E88E5 100%)',
@@ -233,9 +233,26 @@ export default function MainLayout() {
             </Dropdown>
           </Space>
         </div>
-        <Content style={{ margin: 24 }}>
+        <Content style={{ margin: 24, flex: 1 }}>
           <Outlet />
         </Content>
+        {/* ── Footer ── */}
+        <div style={{
+          textAlign: 'center',
+          padding: '16px 24px',
+          fontSize: 12,
+          color: '#94A3B8',
+          borderTop: '1px solid #E8EDF2',
+          background: '#FAFBFC',
+        }}>
+          <span>© {new Date().getFullYear()} </span>
+          <a href="https://dlu.edu.vn" target="_blank" rel="noreferrer" style={{ color: '#1565C0', fontWeight: 500 }}>
+            Đại học Đà Lạt
+          </a>
+          <span> — ITDLUPanel v{sysInfo?.panel_version || '1.0.0'}</span>
+          <span style={{ margin: '0 8px', color: '#CBD5E1' }}>|</span>
+          <span>Powered by Go + React</span>
+        </div>
       </Layout>
     </Layout>
   );
