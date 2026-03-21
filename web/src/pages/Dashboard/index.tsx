@@ -137,72 +137,80 @@ export default function Dashboard() {
 
   // Popover style helpers
   const popLabel: React.CSSProperties = { fontSize: 13, color: '#555' };
-  const popVal: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: '#1A1A2E', fontFamily: "'JetBrains Mono', monospace" };
-  const popRow: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 20, padding: '8px 12px', borderBottom: '1px solid #f0f0f0' };
-  const popSection: React.CSSProperties = { fontWeight: 600, fontSize: 13, color: '#1565C0', margin: '14px 0 8px', padding: '0 12px' };
+  const popVal: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: '#1A1A2E', fontFamily: "'JetBrains Mono', monospace", whiteSpace: 'nowrap' };
+  const popRow: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '7px 0', borderBottom: '1px solid #f0f0f0' };
+  const popSection: React.CSSProperties = { fontWeight: 600, fontSize: 13, color: '#1565C0', margin: '12px 0 6px' };
+  const popWrap: React.CSSProperties = { padding: '0 14px' };
 
   // === LOAD POPOVER ===
   const loadPopoverContent = (
-    <div style={{ width: 380 }}>
-      <div style={{ padding: '14px 12px 10px', borderBottom: '2px solid #E3F2FD' }}>
+    <div style={{ width: 320 }}>
+      <div style={{ ...popWrap, padding: '12px 14px 8px', borderBottom: '2px solid #E3F2FD' }}>
         <span style={{ fontSize: 15, fontWeight: 700 }}>System Load: <span style={{ color: '#4CAF50' }}>{loadPct}%</span></span>
       </div>
-      <div style={popSection}>📊 Load average</div>
-      <div style={popRow}><span style={popLabel}>1 min</span><span style={popVal}>{info.cpu.load_average?.[0]?.toFixed(2) ?? '—'}</span></div>
-      <div style={popRow}><span style={popLabel}>5 min</span><span style={popVal}>{info.cpu.load_average?.[1]?.toFixed(2) ?? '—'}</span></div>
-      <div style={popRow}><span style={popLabel}>15 min</span><span style={popVal}>{info.cpu.load_average?.[2]?.toFixed(2) ?? '—'}</span></div>
-      <div style={popSection}>⚙️ Process information</div>
-      <div style={popRow}><span style={popLabel}>Total processes</span><span style={popVal}>{info.cpu.total_processes ?? 0}</span></div>
-      <div style={{ ...popRow, borderBottom: 'none' }}><span style={popLabel}>Active processes</span><span style={popVal}>{info.cpu.active_processes ?? 0}</span></div>
+      <div style={popWrap}>
+        <div style={popSection}>📊 Load average</div>
+        <div style={popRow}><span style={popLabel}>1 min</span><span style={popVal}>{info.cpu.load_average?.[0]?.toFixed(2) ?? '—'}</span></div>
+        <div style={popRow}><span style={popLabel}>5 min</span><span style={popVal}>{info.cpu.load_average?.[1]?.toFixed(2) ?? '—'}</span></div>
+        <div style={popRow}><span style={popLabel}>15 min</span><span style={popVal}>{info.cpu.load_average?.[2]?.toFixed(2) ?? '—'}</span></div>
+        <div style={popSection}>⚙️ Process information</div>
+        <div style={popRow}><span style={popLabel}>Total processes</span><span style={popVal}>{info.cpu.total_processes ?? 0}</span></div>
+        <div style={{ ...popRow, borderBottom: 'none' }}><span style={popLabel}>Active processes</span><span style={popVal}>{info.cpu.active_processes ?? 0}</span></div>
+      </div>
     </div>
   );
 
   // === CPU POPOVER ===
   const cpuPopoverContent = (
-    <div style={{ width: 380, maxHeight: '70vh', overflow: 'auto', paddingBottom: 8 }}>
-      <div style={{ padding: '12px 12px 8px', borderBottom: '2px solid #E3F2FD' }}>
+    <div style={{ width: 340, maxHeight: '65vh', overflowY: 'auto' }}>
+      <div style={{ ...popWrap, padding: '12px 14px 8px', borderBottom: '2px solid #E3F2FD' }}>
         <span style={{ fontSize: 15, fontWeight: 700 }}>CPU usage: <span style={{ color: '#1E88E5' }}>{info.cpu.usage_percent.toFixed(1)}%</span></span>
       </div>
-      <div style={popSection}>🖥️ CPU information</div>
-      <div style={{ padding: '4px 12px 2px', fontSize: 13, color: '#333', wordBreak: 'break-word' }}>{info.cpu.model}</div>
-      <div style={{ padding: '2px 12px 8px', fontSize: 13, color: '#666' }}>
-        {info.cpu.physical_cores ?? info.cpu.cores} Physical core, {info.cpu.cores} Logical core
-      </div>
-      {info.cpu.per_core_percent && info.cpu.per_core_percent.length > 0 && (<>
-        <div style={popSection}>📈 Per-core usage</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0, overflow: 'hidden' }}>
-          {info.cpu.per_core_percent.map((v, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 12px', borderBottom: '1px solid #f0f0f0' }}>
-              <span style={popLabel}>Core {i + 1}</span>
-              <span style={popVal}>{v.toFixed(1)}%</span>
+      <div style={popWrap}>
+        <div style={popSection}>🖥️ CPU information</div>
+        <div style={{ fontSize: 13, color: '#333', wordBreak: 'break-word', paddingBottom: 2 }}>{info.cpu.model}</div>
+        <div style={{ fontSize: 13, color: '#666', paddingBottom: 8 }}>
+          {info.cpu.physical_cores ?? info.cpu.cores} Physical core, {info.cpu.cores} Logical core
+        </div>
+        {info.cpu.per_core_percent && info.cpu.per_core_percent.length > 0 && (<>
+          <div style={popSection}>📈 Per-core usage</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
+            {info.cpu.per_core_percent.map((v, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 4px 5px 0', borderBottom: '1px solid #f0f0f0' }}>
+                <span style={popLabel}>Core {i + 1}</span>
+                <span style={popVal}>{v.toFixed(1)}%</span>
+              </div>
+            ))}
+          </div>
+        </>)}
+        {info.cpu.cpu_times && (<>
+          <div style={popSection}>⏱️ CPU time breakdown</div>
+          {Object.entries(info.cpu.cpu_times).map(([k, v]) => (
+            <div key={k} style={popRow}>
+              <span style={popLabel}>{k}</span>
+              <span style={popVal}>{typeof v === 'number' ? v.toFixed(2) + '%' : v}</span>
             </div>
           ))}
-        </div>
-      </>)}
-      {info.cpu.cpu_times && (<>
-        <div style={popSection}>⏱️ CPU time breakdown</div>
-        {Object.entries(info.cpu.cpu_times).map(([k, v]) => (
-          <div key={k} style={popRow}>
-            <span style={popLabel}>{k}</span>
-            <span style={popVal}>{typeof v === 'number' ? v.toFixed(2) + '%' : v}</span>
-          </div>
-        ))}
-      </>)}
+        </>)}
+        <div style={{ paddingBottom: 8 }} />
+      </div>
     </div>
   );
 
   // === RAM POPOVER ===
   const ramPopoverContent = (
-    <div style={{ width: 380 }}>
-      <div style={{ padding: '12px 12px 8px', borderBottom: '2px solid #E3F2FD' }}>
+    <div style={{ width: 320 }}>
+      <div style={{ ...popWrap, padding: '12px 14px 8px', borderBottom: '2px solid #E3F2FD' }}>
         <span style={{ fontSize: 15, fontWeight: 700 }}>RAM usage: <span style={{ color: '#0288D1' }}>{info.memory.usage_percent.toFixed(1)}%</span></span>
       </div>
-      <div style={popSection}>💾 Memory information</div>
-      <div style={popRow}><span style={popLabel}>Used</span><span style={popVal}>{formatMB(info.memory.used)} MB</span></div>
-      <div style={popRow}><span style={popLabel}>Total</span><span style={popVal}>{formatMB(info.memory.total)} MB</span></div>
-      <div style={popRow}><span style={popLabel}>Available</span><span style={popVal}>{formatMB(info.memory.available)} MB</span></div>
-      <div style={popRow}><span style={popLabel}>Buffers</span><span style={popVal}>{formatMB(info.memory.buffers ?? 0)} MB</span></div>
-      <div style={popRow}><span style={popLabel}>Cached</span><span style={popVal}>{formatMB(info.memory.cached ?? 0)} MB</span></div>
+      <div style={popWrap}>
+        <div style={popSection}>💾 Memory information</div>
+        <div style={popRow}><span style={popLabel}>Used</span><span style={popVal}>{formatMB(info.memory.used)} MB</span></div>
+        <div style={popRow}><span style={popLabel}>Total</span><span style={popVal}>{formatMB(info.memory.total)} MB</span></div>
+        <div style={popRow}><span style={popLabel}>Available</span><span style={popVal}>{formatMB(info.memory.available)} MB</span></div>
+        <div style={popRow}><span style={popLabel}>Buffers</span><span style={popVal}>{formatMB(info.memory.buffers ?? 0)} MB</span></div>
+        <div style={{ ...popRow, borderBottom: 'none' }}><span style={popLabel}>Cached</span><span style={popVal}>{formatMB(info.memory.cached ?? 0)} MB</span></div>
+      </div>
     </div>
   );
 
@@ -214,22 +222,24 @@ export default function Dashboard() {
     return String(n);
   };
   const diskPopoverContent = (
-    <div style={{ width: 380 }}>
-      <div style={{ padding: '14px 12px 10px', borderBottom: '2px solid #E3F2FD' }}>
+    <div style={{ width: 320 }}>
+      <div style={{ ...popWrap, padding: '12px 14px 8px', borderBottom: '2px solid #E3F2FD' }}>
         <span style={{ fontSize: 15, fontWeight: 700 }}>Disk space: <span style={{ color: diskPct > 80 ? '#F44336' : '#1565C0' }}>{diskPct}%</span></span>
       </div>
-      <div style={popSection}>📊 Basic information</div>
-      <div style={popRow}><span style={popLabel}>Type</span><span style={popVal}>{info.disk.fs_type || '—'}</span></div>
-      <div style={popRow}><span style={popLabel}>Mount point</span><span style={popVal}>{info.disk.mount_point || '/'}</span></div>
-      <div style={popRow}><span style={popLabel}>Available</span><span style={popVal}>{formatGB(info.disk.available)}G</span></div>
-      <div style={popRow}><span style={popLabel}>Total</span><span style={popVal}>{formatGB(info.disk.total)}G</span></div>
-      <div style={popRow}><span style={popLabel}>Used</span><span style={popVal}>{formatGB(info.disk.used)}G</span></div>
-      <div style={popSection}>📁 Inode information</div>
-      <div style={popRow}><span style={popLabel}>File system</span><span style={popVal}>{info.disk.device || '—'}</span></div>
-      <div style={popRow}><span style={popLabel}>Total Inodes</span><span style={popVal}>{formatInodes(info.disk.inodes_total ?? 0)}</span></div>
-      <div style={popRow}><span style={popLabel}>Used Inodes</span><span style={popVal}>{formatInodes(info.disk.inodes_used ?? 0)}</span></div>
-      <div style={popRow}><span style={popLabel}>Available Inodes</span><span style={popVal}>{formatInodes(info.disk.inodes_free ?? 0)}</span></div>
-      <div style={{ ...popRow, borderBottom: 'none' }}><span style={popLabel}>Usage Inodes</span><span style={popVal}>{(info.disk.inodes_percent ?? 0).toFixed(1)}%</span></div>
+      <div style={popWrap}>
+        <div style={popSection}>📊 Basic information</div>
+        <div style={popRow}><span style={popLabel}>Type</span><span style={popVal}>{info.disk.fs_type || '—'}</span></div>
+        <div style={popRow}><span style={popLabel}>Mount point</span><span style={popVal}>{info.disk.mount_point || '/'}</span></div>
+        <div style={popRow}><span style={popLabel}>Available</span><span style={popVal}>{formatGB(info.disk.available)}G</span></div>
+        <div style={popRow}><span style={popLabel}>Total</span><span style={popVal}>{formatGB(info.disk.total)}G</span></div>
+        <div style={popRow}><span style={popLabel}>Used</span><span style={popVal}>{formatGB(info.disk.used)}G</span></div>
+        <div style={popSection}>📁 Inode information</div>
+        <div style={popRow}><span style={popLabel}>File system</span><span style={popVal}>{info.disk.device || '—'}</span></div>
+        <div style={popRow}><span style={popLabel}>Total Inodes</span><span style={popVal}>{formatInodes(info.disk.inodes_total ?? 0)}</span></div>
+        <div style={popRow}><span style={popLabel}>Used Inodes</span><span style={popVal}>{formatInodes(info.disk.inodes_used ?? 0)}</span></div>
+        <div style={popRow}><span style={popLabel}>Available Inodes</span><span style={popVal}>{formatInodes(info.disk.inodes_free ?? 0)}</span></div>
+        <div style={{ ...popRow, borderBottom: 'none' }}><span style={popLabel}>Usage Inodes</span><span style={popVal}>{(info.disk.inodes_percent ?? 0).toFixed(1)}%</span></div>
+      </div>
     </div>
   );
 
@@ -262,7 +272,7 @@ export default function Dashboard() {
             <Row gutter={8} justify="space-around" align="middle">
               {/* Load ring */}
               <Col xs={24} sm={8} style={{ textAlign: 'center', marginBottom: 8 }}>
-                <Popover content={loadPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom" overlayStyle={{ maxWidth: 420 }} overlayInnerStyle={{ padding: 0 }}>
+                <Popover content={loadPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom">
                   <div style={{ cursor: 'pointer', display: 'inline-block', padding: 4 }}>
                     <Progress type="circle" percent={loadPct} size={isMobile ? 80 : 120} strokeColor="#1565C0" strokeWidth={8}
                       format={() => <span style={{ fontSize: isMobile ? 18 : 26, fontWeight: 700, color: '#1565C0' }}>{loadPct}%</span>} />
@@ -276,7 +286,7 @@ export default function Dashboard() {
 
               {/* CPU usage ring */}
               <Col xs={24} sm={8} style={{ textAlign: 'center', marginBottom: 8 }}>
-                <Popover content={cpuPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom" overlayStyle={{ maxWidth: 420 }} overlayInnerStyle={{ padding: 0 }}>
+                <Popover content={cpuPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom">
                   <div style={{ cursor: 'pointer', display: 'inline-block', padding: 4 }}>
                     <Progress type="circle" percent={cpuPct} size={isMobile ? 80 : 120} strokeColor="#1E88E5" strokeWidth={8}
                       format={() => <span style={{ fontSize: isMobile ? 18 : 26, fontWeight: 700, color: '#1E88E5' }}>{info.cpu.usage_percent.toFixed(1)}%</span>} />
@@ -290,7 +300,7 @@ export default function Dashboard() {
 
               {/* RAM ring */}
               <Col xs={24} sm={8} style={{ textAlign: 'center', marginBottom: 8 }}>
-                <Popover content={ramPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom" overlayStyle={{ maxWidth: 420 }} overlayInnerStyle={{ padding: 0 }}>
+                <Popover content={ramPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom">
                   <div style={{ cursor: 'pointer', display: 'inline-block', padding: 4 }}>
                     <Progress type="circle" percent={memPct} size={isMobile ? 80 : 120} strokeColor="#0288D1" strokeWidth={8}
                       format={() => <span style={{ fontSize: isMobile ? 18 : 26, fontWeight: 700, color: '#0288D1' }}>{info.memory.usage_percent.toFixed(1)}%</span>} />
@@ -322,7 +332,7 @@ export default function Dashboard() {
                 {formatGB(info.disk.used)} / {formatGB(info.disk.total)} GB
               </Text>
             </div>
-            <Popover content={diskPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom" overlayStyle={{ maxWidth: 420 }} overlayInnerStyle={{ padding: 0 }}>
+            <Popover content={diskPopoverContent} title={null} trigger={isMobile ? 'click' : 'hover'} placement="bottom">
               <div style={{ cursor: 'pointer', display: 'inline-block', padding: 4 }}>
                 <Progress type="circle" percent={diskPct} size={isMobile ? 80 : 110}
                   strokeColor={diskPct > 80 ? '#ff4d4f' : '#1565C0'} strokeWidth={10}
