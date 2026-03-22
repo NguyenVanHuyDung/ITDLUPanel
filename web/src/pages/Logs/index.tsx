@@ -256,20 +256,64 @@ export default function Logs() {
 
   const sshPlainColumns = [
     {
-      title: '#',
-      key: 'idx',
-      width: 50,
-      render: (_: unknown, __: unknown, i: number) => <span style={{ fontSize: 11, color: p.textMuted }}>{i + 1}</span>,
+      title: 'Time',
+      key: 'time',
+      width: isMobile ? 80 : 140,
+      render: (_: unknown, record: ParsedLog) => {
+        // Try to extract timestamp from common syslog formats: "Mon DD HH:MM:SS" or ISO
+        const m = record.raw.match(/^(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})/);
+        return <span style={{ fontSize: 11, color: p.textMuted, whiteSpace: 'nowrap' }}>{m ? m[1] : ''}</span>;
+      },
     },
     {
-      title: 'Log Entry',
+      title: 'Source',
+      key: 'source',
+      width: isMobile ? 80 : 120,
+      render: (_: unknown, record: ParsedLog) => {
+        const m = record.raw.match(/^\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\S+\s+(\S+?)[\[:]/);
+        const src = m ? m[1] : '';
+        return src ? (
+          <span style={{
+            fontSize: 11, padding: '1px 7px', borderRadius: 4,
+            background: `${p.accent}12`, color: p.accent, fontWeight: 500,
+          }}>{src}</span>
+        ) : null;
+      },
+    },
+    {
+      title: 'Event',
+      key: 'event',
+      width: isMobile ? 60 : 90,
+      render: (_: unknown, record: ParsedLog) => {
+        const raw = record.raw.toLowerCase();
+        let label = '';
+        let color = p.textMuted;
+        if (raw.includes('accepted') || raw.includes('opened')) { label = 'Accept'; color = p.green; }
+        else if (raw.includes('failed') || raw.includes('invalid') || raw.includes('error')) { label = 'Failed'; color = p.red; }
+        else if (raw.includes('disconnect') || raw.includes('closed')) { label = 'Close'; color = p.amber; }
+        else if (raw.includes('connection from') || raw.includes('new connection')) { label = 'Connect'; color = p.accent; }
+        if (!label) return null;
+        return (
+          <span style={{
+            fontSize: 10, padding: '2px 8px', borderRadius: 4, fontWeight: 600,
+            background: `${color}15`, color,
+          }}>{label}</span>
+        );
+      },
+    },
+    {
+      title: 'Message',
       dataIndex: 'raw',
       key: 'raw',
       render: (v: string) => {
-        if (!search.trim()) return <span style={{ fontSize: 13, color: p.text }}>{v}</span>;
-        const parts = v.split(new RegExp(`(${search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
+        // Strip the syslog prefix to show just the message
+        const stripped = v.replace(/^\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\S+\s+\S+?\[\d+\]:\s*/, '')
+                          .replace(/^\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\S+\s+\S+:\s*/, '');
+        const text = stripped || v;
+        if (!search.trim()) return <span style={{ fontSize: 12, color: p.text, lineHeight: 1.5 }}>{text}</span>;
+        const parts = text.split(new RegExp(`(${search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
         return (
-          <span style={{ fontSize: 13, color: p.text }}>
+          <span style={{ fontSize: 12, color: p.text, lineHeight: 1.5 }}>
             {parts.map((part, i) =>
               part.toLowerCase() === search.toLowerCase()
                 ? <span key={i} style={{ background: p.amber, color: '#000', borderRadius: 2, padding: '0 2px' }}>{part}</span>
@@ -279,26 +323,81 @@ export default function Logs() {
         );
       },
     },
+    {
+      title: 'IP',
+      key: 'ip_addr',
+      width: isMobile ? 90 : 120,
+      render: (_: unknown, record: ParsedLog) => {
+        const m = record.raw.match(/(?:from|for)\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+        return m ? <span style={{ fontSize: 11, color: p.textMuted }}>{m[1]}</span> : null;
+      },
+    },
   ];
 
   const isJsonLog = currentLines.length > 0 && currentLines[0]?.startsWith('{');
 
   const auditColumns = [
-    { title: 'User', dataIndex: 'user', key: 'user' },
     {
-      title: 'Action', dataIndex: 'action', key: 'action',
-      render: (val: string) => <span style={{ fontSize: 12, padding: '1px 6px', borderRadius: 3, background: p.codeBg, color: p.textMuted }}>{val}</span>,
+      title: 'Time', dataIndex: 'created_at', key: 'created_at', width: isMobile ? 100 : 160,
+      render: (val: string) => {
+        if (!val) return <span style={{ color: p.textDim }}>—</span>;
+        const d = new Date(val);
+        return (
+          <div style={{ fontSize: 12, lineHeight: 1.5 }}>
+            <div style={{ color: p.text, fontWeight: 500 }}>{d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+            <div style={{ color: p.textMuted, fontSize: 11 }}>{d.toLocaleTimeString('en-GB', { hour12: false })}</div>
+          </div>
+        );
+      },
     },
-    { title: 'Resource', dataIndex: 'resource', key: 'resource', ellipsis: true },
     {
-      title: 'IP', dataIndex: 'ip', key: 'ip',
-      render: (v: string) => <span style={{ fontSize: 12, color: p.textMuted }}>{v}</span>,
+      title: 'User', dataIndex: 'user', key: 'user', width: isMobile ? 80 : 120,
+      render: (val: string) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{
+            width: 26, height: 26, borderRadius: 6,
+            background: `${p.accent}15`, color: p.accent,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 11, fontWeight: 700, flexShrink: 0,
+          }}>{(val || '?')[0].toUpperCase()}</div>
+          <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>{val}</span>
+        </div>
+      ),
     },
     {
-      title: 'Time', dataIndex: 'created_at', key: 'created_at',
-      render: (val: string) => val
-        ? <span style={{ fontSize: 12, color: p.textMuted }}>{new Date(val).toLocaleString()}</span>
-        : <span style={{ color: p.textDim }}>-</span>,
+      title: 'Action', dataIndex: 'action', key: 'action', width: isMobile ? 80 : 140,
+      render: (val: string) => {
+        const lower = (val || '').toLowerCase();
+        let color = p.accent;
+        if (lower.includes('create') || lower.includes('add') || lower.includes('install')) color = p.green;
+        else if (lower.includes('delete') || lower.includes('remove') || lower.includes('uninstall')) color = p.red;
+        else if (lower.includes('update') || lower.includes('edit') || lower.includes('change') || lower.includes('reset')) color = p.amber;
+        else if (lower.includes('login') || lower.includes('logout') || lower.includes('auth')) color = p.purple;
+        else if (lower.includes('start') || lower.includes('stop') || lower.includes('restart')) color = p.cyan;
+        return (
+          <span style={{
+            fontSize: 11, padding: '3px 10px', borderRadius: 5, fontWeight: 600,
+            background: `${color}15`, color,
+            display: 'inline-block',
+          }}>{val}</span>
+        );
+      },
+    },
+    {
+      title: 'Resource', dataIndex: 'resource', key: 'resource', ellipsis: true,
+      render: (val: string) => (
+        <span style={{ fontSize: 12, color: p.text }}>{val || '—'}</span>
+      ),
+    },
+    {
+      title: 'IP', dataIndex: 'ip', key: 'ip', width: isMobile ? 90 : 130,
+      render: (v: string) => v ? (
+        <span style={{
+          fontSize: 11, padding: '2px 8px', borderRadius: 4,
+          background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+          color: p.textMuted,
+        }}>{v}</span>
+      ) : <span style={{ color: p.textDim }}>—</span>,
     },
   ];
 
@@ -456,6 +555,11 @@ export default function Logs() {
               size="small"
               pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (total) => `${total} entries` }}
               scroll={{ x: 600, y: 'calc(100vh - 380px)' }}
+              rowClassName={(r) => {
+                const raw = r.raw.toLowerCase();
+                if (raw.includes('failed') || raw.includes('invalid') || raw.includes('error')) return 'log-row-error';
+                return '';
+              }}
             />
           )
         )}
@@ -467,8 +571,9 @@ export default function Logs() {
             )}
             rowKey="id"
             loading={loading}
-            pagination={{ pageSize: 20, showSizeChanger: true }}
-            scroll={{ x: 600 }}
+            size="small"
+            pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `${total} entries` }}
+            scroll={{ x: 600, y: 'calc(100vh - 380px)' }}
           />
         )}
       </div>
