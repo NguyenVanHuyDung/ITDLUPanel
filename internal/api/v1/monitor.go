@@ -1,7 +1,9 @@
 package v1
 
 import (
+	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/shirou/gopsutil/v3/disk"
@@ -14,12 +16,16 @@ import (
 
 // MonitorHandler handles monitoring-related API requests.
 type MonitorHandler struct {
-	monitorService *service.MonitorService
+	monitorService   *service.MonitorService
+	metricsCollector *service.MetricsCollector
 }
 
 // NewMonitorHandler creates a new MonitorHandler.
-func NewMonitorHandler(monitorService *service.MonitorService) *MonitorHandler {
-	return &MonitorHandler{monitorService: monitorService}
+func NewMonitorHandler(monitorService *service.MonitorService, metricsCollector *service.MetricsCollector) *MonitorHandler {
+	return &MonitorHandler{
+		monitorService:   monitorService,
+		metricsCollector: metricsCollector,
+	}
 }
 
 // RegisterRoutes registers monitor routes on the given router group.
@@ -32,6 +38,9 @@ func (h *MonitorHandler) RegisterRoutes(rg *gin.RouterGroup) {
 		monitor.GET("/services", h.services)
 		monitor.GET("/network", h.network)
 		monitor.GET("/disk", h.diskStats)
+		monitor.GET("/history", h.history)
+		monitor.GET("/settings", h.monitorSettings)
+		monitor.PUT("/settings", h.updateMonitorSettings)
 	}
 }
 
@@ -161,4 +170,109 @@ func (h *MonitorHandler) diskStats(c *gin.Context) {
 		})
 	}
 	response.Success(c, info)
+}
+
+// history returns historical metrics data for a given time range.
+func (h *MonitorHandler) history(c *gin.Context) {
+	if h.metricsCollector == nil {
+		response.Error(c, fmt.Errorf("metrics collector not initialized"))
+		return
+	}
+
+	now := time.Now().UTC()
+	var start, end time.Time
+
+	// Support preset ranges or custom start/end
+	rangeStr := c.DefaultQuery("range", "1d")
+	if startStr := c.Query("start"); startStr != "" {
+		if t, err := time.Parse(time.RFC3339, startStr); err == nil {
+			start = t.UTC()
+		} else if t, err := time.Parse("2006-01-02", startStr); err == nil {
+			start = t.UTC()
+		}
+	}
+	if endStr := c.Query("end"); endStr != "" {
+		if t, err := time.Parse(time.RFC3339, endStr); err == nil {
+			end = t.UTC()
+		} else if t, err := time.Parse("2006-01-02", endStr); err == nil {
+			end = t.UTC().Add(24*time.Hour - time.Second)
+		}
+	}
+
+	if start.IsZero() || end.IsZero() {
+		end = now
+		switch rangeStr {
+		case "7d":
+			start = now.Add(-7 * 24 * time.Hour)
+		case "30d":
+			start = now.Add(-30 * 24 * time.Hour)
+		default: // "1d"
+			start = now.Add(-24 * time.Hour)
+		}
+	}
+
+	resolution := c.DefaultQuery("resolution", "auto")
+
+	records, err := h.metricsCollector.GetHistory(start, end, resolution)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{
+		"start":      start.Format(time.RFC3339),
+		"end":        end.Format(time.RFC3339),
+		"resolution": resolution,
+		"count":      len(records),
+		"records":    records,
+	})
+}
+
+// monitorSettings returns the current monitor collection settings.
+func (h *MonitorHandler) monitorSettings(c *gin.Context) {
+	if h.metricsCollector == nil {
+		response.Error(c, fmt.Errorf("metrics collector not initialized"))
+		return
+	}
+	settings := h.metricsCollector.GetSettings()
+	settings.Enabled = h.metricsCollector.IsRunning() || settings.Enabled
+	response.Success(c, settings)
+}
+
+// updateMonitorSettings updates the monitor settings and restarts the collector.
+func (h *MonitorHandler) updateMonitorSettings(c *gin.Context) {
+	if h.metricsCollector == nil {
+		response.Error(c, fmt.Errorf("metrics collector not initialized"))
+		return
+	}
+
+	var req service.MonitorSettings
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid settings payload"},
+		})
+		return
+	}
+
+	// Validate interval (minimum 10 seconds)
+	if req.Interval < 10 {
+		req.Interval = 10
+	}
+	if req.RetentionRaw < 1 {
+		req.RetentionRaw = 1
+	}
+	if req.Retention5m < 1 {
+		req.Retention5m = 1
+	}
+	if req.Retention1h < 1 {
+		req.Retention1h = 1
+	}
+	if req.Retention1d < 1 {
+		req.Retention1d = 1
+	}
+
+	if err := h.metricsCollector.UpdateSettings(req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, h.metricsCollector.GetSettings())
 }

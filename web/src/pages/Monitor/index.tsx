@@ -20,6 +20,7 @@ import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import ProcessTable from './ProcessTable';
+import HistoricalMonitor from './HistoricalMonitor';
 
 const { Text } = Typography;
 
@@ -554,7 +555,10 @@ export default function Monitor() {
 
   return (
     <div>
-      {/* Status bar */}
+      {/* Historical monitoring section */}
+      <HistoricalMonitor />
+
+      {/* Realtime status bar */}
       <div style={{ ...statusBarStyle, gap: isMobile ? 8 : 24, padding: isMobile ? '8px 12px' : '12px 20px' }}>
         <SyncOutlined
           spin={polling}

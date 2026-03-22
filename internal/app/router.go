@@ -88,6 +88,8 @@ func SetupRouter(db *sql.DB) *gin.Engine {
 		userService := service.NewUserService(db)
 		totpService := service.NewTOTPService(db)
 		monitorService := service.NewMonitorService()
+		metricsCollector := service.NewMetricsCollector(db, monitorService)
+		metricsCollector.Start()
 		siteService := service.NewSiteService(db)
 		sslService := service.NewSSLService(db)
 		databaseService := service.NewDatabaseService(db)
@@ -118,7 +120,7 @@ func SetupRouter(db *sql.DB) *gin.Engine {
 		dashboardHandler := v1.NewDashboardHandler(monitorService)
 		dashboardHandler.RegisterRoutes(authGroup)
 
-		monitorHandler := v1.NewMonitorHandler(monitorService)
+		monitorHandler := v1.NewMonitorHandler(monitorService, metricsCollector)
 		monitorHandler.RegisterRoutes(authGroup)
 
 		// -------------------------------------------------------
