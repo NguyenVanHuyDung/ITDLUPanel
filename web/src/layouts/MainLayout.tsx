@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Menu, Dropdown, Button, Avatar, Space, Typography, Drawer } from 'antd';
+import { Layout, Menu, Dropdown, Button, Avatar, Space, Typography, Drawer, Tooltip } from 'antd';
 import {
   DashboardOutlined,
   GlobalOutlined,
@@ -25,9 +25,12 @@ import {
   FieldTimeOutlined,
   TagOutlined,
   CloseOutlined,
+  SunOutlined,
+  MoonOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/stores/auth';
+import { useThemeStore } from '@/stores/theme';
 import api from '@/services/api';
 import type { MenuProps } from 'antd';
 
@@ -63,6 +66,8 @@ export default function MainLayout() {
   const location = useLocation();
   const { t, i18n } = useTranslation();
   const { user, logout } = useAuthStore();
+  const { mode: themeMode, toggle: toggleTheme } = useThemeStore();
+  const isDark = themeMode === 'dark';
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchSysInfo = useCallback(async () => {
@@ -89,6 +94,10 @@ export default function MainLayout() {
   useEffect(() => {
     setMobileDrawerOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    document.body.setAttribute('data-theme', themeMode);
+  }, [themeMode]);
 
   const handleLogout = () => {
     logout();
@@ -143,12 +152,12 @@ export default function MainLayout() {
         alignItems: 'center',
         justifyContent: isMobile ? 'space-between' : (collapsed ? 'center' : 'flex-start'),
         padding: (isMobile || !collapsed) ? '0 20px' : '0',
-        borderBottom: '1px solid rgba(255,255,255,0.1)',
+        borderBottom: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid #E8EDF2',
       }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <span style={{ fontSize: collapsed && !isMobile ? 24 : 20, lineHeight: 1 }}>🎓</span>
           {(!collapsed || isMobile) && (
-            <Text strong style={{ color: '#fff', fontSize: 18, marginLeft: 10 }}>
+            <Text strong style={{ color: isDark ? '#fff' : '#1A1A2E', fontSize: 18, marginLeft: 10 }}>
               ITDLUPanel
             </Text>
           )}
@@ -158,7 +167,7 @@ export default function MainLayout() {
             type="text"
             icon={<CloseOutlined />}
             onClick={() => setMobileDrawerOpen(false)}
-            style={{ color: 'rgba(255,255,255,0.65)', fontSize: 16 }}
+            style={{ color: isDark ? 'rgba(255,255,255,0.65)' : '#64748B', fontSize: 16 }}
           />
         )}
       </div>
@@ -167,8 +176,8 @@ export default function MainLayout() {
         selectedKeys={[location.pathname]}
         items={menuItems}
         onClick={handleMenuClick}
-        style={{ background: 'transparent', borderRight: 0, color: 'rgba(255,255,255,0.85)' }}
-        theme="dark"
+        style={{ background: 'transparent', borderRight: 0, ...(isDark ? { color: 'rgba(255,255,255,0.85)' } : {}) }}
+        theme={isDark ? 'dark' : 'light'}
       />
     </>
   );
@@ -176,7 +185,7 @@ export default function MainLayout() {
   const contentMarginLeft = isMobile ? 0 : (collapsed ? SIDER_COLLAPSED : SIDER_WIDTH);
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout style={{ minHeight: '100vh', background: isDark ? '#0d1117' : '#F5F7FA' }}>
       {/* Desktop sidebar */}
       {!isMobile && (
         <Sider
@@ -187,7 +196,7 @@ export default function MainLayout() {
           breakpoint="lg"
           onBreakpoint={(broken) => setCollapsed(broken)}
           style={{
-            background: '#1B2A4A',
+            background: isDark ? '#141821' : '#FFFFFF',
             overflow: 'auto',
             height: '100vh',
             position: 'fixed',
@@ -195,6 +204,7 @@ export default function MainLayout() {
             top: 0,
             bottom: 0,
             zIndex: 10,
+            ...(isDark ? {} : { borderRight: '1px solid #E8EDF2' }),
           }}
         >
           {siderContent}
@@ -209,7 +219,7 @@ export default function MainLayout() {
           placement="left"
           width={SIDER_WIDTH}
           closable={false}
-          styles={{ body: { padding: 0, background: '#1B2A4A' } }}
+          styles={{ body: { padding: 0, background: isDark ? '#141821' : '#FFFFFF' } }}
           style={{ zIndex: 1001 }}
         >
           {siderContent}
@@ -222,6 +232,7 @@ export default function MainLayout() {
         minHeight: '100vh',
         display: 'flex',
         flexDirection: 'column',
+        background: isDark ? '#0d1117' : '#F5F7FA',
       }}>
         {/* ── Unified Header Bar ── */}
         <div style={{
@@ -275,6 +286,15 @@ export default function MainLayout() {
 
           {/* Right: language + user */}
           <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 8, flexShrink: 0 }}>
+            <Tooltip title={isDark ? 'Light mode' : 'Dark mode'}>
+              <Button
+                type="text"
+                icon={isDark ? <SunOutlined /> : <MoonOutlined />}
+                onClick={toggleTheme}
+                size="small"
+                style={{ color: 'rgba(255,255,255,0.9)', fontSize: 15 }}
+              />
+            </Tooltip>
             <Dropdown menu={{ items: languageItems, onClick: ({ key }) => i18n.changeLanguage(key) }}>
               <Button type="text" icon={<TranslationOutlined />} size="small"
                 style={{ color: 'rgba(255,255,255,0.9)', fontSize: 13 }}
@@ -298,9 +318,9 @@ export default function MainLayout() {
           textAlign: 'center',
           padding: isMobile ? '12px 8px' : '16px 24px',
           fontSize: isMobile ? 11 : 12,
-          color: '#94A3B8',
-          borderTop: '1px solid #E8EDF2',
-          background: '#FAFBFC',
+          color: isDark ? '#8b949e' : '#94A3B8',
+          borderTop: isDark ? '1px solid #30363d' : '1px solid #E8EDF2',
+          background: isDark ? '#161b22' : '#FAFBFC',
         }}>
           <span>© {new Date().getFullYear()} </span>
           <a href="https://dlu.edu.vn" target="_blank" rel="noreferrer" style={{ color: '#1565C0', fontWeight: 500 }}>
