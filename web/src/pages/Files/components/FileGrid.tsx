@@ -1,5 +1,6 @@
 import type { FileItem } from '../types';
 import { getFileIcon } from './FileIcon';
+import { usePalette } from '../palette';
 
 interface FileGridProps {
   files: FileItem[];
@@ -14,6 +15,8 @@ export default function FileGrid({
   files, selectedKeys, onSelectChange,
   onNavigate, onEdit, onContextMenu,
 }: FileGridProps) {
+  const { p, isDark } = usePalette();
+
   const toggleSelect = (path: string, e: React.MouseEvent) => {
     if (e.ctrlKey || e.metaKey) {
       onSelectChange(
@@ -25,23 +28,51 @@ export default function FileGrid({
   };
 
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-2 p-3">
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
+        gap: 8, padding: 12,
+      }}
+    >
       {files.map(file => {
         const selected = selectedKeys.includes(file.path);
         return (
           <div
             key={file.path}
-            className={`flex flex-col items-center justify-center p-3 rounded-lg cursor-pointer text-center transition-all
-              ${selected ? 'border-2 border-blue-600 bg-blue-50' : 'border-2 border-transparent hover:bg-gray-50'}`}
+            style={{
+              display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center',
+              padding: 12, borderRadius: 8, cursor: 'pointer',
+              textAlign: 'center', transition: 'all 0.15s',
+              border: selected
+                ? `2px solid ${p.accent}`
+                : '2px solid transparent',
+              background: selected
+                ? `${p.accent}08`
+                : 'transparent',
+            }}
             onClick={(e) => toggleSelect(file.path, e)}
             onDoubleClick={() => {
               if (file.is_dir) onNavigate(file.path);
               else onEdit(file);
             }}
             onContextMenu={(e) => onContextMenu(e, file)}
+            onMouseEnter={(e) => {
+              if (!selected) e.currentTarget.style.background = p.rowHover;
+            }}
+            onMouseLeave={(e) => {
+              if (!selected) e.currentTarget.style.background = 'transparent';
+            }}
           >
-            <div className="text-[32px] mb-1">{getFileIcon(file)}</div>
-            <span className="text-xs w-full overflow-hidden text-ellipsis whitespace-nowrap">
+            <div style={{ fontSize: 32, marginBottom: 4 }}>{getFileIcon(file)}</div>
+            <span
+              style={{
+                fontSize: 11, width: '100%',
+                overflow: 'hidden', textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap', color: p.text,
+              }}
+            >
               {file.name}
             </span>
           </div>

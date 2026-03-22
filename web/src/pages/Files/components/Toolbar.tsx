@@ -1,5 +1,6 @@
-import { Button, Dropdown, Space, Tooltip, Upload, type MenuProps } from 'antd';
+import { Dropdown, Tooltip, Upload, Tag } from 'antd';
 import { message } from 'antd';
+import type { MenuProps } from 'antd';
 import {
   UploadOutlined, FileAddOutlined, FolderAddOutlined,
   SearchOutlined, CodeOutlined, HomeOutlined,
@@ -9,6 +10,7 @@ import {
   CloudDownloadOutlined,
 } from '@ant-design/icons';
 import type { ViewMode } from '../types';
+import { usePalette, mono } from '../palette';
 
 interface ToolbarProps {
   viewMode: ViewMode;
@@ -35,14 +37,45 @@ export default function Toolbar({
   onGoRoot, onNewFolder, onNewFile, onUpload,
   onBulkDelete, onBulkCompress, onRemoteDownload,
 }: ToolbarProps) {
+  const { p, isDark } = usePalette();
+
   const newMenuItems: MenuProps['items'] = [
     { key: 'folder', icon: <FolderAddOutlined />, label: 'New Folder', onClick: onNewFolder },
     { key: 'file', icon: <FileAddOutlined />, label: 'New File', onClick: onNewFile },
   ];
 
+  const btn = (active?: boolean, danger?: boolean): React.CSSProperties => ({
+    display: 'inline-flex', alignItems: 'center', gap: 5,
+    padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+    fontSize: 12, fontWeight: 600, border: 'none',
+    transition: 'all 0.15s',
+    background: danger
+      ? `${p.red}15`
+      : active
+        ? `${p.accent}18`
+        : (isDark ? 'rgba(30,41,59,0.5)' : '#F1F5F9'),
+    color: danger ? p.red : active ? p.accent : p.textMuted,
+  });
+
+  const iconBtn = (active?: boolean): React.CSSProperties => ({
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    width: 28, height: 28, borderRadius: 6, cursor: 'pointer',
+    border: active ? `1px solid ${p.accent}40` : '1px solid transparent',
+    background: active ? `${p.accent}15` : 'transparent',
+    color: active ? p.accent : p.textMuted,
+    fontSize: 14, transition: 'all 0.15s',
+  });
+
   return (
-    <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200 gap-2 flex-wrap">
-      <Space size={6} wrap>
+    <div
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '8px 12px', gap: 8, flexWrap: 'wrap',
+        borderBottom: `1px solid ${p.cardBorder}`,
+        background: p.headerBg,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
         <Upload
           multiple
           showUploadList={false}
@@ -57,63 +90,84 @@ export default function Toolbar({
             }
           }}
         >
-          <Button size="small" type="primary" icon={<UploadOutlined />}>
-            Upload
-          </Button>
+          <button style={{
+            ...btn(), background: p.accent, color: '#fff',
+            fontWeight: 700, letterSpacing: '-0.01em',
+          }}>
+            <UploadOutlined /> Upload
+          </button>
         </Upload>
 
         <Dropdown menu={{ items: newMenuItems }} trigger={['click']}>
-          <Button size="small" icon={<FileAddOutlined />}>New ▾</Button>
+          <button style={btn()}>
+            <FileAddOutlined /> New ▾
+          </button>
         </Dropdown>
 
-        <Button size="small" icon={<SearchOutlined />}
-          type={searchVisible ? 'primary' : 'default'}
-          onClick={onToggleSearch}>
-          Search
-        </Button>
+        <button style={btn(searchVisible)} onClick={onToggleSearch}>
+          <SearchOutlined /> Search
+        </button>
 
-        <Button size="small" icon={<CodeOutlined />}
-          type={termOpen ? 'primary' : 'default'}
-          onClick={onToggleTerminal}>
-          Terminal
-        </Button>
+        <button style={btn(termOpen)} onClick={onToggleTerminal}>
+          <CodeOutlined /> Terminal
+        </button>
 
-        <Button size="small" icon={<CloudDownloadOutlined />} onClick={onRemoteDownload}>
-          Remote DL
-        </Button>
+        <button style={btn()} onClick={onRemoteDownload}>
+          <CloudDownloadOutlined /> Remote
+        </button>
 
-        <Button size="small" icon={<HomeOutlined />} onClick={onGoRoot}>Root</Button>
+        <button style={btn()} onClick={onGoRoot}>
+          <HomeOutlined /> Root
+        </button>
 
         <Tooltip title={showHidden ? 'Hide hidden files' : 'Show hidden files'}>
-          <Button size="small"
-            type={showHidden ? 'primary' : 'default'}
-            icon={showHidden ? <EyeOutlined /> : <EyeInvisibleOutlined />}
-            onClick={onToggleHidden}
-          />
+          <button style={iconBtn(showHidden)} onClick={onToggleHidden}>
+            {showHidden ? <EyeOutlined /> : <EyeInvisibleOutlined />}
+          </button>
         </Tooltip>
 
         {selectedCount > 0 && (
           <>
-            <Button size="small" danger icon={<DeleteOutlined />} onClick={onBulkDelete}>
-              Delete ({selectedCount})
-            </Button>
-            <Button size="small" icon={<CompressOutlined />} onClick={onBulkCompress}>
-              Compress ({selectedCount})
-            </Button>
+            <button style={btn(false, true)} onClick={onBulkDelete}>
+              <DeleteOutlined /> Delete
+              <Tag
+                style={{
+                  margin: 0, background: `${p.red}20`, border: `1px solid ${p.red}30`,
+                  color: p.red, fontSize: 10, fontWeight: 700, fontFamily: mono,
+                  borderRadius: 4, padding: '0 5px', lineHeight: '18px',
+                }}
+              >
+                {selectedCount}
+              </Tag>
+            </button>
+            <button style={btn()} onClick={onBulkCompress}>
+              <CompressOutlined /> Compress
+              <Tag
+                style={{
+                  margin: 0, background: `${p.accent}15`, border: `1px solid ${p.accent}30`,
+                  color: p.accent, fontSize: 10, fontWeight: 700, fontFamily: mono,
+                  borderRadius: 4, padding: '0 5px', lineHeight: '18px',
+                }}
+              >
+                {selectedCount}
+              </Tag>
+            </button>
           </>
         )}
-      </Space>
+      </div>
 
-      <Space size={4}>
+      <div style={{ display: 'flex', gap: 2 }}>
         <Tooltip title="List view">
-          <Button type={viewMode === 'list' ? 'primary' : 'default'} size="small"
-            icon={<UnorderedListOutlined />} onClick={() => onViewModeChange('list')} />
+          <button style={iconBtn(viewMode === 'list')} onClick={() => onViewModeChange('list')}>
+            <UnorderedListOutlined />
+          </button>
         </Tooltip>
         <Tooltip title="Grid view">
-          <Button type={viewMode === 'grid' ? 'primary' : 'default'} size="small"
-            icon={<AppstoreOutlined />} onClick={() => onViewModeChange('grid')} />
+          <button style={iconBtn(viewMode === 'grid')} onClick={() => onViewModeChange('grid')}>
+            <AppstoreOutlined />
+          </button>
         </Tooltip>
-      </Space>
+      </div>
     </div>
   );
 }

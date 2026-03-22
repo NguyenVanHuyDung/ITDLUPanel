@@ -1,7 +1,8 @@
 import React from 'react';
-import { Pagination, Select } from 'antd';
+import { Select } from 'antd';
 import { formatSize } from '../utils/fileHelpers';
 import { PAGE_SIZE_KEY } from '../utils/constants';
+import { usePalette, mono } from '../palette';
 
 interface FooterBarProps {
   dirCount: number;
@@ -17,44 +18,74 @@ interface FooterBarProps {
 const pageSizeOptions = [25, 50, 100, 200];
 
 const FooterBar: React.FC<FooterBarProps> = ({
-  dirCount,
-  fileCount,
-  totalSize,
-  currentPage,
-  pageSize,
-  total,
-  onPageChange,
-  onPageSizeChange,
+  dirCount, fileCount, totalSize,
+  currentPage, pageSize, total,
+  onPageChange, onPageSizeChange,
 }) => {
-  const handlePageSizeChange = (size: number) => {
-    localStorage.setItem(PAGE_SIZE_KEY, String(size));
-    onPageSizeChange(size);
-  };
+  const { p } = usePalette();
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
 
   return (
-    <div className="flex items-center justify-between px-3 py-1.5 border-t border-gray-200 text-sm text-gray-500">
-      <span>
-        Total <strong>{dirCount}</strong> directories, <strong>{fileCount}</strong> files.
-        {' '}File size: <strong>{formatSize(totalSize)}</strong>
+    <div
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '8px 12px',
+        borderTop: `1px solid ${p.cardBorder}`,
+        background: p.headerBg,
+        flexWrap: 'wrap', gap: 8,
+      }}
+    >
+      <span style={{ fontSize: 11, color: p.textDim }}>
+        <strong style={{ color: p.text, fontFamily: mono }}>{dirCount}</strong> dirs,{' '}
+        <strong style={{ color: p.text, fontFamily: mono }}>{fileCount}</strong> files{' '}
+        — <strong style={{ color: p.text, fontFamily: mono }}>{formatSize(totalSize)}</strong>
       </span>
 
-      <div className="flex items-center gap-2">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <Select
           size="small"
           value={pageSize}
-          onChange={handlePageSizeChange}
-          options={pageSizeOptions.map(v => ({ label: `${v} / page`, value: v }))}
-          className="w-[120px]"
+          onChange={(v) => {
+            localStorage.setItem(PAGE_SIZE_KEY, String(v));
+            onPageSizeChange(v);
+          }}
+          options={pageSizeOptions.map(v => ({ label: `${v}/pg`, value: v }))}
+          style={{ width: 85 }}
+          popupMatchSelectWidth={false}
         />
-        <Pagination
-          size="small"
-          current={currentPage}
-          pageSize={pageSize}
-          total={total}
-          onChange={onPageChange}
-          showQuickJumper
-          showTotal={(t) => `Total ${t}`}
-        />
+
+        {totalPages > 1 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+              let pageIdx: number;
+              if (totalPages <= 7) pageIdx = i + 1;
+              else if (safePage <= 4) pageIdx = i + 1;
+              else if (safePage > totalPages - 4) pageIdx = totalPages - 6 + i;
+              else pageIdx = safePage - 3 + i;
+              return (
+                <button
+                  key={pageIdx}
+                  onClick={() => onPageChange(pageIdx)}
+                  style={{
+                    width: 28, height: 28, borderRadius: 6,
+                    border: pageIdx === safePage ? `1px solid ${p.accent}40` : '1px solid transparent',
+                    background: pageIdx === safePage ? `${p.accent}15` : 'transparent',
+                    color: pageIdx === safePage ? p.accent : p.textDim,
+                    fontSize: 11, fontWeight: pageIdx === safePage ? 700 : 500,
+                    cursor: 'pointer', fontFamily: mono, transition: 'all 0.15s',
+                  }}
+                >
+                  {pageIdx}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <span style={{ fontSize: 10, color: p.textDim, fontFamily: mono }}>
+          {total} total
+        </span>
       </div>
     </div>
   );

@@ -1,20 +1,45 @@
+import { usePalette } from '../palette';
+
 interface DragDropOverlayProps {
   isDragging: boolean;
 }
 
 export default function DragDropOverlay({ isDragging }: DragDropOverlayProps) {
+  const { p } = usePalette();
+
   if (!isDragging) return null;
 
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-blue-600/10 backdrop-blur-[2px] pointer-events-none">
-      <div className="flex flex-col items-center gap-3 p-8 rounded-2xl border-2 border-dashed border-blue-500 bg-white/90 shadow-xl">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <div
+      style={{
+        position: 'absolute', inset: 0, zIndex: 50,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: `${p.accent}08`,
+        backdropFilter: 'blur(2px)',
+        pointerEvents: 'none',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', gap: 12,
+          padding: 32, borderRadius: 16,
+          border: `2px dashed ${p.accent}`,
+          background: `${p.card}F0`,
+          boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+        }}
+      >
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke={p.accent} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
           <polyline points="17 8 12 3 7 8" />
           <line x1="12" y1="3" x2="12" y2="15" />
         </svg>
-        <span className="text-blue-700 font-semibold text-base">Drop files to upload</span>
-        <span className="text-blue-500 text-sm">Files will be uploaded to the current directory</span>
+        <span style={{ color: p.accent, fontWeight: 600, fontSize: 15 }}>
+          Drop files to upload
+        </span>
+        <span style={{ color: p.textMuted, fontSize: 12 }}>
+          Files will be uploaded to the current directory
+        </span>
       </div>
     </div>
   );

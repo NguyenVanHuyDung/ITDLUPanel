@@ -1,18 +1,13 @@
 import React, { useEffect } from 'react';
 import {
-  FolderFilled,
-  EditOutlined,
-  DownloadOutlined,
-  ScissorOutlined,
-  CopyOutlined,
-  SwapOutlined,
-  CompressOutlined,
-  InfoCircleOutlined,
-  DeleteOutlined,
+  FolderFilled, EditOutlined, DownloadOutlined,
+  ScissorOutlined, CopyOutlined, SwapOutlined,
+  CompressOutlined, InfoCircleOutlined, DeleteOutlined,
 } from '@ant-design/icons';
 import type { ContextMenuState, FileItem } from '../types';
 import { ARCHIVE_EXTENSIONS } from '../utils/constants';
 import { getExtension } from '../utils/fileHelpers';
+import { usePalette } from '../palette';
 
 interface ContextMenuProps {
   state: ContextMenuState | null;
@@ -25,17 +20,16 @@ interface MenuItem {
   label: string;
   icon: React.ReactNode;
   danger?: boolean;
-  show?: boolean;
 }
 
 const ContextMenu: React.FC<ContextMenuProps> = ({ state, onClose, onAction }) => {
+  const { p, isDark } = usePalette();
+
   useEffect(() => {
     if (!state) return;
-
     const handleClose = () => onClose();
     document.addEventListener('click', handleClose);
     document.addEventListener('scroll', handleClose, true);
-
     return () => {
       document.removeEventListener('click', handleClose);
       document.removeEventListener('scroll', handleClose, true);
@@ -78,13 +72,29 @@ const ContextMenu: React.FC<ContextMenuProps> = ({ state, onClose, onAction }) =
 
   return (
     <div
-      className="fixed z-[9999] min-w-[180px] rounded-lg bg-white border border-gray-200 shadow-lg py-1"
-      style={{ left: x, top: y }}
+      style={{
+        position: 'fixed', zIndex: 9999, minWidth: 180,
+        left: x, top: y,
+        borderRadius: 10, padding: '4px 0',
+        background: p.card,
+        border: `1px solid ${p.cardBorder}`,
+        boxShadow: isDark
+          ? '0 8px 24px rgba(0,0,0,0.4)'
+          : '0 8px 24px rgba(0,0,0,0.12)',
+      }}
       onContextMenu={(e) => e.preventDefault()}
     >
       {items.map((item, idx) => {
         if (item === 'divider') {
-          return <div key={`d-${idx}`} className="my-1 border-t border-gray-100" />;
+          return (
+            <div
+              key={`d-${idx}`}
+              style={{
+                margin: '4px 8px',
+                borderTop: `1px solid ${p.cardBorder}`,
+              }}
+            />
+          );
         }
 
         const { key, label, icon, danger } = item;
@@ -92,14 +102,23 @@ const ContextMenu: React.FC<ContextMenuProps> = ({ state, onClose, onAction }) =
           <button
             key={key}
             type="button"
-            className={`flex items-center gap-2 w-full px-3 py-1.5 rounded text-left text-sm transition-colors ${
-              danger
-                ? 'text-red-500 hover:bg-red-50'
-                : 'text-gray-700 hover:bg-blue-50'
-            }`}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              width: '100%', padding: '6px 12px', border: 'none',
+              borderRadius: 0, textAlign: 'left', fontSize: 12,
+              cursor: 'pointer', transition: 'background 0.1s',
+              background: 'transparent',
+              color: danger ? p.red : p.text,
+            }}
             onClick={() => handleClick(key)}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = danger ? `${p.red}08` : p.rowHover;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+            }}
           >
-            {icon}
+            <span style={{ color: danger ? p.red : p.textMuted, fontSize: 13 }}>{icon}</span>
             {label}
           </button>
         );

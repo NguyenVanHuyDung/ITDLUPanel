@@ -6,6 +6,7 @@ import type { FileItem, ViewMode, ContextMenuState, MoveMode } from './types';
 import { PAGE_SIZE_KEY } from './utils/constants';
 import { joinPath, getExtension } from './utils/fileHelpers';
 import { ARCHIVE_EXTENSIONS } from './utils/constants';
+import { usePalette } from './palette';
 
 import { useFileManager } from './hooks/useFileManager';
 import { useBookmarks } from './hooks/useBookmarks';
@@ -248,9 +249,18 @@ export default function Files() {
 
   /* ────────── RENDER ────────── */
 
+  const { p, isDark } = usePalette();
+
   return (
     <div
-      className="relative flex flex-col h-full bg-white rounded-lg overflow-hidden"
+      style={{
+        position: 'relative',
+        display: 'flex', flexDirection: 'column',
+        height: '100%', overflow: 'hidden',
+        background: p.card, borderRadius: 12,
+        border: `1px solid ${p.cardBorder}`,
+        boxShadow: isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.06)',
+      }}
       onDragEnter={dd.handleDragEnter}
       onDragLeave={dd.handleDragLeave}
       onDragOver={dd.handleDragOver}
@@ -307,7 +317,7 @@ export default function Files() {
       />
 
       {/* 5. File Table / Grid */}
-      <div className="flex-1 overflow-auto">
+      <div style={{ flex: 1, overflowY: 'auto' }}>
         {viewMode === 'list' ? (
           <FileTable
             files={paginatedFiles}

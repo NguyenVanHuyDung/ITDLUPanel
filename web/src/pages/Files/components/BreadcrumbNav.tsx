@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Button, Space, Tooltip, Input } from 'antd';
+import { Tooltip, Input } from 'antd';
 import { LeftOutlined, RightOutlined, HomeOutlined, ReloadOutlined } from '@ant-design/icons';
+import { usePalette, mono } from '../palette';
 
 interface BreadcrumbNavProps {
   currentPath: string;
@@ -19,6 +20,7 @@ export default function BreadcrumbNav({
 }: BreadcrumbNavProps) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
+  const { p, isDark } = usePalette();
 
   const segments = currentPath.split('/').filter(Boolean);
 
@@ -35,16 +37,37 @@ export default function BreadcrumbNav({
     }
   };
 
+  const navBtn = (disabled?: boolean): React.CSSProperties => ({
+    background: 'none', border: 'none',
+    cursor: disabled ? 'default' : 'pointer',
+    color: disabled ? p.textDim : p.textMuted,
+    fontSize: 12, padding: '4px 6px', borderRadius: 6,
+    display: 'flex', alignItems: 'center',
+    opacity: disabled ? 0.4 : 1,
+    transition: 'color 0.15s',
+  });
+
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 border-b border-gray-200 bg-white">
-      <Space size={4}>
+    <div
+      style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '6px 12px',
+        borderBottom: `1px solid ${p.cardBorder}`,
+        background: p.card,
+      }}
+    >
+      <div style={{ display: 'flex', gap: 2 }}>
         <Tooltip title="Back">
-          <Button type="text" size="small" icon={<LeftOutlined />} disabled={!canGoBack} onClick={onGoBack} />
+          <button style={navBtn(!canGoBack)} onClick={onGoBack} disabled={!canGoBack}>
+            <LeftOutlined />
+          </button>
         </Tooltip>
         <Tooltip title="Forward">
-          <Button type="text" size="small" icon={<RightOutlined />} disabled={!canGoForward} onClick={onGoForward} />
+          <button style={navBtn(!canGoForward)} onClick={onGoForward} disabled={!canGoForward}>
+            <RightOutlined />
+          </button>
         </Tooltip>
-      </Space>
+      </div>
 
       {editing ? (
         <Input
@@ -54,28 +77,47 @@ export default function BreadcrumbNav({
           onPressEnter={commitEdit}
           onBlur={commitEdit}
           autoFocus
-          className="flex-1 font-mono text-[13px]"
+          style={{
+            flex: 1, fontFamily: mono, fontSize: 12,
+            background: p.inputBg, borderColor: p.cardBorder,
+            color: p.text, borderRadius: 6,
+          }}
+          styles={{ input: { background: 'transparent', color: p.text } }}
         />
       ) : (
         <div
-          className="flex items-center gap-1 flex-1 flex-wrap text-[13px] cursor-text"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 4,
+            flex: 1, flexWrap: 'wrap', fontSize: 13, cursor: 'text',
+          }}
           onDoubleClick={startEdit}
         >
           <span
-            className="cursor-pointer text-blue-700 font-medium hover:underline"
+            style={{
+              cursor: 'pointer', color: p.accent, fontWeight: 600,
+              display: 'flex', alignItems: 'center', gap: 4,
+            }}
             onClick={() => onNavigate('/')}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.textDecoration = 'underline'; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.textDecoration = 'none'; }}
           >
-            <HomeOutlined /> Root
+            <HomeOutlined style={{ fontSize: 12 }} /> Root
           </span>
           {segments.map((seg, i) => {
             const fullPath = '/' + segments.slice(0, i + 1).join('/');
             const isLast = i === segments.length - 1;
             return (
-              <span key={fullPath} className="inline-flex items-center gap-1">
-                <span className="text-gray-400">/</span>
+              <span key={fullPath} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ color: p.textDim }}>/</span>
                 <span
-                  className={`cursor-pointer hover:underline ${isLast ? 'text-gray-900 font-semibold' : 'text-blue-700'}`}
+                  style={{
+                    cursor: 'pointer',
+                    color: isLast ? p.text : p.accent,
+                    fontWeight: isLast ? 600 : 400,
+                  }}
                   onClick={() => onNavigate(fullPath)}
+                  onMouseEnter={(e) => { if (!isLast) (e.currentTarget as HTMLElement).style.textDecoration = 'underline'; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.textDecoration = 'none'; }}
                 >
                   {seg}
                 </span>
@@ -86,7 +128,16 @@ export default function BreadcrumbNav({
       )}
 
       <Tooltip title="Refresh">
-        <Button type="text" size="small" icon={<ReloadOutlined spin={loading} />} onClick={onRefresh} />
+        <button
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: p.textMuted, fontSize: 13, padding: '4px 6px',
+            borderRadius: 6, display: 'flex', alignItems: 'center',
+          }}
+          onClick={onRefresh}
+        >
+          <ReloadOutlined spin={loading} />
+        </button>
       </Tooltip>
     </div>
   );
