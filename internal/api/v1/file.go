@@ -51,6 +51,7 @@ func (h *FileHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gin.Ha
 		files.POST("/compress", h.compress)
 		files.POST("/decompress", h.decompress)
 		files.GET("/search", h.search)
+		files.GET("/search-content", h.searchContent)
 		files.POST("/calculate-size", h.calculateSize)
 	}
 }
@@ -670,6 +671,39 @@ func (h *FileHandler) search(c *gin.Context) {
 	}
 
 	results, err := h.fileService.Search(q.Path, q.Pattern)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{
+		"path":    q.Path,
+		"pattern": q.Pattern,
+		"results": results,
+	})
+}
+
+// ── Search file content ────────────────────────────────────────────────
+
+type searchContentQuery struct {
+	Path    string `form:"path" validate:"required"`
+	Pattern string `form:"pattern" validate:"required"`
+}
+
+func (h *FileHandler) searchContent(c *gin.Context) {
+	var q searchContentQuery
+	if err := c.ShouldBindQuery(&q); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "query", Message: "path and pattern query parameters are required"},
+		})
+		return
+	}
+	if errs := validator.Validate(q); errs != nil {
+		response.ValidationError(c, errs)
+		return
+	}
+
+	results, err := h.fileService.SearchContent(q.Path, q.Pattern)
 	if err != nil {
 		response.Error(c, err)
 		return

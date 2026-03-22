@@ -66,7 +66,7 @@ export function useFileManager() {
     setShowHidden(prev => !prev);
   }, []);
 
-  const handleSearch = useCallback(async (query: string) => {
+  const handleSearch = useCallback(async (query: string, mode: 'name' | 'content' = 'name') => {
     setSearchQuery(query);
     if (!query.trim()) {
       setSearchResults(null);
@@ -74,10 +74,17 @@ export function useFileManager() {
     }
     setSearchLoading(true);
     try {
-      const res = await api.get<ApiResponse<{ items: FileItem[] }>>('/files/search', {
-        params: { path: currentPath, pattern: query },
-      });
-      setSearchResults(res.data.data?.items ?? []);
+      if (mode === 'content') {
+        const res = await api.get<ApiResponse<{ path: string; pattern: string; results: FileItem[] }>>('/files/search-content', {
+          params: { path: currentPath, pattern: query },
+        });
+        setSearchResults(res.data.data?.results ?? []);
+      } else {
+        const res = await api.get<ApiResponse<{ path: string; pattern: string; results: FileItem[] }>>('/files/search', {
+          params: { path: currentPath, pattern: query },
+        });
+        setSearchResults(res.data.data?.results ?? []);
+      }
     } catch {
       message.error('Search failed');
     } finally {

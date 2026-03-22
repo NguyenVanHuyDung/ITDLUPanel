@@ -1,37 +1,51 @@
 import { useState, useEffect } from 'react';
-import { Input, Button } from 'antd';
-import { SearchOutlined } from '@ant-design/icons';
+import { Input, Button, Radio } from 'antd';
+import { SearchOutlined, FileSearchOutlined } from '@ant-design/icons';
+
+export type SearchMode = 'name' | 'content';
 
 interface SearchBarProps {
   visible: boolean;
   loading: boolean;
   resultCount: number | null;
-  onSearch: (query: string) => void;
+  onSearch: (query: string, mode: SearchMode) => void;
   onClear: () => void;
 }
 
 export default function SearchBar({ visible, loading, resultCount, onSearch, onClear }: SearchBarProps) {
   const [query, setQuery] = useState('');
+  const [mode, setMode] = useState<SearchMode>('name');
 
   useEffect(() => {
-    if (!visible) setQuery('');
+    if (!visible) { setQuery(''); setMode('name'); }
   }, [visible]);
 
   if (!visible) return null;
 
+  const doSearch = () => { if (query.trim()) onSearch(query, mode); };
+
   return (
-    <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-white">
+    <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-white flex-wrap">
+      <Radio.Group value={mode} onChange={(e) => setMode(e.target.value)} size="small">
+        <Radio.Button value="name">
+          <SearchOutlined className="mr-1" />File Name
+        </Radio.Button>
+        <Radio.Button value="content">
+          <FileSearchOutlined className="mr-1" />File Content
+        </Radio.Button>
+      </Radio.Group>
+
       <Input
-        placeholder="Search files..."
+        placeholder={mode === 'name' ? 'Search by filename pattern (e.g. *.php)...' : 'Search text inside files (grep)...'}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        onPressEnter={() => onSearch(query)}
-        className="max-w-[400px]"
+        onPressEnter={doSearch}
+        className="max-w-[400px] flex-1"
         size="small"
-        prefix={<SearchOutlined className="text-gray-400" />}
+        prefix={mode === 'name' ? <SearchOutlined className="text-gray-400" /> : <FileSearchOutlined className="text-gray-400" />}
         allowClear
       />
-      <Button size="small" type="primary" loading={loading} onClick={() => onSearch(query)}>
+      <Button size="small" type="primary" loading={loading} onClick={doSearch}>
         Search
       </Button>
       {resultCount !== null && (

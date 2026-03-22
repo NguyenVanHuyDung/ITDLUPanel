@@ -201,6 +201,95 @@ func (s *FileService) Search(path, pattern string) ([]*FileInfo, error) {
 	return results, nil
 }
 
+// ContentSearchResult holds a file that matched content search along with matching lines.
+type ContentSearchResult struct {
+	*FileInfo
+	MatchLines []ContentMatch `json:"match_lines,omitempty"`
+}
+
+// ContentMatch is a single matching line inside a file.
+type ContentMatch struct {
+	Line    int    `json:"line"`
+	Content string `json:"content"`
+}
+
+// SearchContent searches for files whose content contains the given pattern (case-insensitive substring).
+// It walks the directory tree, reads text files, and returns files with matching lines.
+func (s *FileService) SearchContent(path, pattern string) ([]*ContentSearchResult, error) {
+	cleanPath, err := safePath(path)
+	if err != nil {
+		return nil, err
+	}
+	if pattern == "" {
+		return nil, apperrors.New(apperrors.ErrValidation, "search pattern is required")
+	}
+
+	lowerPattern := strings.ToLower(pattern)
+	var results []*ContentSearchResult
+
+	_ = filepath.WalkDir(cleanPath, func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		// Skip binary/large files
+		fi, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		if fi.Size() > 10*1024*1024 { // skip files > 10MB
+			return nil
+		}
+
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return nil
+		}
+
+		// Quick binary check: if first 512 bytes contain null byte, skip
+		checkLen := len(data)
+		if checkLen > 512 {
+			checkLen = 512
+		}
+		for _, b := range data[:checkLen] {
+			if b == 0 {
+				return nil // binary file
+			}
+		}
+
+		lines := strings.Split(string(data), "\n")
+		var matches []ContentMatch
+		for i, line := range lines {
+			if strings.Contains(strings.ToLower(line), lowerPattern) {
+				content := line
+				if len(content) > 200 {
+					content = content[:200] + "..."
+				}
+				matches = append(matches, ContentMatch{Line: i + 1, Content: content})
+				if len(matches) >= 5 { // max 5 matches per file
+					break
+				}
+			}
+		}
+
+		if len(matches) > 0 {
+			results = append(results, &ContentSearchResult{
+				FileInfo:   buildFileInfo(fi, p),
+				MatchLines: matches,
+			})
+		}
+
+		if len(results) >= 200 { // limit total results
+			return filepath.SkipAll
+		}
+		return nil
+	})
+
+	return results, nil
+}
+
 // CalculateDirSize walks a directory tree and returns its total size in bytes.
 func (s *FileService) CalculateDirSize(path string) (int64, error) {
 	cleanPath, err := safePath(path)
