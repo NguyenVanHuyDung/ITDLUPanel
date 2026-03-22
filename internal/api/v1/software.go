@@ -31,6 +31,7 @@ func (h *SoftwareHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gi
 	{
 		sw.GET("", h.list)
 		sw.POST("/install", h.install)
+		sw.POST("/install-stack", h.installStack)
 		sw.DELETE("/:name", h.uninstall)
 		sw.POST("/:name/start", h.start)
 		sw.POST("/:name/stop", h.stop)
@@ -95,7 +96,47 @@ func (h *SoftwareHandler) install(c *gin.Context) {
 	})
 }
 
-// uninstall enqueues a software uninstallation task.
+type installStackRequest struct {
+	Components []string `json:"components" binding:"required,min=1"`
+}
+
+// installStack enqueues multiple software installation tasks sequentially.
+func (h *SoftwareHandler) installStack(c *gin.Context) {
+	var req installStackRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "components array is required"},
+		})
+		return
+	}
+
+	if len(req.Components) == 0 {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "components", Message: "at least one component is required"},
+		})
+		return
+	}
+
+	userID, _ := c.Get("user_id")
+	uid, _ := userID.(int64)
+
+	var taskIDs []int64
+	for _, comp := range req.Components {
+		taskID, err := h.softwareService.InstallSoftware(comp, "", uid)
+		if err != nil {
+			continue
+		}
+		taskIDs = append(taskIDs, taskID)
+	}
+
+	c.JSON(http.StatusAccepted, response.Response{
+		Code:    http.StatusAccepted,
+		Message: "stack installation tasks created",
+		Data: gin.H{
+			"task_ids": taskIDs,
+		},
+	})
+}
 func (h *SoftwareHandler) uninstall(c *gin.Context) {
 	name := c.Param("name")
 	if name == "" {

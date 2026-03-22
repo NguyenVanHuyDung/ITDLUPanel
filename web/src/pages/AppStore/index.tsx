@@ -37,7 +37,7 @@ export default function AppStore() {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
   const { p, isDark } = usePalette();
-  const [activeTab, setActiveTab] = useState<'installed' | 'available'>('installed');
+  const [activeTab, setActiveTab] = useState<'installed' | 'available' | 'stacks'>('installed');
   const [installed, setInstalled] = useState<Software[]>([]);
   const [available, setAvailable] = useState<AvailableSoftware[]>([]);
   const [installedLoading, setInstalledLoading] = useState(false);
@@ -62,6 +62,68 @@ export default function AppStore() {
   // Global task store
   const { addTask, setModalOpen: openTaskModal, setActiveTab: setTaskTab } = useTaskStore();
   const tasks = useTaskStore((s) => s.tasks);
+
+  // Stack installer state
+  const [stackExtras, setStackExtras] = useState<Record<string, boolean>>({ phpmyadmin: true, pureftpd: false });
+  const [stackInstalling, setStackInstalling] = useState<string | null>(null);
+
+  const STACK_DEFS = [
+    {
+      id: 'lemp', name: 'LEMP Stack',
+      desc: 'Linux + Nginx + MySQL + PHP — The modern, high-performance stack for most web apps.',
+      components: ['nginx', 'mysql', 'php'],
+      color: '#009639',
+      icon: '⚡',
+    },
+    {
+      id: 'lomp', name: 'LOMP Stack',
+      desc: 'Linux + OpenLiteSpeed + MySQL + PHP — Lightweight, fast, built-in cache & GUI.',
+      components: ['openlitespeed', 'mysql', 'php'],
+      color: '#3A7BD5',
+      icon: '🚀',
+    },
+    {
+      id: 'lamp', name: 'LAMP Stack',
+      desc: 'Linux + Apache + MySQL + PHP — Classic, stable, widely supported stack.',
+      components: ['apache', 'mysql', 'php'],
+      color: '#D22128',
+      icon: '🏛',
+    },
+  ] as const;
+
+  const handleStackInstall = async (stackId: string) => {
+    const stack = STACK_DEFS.find(s => s.id === stackId);
+    if (!stack) return;
+    const components = [...stack.components] as string[];
+    if (stackExtras.phpmyadmin) components.push('phpmyadmin');
+    if (stackExtras.pureftpd) components.push('pureftpd');
+
+    // Filter out already installed
+    const installedNames = new Set(installed.map(s => s.name));
+    const toInstall = components.filter(c => !installedNames.has(c));
+    if (toInstall.length === 0) {
+      message.info('All components in this stack are already installed.');
+      return;
+    }
+
+    setStackInstalling(stackId);
+    try {
+      const { data } = await api.post<ApiResponse<{ task_ids: number[] }>>('/software/install-stack', {
+        components: toInstall,
+      });
+      const taskIds = data.data?.task_ids ?? [];
+      for (let i = 0; i < taskIds.length; i++) {
+        trackTask(taskIds[i], `Install ${toInstall[i]}`, 'install');
+      }
+      if (taskIds.length > 0) {
+        message.info(`Installing ${stack.name} (${toInstall.length} components)…`);
+      }
+    } catch {
+      message.error('Failed to start stack installation');
+    } finally {
+      setStackInstalling(null);
+    }
+  };
 
   /* ───────── Data fetching ───────── */
 
@@ -327,6 +389,7 @@ export default function AppStore() {
         {([
           { key: 'installed' as const, label: `✓ Installed (${installed.length})` },
           { key: 'available' as const, label: `↓ Available (${available.length})` },
+          { key: 'stacks' as const, label: '⚡ Stacks' },
         ]).map(tab => {
           const active = activeTab === tab.key;
           return (
@@ -446,7 +509,7 @@ export default function AppStore() {
               })}
             </div>
           )
-        ) : (
+        ) : activeTab === 'available' ? (
           /* ── AVAILABLE TAB ── */
           available.length === 0 ? (
             <div style={{ textAlign: 'center', padding: 48, color: p.textMuted, fontSize: 13 }}>
@@ -532,7 +595,158 @@ export default function AppStore() {
               })}
             </div>
           )
-        )}
+        ) : activeTab === 'stacks' ? (
+          /* ── STACKS TAB ── */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ fontSize: 13, color: p.textMuted, lineHeight: 1.6 }}>
+              Select a server stack to install all required components at once. You can also include optional extras like phpMyAdmin or FTP.
+            </div>
+
+            {/* ── Extras toggle ── */}
+            <div style={{
+              display: 'flex', gap: 12, flexWrap: 'wrap',
+              padding: '12px 16px', borderRadius: 8,
+              background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
+              border: `1px solid ${p.cardBorder}`,
+            }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: p.text, marginRight: 4, alignSelf: 'center' }}>
+                Extras:
+              </span>
+              {([
+                { key: 'phpmyadmin', label: 'phpMyAdmin', desc: 'Web database manager' },
+                { key: 'pureftpd', label: 'Pure-FTPd', desc: 'FTP server' },
+              ] as const).map(extra => {
+                const on = stackExtras[extra.key];
+                return (
+                  <button
+                    key={extra.key}
+                    onClick={() => setStackExtras(prev => ({ ...prev, [extra.key]: !prev[extra.key] }))}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      padding: '6px 14px', borderRadius: 6,
+                      border: `1px solid ${on ? p.accent : p.cardBorder}`,
+                      background: on ? `${p.accent}15` : 'transparent',
+                      cursor: 'pointer', transition: 'all 0.15s',
+                      fontSize: 12, color: on ? p.accent : p.textMuted,
+                    }}
+                  >
+                    <span style={{
+                      width: 16, height: 16, borderRadius: 4,
+                      border: `2px solid ${on ? p.accent : p.textMuted}`,
+                      background: on ? p.accent : 'transparent',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0, transition: 'all 0.15s',
+                    }}>
+                      {on && <span style={{ color: '#fff', fontSize: 10, fontWeight: 700 }}>✓</span>}
+                    </span>
+                    <span>
+                      <span style={{ fontWeight: 500 }}>{extra.label}</span>
+                      <span style={{ color: p.textMuted, marginLeft: 6 }}>— {extra.desc}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* ── Stack cards ── */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '100%' : '300px'}, 1fr))`,
+              gap: 14,
+            }}>
+              {STACK_DEFS.map(stack => {
+                const installedNames = new Set(installed.map(s => s.name));
+                const allComponents = [...stack.components] as string[];
+                if (stackExtras.phpmyadmin) allComponents.push('phpmyadmin');
+                if (stackExtras.pureftpd) allComponents.push('pureftpd');
+                const remaining = allComponents.filter(c => !installedNames.has(c));
+                const allDone = remaining.length === 0;
+                const busy = stackInstalling === stack.id;
+
+                return (
+                  <div
+                    key={stack.id}
+                    style={{
+                      padding: 20, borderRadius: 10,
+                      border: `1px solid ${p.cardBorder}`,
+                      background: isDark ? 'rgba(255,255,255,0.02)' : '#fff',
+                      display: 'flex', flexDirection: 'column', gap: 14,
+                      transition: 'box-shadow 0.2s, border-color 0.2s',
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.borderColor = stack.color;
+                      e.currentTarget.style.boxShadow = `0 4px 20px ${stack.color}18`;
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.borderColor = p.cardBorder;
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  >
+                    {/* Header */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{
+                        width: 44, height: 44, borderRadius: 10,
+                        background: `${stack.color}15`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 22,
+                      }}>
+                        {stack.icon}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 16, fontWeight: 700, color: p.text }}>{stack.name}</div>
+                        <div style={{ fontSize: 11, color: p.textMuted }}>{allComponents.length} components</div>
+                      </div>
+                    </div>
+
+                    {/* Description */}
+                    <div style={{ fontSize: 12, color: p.textMuted, lineHeight: 1.5 }}>{stack.desc}</div>
+
+                    {/* Component pills */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {allComponents.map(comp => {
+                        const done = installedNames.has(comp);
+                        const color = SOFTWARE_COLORS[comp] || '#666';
+                        return (
+                          <div key={comp} style={{
+                            display: 'flex', alignItems: 'center', gap: 5,
+                            padding: '4px 10px', borderRadius: 5,
+                            fontSize: 11, fontWeight: 500,
+                            background: done ? `${p.green}15` : `${color}12`,
+                            color: done ? p.green : color,
+                            border: `1px solid ${done ? `${p.green}30` : `${color}25`}`,
+                          }}>
+                            {done && <span style={{ fontSize: 10 }}>✓</span>}
+                            {comp}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Install button */}
+                    <button
+                      disabled={allDone || busy}
+                      onClick={() => handleStackInstall(stack.id)}
+                      style={{
+                        width: '100%', padding: '10px 0',
+                        borderRadius: 8, border: 'none',
+                        background: allDone ? (isDark ? 'rgba(255,255,255,0.06)' : '#f0f0f0') : stack.color,
+                        color: allDone ? p.textMuted : '#fff',
+                        fontSize: 13, fontWeight: 600,
+                        cursor: allDone || busy ? 'not-allowed' : 'pointer',
+                        opacity: busy ? 0.7 : 1,
+                        transition: 'opacity 0.15s',
+                      }}
+                      onMouseEnter={e => { if (!allDone && !busy) e.currentTarget.style.opacity = '0.85'; }}
+                      onMouseLeave={e => { e.currentTarget.style.opacity = allDone || busy ? (busy ? '0.7' : '1') : '1'; }}
+                    >
+                      {busy ? 'Installing…' : allDone ? '✓ All Installed' : `Install Stack (${remaining.length} to install)`}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {/* ── Install Modal ──────────────────────────────────────────────── */}
