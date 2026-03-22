@@ -73,7 +73,7 @@ const FooterBar: React.FC<FooterBarProps> = ({
                     background: pageIdx === safePage ? `${p.accent}15` : 'transparent',
                     color: pageIdx === safePage ? p.accent : p.textDim,
                     fontSize: 11, fontWeight: pageIdx === safePage ? 700 : 500,
-                    cursor: 'pointer', fontFamily: mono, transition: 'all 0.15s',
+                    cursor: 'pointer', transition: 'all 0.15s',
                   }}
                 >
                   {pageIdx}

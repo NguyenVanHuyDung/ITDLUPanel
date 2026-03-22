@@ -103,7 +103,7 @@ export default function SearchBar({ visible, loading, resultCount, onSearch, onC
           <Tag
             style={{
               background: `${p.green}12`, border: `1px solid ${p.green}30`,
-              color: p.green, fontSize: 11, fontWeight: 700, fontFamily: mono,
+              color: p.green, fontSize: 11, fontWeight: 700,
               borderRadius: 6, padding: '0 8px', lineHeight: '22px', margin: 0,
             }}
           >

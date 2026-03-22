@@ -255,7 +255,7 @@ export default function AppStore() {
     border: `1px solid ${disabled ? p.cardBorder : color}`,
     background: 'transparent',
     color: disabled ? p.textDim : color,
-    fontSize: 11, fontWeight: 500, fontFamily: mono,
+    fontSize: 11, fontWeight: 500,
     cursor: disabled || busy ? 'not-allowed' : 'pointer',
     opacity: busy ? 0.5 : 1,
     transition: 'all 0.15s',
@@ -307,7 +307,7 @@ export default function AppStore() {
             padding: '5px 14px', borderRadius: 6,
             border: `1px solid ${p.cardBorder}`,
             background: 'transparent', color: p.textMuted,
-            fontSize: 12, fontFamily: mono, cursor: 'pointer',
+            fontSize: 12, cursor: 'pointer',
             display: 'flex', alignItems: 'center', gap: 5,
             transition: 'all 0.15s',
           }}
@@ -336,7 +336,7 @@ export default function AppStore() {
               style={{
                 padding: '6px 16px', borderRadius: 6,
                 border: 'none', cursor: 'pointer',
-                fontFamily: mono, fontSize: 12, fontWeight: 500,
+                fontSize: 12, fontWeight: 500,
                 background: active ? `${p.accent}15` : 'transparent',
                 color: active ? p.accent : p.textMuted,
                 transition: 'all 0.15s',
@@ -405,7 +405,7 @@ export default function AppStore() {
                         display: 'flex', alignItems: 'center', gap: 5,
                         padding: '3px 10px', borderRadius: 99,
                         background: running ? `${p.green}15` : `${p.red}15`,
-                        fontSize: 11, fontWeight: 500, fontFamily: mono,
+                        fontSize: 11, fontWeight: 500,
                         color: running ? p.green : p.red,
                       }}>
                         <span style={{
@@ -502,7 +502,7 @@ export default function AppStore() {
                     {done ? (
                       <div style={{
                         display: 'flex', alignItems: 'center', gap: 5,
-                        fontSize: 12, fontWeight: 500, fontFamily: mono, color: p.green,
+                        fontSize: 12, fontWeight: 500, color: p.green,
                         padding: '6px 0',
                       }}>
                         <span style={{
@@ -518,7 +518,7 @@ export default function AppStore() {
                           width: '100%', padding: '8px 0',
                           borderRadius: 7, border: 'none',
                           background: p.accent, color: '#fff',
-                          fontSize: 13, fontWeight: 500, fontFamily: mono,
+                          fontSize: 13, fontWeight: 500,
                           cursor: 'pointer', transition: 'opacity 0.15s',
                         }}
                         onMouseEnter={e => { e.currentTarget.style.opacity = '0.85'; }}
