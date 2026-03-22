@@ -26,9 +26,37 @@ body {
   color: var(--color-text);
 }
 
-/* Ant Design theme overrides */
+/* Ant Design sider — theme-aware via data-theme on body */
 .ant-layout-sider {
-  background: var(--color-sidebar) !important;
+  background: #FFFFFF !important;
+  border-right: 1px solid #E8EDF2;
+}
+[data-theme="dark"] .ant-layout-sider {
+  background: #141821 !important;
+  border-right: 1px solid rgba(255,255,255,0.06);
+}
+
+/* Light sidebar: menu item hover → blue bg + white text */
+.ant-menu-light .ant-menu-item:hover,
+.ant-menu-light .ant-menu-item-active {
+  background: #1565C0 !important;
+  color: #fff !important;
+}
+.ant-menu-light .ant-menu-item:hover .ant-menu-item-icon,
+.ant-menu-light .ant-menu-item-active .ant-menu-item-icon {
+  color: #fff !important;
+}
+/* Light sidebar: selected item → blue bg + white text */
+.ant-menu-light .ant-menu-item-selected {
+  background: #1565C0 !important;
+  color: #fff !important;
+}
+.ant-menu-light .ant-menu-item-selected .ant-menu-item-icon {
+  color: #fff !important;
+}
+/* Light sidebar: default icon color */
+.ant-menu-light .ant-menu-item .ant-menu-item-icon {
+  color: #64748B;
 }
 
 /* Scrollbar styling */
