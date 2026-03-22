@@ -164,7 +164,15 @@ export default function MainLayout() {
         borderBottom: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid #E8EDF2',
       }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <span style={{ fontSize: collapsed && !isMobile ? 24 : 20, lineHeight: 1 }}>🎓</span>
+          <img
+            src="/favicon.svg"
+            alt="ITDLUPanel"
+            style={{
+              width: collapsed && !isMobile ? 28 : 24,
+              height: collapsed && !isMobile ? 28 : 24,
+              flexShrink: 0,
+            }}
+          />
           {(!collapsed || isMobile) && (
             <Text strong style={{ color: isDark ? '#fff' : '#1A1A2E', fontSize: 18, marginLeft: 10 }}>
               ITDLUPanel
