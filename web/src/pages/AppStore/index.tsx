@@ -6,7 +6,7 @@ import {
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/useIsMobile';
-import { usePalette, mono } from '@/hooks/usePalette';
+import { usePalette } from '@/hooks/usePalette';
 import { useTaskStore } from '@/stores/task';
 import api from '@/services/api';
 import type { ApiResponse, Software } from '@/types';
@@ -287,14 +287,14 @@ export default function AppStore() {
             App Store
           </span>
           <span style={{
-            fontSize: 11, fontFamily: mono, padding: '2px 9px', borderRadius: 4,
+            fontSize: 11, padding: '2px 9px', borderRadius: 4,
             background: `${p.accent}15`, color: p.accent, fontWeight: 500,
           }}>
             {installed.length} installed
           </span>
           {runningCount > 0 && (
             <span style={{
-              fontSize: 11, fontFamily: mono, padding: '2px 9px', borderRadius: 4,
+              fontSize: 11, padding: '2px 9px', borderRadius: 4,
               background: `${p.green}15`, color: p.green, fontWeight: 500,
             }}>
               {runningCount} running
@@ -397,7 +397,7 @@ export default function AppStore() {
                         <div style={{ fontWeight: 600, color: p.text, fontSize: 14 }}>
                           {sw.display_name}
                         </div>
-                        <div style={{ fontSize: 11, fontFamily: mono, color: p.textMuted }}>
+                        <div style={{ fontSize: 11, color: p.textMuted }}>
                           v{sw.version} · {sw.type}
                         </div>
                       </div>
@@ -483,7 +483,7 @@ export default function AppStore() {
                         <span style={{
                           fontSize: 10, padding: '2px 7px', borderRadius: 4,
                           background: `${p.accent}12`, color: p.accent,
-                          fontFamily: mono, fontWeight: 500,
+                          fontWeight: 500,
                         }}>
                           {sw.type || sw.category}
                         </span>
@@ -601,7 +601,7 @@ export default function AppStore() {
                     <Descriptions bordered size="small" column={1} style={{ marginBottom: 16 }}>
                       <Descriptions.Item label="Name">{manageSW.display_name}</Descriptions.Item>
                       <Descriptions.Item label="Version">
-                        <span style={{ fontFamily: mono }}>{manageSW.version}</span>
+                        <span style={{  }}>{manageSW.version}</span>
                       </Descriptions.Item>
                       <Descriptions.Item label="Type"><Tag>{manageSW.type}</Tag></Descriptions.Item>
                       <Descriptions.Item label="Status">
@@ -628,12 +628,12 @@ export default function AppStore() {
                           {swStatus.SubState && <Descriptions.Item label="Sub State">{swStatus.SubState}</Descriptions.Item>}
                           {swStatus.MainPID && swStatus.MainPID !== '0' && (
                             <Descriptions.Item label="Main PID">
-                              <span style={{ fontFamily: mono }}>{swStatus.MainPID}</span>
+                              <span style={{  }}>{swStatus.MainPID}</span>
                             </Descriptions.Item>
                           )}
                           {swStatus.MemoryCurrent && swStatus.MemoryCurrent !== '18446744073709551615' && (
                             <Descriptions.Item label="Memory">
-                              <span style={{ fontFamily: mono }}>
+                              <span style={{  }}>
                                 {(parseInt(swStatus.MemoryCurrent) / 1024 / 1024).toFixed(1)} MB
                               </span>
                             </Descriptions.Item>
@@ -709,7 +709,7 @@ export default function AppStore() {
                       value={swConfig}
                       onChange={(e) => setSwConfig(e.target.value)}
                       rows={18}
-                      style={{ fontFamily: mono, fontSize: 13 }}
+                      style={{ fontSize: 13 }}
                     />
                     <div style={{ marginTop: 12, textAlign: 'right' }}>
                       <Button type="primary" loading={savingConfig} onClick={saveConfig}>

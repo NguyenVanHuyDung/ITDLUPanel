@@ -3,7 +3,7 @@ import { Table, Modal, Form, Input, InputNumber, Select, Switch, message, Popcon
 import { PlusOutlined, DeleteOutlined, ReloadOutlined, LockOutlined, SecurityScanOutlined, ExportOutlined, ImportOutlined, FireOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/useIsMobile';
-import { usePalette, mono } from '@/hooks/usePalette';
+import { usePalette } from '@/hooks/usePalette';
 import type { ApiResponse } from '@/types';
 import api from '@/services/api';
 
@@ -238,7 +238,7 @@ function FirewallTab() {
     borderRadius: 4,
     fontSize: 11,
     fontWeight: 500,
-    fontFamily: mono,
+    
   };
 
   // Table columns for Port rules
@@ -249,7 +249,7 @@ function FirewallTab() {
       key: 'protocol',
       width: 90,
       render: (val: string) => (
-        <span style={{ fontSize: 11, fontFamily: mono, padding: '2px 9px', borderRadius: 4, background: `${p.accent}15`, color: p.accent, fontWeight: 500 }}>
+        <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 4, background: `${p.accent}15`, color: p.accent, fontWeight: 500 }}>
           {(val ?? '').toUpperCase()}
         </span>
       ),
@@ -259,7 +259,7 @@ function FirewallTab() {
       dataIndex: 'port',
       key: 'port',
       width: 80,
-      render: (val: string) => <span style={{ fontWeight: 600, color: p.text, fontFamily: mono }}>{val}</span>,
+      render: (val: string) => <span style={{ fontWeight: 600, color: p.text }}>{val}</span>,
     },
     {
       title: t('common.status'),
@@ -314,7 +314,7 @@ function FirewallTab() {
       key: 'ip',
       width: 120,
       render: (val: string) => val
-        ? <span style={{ fontFamily: mono, color: p.text }}>{val}</span>
+        ? <span style={{ color: p.text }}>{val}</span>
         : <span style={{ color: p.textMuted }}>All</span>,
     },
     {
@@ -331,7 +331,7 @@ function FirewallTab() {
       width: 160,
       render: (val: string) => {
         if (!val) return '—';
-        try { return <span style={{ fontFamily: mono, fontSize: 12 }}>{new Date(val).toLocaleString()}</span>; } catch { return val; }
+        try { return <span style={{ fontSize: 12 }}>{new Date(val).toLocaleString()}</span>; } catch { return val; }
       },
     },
     {
@@ -364,7 +364,7 @@ function FirewallTab() {
       dataIndex: 'ip',
       key: 'ip',
       render: (val: string) => val
-        ? <span style={{ fontWeight: 600, color: p.text, fontFamily: mono }}>{val}</span>
+        ? <span style={{ fontWeight: 600, color: p.text }}>{val}</span>
         : <span style={{ color: p.textMuted }}>All</span>,
     },
     {
@@ -401,7 +401,7 @@ function FirewallTab() {
       width: 160,
       render: (val: string) => {
         if (!val) return '—';
-        try { return <span style={{ fontFamily: mono, fontSize: 12 }}>{new Date(val).toLocaleString()}</span>; } catch { return val; }
+        try { return <span style={{ fontSize: 12 }}>{new Date(val).toLocaleString()}</span>; } catch { return val; }
       },
     },
     {

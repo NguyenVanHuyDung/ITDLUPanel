@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next';
 import type { ApiResponse } from '@/types';
 import api from '@/services/api';
 import { useIsMobile } from '@/hooks/useIsMobile';
-import { usePalette, mono } from '@/hooks/usePalette';
+import { usePalette } from '@/hooks/usePalette';
 
 interface CronJob {
   id: number;
@@ -350,7 +350,7 @@ export default function Cron() {
               <ClockCircleOutlined style={{ color: p.accent, fontSize: 14 }} />
               <span style={{ fontWeight: 500 }}>{human}</span>
               {isHumanized && (
-                <code style={{ fontSize: 11, fontFamily: mono, color: p.textMuted, background: p.codeBg, padding: '1px 6px', borderRadius: 3 }}>{val}</code>
+                <code style={{ fontSize: 11, color: p.textMuted, background: p.codeBg, padding: '1px 6px', borderRadius: 3 }}>{val}</code>
               )}
             </div>
           </Tooltip>
@@ -363,7 +363,7 @@ export default function Cron() {
       key: 'command',
       ellipsis: true,
       width: isMobile ? undefined : 200,
-      render: (val: string) => <span style={{ fontFamily: mono, fontSize: 12 }}>{val}</span>,
+      render: (val: string) => <span style={{ fontSize: 12 }}>{val}</span>,
     },
     {
       title: t('common.type'),
@@ -371,7 +371,7 @@ export default function Cron() {
       key: 'type',
       render: (val: string) => (
         <span style={{
-          fontSize: 11, fontFamily: mono, padding: '2px 9px', borderRadius: 4,
+          fontSize: 11, padding: '2px 9px', borderRadius: 4,
           background: val === 'shell' ? `${p.accent}15` : `${p.purple}15`,
           color: val === 'shell' ? p.accent : p.purple,
           fontWeight: 500,
@@ -402,7 +402,7 @@ export default function Cron() {
       dataIndex: 'last_run',
       key: 'last_run',
       render: (val: string) => val
-        ? <span style={{ fontFamily: mono, fontSize: 12 }}>{new Date(val).toLocaleString()}</span>
+        ? <span style={{ fontSize: 12 }}>{new Date(val).toLocaleString()}</span>
         : <span style={{ color: p.textMuted }}>-</span>,
     },
     {
@@ -518,7 +518,7 @@ export default function Cron() {
       <div style={{ marginTop: 12, padding: '8px 12px', background: `${p.accent}10`, borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
         <ClockCircleOutlined style={{ color: p.accent }} />
         <span style={{ color: p.accent }}>{cronToHuman(buildCronFromState(schedState))}</span>
-        <code style={{ marginLeft: 'auto', fontFamily: mono, fontSize: 12, color: p.textMuted }}>{buildCronFromState(schedState)}</code>
+        <code style={{ marginLeft: 'auto', fontSize: 12, color: p.textMuted }}>{buildCronFromState(schedState)}</code>
       </div>
     </div>
   );
@@ -541,7 +541,7 @@ export default function Cron() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 15, fontWeight: 600, color: p.text }}>{t('sidebar.cron')}</span>
           <span style={{
-            fontSize: 11, fontFamily: mono, padding: '2px 9px', borderRadius: 4,
+            fontSize: 11, padding: '2px 9px', borderRadius: 4,
             background: `${p.accent}15`, color: p.accent, fontWeight: 500,
           }}>{jobs.length} jobs</span>
         </div>
@@ -683,10 +683,10 @@ export default function Cron() {
                 <Form.Item name="schedule" noStyle rules={schedMode === 'custom' ? [{ required: true, message: 'Enter cron expression' }] : []}>
                   <Input
                     placeholder="* * * * *"
-                    style={{ fontFamily: mono }}
+                    style={{  }}
                   />
                 </Form.Item>
-                <div style={{ fontFamily: mono, fontSize: 11, color: p.textMuted, marginTop: 8, lineHeight: 1.6 }}>
+                <div style={{ fontSize: 11, color: p.textMuted, marginTop: 8, lineHeight: 1.6 }}>
                   minute(0-59) hour(0-23) day(1-31) month(1-12) weekday(0-7)
                 </div>
               </div>
@@ -726,7 +726,7 @@ export default function Cron() {
           maxHeight: '70vh',
           overflow: 'auto',
           fontSize: 13,
-          fontFamily: mono,
+          
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-all',
         }}>

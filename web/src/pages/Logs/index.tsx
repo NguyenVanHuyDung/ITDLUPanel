@@ -3,7 +3,7 @@ import { Table, Input, Select, Popconfirm, Tooltip, message } from 'antd';
 import { ReloadOutlined, SearchOutlined, ClearOutlined, InfoCircleOutlined, WarningOutlined, BugOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/useIsMobile';
-import { usePalette, mono } from '@/hooks/usePalette';
+import { usePalette } from '@/hooks/usePalette';
 import type { ApiResponse } from '@/types';
 import api from '@/services/api';
 
@@ -83,7 +83,7 @@ function StatusBadge({ status, p }: { status?: number; p: { green: string; amber
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', padding: '1px 7px', borderRadius: 4,
-      background: `${color}15`, color, fontSize: 11, fontFamily: mono, fontWeight: 500,
+      background: `${color}15`, color, fontSize: 11, fontWeight: 500,
     }}>{status}</span>
   );
 }
@@ -189,7 +189,7 @@ export default function Logs() {
       dataIndex: 'time',
       key: 'time',
       width: isMobile ? 80 : 110,
-      render: (v: string) => <span style={{ fontSize: 12, fontFamily: mono, color: p.textMuted }}>{formatTime(v)}</span>,
+      render: (v: string) => <span style={{ fontSize: 12, color: p.textMuted }}>{formatTime(v)}</span>,
     },
     {
       title: 'Level',
@@ -223,9 +223,9 @@ export default function Logs() {
                 display: 'inline-flex', alignItems: 'center', padding: '1px 7px', borderRadius: 4,
                 background: `${p.accent}15`, color: p.accent, fontSize: 11, fontWeight: 500,
               }}>{r.method}</span>{' '}
-              <span style={{ fontSize: 12, fontFamily: mono, color: p.textMuted, background: p.codeBg, padding: '1px 5px', borderRadius: 3 }}>{r.path}</span>
+              <span style={{ fontSize: 12, color: p.textMuted, background: p.codeBg, padding: '1px 5px', borderRadius: 3 }}>{r.path}</span>
               {r.status != null && <>{' '}<StatusBadge status={r.status} p={p} /></>}
-              {r.duration != null && <span style={{ fontSize: 11, fontFamily: mono, color: p.textMuted, marginLeft: 4 }}>{r.duration.toFixed(1)}ms</span>}
+              {r.duration != null && <span style={{ fontSize: 11, color: p.textMuted, marginLeft: 4 }}>{r.duration.toFixed(1)}ms</span>}
             </span>
           )}
           {r.error && <div><span style={{ fontSize: 12, color: p.red }}>{r.error}</span></div>}
@@ -234,7 +234,7 @@ export default function Logs() {
               {Object.entries(r.extra).map(([k, v]) => (
                 <Tooltip key={k} title={JSON.stringify(v)}>
                   <span style={{
-                    display: 'inline-block', fontSize: 11, fontFamily: mono,
+                    display: 'inline-block', fontSize: 11,
                     margin: '1px 4px 1px 0', padding: '1px 6px', borderRadius: 3,
                     background: p.codeBg, color: p.textMuted,
                   }}>{k}={typeof v === 'string' ? v : JSON.stringify(v)}</span>
@@ -250,7 +250,7 @@ export default function Logs() {
       dataIndex: 'ip',
       key: 'ip',
       width: isMobile ? 90 : 120,
-      render: (v?: string) => v ? <span style={{ fontSize: 12, fontFamily: mono, color: p.textMuted }}>{v}</span> : null,
+      render: (v?: string) => v ? <span style={{ fontSize: 12, color: p.textMuted }}>{v}</span> : null,
     },
   ];
 
@@ -259,17 +259,17 @@ export default function Logs() {
       title: '#',
       key: 'idx',
       width: 50,
-      render: (_: unknown, __: unknown, i: number) => <span style={{ fontSize: 11, fontFamily: mono, color: p.textMuted }}>{i + 1}</span>,
+      render: (_: unknown, __: unknown, i: number) => <span style={{ fontSize: 11, color: p.textMuted }}>{i + 1}</span>,
     },
     {
       title: 'Log Entry',
       dataIndex: 'raw',
       key: 'raw',
       render: (v: string) => {
-        if (!search.trim()) return <span style={{ fontFamily: mono, fontSize: 13, color: p.text }}>{v}</span>;
+        if (!search.trim()) return <span style={{ fontSize: 13, color: p.text }}>{v}</span>;
         const parts = v.split(new RegExp(`(${search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
         return (
-          <span style={{ fontFamily: mono, fontSize: 13, color: p.text }}>
+          <span style={{ fontSize: 13, color: p.text }}>
             {parts.map((part, i) =>
               part.toLowerCase() === search.toLowerCase()
                 ? <span key={i} style={{ background: p.amber, color: '#000', borderRadius: 2, padding: '0 2px' }}>{part}</span>
@@ -287,17 +287,17 @@ export default function Logs() {
     { title: 'User', dataIndex: 'user', key: 'user' },
     {
       title: 'Action', dataIndex: 'action', key: 'action',
-      render: (val: string) => <span style={{ fontSize: 12, fontFamily: mono, padding: '1px 6px', borderRadius: 3, background: p.codeBg, color: p.textMuted }}>{val}</span>,
+      render: (val: string) => <span style={{ fontSize: 12, padding: '1px 6px', borderRadius: 3, background: p.codeBg, color: p.textMuted }}>{val}</span>,
     },
     { title: 'Resource', dataIndex: 'resource', key: 'resource', ellipsis: true },
     {
       title: 'IP', dataIndex: 'ip', key: 'ip',
-      render: (v: string) => <span style={{ fontSize: 12, fontFamily: mono, color: p.textMuted }}>{v}</span>,
+      render: (v: string) => <span style={{ fontSize: 12, color: p.textMuted }}>{v}</span>,
     },
     {
       title: 'Time', dataIndex: 'created_at', key: 'created_at',
       render: (val: string) => val
-        ? <span style={{ fontSize: 12, fontFamily: mono, color: p.textMuted }}>{new Date(val).toLocaleString()}</span>
+        ? <span style={{ fontSize: 12, color: p.textMuted }}>{new Date(val).toLocaleString()}</span>
         : <span style={{ color: p.textDim }}>-</span>,
     },
   ];
@@ -414,7 +414,7 @@ export default function Logs() {
           >
             {tab.label}
             <span style={{
-              fontSize: 10, fontFamily: mono, padding: '1px 6px', borderRadius: 3,
+              fontSize: 10, padding: '1px 6px', borderRadius: 3,
               background: activeTab === tab.key ? `${p.accent}20` : p.codeBg,
               color: activeTab === tab.key ? p.accent : p.textDim,
             }}>{tabCounts[tab.key]}</span>

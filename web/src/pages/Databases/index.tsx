@@ -11,7 +11,7 @@ import api from '@/services/api';
 import type { Database } from '@/types';
 import RequireSoftware from '@/components/RequireSoftware';
 import { useIsMobile } from '@/hooks/useIsMobile';
-import { usePalette, mono } from '@/hooks/usePalette';
+import { usePalette } from '@/hooks/usePalette';
 
 const formatSize = (bytes: number) => {
   if (bytes < 1024) return bytes + ' B';
@@ -169,7 +169,7 @@ function DatabasesContent() {
       render: (username: string) => (
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
           <span style={{
-            fontSize: 12, fontFamily: mono, padding: '1px 7px', borderRadius: 4,
+            fontSize: 12, padding: '1px 7px', borderRadius: 4,
             background: `${p.accent}15`, color: p.accent, fontWeight: 500,
           }}>{username}</span>
           <Tooltip title="Copy">
@@ -186,7 +186,7 @@ function DatabasesContent() {
         return (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
             <span style={{
-              fontFamily: mono,
+              
               fontSize: 12,
               color: visible ? p.text : p.textMuted,
               letterSpacing: visible ? 0 : 2,
@@ -223,7 +223,7 @@ function DatabasesContent() {
       key: 'size',
       width: 80,
       render: (_: unknown, r: Database) => (
-        <span style={{ fontFamily: mono, fontSize: 12, color: p.textMuted }}>{formatSize(r.size)}</span>
+        <span style={{ fontSize: 12, color: p.textMuted }}>{formatSize(r.size)}</span>
       ),
     },
     {
@@ -318,14 +318,14 @@ function DatabasesContent() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 15, fontWeight: 600, color: p.text }}>Databases</span>
             <span style={{
-              fontSize: 11, fontFamily: mono, padding: '2px 9px', borderRadius: 4,
+              fontSize: 11, padding: '2px 9px', borderRadius: 4,
               background: `${p.accent}15`, color: p.accent, fontWeight: 500,
             }}>
               {databases.length} databases
             </span>
             {dbVersion && (
               <span style={{
-                fontSize: 11, fontFamily: mono, padding: '2px 9px', borderRadius: 4,
+                fontSize: 11, padding: '2px 9px', borderRadius: 4,
                 background: `${p.green}15`, color: p.green, fontWeight: 500,
               }}>
                 {dbVersion}

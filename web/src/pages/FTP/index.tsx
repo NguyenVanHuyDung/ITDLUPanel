@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Table, Modal, Form, Input, Popconfirm, message } from 'antd';
 import { PlusOutlined, DeleteOutlined, ReloadOutlined, LockOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
-import { usePalette, mono } from '@/hooks/usePalette';
+import { usePalette } from '@/hooks/usePalette';
 import type { ApiResponse } from '@/types';
 import api from '@/services/api';
 import RequireSoftware from '@/components/RequireSoftware';
@@ -103,7 +103,7 @@ function FTPContent() {
       dataIndex: 'path',
       key: 'path',
       ellipsis: true,
-      render: (v: string) => <span style={{ fontFamily: mono, fontSize: 12 }}>{v}</span>,
+      render: (v: string) => <span style={{ fontSize: 12 }}>{v}</span>,
     },
     {
       title: t('common.status'),
@@ -129,7 +129,7 @@ function FTPContent() {
       dataIndex: 'created_at',
       key: 'created_at',
       render: (val: string) => val
-        ? <span style={{ fontFamily: mono, fontSize: 12, color: p.textMuted }}>{new Date(val).toLocaleString()}</span>
+        ? <span style={{ fontSize: 12, color: p.textMuted }}>{new Date(val).toLocaleString()}</span>
         : <span style={{ color: p.textDim }}>-</span>,
     },
     {
@@ -191,7 +191,7 @@ function FTPContent() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 15, fontWeight: 600, color: p.text }}>FTP Accounts</span>
           <span style={{
-            fontSize: 11, fontFamily: mono, padding: '2px 9px', borderRadius: 4,
+            fontSize: 11, padding: '2px 9px', borderRadius: 4,
             background: `${p.accent}15`, color: p.accent, fontWeight: 500,
           }}>{accounts.length}</span>
         </div>

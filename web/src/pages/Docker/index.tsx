@@ -7,7 +7,7 @@ import {
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/useIsMobile';
-import { usePalette, mono } from '@/hooks/usePalette';
+import { usePalette } from '@/hooks/usePalette';
 import type { ApiResponse } from '@/types';
 import api from '@/services/api';
 
@@ -204,7 +204,7 @@ export default function Docker() {
       key: 'ports',
       ellipsis: true,
       render: (val: string) => val
-        ? <span style={{ fontFamily: mono, fontSize: 12 }}>{val}</span>
+        ? <span style={{ fontSize: 12 }}>{val}</span>
         : '-',
     },
     {
@@ -212,7 +212,7 @@ export default function Docker() {
       dataIndex: 'created',
       key: 'created',
       render: (val: string) => val
-        ? <span style={{ fontFamily: mono, fontSize: 12, color: p.textMuted }}>{new Date(val).toLocaleString()}</span>
+        ? <span style={{ fontSize: 12, color: p.textMuted }}>{new Date(val).toLocaleString()}</span>
         : '-',
     },
     {
@@ -274,7 +274,7 @@ export default function Docker() {
       key: 'tag',
       render: (val: string) => (
         <span style={{
-          fontSize: 11, fontFamily: mono, padding: '2px 9px', borderRadius: 4,
+          fontSize: 11, padding: '2px 9px', borderRadius: 4,
           background: `${p.accent}15`, color: p.accent, fontWeight: 500,
         }}>
           {val || 'latest'}
@@ -285,14 +285,14 @@ export default function Docker() {
       title: t('common.size'),
       dataIndex: 'size',
       key: 'size',
-      render: (val: number) => <span style={{ fontFamily: mono, fontSize: 12 }}>{formatSize(val)}</span>,
+      render: (val: number) => <span style={{ fontSize: 12 }}>{formatSize(val)}</span>,
     },
     {
       title: 'Created',
       dataIndex: 'created',
       key: 'created',
       render: (val: string) => val
-        ? <span style={{ fontFamily: mono, fontSize: 12, color: p.textMuted }}>{new Date(val).toLocaleString()}</span>
+        ? <span style={{ fontSize: 12, color: p.textMuted }}>{new Date(val).toLocaleString()}</span>
         : '-',
     },
     {
@@ -368,19 +368,19 @@ export default function Docker() {
           {!loadingInfo && (
             <>
               <span style={{
-                fontSize: 11, fontFamily: mono, padding: '2px 9px', borderRadius: 4,
+                fontSize: 11, padding: '2px 9px', borderRadius: 4,
                 background: `${p.accent}15`, color: p.accent, fontWeight: 500,
               }}>
                 v{info.version}
               </span>
               <span style={{
-                fontSize: 11, fontFamily: mono, padding: '2px 9px', borderRadius: 4,
+                fontSize: 11, padding: '2px 9px', borderRadius: 4,
                 background: `${p.green}15`, color: p.green, fontWeight: 500,
               }}>
                 {info.containers} containers ({info.containers_running} running)
               </span>
               <span style={{
-                fontSize: 11, fontFamily: mono, padding: '2px 9px', borderRadius: 4,
+                fontSize: 11, padding: '2px 9px', borderRadius: 4,
                 background: `${p.purple}15`, color: p.purple, fontWeight: 500,
               }}>
                 {info.images} images
@@ -480,7 +480,7 @@ export default function Docker() {
           maxHeight: '60vh',
           overflow: 'auto',
           fontSize: isMobile ? 11 : 13,
-          fontFamily: mono,
+          
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-all',
         }}>

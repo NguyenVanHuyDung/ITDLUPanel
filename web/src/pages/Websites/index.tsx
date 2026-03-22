@@ -12,7 +12,7 @@ import api from '@/services/api';
 import type { Site } from '@/types';
 import RequireSoftware from '@/components/RequireSoftware';
 import { useIsMobile } from '@/hooks/useIsMobile';
-import { usePalette, mono } from '@/hooks/usePalette';
+import { usePalette } from '@/hooks/usePalette';
 
 // ---------------------------------------------------------------------------
 // Config modal sections
@@ -117,7 +117,7 @@ function DomainManagerPanel({ siteId, siteDomain }: { siteId: number; siteDomain
           {
             title: 'Domain name', dataIndex: 'domain', key: 'domain',
             render: (d: string, r: DomainInfo) => (
-              <span style={{ fontFamily: mono, fontSize: 13 }}>
+              <span style={{ fontSize: 13 }}>
                 {d}
                 {r.is_primary === 1 && (
                   <span style={{
@@ -128,7 +128,7 @@ function DomainManagerPanel({ siteId, siteDomain }: { siteId: number; siteDomain
               </span>
             ),
           },
-          { title: 'Port', key: 'port', width: 80, render: () => <span style={{ fontFamily: mono, fontSize: 12, color: p.textMuted }}>80</span> },
+          { title: 'Port', key: 'port', width: 80, render: () => <span style={{ fontSize: 12, color: p.textMuted }}>80</span> },
           {
             title: 'Operate', key: 'op', width: 80,
             render: (_: unknown, r: DomainInfo) =>
@@ -198,7 +198,7 @@ function ConfigEditorPanel({ siteId, webserver }: { siteId: number; webserver: s
           onChange={e => setContent(e.target.value)}
           rows={22}
           style={{
-            fontFamily: mono,
+            
             fontSize: 12,
             background: p.codeBg,
             color: p.text,
@@ -265,21 +265,21 @@ function DirectoryPanel({ site }: { site: Site }) {
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '12px 16px', fontSize: 13 }}>
         <span style={{ color: p.textMuted }}>Document Root:</span>
-        <span style={{ fontSize: 12, fontFamily: mono, padding: '2px 6px', borderRadius: 4, background: p.codeBg }}>
+        <span style={{ fontSize: 12, padding: '2px 6px', borderRadius: 4, background: p.codeBg }}>
           {site.path || `/ITDLUPanel/wwwroot/${site.domain}`}
         </span>
         <span style={{ color: p.textMuted }}>Domain:</span>
-        <span style={{ fontWeight: 600, fontFamily: mono, color: p.text }}>{site.domain}</span>
+        <span style={{ fontWeight: 600, color: p.text }}>{site.domain}</span>
         <span style={{ color: p.textMuted }}>Web Server:</span>
         <span style={{ color: p.text }}>{site.webserver?.toUpperCase()}</span>
         <span style={{ color: p.textMuted }}>PHP Version:</span>
-        <span style={{ fontFamily: mono, color: p.text }}>{site.php_version || 'Not set'}</span>
+        <span style={{ color: p.text }}>{site.php_version || 'Not set'}</span>
         <span style={{ color: p.textMuted }}>Status:</span>
         <span style={{ color: site.status === 1 ? p.green : p.red, fontWeight: 500 }}>
           {site.status === 1 ? 'Running' : 'Stopped'}
         </span>
         <span style={{ color: p.textMuted }}>Created:</span>
-        <span style={{ fontFamily: mono, fontSize: 12, color: p.text }}>{site.created_at}</span>
+        <span style={{ fontSize: 12, color: p.text }}>{site.created_at}</span>
       </div>
     </div>
   );
@@ -339,7 +339,7 @@ function SiteConfigModal({ site, open, onClose, phpVersions }: { site: Site | nu
       destroyOnHidden
       title={
         <span style={{ fontSize: 14, color: p.text }}>
-          Site modification [<span style={{ fontFamily: mono }}>{site.domain}</span>]
+          Site modification [<span style={{  }}>{site.domain}</span>]
           <span style={{ color: p.textMuted, fontWeight: 400, fontSize: 12, marginLeft: 8 }}>
             — Created {site.created_at}
           </span>
@@ -510,13 +510,13 @@ function WebsitesContent() {
               href={`http${r.ssl_enabled ? 's' : ''}://${r.domain}`}
               target="_blank"
               rel="noreferrer"
-              style={{ color: p.accent, fontWeight: 500, fontSize: 13, fontFamily: mono }}
+              style={{ color: p.accent, fontWeight: 500, fontSize: 13 }}
             >
               {r.domain}
             </a>
             <LinkOutlined style={{ fontSize: 10, color: p.textMuted }} />
           </div>
-          <div style={{ fontSize: 11, color: p.textMuted, marginLeft: 19, fontFamily: mono }}>
+          <div style={{ fontSize: 11, color: p.textMuted, marginLeft: 19 }}>
             {r.name !== r.domain ? r.name : r.path || `/ITDLUPanel/wwwroot/${r.domain}`}
           </div>
         </div>
@@ -554,7 +554,7 @@ function WebsitesContent() {
           </Tooltip>
           {r.php_version && (
             <span style={{
-              fontSize: 10, fontWeight: 600, fontFamily: mono,
+              fontSize: 10, fontWeight: 600,
               padding: '2px 8px', borderRadius: 4,
               background: `${p.purple}15`, color: p.purple,
               boxShadow: 'none',
@@ -659,7 +659,7 @@ function WebsitesContent() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 15, fontWeight: 600, color: p.text }}>Websites</span>
             <span style={{
-              fontSize: 11, fontFamily: mono,
+              fontSize: 11,
               padding: '2px 9px', borderRadius: 4,
               background: `${p.accent}15`, color: p.accent,
               fontWeight: 500,
@@ -712,7 +712,7 @@ function WebsitesContent() {
           <div style={{ flex: 1 }} />
           {nginxVersion && (
             <span style={{
-              fontSize: 11, fontFamily: mono, fontWeight: 600,
+              fontSize: 11, fontWeight: 600,
               padding: '2px 8px', borderRadius: 4,
               background: `${p.accent}15`, color: p.accent,
             }}>
