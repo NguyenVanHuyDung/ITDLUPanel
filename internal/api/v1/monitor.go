@@ -39,6 +39,7 @@ func (h *MonitorHandler) RegisterRoutes(rg *gin.RouterGroup) {
 		monitor.GET("/network", h.network)
 		monitor.GET("/disk", h.diskStats)
 		monitor.GET("/history", h.history)
+		monitor.DELETE("/history", h.cleanHistory)
 		monitor.GET("/settings", h.monitorSettings)
 		monitor.PUT("/settings", h.updateMonitorSettings)
 	}
@@ -275,4 +276,24 @@ func (h *MonitorHandler) updateMonitorSettings(c *gin.Context) {
 		return
 	}
 	response.Success(c, h.metricsCollector.GetSettings())
+}
+
+// cleanHistory deletes historical metrics data. Accepts optional "table" query
+// param (raw, 5m, 1h, 1d, all). Defaults to "all".
+func (h *MonitorHandler) cleanHistory(c *gin.Context) {
+	if h.metricsCollector == nil {
+		response.Error(c, fmt.Errorf("metrics collector not initialized"))
+		return
+	}
+
+	target := c.DefaultQuery("table", "all")
+	deleted, err := h.metricsCollector.CleanHistory(target)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{
+		"table":   target,
+		"deleted": deleted,
+	})
 }

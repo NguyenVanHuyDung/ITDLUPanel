@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { DatePicker, Switch, Tooltip, Spin, InputNumber, message, Collapse } from 'antd';
+import { DatePicker, Switch, Tooltip, Spin, InputNumber, message, Collapse, Popconfirm } from 'antd';
 import {
   HistoryOutlined,
   SettingOutlined,
   ReloadOutlined,
   DatabaseOutlined,
   ClockCircleOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons';
 import {
   AreaChart,
@@ -429,6 +430,17 @@ export default function HistoricalMonitor() {
     }
   };
 
+  const handleCleanLog = async () => {
+    try {
+      const res = await api.delete('/monitor/history', { params: { table: 'all' } });
+      const deleted = res.data.data?.deleted ?? 0;
+      message.success(`Cleaned ${deleted} records`);
+      setData([]);
+    } catch {
+      message.error('Failed to clean monitor logs');
+    }
+  };
+
   const rangeButtons: { key: TimeRange; label: string }[] = [
     { key: '1d', label: '24H' },
     { key: '7d', label: '7D' },
@@ -549,6 +561,22 @@ export default function HistoricalMonitor() {
             onClick={fetchHistory}
           />
         </Tooltip>
+
+        {/* Clean log */}
+        <Popconfirm
+          title="Clean all monitor logs?"
+          description="This will delete all historical data from all resolution tables."
+          onConfirm={handleCleanLog}
+          okText="Clean"
+          okButtonProps={{ danger: true }}
+          cancelText="Cancel"
+        >
+          <Tooltip title="Clean log">
+            <DeleteOutlined
+              style={{ fontSize: 14, color: p.textMuted, cursor: 'pointer' }}
+            />
+          </Tooltip>
+        </Popconfirm>
 
         {/* Settings gear */}
         <Tooltip title="Collection settings">

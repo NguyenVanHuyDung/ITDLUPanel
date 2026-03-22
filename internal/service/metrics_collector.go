@@ -310,6 +310,43 @@ func (mc *MetricsCollector) purgeOldData() {
 	}
 }
 
+// CleanHistory deletes all data from the specified table(s).
+// target can be "raw", "5m", "1h", "1d", or "all".
+func (mc *MetricsCollector) CleanHistory(target string) (int64, error) {
+	tables := []string{
+		"monitor_metrics_raw",
+		"monitor_metrics_5m",
+		"monitor_metrics_1h",
+		"monitor_metrics_1d",
+	}
+	if target != "all" {
+		tableName := "monitor_metrics_" + target
+		valid := false
+		for _, t := range tables {
+			if t == tableName {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return 0, fmt.Errorf("invalid table: %s", target)
+		}
+		tables = []string{tableName}
+	}
+
+	var total int64
+	for _, table := range tables {
+		res, err := mc.db.Exec(fmt.Sprintf("DELETE FROM %s", table))
+		if err != nil {
+			return total, fmt.Errorf("clean %s: %w", table, err)
+		}
+		n, _ := res.RowsAffected()
+		total += n
+	}
+	logger.Info().Str("target", target).Int64("deleted", total).Msg("Monitor history cleaned")
+	return total, nil
+}
+
 // ---------------------------------------------------------------------------
 // Settings helpers
 // ---------------------------------------------------------------------------
