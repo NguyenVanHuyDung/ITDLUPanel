@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Table, Card, Button, Modal, Form, Input, InputNumber, Select, Space, Tag, Switch, message, Popconfirm, Spin, Radio, Tooltip, Badge } from 'antd';
-import { PlusOutlined, DeleteOutlined, ReloadOutlined, SafetyOutlined, LockOutlined, SecurityScanOutlined, SearchOutlined, ExportOutlined, ImportOutlined, EditOutlined, FireOutlined } from '@ant-design/icons';
+import { Table, Modal, Form, Input, InputNumber, Select, Switch, message, Popconfirm, Spin, Radio, Tooltip } from 'antd';
+import { PlusOutlined, DeleteOutlined, ReloadOutlined, LockOutlined, SecurityScanOutlined, ExportOutlined, ImportOutlined, FireOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { usePalette, mono } from '@/hooks/usePalette';
 import type { ApiResponse } from '@/types';
 import api from '@/services/api';
 
@@ -46,30 +47,13 @@ interface Fail2banConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Design tokens
-// ---------------------------------------------------------------------------
-
-const C = {
-  primary: '#1565C0',
-  primaryLight: '#1E88E5',
-  primaryDark: '#0D47A1',
-  success: '#4CAF50',
-  warning: '#FF9800',
-  error: '#F44336',
-  bg: '#E3F2FD',
-  text: '#1A1A2E',
-  textSecondary: '#64748B',
-  border: '#E8EDF2',
-  white: '#FFFFFF',
-} as const;
-
-// ---------------------------------------------------------------------------
 // Firewall Tab
 // ---------------------------------------------------------------------------
 
 function FirewallTab() {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
+  const { p, isDark } = usePalette();
   const [rules, setRules] = useState<FirewallRule[]>([]);
   const [portStatuses, setPortStatuses] = useState<PortStatus[]>([]);
   const [loading, setLoading] = useState(true);
@@ -247,6 +231,16 @@ function FirewallTab() {
     input.click();
   };
 
+  const badgeBase: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '2px 9px',
+    borderRadius: 4,
+    fontSize: 11,
+    fontWeight: 500,
+    fontFamily: mono,
+  };
+
   // Table columns for Port rules
   const portColumns = [
     {
@@ -255,9 +249,9 @@ function FirewallTab() {
       key: 'protocol',
       width: 90,
       render: (val: string) => (
-        <Tag style={{ background: C.bg, color: C.primary, border: `1px solid ${C.primary}33`, fontWeight: 500 }}>
+        <span style={{ fontSize: 11, fontFamily: mono, padding: '2px 9px', borderRadius: 4, background: `${p.accent}15`, color: p.accent, fontWeight: 500 }}>
           {(val ?? '').toUpperCase()}
-        </Tag>
+        </span>
       ),
     },
     {
@@ -265,7 +259,7 @@ function FirewallTab() {
       dataIndex: 'port',
       key: 'port',
       width: 80,
-      render: (val: string) => <span style={{ fontWeight: 600, color: C.text }}>{val}</span>,
+      render: (val: string) => <span style={{ fontWeight: 600, color: p.text, fontFamily: mono }}>{val}</span>,
     },
     {
       title: t('common.status'),
@@ -275,20 +269,22 @@ function FirewallTab() {
         const ps = isPortListening(record.port, record.protocol);
         if (ps) {
           return (
-            <Space size={4}>
-              <Badge status="success" />
-              <span style={{ color: C.success, fontWeight: 500 }}>Listening</span>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 10px', borderRadius: 99, background: `${p.green}15`, color: p.green, fontSize: 11, fontWeight: 500 }}>
+                <span style={{ width: 6, height: 6, borderRadius: 3, background: p.green }} />
+                Listening
+              </span>
               <Tooltip title={ps.process || 'Active'}>
-                <a style={{ color: C.success, fontSize: 12, cursor: 'pointer' }}>Details</a>
+                <a style={{ color: p.green, fontSize: 12, cursor: 'pointer' }}>Details</a>
               </Tooltip>
-            </Space>
+            </div>
           );
         }
         return (
-          <Space size={4}>
-            <Badge status="default" />
-            <span style={{ color: C.textSecondary }}>Not Listening</span>
-          </Space>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 10px', borderRadius: 99, background: `${p.textMuted}15`, color: p.textMuted, fontSize: 11, fontWeight: 500 }}>
+            <span style={{ width: 6, height: 6, borderRadius: 3, background: p.textMuted }} />
+            Not Listening
+          </span>
         );
       },
     },
@@ -299,29 +295,34 @@ function FirewallTab() {
       width: 90,
       render: (val: string) =>
         val === 'allow'
-          ? <span style={{ color: C.success, fontWeight: 600 }}>Allow</span>
-          : <span style={{ color: C.error, fontWeight: 600 }}>Deny</span>,
+          ? <span style={{ color: p.green, fontWeight: 600 }}>Allow</span>
+          : <span style={{ color: p.red, fontWeight: 600 }}>Deny</span>,
     },
     {
       title: 'Direction',
       dataIndex: 'direction',
       key: 'direction',
       width: 100,
-      render: (val: string) => val === 'in' ? 'Inbound' : 'Outbound',
+      render: (val: string) =>
+        val === 'in'
+          ? <span style={{ ...badgeBase, background: `${p.green}15`, color: p.green }}>IN</span>
+          : <span style={{ ...badgeBase, background: `${p.amber}15`, color: p.amber }}>OUT</span>,
     },
     {
       title: 'Source IP',
       dataIndex: 'ip',
       key: 'ip',
       width: 120,
-      render: (val: string) => val || <span style={{ color: C.textSecondary }}>All</span>,
+      render: (val: string) => val
+        ? <span style={{ fontFamily: mono, color: p.text }}>{val}</span>
+        : <span style={{ color: p.textMuted }}>All</span>,
     },
     {
       title: 'Remarks',
       dataIndex: 'description',
       key: 'description',
       ellipsis: true,
-      render: (val: string) => val || <span style={{ color: C.textSecondary }}>—</span>,
+      render: (val: string) => val || <span style={{ color: p.textMuted }}>—</span>,
     },
     {
       title: 'Add Time',
@@ -330,7 +331,7 @@ function FirewallTab() {
       width: 160,
       render: (val: string) => {
         if (!val) return '—';
-        try { return new Date(val).toLocaleString(); } catch { return val; }
+        try { return <span style={{ fontFamily: mono, fontSize: 12 }}>{new Date(val).toLocaleString()}</span>; } catch { return val; }
       },
     },
     {
@@ -339,14 +340,19 @@ function FirewallTab() {
       width: 130,
       fixed: 'right' as const,
       render: (_: unknown, record: FirewallRule) => (
-        <Space size={0} split={<span style={{ color: C.border, margin: '0 4px' }}>|</span>}>
-          <a style={{ color: C.primary, fontWeight: 500 }} onClick={() => openEditModal(record)}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <button
+            style={{ padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.cardBorder}`, background: 'transparent', color: p.textMuted, fontSize: 11, cursor: 'pointer' }}
+            onClick={() => openEditModal(record)}
+          >
             Edit
-          </a>
+          </button>
           <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
-            <a style={{ color: C.error, fontWeight: 500 }}>Delete</a>
+            <button style={{ padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.red}`, background: 'transparent', color: p.red, fontSize: 11, cursor: 'pointer' }}>
+              Delete
+            </button>
           </Popconfirm>
-        </Space>
+        </div>
       ),
     },
   ];
@@ -357,7 +363,9 @@ function FirewallTab() {
       title: 'IP Address',
       dataIndex: 'ip',
       key: 'ip',
-      render: (val: string) => <span style={{ fontWeight: 600, color: C.text }}>{val || 'All'}</span>,
+      render: (val: string) => val
+        ? <span style={{ fontWeight: 600, color: p.text, fontFamily: mono }}>{val}</span>
+        : <span style={{ color: p.textMuted }}>All</span>,
     },
     {
       title: 'Strategy',
@@ -366,22 +374,25 @@ function FirewallTab() {
       width: 90,
       render: (val: string) =>
         val === 'allow'
-          ? <span style={{ color: C.success, fontWeight: 600 }}>Allow</span>
-          : <span style={{ color: C.error, fontWeight: 600 }}>Deny</span>,
+          ? <span style={{ color: p.green, fontWeight: 600 }}>Allow</span>
+          : <span style={{ color: p.red, fontWeight: 600 }}>Deny</span>,
     },
     {
       title: 'Direction',
       dataIndex: 'direction',
       key: 'direction',
       width: 100,
-      render: (val: string) => val === 'in' ? 'Inbound' : 'Outbound',
+      render: (val: string) =>
+        val === 'in'
+          ? <span style={{ ...badgeBase, background: `${p.green}15`, color: p.green }}>IN</span>
+          : <span style={{ ...badgeBase, background: `${p.amber}15`, color: p.amber }}>OUT</span>,
     },
     {
       title: 'Remarks',
       dataIndex: 'description',
       key: 'description',
       ellipsis: true,
-      render: (val: string) => val || <span style={{ color: C.textSecondary }}>—</span>,
+      render: (val: string) => val || <span style={{ color: p.textMuted }}>—</span>,
     },
     {
       title: 'Add Time',
@@ -390,7 +401,7 @@ function FirewallTab() {
       width: 160,
       render: (val: string) => {
         if (!val) return '—';
-        try { return new Date(val).toLocaleString(); } catch { return val; }
+        try { return <span style={{ fontFamily: mono, fontSize: 12 }}>{new Date(val).toLocaleString()}</span>; } catch { return val; }
       },
     },
     {
@@ -399,42 +410,22 @@ function FirewallTab() {
       width: 130,
       fixed: 'right' as const,
       render: (_: unknown, record: FirewallRule) => (
-        <Space size={0} split={<span style={{ color: C.border, margin: '0 4px' }}>|</span>}>
-          <a style={{ color: C.primary, fontWeight: 500 }} onClick={() => openEditModal(record)}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <button
+            style={{ padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.cardBorder}`, background: 'transparent', color: p.textMuted, fontSize: 11, cursor: 'pointer' }}
+            onClick={() => openEditModal(record)}
+          >
             Edit
-          </a>
+          </button>
           <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
-            <a style={{ color: C.error, fontWeight: 500 }}>Delete</a>
+            <button style={{ padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.red}`, background: 'transparent', color: p.red, fontSize: 11, cursor: 'pointer' }}>
+              Delete
+            </button>
           </Popconfirm>
-        </Space>
+        </div>
       ),
     },
   ];
-
-  const pillStyle = (active: boolean) => ({
-    padding: '6px 18px',
-    borderRadius: 20,
-    cursor: 'pointer' as const,
-    fontWeight: 500 as const,
-    fontSize: 13,
-    border: `1px solid ${active ? C.primary : C.border}`,
-    background: active ? C.primary : C.white,
-    color: active ? C.white : C.text,
-    transition: 'all 0.2s',
-    userSelect: 'none' as const,
-  });
-
-  const dirBtnStyle = (active: boolean) => ({
-    padding: '4px 14px',
-    borderRadius: 4,
-    cursor: 'pointer' as const,
-    fontWeight: 500 as const,
-    fontSize: 13,
-    border: 'none' as const,
-    background: active ? C.primary : 'transparent',
-    color: active ? C.white : C.textSecondary,
-    transition: 'all 0.2s',
-  });
 
   return (
     <div>
@@ -445,41 +436,53 @@ function FirewallTab() {
         flexDirection: isMobile ? 'column' : 'row',
         gap: 16,
         padding: '16px 20px',
-        background: C.bg,
+        background: isDark ? p.rowAlt : p.headerBg,
         borderRadius: 8,
         marginBottom: 20,
-        border: `1px solid ${C.border}`,
+        border: `1px solid ${p.cardBorder}`,
       }}>
-        <Space size={8} align="center">
-          <span style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>Firewall</span>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{ fontSize: 13, color: p.text, fontWeight: 500 }}>Firewall</span>
           <Switch
             checked={firewallEnabled}
             onChange={setFirewallEnabled}
-            style={{ backgroundColor: firewallEnabled ? C.success : undefined }}
+            style={{ backgroundColor: firewallEnabled ? p.green : undefined }}
           />
-        </Space>
-        <div style={{ width: 1, height: 24, background: C.border, display: isMobile ? 'none' : 'block' }} />
-        <Space size={8} align="center">
-          <span style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>Block ICMP</span>
+        </div>
+        <div style={{ width: 1, height: 24, background: p.cardBorder, display: isMobile ? 'none' : 'block' }} />
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{ fontSize: 13, color: p.text, fontWeight: 500 }}>Block ICMP</span>
           <Switch
             checked={icmpBlocked}
             onChange={setIcmpBlocked}
           />
-        </Space>
+        </div>
         <div style={{ flex: 1 }} />
-        <Button icon={<ReloadOutlined />} size="small" onClick={fetchRules}>
-          {t('common.refresh')}
-        </Button>
+        <button onClick={fetchRules} style={{
+          padding: '5px 14px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+          background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+        }}>
+          <ReloadOutlined /> {t('common.refresh')}
+        </button>
       </div>
 
       {/* Sub-tabs: Port rules / IP rules */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 18, flexWrap: 'wrap' }}>
-        <div style={pillStyle(subTab === 'port')} onClick={() => { setSubTab('port'); setSelectedRowKeys([]); }}>
-          Port rules: {portRuleCount}
-        </div>
-        <div style={pillStyle(subTab === 'ip')} onClick={() => { setSubTab('ip'); setSelectedRowKeys([]); }}>
-          IP rules: {ipRuleCount}
-        </div>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 18, flexWrap: 'wrap' }}>
+        <button onClick={() => { setSubTab('port'); setSelectedRowKeys([]); }} style={{
+          padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
+          fontSize: 12, fontWeight: 500,
+          background: subTab === 'port' ? `${p.accent}15` : 'transparent',
+          color: subTab === 'port' ? p.accent : p.textMuted,
+          transition: 'all 0.15s',
+        }}>Port Rules ({portRuleCount})</button>
+        <button onClick={() => { setSubTab('ip'); setSelectedRowKeys([]); }} style={{
+          padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
+          fontSize: 12, fontWeight: 500,
+          background: subTab === 'ip' ? `${p.accent}15` : 'transparent',
+          color: subTab === 'ip' ? p.accent : p.textMuted,
+          transition: 'all 0.15s',
+        }}>IP Rules ({ipRuleCount})</button>
       </div>
 
       {/* Action bar */}
@@ -491,35 +494,54 @@ function FirewallTab() {
         gap: 12,
         marginBottom: 16,
       }}>
-        <Space wrap size={8}>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={openAddModal}
-            style={{ background: C.success, borderColor: C.success }}
-          >
-            {subTab === 'port' ? 'Add Port Rule' : 'Add IP Rule'}
-          </Button>
-          <Button icon={<ImportOutlined />} onClick={handleImportRules}>
-            {t('common.import')} rules
-          </Button>
-          <Button icon={<ExportOutlined />} onClick={handleExportRules}>
-            {t('common.export')} rules
-          </Button>
-        </Space>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={openAddModal} style={{
+            padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
+            background: p.accent, color: '#fff', fontSize: 13, fontWeight: 500,
+            transition: 'opacity 0.15s', display: 'inline-flex', alignItems: 'center', gap: 6,
+          }}>
+            <PlusOutlined /> {subTab === 'port' ? 'Add Port Rule' : 'Add IP Rule'}
+          </button>
+          <button onClick={handleImportRules} style={{
+            padding: '5px 14px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+            background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+          }}>
+            <ImportOutlined /> {t('common.import')} rules
+          </button>
+          <button onClick={handleExportRules} style={{
+            padding: '5px 14px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+            background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+          }}>
+            <ExportOutlined /> {t('common.export')} rules
+          </button>
+        </div>
 
-        <Space wrap size={8}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           {!isMobile && (
-            <div style={{ display: 'inline-flex', background: '#F1F5F9', borderRadius: 6, padding: 2 }}>
-              <button style={dirBtnStyle(directionFilter === 'all')} onClick={() => setDirectionFilter('all')}>
-                All directions
-              </button>
-              <button style={dirBtnStyle(directionFilter === 'in')} onClick={() => setDirectionFilter('in')}>
-                Inbound
-              </button>
-              <button style={dirBtnStyle(directionFilter === 'out')} onClick={() => setDirectionFilter('out')}>
-                Outbound
-              </button>
+            <div style={{ display: 'inline-flex', borderRadius: 6, padding: 2 }}>
+              <button style={{
+                padding: '4px 14px', borderRadius: 4, cursor: 'pointer', fontWeight: 500, fontSize: 13,
+                border: 'none',
+                background: directionFilter === 'all' ? p.accent : 'transparent',
+                color: directionFilter === 'all' ? '#fff' : p.textMuted,
+                transition: 'all 0.2s',
+              }} onClick={() => setDirectionFilter('all')}>All directions</button>
+              <button style={{
+                padding: '4px 14px', borderRadius: 4, cursor: 'pointer', fontWeight: 500, fontSize: 13,
+                border: 'none',
+                background: directionFilter === 'in' ? p.accent : 'transparent',
+                color: directionFilter === 'in' ? '#fff' : p.textMuted,
+                transition: 'all 0.2s',
+              }} onClick={() => setDirectionFilter('in')}>Inbound</button>
+              <button style={{
+                padding: '4px 14px', borderRadius: 4, cursor: 'pointer', fontWeight: 500, fontSize: 13,
+                border: 'none',
+                background: directionFilter === 'out' ? p.accent : 'transparent',
+                color: directionFilter === 'out' ? '#fff' : p.textMuted,
+                transition: 'all 0.2s',
+              }} onClick={() => setDirectionFilter('out')}>Outbound</button>
             </div>
           )}
           {isMobile && (
@@ -543,7 +565,7 @@ function FirewallTab() {
             onSearch={setSearchText}
             onChange={e => { if (!e.target.value) setSearchText(''); }}
           />
-        </Space>
+        </div>
       </div>
 
       {/* Table */}
@@ -575,20 +597,24 @@ function FirewallTab() {
         <div style={{
           marginTop: -8,
           padding: '8px 16px',
-          background: '#FFF3E0',
+          background: `${p.amber}10`,
           borderRadius: 6,
           display: 'flex',
           alignItems: 'center',
           gap: 12,
-          border: `1px solid ${C.warning}44`,
+          border: `1px solid ${p.amber}44`,
         }}>
-          <span style={{ fontSize: 13, color: C.text }}>
+          <span style={{ fontSize: 13, color: p.text }}>
             {selectedRowKeys.length} selected
           </span>
           <Popconfirm title={`Delete ${selectedRowKeys.length} rules?`} onConfirm={handleBatchDelete}>
-            <Button size="small" danger icon={<DeleteOutlined />}>
-              Batch delete
-            </Button>
+            <button style={{
+              padding: '4px 12px', borderRadius: 6, border: `1px solid ${p.red}`,
+              background: 'transparent', color: p.red, fontSize: 12, cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+            }}>
+              <DeleteOutlined /> Batch delete
+            </button>
           </Popconfirm>
         </div>
       )}
@@ -663,6 +689,7 @@ function FirewallTab() {
 function SSHTab() {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
+  const { p, isDark } = usePalette();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
@@ -696,18 +723,16 @@ function SSHTab() {
   if (loading) return <div style={{ textAlign: 'center', padding: 48 }}><Spin size="large" /></div>;
 
   return (
-    <Card
-      style={{
-        maxWidth: 640,
-        borderRadius: 10,
-        border: `1px solid ${C.border}`,
-        boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-      }}
-      styles={{ body: { padding: isMobile ? 16 : 28 } }}
-    >
+    <div style={{
+      maxWidth: 640,
+      borderRadius: 10,
+      background: isDark ? p.rowAlt : p.headerBg,
+      border: `1px solid ${p.cardBorder}`,
+      padding: isMobile ? 16 : 28,
+    }}>
       <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <LockOutlined style={{ fontSize: 20, color: C.primary }} />
-        <span style={{ fontSize: 16, fontWeight: 600, color: C.text }}>SSH Configuration</span>
+        <LockOutlined style={{ fontSize: 20, color: p.accent }} />
+        <span style={{ fontSize: 16, fontWeight: 600, color: p.text }}>SSH Configuration</span>
       </div>
       <Form form={form} layout="vertical" onFinish={handleSave}
         initialValues={{ port: 22, permit_root_login: false, password_auth: true, max_auth_tries: 6 }}>
@@ -725,17 +750,14 @@ function SSHTab() {
           <InputNumber min={1} max={20} style={{ width: '100%' }} />
         </Form.Item>
         <Form.Item style={{ marginBottom: 0 }}>
-          <Button
-            type="primary"
-            htmlType="submit"
-            loading={saving}
-            style={{ background: C.primary, borderColor: C.primary }}
-          >
-            {t('common.save')}
-          </Button>
+          <button type="submit" disabled={saving} style={{
+            padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
+            background: p.accent, color: '#fff', fontSize: 13, fontWeight: 500,
+            opacity: saving ? 0.6 : 1, transition: 'opacity 0.15s',
+          }}>{saving ? '...' : t('common.save')}</button>
         </Form.Item>
       </Form>
-    </Card>
+    </div>
   );
 }
 
@@ -746,6 +768,7 @@ function SSHTab() {
 function Fail2banTab() {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
+  const { p, isDark } = usePalette();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
@@ -779,18 +802,16 @@ function Fail2banTab() {
   if (loading) return <div style={{ textAlign: 'center', padding: 48 }}><Spin size="large" /></div>;
 
   return (
-    <Card
-      style={{
-        maxWidth: 640,
-        borderRadius: 10,
-        border: `1px solid ${C.border}`,
-        boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-      }}
-      styles={{ body: { padding: isMobile ? 16 : 28 } }}
-    >
+    <div style={{
+      maxWidth: 640,
+      borderRadius: 10,
+      background: isDark ? p.rowAlt : p.headerBg,
+      border: `1px solid ${p.cardBorder}`,
+      padding: isMobile ? 16 : 28,
+    }}>
       <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <SecurityScanOutlined style={{ fontSize: 20, color: C.primary }} />
-        <span style={{ fontSize: 16, fontWeight: 600, color: C.text }}>Brute Force Protection (Fail2ban)</span>
+        <SecurityScanOutlined style={{ fontSize: 20, color: p.accent }} />
+        <span style={{ fontSize: 16, fontWeight: 600, color: p.text }}>Brute Force Protection (Fail2ban)</span>
       </div>
       <Form form={form} layout="vertical" onFinish={handleSave}
         initialValues={{ enabled: false, max_retry: 5, ban_time: 600, find_time: 600 }}>
@@ -810,17 +831,14 @@ function Fail2banTab() {
           <InputNumber min={60} max={86400} style={{ width: '100%' }} />
         </Form.Item>
         <Form.Item style={{ marginBottom: 0 }}>
-          <Button
-            type="primary"
-            htmlType="submit"
-            loading={saving}
-            style={{ background: C.primary, borderColor: C.primary }}
-          >
-            {t('common.save')}
-          </Button>
+          <button type="submit" disabled={saving} style={{
+            padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
+            background: p.accent, color: '#fff', fontSize: 13, fontWeight: 500,
+            opacity: saving ? 0.6 : 1, transition: 'opacity 0.15s',
+          }}>{saving ? '...' : t('common.save')}</button>
         </Form.Item>
       </Form>
-    </Card>
+    </div>
   );
 }
 
@@ -828,25 +846,9 @@ function Fail2banTab() {
 // Main Security Page
 // ---------------------------------------------------------------------------
 
-const topTabStyle = (active: boolean): React.CSSProperties => ({
-  padding: '12px 24px',
-  cursor: 'pointer',
-  fontWeight: active ? 600 : 400,
-  fontSize: 15,
-  color: active ? C.primary : C.textSecondary,
-  borderBottom: active ? `3px solid ${C.primary}` : '3px solid transparent',
-  transition: 'all 0.2s',
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 8,
-  userSelect: 'none',
-  background: 'none',
-  border: 'none',
-  borderBottomStyle: 'solid',
-});
-
 export default function Security() {
   const [activeTab, setActiveTab] = useState<'firewall' | 'ssh' | 'fail2ban'>('firewall');
+  const { p, isDark } = usePalette();
 
   const tabs = [
     { key: 'firewall' as const, icon: <FireOutlined />, label: 'Firewall' },
@@ -855,31 +857,50 @@ export default function Security() {
   ];
 
   return (
-    <div>
-      {/* Top tab bar */}
+    <div style={{
+      background: p.card, borderRadius: 12,
+      border: `1px solid ${p.cardBorder}`,
+      boxShadow: isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.06)',
+      overflow: 'hidden',
+    }}>
+      {/* Header */}
       <div style={{
-        display: 'flex',
-        borderBottom: `1px solid ${C.border}`,
-        marginBottom: 24,
-        overflowX: 'auto',
-        whiteSpace: 'nowrap',
+        padding: '14px 20px',
+        borderBottom: `1px solid ${p.cardBorder}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        background: p.headerBg,
+        flexWrap: 'wrap', gap: 8,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 15, fontWeight: 600, color: p.text }}>Security</span>
+        </div>
+      </div>
+
+      {/* Tab bar */}
+      <div style={{
+        padding: '8px 20px',
+        borderBottom: `1px solid ${p.cardBorder}`,
+        display: 'flex', gap: 4,
       }}>
         {tabs.map(tab => (
-          <button
-            key={tab.key}
-            style={topTabStyle(activeTab === tab.key)}
-            onClick={() => setActiveTab(tab.key)}
-          >
-            {tab.icon}
-            {tab.label}
-          </button>
+          <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
+            padding: '6px 16px', borderRadius: 6,
+            border: 'none', cursor: 'pointer',
+            fontSize: 12, fontWeight: 500,
+            background: activeTab === tab.key ? `${p.accent}15` : 'transparent',
+            color: activeTab === tab.key ? p.accent : p.textMuted,
+            transition: 'all 0.15s',
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+          }}>{tab.icon} {tab.label}</button>
         ))}
       </div>
 
-      {/* Tab content */}
-      {activeTab === 'firewall' && <FirewallTab />}
-      {activeTab === 'ssh' && <SSHTab />}
-      {activeTab === 'fail2ban' && <Fail2banTab />}
+      {/* Content */}
+      <div style={{ padding: 20 }}>
+        {activeTab === 'firewall' && <FirewallTab />}
+        {activeTab === 'ssh' && <SSHTab />}
+        {activeTab === 'fail2ban' && <Fail2banTab />}
+      </div>
     </div>
   );
 }

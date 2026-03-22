@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Table, Button, Modal, Form, Input, Select, Space, message, Typography, Popconfirm, Tooltip, Badge, Spin } from 'antd';
+import { Table, Modal, Form, Input, Select, message, Popconfirm, Tooltip, Spin } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, KeyOutlined, CloudDownloadOutlined,
   ReloadOutlined, DatabaseOutlined, CopyOutlined, LinkOutlined,
@@ -11,19 +11,7 @@ import api from '@/services/api';
 import type { Database } from '@/types';
 import RequireSoftware from '@/components/RequireSoftware';
 import { useIsMobile } from '@/hooks/useIsMobile';
-
-const { Text } = Typography;
-
-// ---------------------------------------------------------------------------
-// Constants & palette (unified blue theme)
-// ---------------------------------------------------------------------------
-const PRIMARY = '#1565C0';
-const PRIMARY_DARK = '#0D47A1';
-const PRIMARY_LIGHT = '#E3F2FD';
-const BORDER = '#E8EDF2';
-const TEXT_PRIMARY = '#1A1A2E';
-const TEXT_SECONDARY = '#64748B';
-const SUCCESS = '#4CAF50';
+import { usePalette, mono } from '@/hooks/usePalette';
 
 const formatSize = (bytes: number) => {
   if (bytes < 1024) return bytes + ' B';
@@ -37,68 +25,10 @@ const generatePassword = () => {
   return Array.from({ length: 16 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 };
 
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-const cardStyle: React.CSSProperties = {
-  background: '#fff',
-  borderRadius: 8,
-  border: `1px solid ${BORDER}`,
-  overflow: 'hidden',
-};
-
-const tabBarStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 0,
-  borderBottom: `1px solid ${BORDER}`,
-  padding: '0 20px',
-  background: '#FAFBFC',
-};
-
-const activeTabStyle: React.CSSProperties = {
-  padding: '12px 20px',
-  fontSize: 14,
-  fontWeight: 600,
-  color: PRIMARY,
-  borderBottom: `2px solid ${PRIMARY}`,
-  cursor: 'pointer',
-  background: 'transparent',
-  marginBottom: -1,
-};
-
-const inactiveTabStyle: React.CSSProperties = {
-  padding: '12px 20px',
-  fontSize: 14,
-  fontWeight: 500,
-  color: TEXT_SECONDARY,
-  cursor: 'not-allowed',
-  opacity: 0.5,
-  background: 'transparent',
-};
-
-const toolbarStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  flexWrap: 'wrap',
-  gap: 8,
-  padding: '12px 20px',
-  borderBottom: `1px solid ${BORDER}`,
-};
-
-const actionLinkStyle: React.CSSProperties = {
-  fontSize: 12,
-  padding: '0 4px',
-  height: 'auto',
-  color: PRIMARY,
-};
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 function DatabasesContent() {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
+  const { p, isDark } = usePalette();
   const [loading, setLoading] = useState(true);
   const [databases, setDatabases] = useState<Database[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
@@ -227,8 +157,8 @@ function DatabasesContent() {
       dataIndex: 'name',
       key: 'name',
       render: (name: string) => (
-        <span style={{ fontWeight: 500, color: TEXT_PRIMARY }}>
-          <DatabaseOutlined style={{ marginRight: 6, color: PRIMARY }} />{name}
+        <span style={{ fontWeight: 500, color: p.text }}>
+          <DatabaseOutlined style={{ marginRight: 6, color: p.accent }} />{name}
         </span>
       ),
     },
@@ -237,12 +167,15 @@ function DatabasesContent() {
       dataIndex: 'username',
       key: 'username',
       render: (username: string) => (
-        <Space size={4}>
-          <Text code style={{ fontSize: 12, background: PRIMARY_LIGHT, color: PRIMARY_DARK, border: 'none' }}>{username}</Text>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <span style={{
+            fontSize: 12, fontFamily: mono, padding: '1px 7px', borderRadius: 4,
+            background: `${p.accent}15`, color: p.accent, fontWeight: 500,
+          }}>{username}</span>
           <Tooltip title="Copy">
-            <CopyOutlined style={{ cursor: 'pointer', color: TEXT_SECONDARY, fontSize: 11 }} onClick={() => copyToClipboard(username, 'Username')} />
+            <CopyOutlined style={{ cursor: 'pointer', color: p.textMuted, fontSize: 11 }} onClick={() => copyToClipboard(username, 'Username')} />
           </Tooltip>
-        </Space>
+        </div>
       ),
     },
     {
@@ -251,11 +184,11 @@ function DatabasesContent() {
       render: (_: unknown, r: Database) => {
         const visible = visiblePasswords.has(r.id);
         return (
-          <Space size={2}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
             <span style={{
-              fontFamily: "'JetBrains Mono', monospace",
+              fontFamily: mono,
               fontSize: 12,
-              color: visible ? TEXT_PRIMARY : TEXT_SECONDARY,
+              color: visible ? p.text : p.textMuted,
               letterSpacing: visible ? 0 : 2,
               minWidth: isMobile ? 50 : 80,
               display: 'inline-block',
@@ -263,22 +196,25 @@ function DatabasesContent() {
               {visible ? (r.password || '—') : '••••••••'}
             </span>
             <Tooltip title={visible ? 'Hide' : 'Show'}>
-              <Button
-                type="text" size="small"
-                icon={visible ? <EyeInvisibleOutlined /> : <EyeOutlined />}
-                style={{ color: TEXT_SECONDARY, fontSize: 12 }}
+              <button
                 onClick={() => togglePasswordVisibility(r.id)}
-              />
+                style={{
+                  padding: '2px 4px', border: 'none', background: 'transparent',
+                  cursor: 'pointer', color: p.textMuted, fontSize: 12, display: 'inline-flex', alignItems: 'center',
+                }}
+              >
+                {visible ? <EyeInvisibleOutlined /> : <EyeOutlined />}
+              </button>
             </Tooltip>
             {r.password && (
               <Tooltip title="Copy">
                 <CopyOutlined
-                  style={{ cursor: 'pointer', color: TEXT_SECONDARY, fontSize: 11 }}
+                  style={{ cursor: 'pointer', color: p.textMuted, fontSize: 11 }}
                   onClick={() => copyToClipboard(r.password!, 'Password')}
                 />
               </Tooltip>
             )}
-          </Space>
+          </div>
         );
       },
     },
@@ -287,7 +223,7 @@ function DatabasesContent() {
       key: 'size',
       width: 80,
       render: (_: unknown, r: Database) => (
-        <span style={{ fontSize: 13, color: TEXT_SECONDARY }}>{formatSize(r.size)}</span>
+        <span style={{ fontFamily: mono, fontSize: 12, color: p.textMuted }}>{formatSize(r.size)}</span>
       ),
     },
     {
@@ -295,19 +231,22 @@ function DatabasesContent() {
       key: 'backup',
       width: 100,
       render: (_: unknown, r: Database) => (
-        <Space size={4}>
-          <Button type="link" size="small" style={{ fontSize: 12, padding: 0, color: PRIMARY }}
-            onClick={() => handleBackup(r.id)}
-          >
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <button onClick={() => handleBackup(r.id)} style={{
+            padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+            background: 'transparent', color: p.textMuted, fontSize: 11, cursor: 'pointer',
+            transition: 'all 0.15s',
+          }}>
             Backup
-          </Button>
-          <span style={{ color: BORDER }}>|</span>
-          <Button type="link" size="small" style={{ fontSize: 12, padding: 0, color: PRIMARY }}
-            onClick={() => { message.info('Import feature coming soon'); }}
-          >
+          </button>
+          <button onClick={() => { message.info('Import feature coming soon'); }} style={{
+            padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+            background: 'transparent', color: p.textMuted, fontSize: 11, cursor: 'pointer',
+            transition: 'all 0.15s',
+          }}>
             Import
-          </Button>
-        </Space>
+          </button>
+        </div>
       ),
     },
     {
@@ -315,7 +254,7 @@ function DatabasesContent() {
       key: 'location',
       width: 90,
       render: (_: unknown, r: Database) => (
-        <span style={{ fontSize: 13, color: TEXT_SECONDARY }}>
+        <span style={{ fontSize: 12, color: p.textMuted }}>
           <GlobalOutlined style={{ marginRight: 4, fontSize: 11 }} />
           {r.remote_access || 'localhost'}
         </span>
@@ -326,93 +265,170 @@ function DatabasesContent() {
       key: 'actions',
       width: isMobile ? 120 : 240,
       render: (_: unknown, r: Database) => (
-        <Space size={0} split={<span style={{ color: '#E0E0E0', margin: '0 2px' }}>|</span>}>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
           {pmaInstalled && (
-            <Button type="link" size="small" style={actionLinkStyle} onClick={openPma}>
+            <button onClick={openPma} style={{
+              padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+              background: 'transparent', color: p.textMuted, fontSize: 11, cursor: 'pointer',
+              transition: 'all 0.15s',
+            }}>
               {isMobile ? 'PMA' : 'phpMyAdmin'}
-            </Button>
+            </button>
           )}
-          <Button type="link" size="small" style={actionLinkStyle}
-            onClick={() => { setSelectedDb(r); setPasswordModalOpen(true); }}
-          >
+          <button onClick={() => { setSelectedDb(r); setPasswordModalOpen(true); }} style={{
+            padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+            background: 'transparent', color: p.textMuted, fontSize: 11, cursor: 'pointer',
+            transition: 'all 0.15s',
+          }}>
             {isMobile ? 'Pwd' : 'Password'}
-          </Button>
+          </button>
           <Popconfirm
             title={t('common.confirm_delete')}
             onConfirm={() => handleDelete(r.id)}
             okText={t('common.yes')} cancelText={t('common.no')}
             okButtonProps={{ danger: true }}
           >
-            <Button type="link" size="small" style={{ ...actionLinkStyle, color: '#F44336' }}>
+            <button style={{
+              padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.red}`,
+              background: 'transparent', color: p.red, fontSize: 11, cursor: 'pointer',
+            }}>
               Delete
-            </Button>
+            </button>
           </Popconfirm>
-        </Space>
+        </div>
       ),
     },
   ];
 
   return (
     <div>
-      <div style={cardStyle}>
-        {/* Tab bar */}
-        <div style={tabBarStyle}>
-          <div style={activeTabStyle}>
-            <DatabaseOutlined style={{ marginRight: 6 }} /> MySQL
+      <div style={{
+        background: p.card, borderRadius: 12,
+        border: `1px solid ${p.cardBorder}`,
+        boxShadow: isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.06)',
+        overflow: 'hidden',
+      }}>
+        {/* Header bar */}
+        <div style={{
+          padding: '14px 20px',
+          borderBottom: `1px solid ${p.cardBorder}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: p.headerBg,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 15, fontWeight: 600, color: p.text }}>Databases</span>
+            <span style={{
+              fontSize: 11, fontFamily: mono, padding: '2px 9px', borderRadius: 4,
+              background: `${p.accent}15`, color: p.accent, fontWeight: 500,
+            }}>
+              {databases.length} databases
+            </span>
+            {dbVersion && (
+              <span style={{
+                fontSize: 11, fontFamily: mono, padding: '2px 9px', borderRadius: 4,
+                background: `${p.green}15`, color: p.green, fontWeight: 500,
+              }}>
+                {dbVersion}
+              </span>
+            )}
           </div>
-          <div style={inactiveTabStyle}>PostgreSQL</div>
-          <div style={inactiveTabStyle}>Redis</div>
-          <div style={{ flex: 1 }} />
-          {dbVersion && (
-            <Badge
-              count={dbVersion}
-              style={{
-                background: PRIMARY_LIGHT,
-                color: PRIMARY,
-                fontSize: 11,
-                fontWeight: 600,
-                borderRadius: 4,
-                padding: '0 8px',
-                boxShadow: 'none',
-              }}
-            />
-          )}
+          <button
+            onClick={() => { form.setFieldsValue({ password: generatePassword() }); setModalOpen(true); }}
+            style={{
+              padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
+              background: p.accent, color: '#fff', fontSize: 13, fontWeight: 500,
+              display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'opacity 0.15s',
+            }}
+          >
+            <PlusOutlined /> {!isMobile && t('databases.add_database')}
+          </button>
+        </div>
+
+        {/* Tab bar */}
+        <div style={{
+          padding: '8px 20px',
+          borderBottom: `1px solid ${p.cardBorder}`,
+          display: 'flex', gap: 4,
+        }}>
+          <button style={{
+            padding: '6px 16px', borderRadius: 6,
+            border: 'none', cursor: 'pointer',
+            fontSize: 12, fontWeight: 500,
+            background: `${p.accent}15`, color: p.accent,
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+          }}>
+            <DatabaseOutlined /> MySQL
+          </button>
+          <button disabled style={{
+            padding: '6px 16px', borderRadius: 6,
+            border: 'none', cursor: 'not-allowed',
+            fontSize: 12, fontWeight: 500, opacity: 0.45,
+            background: 'transparent', color: p.textMuted,
+          }}>
+            PostgreSQL
+          </button>
+          <button disabled style={{
+            padding: '6px 16px', borderRadius: 6,
+            border: 'none', cursor: 'not-allowed',
+            fontSize: 12, fontWeight: 500, opacity: 0.45,
+            background: 'transparent', color: p.textMuted,
+          }}>
+            Redis
+          </button>
         </div>
 
         {/* Toolbar */}
-        <div style={toolbarStyle}>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => { form.setFieldsValue({ password: generatePassword() }); setModalOpen(true); }}
-            style={{ background: PRIMARY, borderColor: PRIMARY, fontWeight: 500 }}
-          >
-            {!isMobile && t('databases.add_database')}
-          </Button>
-          <Button icon={<SafetyCertificateOutlined />} onClick={() => message.info('Root password management coming soon')}>
-            {!isMobile && 'Root password'}
-          </Button>
+        <div style={{
+          display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8,
+          padding: '10px 20px',
+          borderBottom: `1px solid ${p.cardBorder}`,
+        }}>
+          <button onClick={() => message.info('Root password management coming soon')} style={{
+            padding: '5px 14px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+            background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+          }}>
+            <SafetyCertificateOutlined /> {!isMobile && 'Root password'}
+          </button>
           {pmaInstalled ? (
-            <Button icon={<LinkOutlined />} onClick={openPma}>
-              {!isMobile && 'phpMyAdmin'}
-            </Button>
+            <button onClick={openPma} style={{
+              padding: '5px 14px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+              background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+            }}>
+              <LinkOutlined /> {!isMobile && 'phpMyAdmin'}
+            </button>
           ) : (
             <Tooltip title="Install phpMyAdmin from App Store">
-              <Button icon={<LinkOutlined />} disabled>{!isMobile && 'phpMyAdmin'}</Button>
+              <button disabled style={{
+                padding: '5px 14px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+                background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'not-allowed',
+                display: 'inline-flex', alignItems: 'center', gap: 6, opacity: 0.5,
+              }}>
+                <LinkOutlined /> {!isMobile && 'phpMyAdmin'}
+              </button>
             </Tooltip>
           )}
-          <Button icon={<CloudDownloadOutlined />} onClick={() => message.info('Backup all coming soon')}>
-            {!isMobile && 'Backup All'}
-          </Button>
-          <Button icon={<ImportOutlined />} onClick={() => message.info('Import coming soon')}>
-            {!isMobile && 'Import'}
-          </Button>
+          <button onClick={() => message.info('Backup all coming soon')} style={{
+            padding: '5px 14px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+            background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+          }}>
+            <CloudDownloadOutlined /> {!isMobile && 'Backup All'}
+          </button>
+          <button onClick={() => message.info('Import coming soon')} style={{
+            padding: '5px 14px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+            background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+          }}>
+            <ImportOutlined /> {!isMobile && 'Import'}
+          </button>
 
           <div style={{ flex: 1 }} />
 
           <Input
             placeholder="Database search"
-            prefix={<SearchOutlined style={{ color: TEXT_SECONDARY }} />}
+            prefix={<SearchOutlined style={{ color: p.textMuted }} />}
             value={searchText}
             onChange={e => setSearchText(e.target.value)}
             allowClear
@@ -420,7 +436,13 @@ function DatabasesContent() {
             size="middle"
           />
           <Tooltip title="Refresh">
-            <Button icon={<ReloadOutlined />} onClick={fetchData} />
+            <button onClick={fetchData} style={{
+              padding: '5px 10px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+              background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', transition: 'all 0.15s',
+            }}>
+              <ReloadOutlined />
+            </button>
           </Tooltip>
         </div>
 
@@ -437,7 +459,7 @@ function DatabasesContent() {
               pageSize: 20,
               showSizeChanger: true,
               size: 'small',
-              showTotal: (total) => <span style={{ color: TEXT_SECONDARY, fontSize: 13 }}>Total {total}</span>,
+              showTotal: (total) => <span style={{ color: p.textMuted, fontSize: 13 }}>Total {total}</span>,
               style: { padding: '8px 16px', margin: 0 },
             }}
             style={{ fontSize: 13 }}
@@ -450,7 +472,7 @@ function DatabasesContent() {
       <Modal
         title={
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <DatabaseOutlined style={{ color: PRIMARY }} />
+            <DatabaseOutlined style={{ color: p.accent }} />
             {t('databases.add_database')}
           </span>
         }
@@ -462,7 +484,6 @@ function DatabasesContent() {
         cancelText={t('common.cancel')}
         destroyOnHidden
         width={520}
-        okButtonProps={{ style: { background: PRIMARY, borderColor: PRIMARY } }}
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           <Form.Item name="db_type" label={t('databases.db_type') || 'Database Type'} initialValue="mysql" rules={[{ required: true }]}>
@@ -496,7 +517,7 @@ function DatabasesContent() {
           <Form.Item name="password" label={t('auth.password')} rules={[{ required: true }, { min: 6, message: 'Minimum 6 characters' }]}>
             <Input.Password
               addonAfter={
-                <Space size={8}>
+                <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
                   <Tooltip title="Generate new password">
                     <ReloadOutlined onClick={() => form.setFieldsValue({ password: generatePassword() })} style={{ cursor: 'pointer' }} />
                   </Tooltip>
@@ -506,7 +527,7 @@ function DatabasesContent() {
                       if (pw) { navigator.clipboard.writeText(pw); message.success(t('common.copied')); }
                     }} style={{ cursor: 'pointer' }} />
                   </Tooltip>
-                </Space>
+                </span>
               }
             />
           </Form.Item>
@@ -532,7 +553,7 @@ function DatabasesContent() {
       <Modal
         title={
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <KeyOutlined style={{ color: PRIMARY }} />
+            <KeyOutlined style={{ color: p.accent }} />
             Change Password — {selectedDb?.name}
           </span>
         }
@@ -543,13 +564,12 @@ function DatabasesContent() {
         okText={t('common.update')}
         cancelText={t('common.cancel')}
         destroyOnHidden
-        okButtonProps={{ style: { background: PRIMARY, borderColor: PRIMARY } }}
       >
         <Form form={pwForm} layout="vertical" style={{ marginTop: 16 }}>
           <Form.Item name="password" label={t('auth.new_password')} rules={[{ required: true, min: 8 }]}>
             <Input.Password
               addonAfter={
-                <Space size={8}>
+                <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
                   <Tooltip title="Generate & copy">
                     <ReloadOutlined onClick={() => {
                       const pw = generatePassword();
@@ -564,7 +584,7 @@ function DatabasesContent() {
                       if (pw) { navigator.clipboard.writeText(pw); message.success(t('common.copied')); }
                     }} style={{ cursor: 'pointer' }} />
                   </Tooltip>
-                </Space>
+                </span>
               }
             />
           </Form.Item>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Table, Card, Button, Modal, Form, Input, Select, Tabs, Space, Tag, Drawer, Typography, message, Popconfirm, Row, Col, Tooltip, InputNumber } from 'antd';
+import { Table, Modal, Form, Input, Select, Drawer, message, Popconfirm, Tooltip, InputNumber } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, ReloadOutlined, EditOutlined, FileTextOutlined,
   CheckCircleOutlined, StopOutlined, ThunderboltOutlined, DatabaseOutlined,
@@ -10,8 +10,7 @@ import { useTranslation } from 'react-i18next';
 import type { ApiResponse } from '@/types';
 import api from '@/services/api';
 import { useIsMobile } from '@/hooks/useIsMobile';
-
-const { Text } = Typography;
+import { usePalette, mono } from '@/hooks/usePalette';
 
 interface CronJob {
   id: number;
@@ -185,6 +184,7 @@ const CRON_TEMPLATES: CronTemplate[] = [
 export default function Cron() {
   const isMobile = useIsMobile();
   const { t } = useTranslation();
+  const { p, isDark } = usePalette();
   const [loading, setLoading] = useState(true);
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
@@ -194,6 +194,7 @@ export default function Cron() {
   const [logLoading, setLogLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [runningIds, setRunningIds] = useState<Set<number>>(new Set());
+  const [activeTab, setActiveTab] = useState<'jobs' | 'templates'>('jobs');
   const [form] = Form.useForm();
   const [schedMode, setSchedMode] = useState<'builder' | 'custom'>('builder');
   const [schedState, setSchedState] = useState<ScheduleState>({
@@ -322,6 +323,13 @@ export default function Cron() {
     { label: 'Saturday', value: 6 },
   ];
 
+  const ghostBtn: React.CSSProperties = {
+    padding: '3px 8px', borderRadius: 6,
+    border: `1px solid ${p.cardBorder}`,
+    background: 'transparent', color: p.textMuted,
+    fontSize: 11, cursor: 'pointer',
+  };
+
   const columns = [
     {
       title: t('common.name'),
@@ -339,10 +347,10 @@ export default function Cron() {
         return (
           <Tooltip title={`Cron: ${val}`}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <ClockCircleOutlined style={{ color: '#1565C0', fontSize: 14 }} />
+              <ClockCircleOutlined style={{ color: p.accent, fontSize: 14 }} />
               <span style={{ fontWeight: 500 }}>{human}</span>
               {isHumanized && (
-                <code style={{ fontSize: 11, color: '#999', background: '#f5f5f5', padding: '1px 6px', borderRadius: 3 }}>{val}</code>
+                <code style={{ fontSize: 11, fontFamily: mono, color: p.textMuted, background: p.codeBg, padding: '1px 6px', borderRadius: 3 }}>{val}</code>
               )}
             </div>
           </Tooltip>
@@ -355,12 +363,20 @@ export default function Cron() {
       key: 'command',
       ellipsis: true,
       width: isMobile ? undefined : 200,
+      render: (val: string) => <span style={{ fontFamily: mono, fontSize: 12 }}>{val}</span>,
     },
     {
       title: t('common.type'),
       dataIndex: 'type',
       key: 'type',
-      render: (val: string) => <Tag color={val === 'shell' ? 'blue' : 'purple'}>{val}</Tag>,
+      render: (val: string) => (
+        <span style={{
+          fontSize: 11, fontFamily: mono, padding: '2px 9px', borderRadius: 4,
+          background: val === 'shell' ? `${p.accent}15` : `${p.purple}15`,
+          color: val === 'shell' ? p.accent : p.purple,
+          fontWeight: 500,
+        }}>{val}</span>
+      ),
     },
     {
       title: t('common.status'),
@@ -368,52 +384,72 @@ export default function Cron() {
       key: 'status',
       render: (status: number) =>
         status === 1
-          ? <Tag color="success" icon={<CheckCircleOutlined />}>{t('common.enabled')}</Tag>
-          : <Tag color="error" icon={<StopOutlined />}>{t('common.disabled')}</Tag>,
+          ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 10px', borderRadius: 99, background: `${p.green}15`, color: p.green, fontSize: 11, fontWeight: 500 }}>
+              <span style={{ width: 6, height: 6, borderRadius: 3, background: p.green }} />
+              {t('common.enabled')}
+            </span>
+          )
+          : (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 10px', borderRadius: 99, background: `${p.red}15`, color: p.red, fontSize: 11, fontWeight: 500 }}>
+              <span style={{ width: 6, height: 6, borderRadius: 3, background: p.red }} />
+              {t('common.disabled')}
+            </span>
+          ),
     },
     {
       title: 'Last Run',
       dataIndex: 'last_run',
       key: 'last_run',
-      render: (val: string) => val ? new Date(val).toLocaleString() : '-',
+      render: (val: string) => val
+        ? <span style={{ fontFamily: mono, fontSize: 12 }}>{new Date(val).toLocaleString()}</span>
+        : <span style={{ color: p.textMuted }}>-</span>,
     },
     {
       title: t('common.actions'),
       key: 'actions',
       width: 320,
       render: (_: unknown, record: CronJob) => (
-        <Space size="small" wrap>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           <Tooltip title="Run now">
-            <Button
-              size="small"
-              type="primary"
-              icon={<CaretRightOutlined />}
-              loading={runningIds.has(record.id)}
+            <button
               onClick={() => handleRunNow(record)}
-              style={{ background: '#1565C0', borderColor: '#1565C0' }}
-            >
-              Run
-            </Button>
+              disabled={runningIds.has(record.id)}
+              style={{
+                padding: '3px 8px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                background: p.accent, color: '#fff', fontSize: 11, fontWeight: 500,
+                opacity: runningIds.has(record.id) ? 0.6 : 1, transition: 'opacity 0.15s',
+              }}
+            >▶ Run</button>
           </Tooltip>
-          <Button size="small" type={record.status === 1 ? 'default' : 'primary'} onClick={() => handleToggleStatus(record)}>
+          <button onClick={() => handleToggleStatus(record)} style={ghostBtn}>
             {record.status === 1 ? t('common.disable') : t('common.enable')}
-          </Button>
-          <Button size="small" icon={<FileTextOutlined />} onClick={() => handleViewLog(record.id)}>
-            Log
-          </Button>
-          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)} />
+          </button>
+          <button onClick={() => handleViewLog(record.id)} style={ghostBtn}>
+            <FileTextOutlined /> Log
+          </button>
+          <button onClick={() => openEdit(record)} style={ghostBtn}>
+            <EditOutlined />
+          </button>
           <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />} />
+            <button style={{
+              padding: '3px 8px', borderRadius: 6,
+              border: `1px solid ${p.red}`,
+              background: 'transparent', color: p.red,
+              fontSize: 11, cursor: 'pointer',
+            }}>
+              <DeleteOutlined />
+            </button>
           </Popconfirm>
-        </Space>
+        </div>
       ),
     },
   ];
 
   const scheduleBuilder = (
-    <div style={{ border: '1px solid #d9d9d9', borderRadius: 8, padding: 16, background: '#fafafa' }}>
+    <div style={{ border: `1px solid ${p.cardBorder}`, borderRadius: 8, padding: 16, background: isDark ? p.rowAlt : p.headerBg }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
-        <Text strong>Run every:</Text>
+        <span style={{ fontWeight: 600, color: p.text }}>Run every:</span>
         <Select
           value={schedState.freq}
           style={{ width: isMobile ? 100 : 140 }}
@@ -430,22 +466,22 @@ export default function Cron() {
 
       {schedState.freq === 'minute' && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <Text>Every</Text>
+          <span style={{ color: p.text }}>Every</span>
           <InputNumber min={1} max={59} value={schedState.interval} onChange={(v) => setSchedState(prev => ({ ...prev, interval: v ?? 5 }))} style={{ width: isMobile ? 60 : 80 }} />
-          <Text>minutes</Text>
+          <span style={{ color: p.text }}>minutes</span>
         </div>
       )}
 
       {schedState.freq === 'hour' && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <Text>At minute</Text>
+          <span style={{ color: p.text }}>At minute</span>
           <InputNumber min={0} max={59} value={schedState.minute} onChange={(v) => setSchedState(prev => ({ ...prev, minute: v ?? 0 }))} style={{ width: isMobile ? 60 : 80 }} />
         </div>
       )}
 
       {schedState.freq === 'day' && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <Text>At</Text>
+          <span style={{ color: p.text }}>At</span>
           <InputNumber min={0} max={23} value={schedState.hour} onChange={(v) => setSchedState(prev => ({ ...prev, hour: v ?? 0 }))} style={{ width: isMobile ? 55 : 70 }} addonAfter="h" />
           <InputNumber min={0} max={59} value={schedState.minute} onChange={(v) => setSchedState(prev => ({ ...prev, minute: v ?? 0 }))} style={{ width: isMobile ? 55 : 70 }} addonAfter="m" />
         </div>
@@ -454,11 +490,11 @@ export default function Cron() {
       {schedState.freq === 'week' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Text>On</Text>
+            <span style={{ color: p.text }}>On</span>
             <Select value={schedState.dow} options={dayOptions} style={{ width: isMobile ? 100 : 140 }} onChange={(v) => setSchedState(prev => ({ ...prev, dow: v }))} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <Text>At</Text>
+            <span style={{ color: p.text }}>At</span>
             <InputNumber min={0} max={23} value={schedState.hour} onChange={(v) => setSchedState(prev => ({ ...prev, hour: v ?? 0 }))} style={{ width: isMobile ? 55 : 70 }} addonAfter="h" />
             <InputNumber min={0} max={59} value={schedState.minute} onChange={(v) => setSchedState(prev => ({ ...prev, minute: v ?? 0 }))} style={{ width: isMobile ? 55 : 70 }} addonAfter="m" />
           </div>
@@ -468,97 +504,142 @@ export default function Cron() {
       {schedState.freq === 'month' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <Text>On day</Text>
+            <span style={{ color: p.text }}>On day</span>
             <InputNumber min={1} max={31} value={schedState.dom} onChange={(v) => setSchedState(prev => ({ ...prev, dom: v ?? 1 }))} style={{ width: isMobile ? 60 : 80 }} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <Text>At</Text>
+            <span style={{ color: p.text }}>At</span>
             <InputNumber min={0} max={23} value={schedState.hour} onChange={(v) => setSchedState(prev => ({ ...prev, hour: v ?? 0 }))} style={{ width: isMobile ? 55 : 70 }} addonAfter="h" />
             <InputNumber min={0} max={59} value={schedState.minute} onChange={(v) => setSchedState(prev => ({ ...prev, minute: v ?? 0 }))} style={{ width: isMobile ? 55 : 70 }} addonAfter="m" />
           </div>
         </div>
       )}
 
-      <div style={{ marginTop: 12, padding: '8px 12px', background: '#e6f4ff', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
-        <ClockCircleOutlined style={{ color: '#1565C0' }} />
-        <Text style={{ color: '#1565C0' }}>{cronToHuman(buildCronFromState(schedState))}</Text>
-        <code style={{ marginLeft: 'auto', fontSize: 12, color: '#666' }}>{buildCronFromState(schedState)}</code>
+      <div style={{ marginTop: 12, padding: '8px 12px', background: `${p.accent}10`, borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <ClockCircleOutlined style={{ color: p.accent }} />
+        <span style={{ color: p.accent }}>{cronToHuman(buildCronFromState(schedState))}</span>
+        <code style={{ marginLeft: 'auto', fontFamily: mono, fontSize: 12, color: p.textMuted }}>{buildCronFromState(schedState)}</code>
       </div>
     </div>
   );
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 8 }}>
-        <Typography.Title level={3} style={{ margin: 0 }}>{t('sidebar.cron')}</Typography.Title>
-        <Space>
-          <Button icon={<ReloadOutlined />} onClick={fetchJobs}>{t('common.refresh')}</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate()}>
-            Add Cron Job
-          </Button>
-        </Space>
+    <div style={{
+      background: p.card, borderRadius: 12,
+      border: `1px solid ${p.cardBorder}`,
+      boxShadow: isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.06)',
+      overflow: 'hidden',
+    }}>
+      {/* Header bar */}
+      <div style={{
+        padding: '14px 20px',
+        borderBottom: `1px solid ${p.cardBorder}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        background: p.headerBg,
+        flexWrap: 'wrap', gap: 8,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 15, fontWeight: 600, color: p.text }}>{t('sidebar.cron')}</span>
+          <span style={{
+            fontSize: 11, fontFamily: mono, padding: '2px 9px', borderRadius: 4,
+            background: `${p.accent}15`, color: p.accent, fontWeight: 500,
+          }}>{jobs.length} jobs</span>
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button onClick={fetchJobs} style={{
+            padding: '5px 14px', borderRadius: 6,
+            border: `1px solid ${p.cardBorder}`,
+            background: 'transparent', color: p.textMuted,
+            fontSize: 12, cursor: 'pointer', transition: 'all 0.15s',
+          }}>{t('common.refresh')}</button>
+          <button onClick={() => openCreate()} style={{
+            padding: '6px 16px', borderRadius: 6,
+            border: 'none', cursor: 'pointer',
+            background: p.accent, color: '#fff',
+            fontSize: 13, fontWeight: 500, transition: 'opacity 0.15s',
+          }}>+ Add Job</button>
+        </div>
       </div>
 
-      <Tabs items={[
-        {
-          key: 'jobs',
-          label: `My Jobs (${jobs.length})`,
-          children: (
-            <Card>
-              <Table
-                columns={columns}
-                dataSource={jobs}
-                rowKey="id"
-                loading={loading}
-                pagination={{ pageSize: 10, showSizeChanger: true }}
-                scroll={{ x: 700 }}
-              />
-            </Card>
-          ),
-        },
-        {
-          key: 'templates',
-          label: <span><ThunderboltOutlined /> Templates</span>,
-          children: (
-            <Row gutter={[16, 16]}>
-              {CRON_TEMPLATES.map((tpl) => (
-                <Col xs={24} sm={12} lg={8} key={tpl.name}>
-                  <Card
-                    hoverable
-                    styles={{ body: { padding: 20 } }}
-                    onClick={() => openCreate(tpl)}
-                  >
-                    <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
-                      <div style={{
-                        width: 40, height: 40, borderRadius: 10,
-                        background: tpl.color, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        color: '#fff', fontSize: 18, flexShrink: 0,
-                      }}>
-                        {tpl.icon}
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <Text strong>{tpl.name}</Text>
-                        <div><Text type="secondary" style={{ fontSize: 12 }}>{tpl.description}</Text></div>
-                      </div>
+      {/* Tab bar */}
+      <div style={{
+        padding: '8px 20px',
+        borderBottom: `1px solid ${p.cardBorder}`,
+        display: 'flex', gap: 4,
+      }}>
+        {[
+          { key: 'jobs' as const, label: `My Jobs (${jobs.length})` },
+          { key: 'templates' as const, label: '⚡ Templates' },
+        ].map(tab => (
+          <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
+            padding: '6px 16px', borderRadius: 6,
+            border: 'none', cursor: 'pointer',
+            fontSize: 12, fontWeight: 500,
+            background: activeTab === tab.key ? `${p.accent}15` : 'transparent',
+            color: activeTab === tab.key ? p.accent : p.textMuted,
+            transition: 'all 0.15s',
+          }}>{tab.label}</button>
+        ))}
+      </div>
+
+      {/* Tab content */}
+      <div style={{ padding: 20 }}>
+        {activeTab === 'jobs' && (
+          <Table
+            columns={columns}
+            dataSource={jobs}
+            rowKey="id"
+            loading={loading}
+            pagination={{ pageSize: 10, showSizeChanger: true }}
+            scroll={{ x: 700 }}
+          />
+        )}
+        {activeTab === 'templates' && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+            {CRON_TEMPLATES.map((tpl) => (
+              <div
+                key={tpl.name}
+                onClick={() => openCreate(tpl)}
+                style={{
+                  padding: 20, borderRadius: 10,
+                  border: `1px solid ${p.cardBorder}`,
+                  background: isDark ? p.rowAlt : p.headerBg,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                }}
+              >
+                <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+                  <div style={{
+                    width: 40, height: 40, borderRadius: 10,
+                    background: tpl.color, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: '#fff', fontSize: 18, flexShrink: 0,
+                  }}>
+                    {tpl.icon}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ fontWeight: 600, color: p.text, fontSize: 13 }}>{tpl.name}</span>
+                    <div><span style={{ fontSize: 12, color: p.textMuted }}>{tpl.description}</span></div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Tooltip title={`Cron: ${tpl.schedule}`}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <ClockCircleOutlined style={{ color: p.accent, fontSize: 12 }} />
+                      <span style={{ fontSize: 12, color: p.textMuted }}>{cronToHuman(tpl.schedule)}</span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Tooltip title={`Cron: ${tpl.schedule}`}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <ClockCircleOutlined style={{ color: '#1565C0', fontSize: 12 }} />
-                          <span style={{ fontSize: 12, color: '#555' }}>{cronToHuman(tpl.schedule)}</span>
-                        </div>
-                      </Tooltip>
-                      <Button type="primary" size="small" icon={<PlusOutlined />} onClick={(e) => { e.stopPropagation(); openCreate(tpl); }}>
-                        Use
-                      </Button>
-                    </div>
-                  </Card>
-                </Col>
-              ))}
-            </Row>
-          ),
-        },
-      ]} />
+                  </Tooltip>
+                  <button onClick={(e) => { e.stopPropagation(); openCreate(tpl); }} style={{
+                    padding: '3px 8px', borderRadius: 6,
+                    border: 'none', cursor: 'pointer',
+                    background: p.accent, color: '#fff',
+                    fontSize: 11, fontWeight: 500, transition: 'opacity 0.15s',
+                  }}>+ Use</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <Modal
         title={editingJob ? 'Edit Cron Job' : 'Add Cron Job'}
@@ -577,35 +658,39 @@ export default function Cron() {
           </Form.Item>
 
           <Form.Item label="Schedule" required>
-            <Tabs
-              activeKey={schedMode}
-              onChange={(k) => setSchedMode(k as 'builder' | 'custom')}
-              size="small"
-              items={[
-                {
-                  key: 'builder',
-                  label: <span><ClockCircleOutlined /> Visual</span>,
-                  children: scheduleBuilder,
-                },
-                {
-                  key: 'custom',
-                  label: <span><EditOutlined /> Cron Expression</span>,
-                  children: (
-                    <div>
-                      <Form.Item name="schedule" noStyle rules={schedMode === 'custom' ? [{ required: true, message: 'Enter cron expression' }] : []}>
-                        <Input
-                          placeholder="* * * * *"
-                          style={{ fontFamily: 'monospace' }}
-                        />
-                      </Form.Item>
-                      <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#999', marginTop: 8, lineHeight: 1.6 }}>
-                        minute(0-59) hour(0-23) day(1-31) month(1-12) weekday(0-7)
-                      </div>
-                    </div>
-                  ),
-                },
-              ]}
-            />
+            <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
+              {[
+                { key: 'builder' as const, label: '🕐 Visual' },
+                { key: 'custom' as const, label: '✏️ Cron Expression' },
+              ].map(tab => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setSchedMode(tab.key)}
+                  style={{
+                    padding: '5px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                    fontSize: 12, fontWeight: 500,
+                    background: schedMode === tab.key ? `${p.accent}15` : 'transparent',
+                    color: schedMode === tab.key ? p.accent : p.textMuted,
+                    transition: 'all 0.15s',
+                  }}
+                >{tab.label}</button>
+              ))}
+            </div>
+            {schedMode === 'builder' && scheduleBuilder}
+            {schedMode === 'custom' && (
+              <div>
+                <Form.Item name="schedule" noStyle rules={schedMode === 'custom' ? [{ required: true, message: 'Enter cron expression' }] : []}>
+                  <Input
+                    placeholder="* * * * *"
+                    style={{ fontFamily: mono }}
+                  />
+                </Form.Item>
+                <div style={{ fontFamily: mono, fontSize: 11, color: p.textMuted, marginTop: 8, lineHeight: 1.6 }}>
+                  minute(0-59) hour(0-23) day(1-31) month(1-12) weekday(0-7)
+                </div>
+              </div>
+            )}
           </Form.Item>
 
           <Form.Item
@@ -633,30 +718,20 @@ export default function Cron() {
         onClose={() => setLogOpen(false)}
         width={640}
       >
-        <Tabs
-          items={[
-            {
-              key: 'log',
-              label: 'Output',
-              children: (
-                <pre style={{
-                  background: '#1e1e1e',
-                  color: '#d4d4d4',
-                  padding: 16,
-                  borderRadius: 8,
-                  maxHeight: '70vh',
-                  overflow: 'auto',
-                  fontSize: 13,
-                  fontFamily: 'monospace',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-all',
-                }}>
-                  {logLoading ? t('common.loading') : logContent}
-                </pre>
-              ),
-            },
-          ]}
-        />
+        <pre style={{
+          background: '#1e1e1e',
+          color: '#d4d4d4',
+          padding: 16,
+          borderRadius: 8,
+          maxHeight: '70vh',
+          overflow: 'auto',
+          fontSize: 13,
+          fontFamily: mono,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-all',
+        }}>
+          {logLoading ? t('common.loading') : logContent}
+        </pre>
       </Drawer>
     </div>
   );

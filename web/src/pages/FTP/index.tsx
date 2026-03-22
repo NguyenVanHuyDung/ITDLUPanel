@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Table, Card, Button, Modal, Form, Input, Space, Tag, Typography, message, Popconfirm } from 'antd';
-import { PlusOutlined, DeleteOutlined, ReloadOutlined, LockOutlined, CheckCircleOutlined, StopOutlined } from '@ant-design/icons';
+import { Table, Modal, Form, Input, Popconfirm, message } from 'antd';
+import { PlusOutlined, DeleteOutlined, ReloadOutlined, LockOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { usePalette, mono } from '@/hooks/usePalette';
 import type { ApiResponse } from '@/types';
 import api from '@/services/api';
 import RequireSoftware from '@/components/RequireSoftware';
@@ -16,6 +17,7 @@ interface FTPAccount {
 
 function FTPContent() {
   const { t } = useTranslation();
+  const { p, isDark } = usePalette();
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState<FTPAccount[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
@@ -101,63 +103,126 @@ function FTPContent() {
       dataIndex: 'path',
       key: 'path',
       ellipsis: true,
+      render: (v: string) => <span style={{ fontFamily: mono, fontSize: 12 }}>{v}</span>,
     },
     {
       title: t('common.status'),
       dataIndex: 'status',
       key: 'status',
-      render: (status: number) =>
-        status === 1
-          ? <Tag color="success" icon={<CheckCircleOutlined />}>{t('common.enabled')}</Tag>
-          : <Tag color="error" icon={<StopOutlined />}>{t('common.disabled')}</Tag>,
+      render: (status: number) => {
+        const color = status === 1 ? p.green : p.red;
+        const label = status === 1 ? t('common.enabled') : t('common.disabled');
+        return (
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+            padding: '2px 10px', borderRadius: 99,
+            background: `${color}15`, color, fontSize: 11, fontWeight: 500,
+          }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: color }} />
+            {label}
+          </span>
+        );
+      },
     },
     {
       title: 'Created',
       dataIndex: 'created_at',
       key: 'created_at',
-      render: (val: string) => val ? new Date(val).toLocaleString() : '-',
+      render: (val: string) => val
+        ? <span style={{ fontFamily: mono, fontSize: 12, color: p.textMuted }}>{new Date(val).toLocaleString()}</span>
+        : <span style={{ color: p.textDim }}>-</span>,
     },
     {
       title: t('common.actions'),
       key: 'actions',
       render: (_: unknown, record: FTPAccount) => (
-        <Space size="small">
-          <Button
-            size="small"
-            icon={<LockOutlined />}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <button
             onClick={() => { setSelectedAccount(record); setPasswordOpen(true); }}
+            style={{
+              padding: '3px 8px', borderRadius: 6,
+              border: `1px solid ${p.cardBorder}`, background: 'transparent',
+              color: p.textMuted, fontSize: 11, cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              transition: 'all 0.15s',
+            }}
           >
-            Password
-          </Button>
-          <Button
-            size="small"
-            type={record.status === 1 ? 'default' : 'primary'}
+            <LockOutlined /> Password
+          </button>
+          <button
             onClick={() => handleToggleStatus(record)}
+            style={{
+              padding: '3px 8px', borderRadius: 6, border: 'none', cursor: 'pointer',
+              fontSize: 11, fontWeight: 500, transition: 'opacity 0.15s',
+              background: record.status === 1 ? `${p.amber}15` : `${p.green}15`,
+              color: record.status === 1 ? p.amber : p.green,
+            }}
           >
             {record.status === 1 ? t('common.disable') : t('common.enable')}
-          </Button>
+          </button>
           <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />} />
+            <button style={{
+              padding: '3px 8px', borderRadius: 6,
+              border: `1px solid ${p.red}`, background: 'transparent',
+              color: p.red, fontSize: 11, cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+            }}>
+              <DeleteOutlined />
+            </button>
           </Popconfirm>
-        </Space>
+        </div>
       ),
     },
   ];
 
   return (
-    <div>
-      <Typography.Title level={3} style={{ marginBottom: 24 }}>{t('sidebar.ftp')}</Typography.Title>
-      <Card
-        title={`FTP Accounts (${accounts.length})`}
-        extra={
-          <Space>
-            <Button icon={<ReloadOutlined />} onClick={fetchAccounts}>{t('common.refresh')}</Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
-              Add FTP Account
-            </Button>
-          </Space>
-        }
-      >
+    <div style={{
+      background: p.card, borderRadius: 12,
+      border: `1px solid ${p.cardBorder}`,
+      boxShadow: isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.06)',
+      overflow: 'hidden',
+    }}>
+      <div style={{
+        padding: '14px 20px',
+        borderBottom: `1px solid ${p.cardBorder}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        background: p.headerBg, flexWrap: 'wrap', gap: 10,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 15, fontWeight: 600, color: p.text }}>FTP Accounts</span>
+          <span style={{
+            fontSize: 11, fontFamily: mono, padding: '2px 9px', borderRadius: 4,
+            background: `${p.accent}15`, color: p.accent, fontWeight: 500,
+          }}>{accounts.length}</span>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            onClick={fetchAccounts}
+            style={{
+              padding: '5px 14px', borderRadius: 6,
+              border: `1px solid ${p.cardBorder}`, background: 'transparent',
+              color: p.textMuted, fontSize: 12, cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              transition: 'all 0.15s',
+            }}
+          >
+            <ReloadOutlined /> {t('common.refresh')}
+          </button>
+          <button
+            onClick={() => setCreateOpen(true)}
+            style={{
+              padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
+              background: p.accent, color: '#fff', fontSize: 13, fontWeight: 500,
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              transition: 'opacity 0.15s',
+            }}
+          >
+            <PlusOutlined /> Add FTP Account
+          </button>
+        </div>
+      </div>
+
+      <div style={{ padding: 16 }}>
         <Table
           columns={columns}
           dataSource={accounts}
@@ -165,7 +230,7 @@ function FTPContent() {
           loading={loading}
           pagination={{ pageSize: 10, showSizeChanger: true }}
         />
-      </Card>
+      </div>
 
       <Modal
         title="Add FTP Account"

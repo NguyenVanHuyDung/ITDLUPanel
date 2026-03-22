@@ -1,99 +1,18 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Table, Button, Modal, Form, Input, Select, Space, message, Typography, Popconfirm, Switch, Tooltip, Spin, Badge } from 'antd';
+import { Table, Button, Modal, Form, Input, Select, message, Popconfirm, Switch, Tooltip, Spin } from 'antd';
 import {
-  PlusOutlined, DeleteOutlined, SettingOutlined, SafetyCertificateOutlined,
+  PlusOutlined, SettingOutlined, SafetyCertificateOutlined,
   SearchOutlined, ReloadOutlined, GlobalOutlined, CodeOutlined,
   FolderOpenOutlined, EyeOutlined, EyeInvisibleOutlined,
   FileTextOutlined, LinkOutlined, LockOutlined, CloudOutlined,
-  EditOutlined, MoreOutlined,
+  MoreOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
 import type { Site } from '@/types';
 import RequireSoftware from '@/components/RequireSoftware';
 import { useIsMobile } from '@/hooks/useIsMobile';
-
-const { Text } = Typography;
-
-// ---------------------------------------------------------------------------
-// Theme constants
-// ---------------------------------------------------------------------------
-const PRIMARY = '#1565C0';
-const PRIMARY_DARK = '#0D47A1';
-const PRIMARY_LIGHT = '#E3F2FD';
-const BORDER = '#E8EDF2';
-const TEXT_PRIMARY = '#1A1A2E';
-const TEXT_SECONDARY = '#64748B';
-const SUCCESS = '#4CAF50';
-const ERROR = '#F44336';
-
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-const cardStyle: React.CSSProperties = {
-  background: '#fff',
-  borderRadius: 8,
-  border: `1px solid ${BORDER}`,
-  overflow: 'hidden',
-};
-
-const tabBarStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 0,
-  borderBottom: `1px solid ${BORDER}`,
-  padding: '0 20px',
-  background: '#FAFBFC',
-};
-
-const activeTabStyle: React.CSSProperties = {
-  padding: '12px 20px',
-  fontSize: 14,
-  fontWeight: 600,
-  color: PRIMARY,
-  borderBottom: `2px solid ${PRIMARY}`,
-  cursor: 'pointer',
-  background: 'transparent',
-  marginBottom: -1,
-};
-
-const inactiveTabStyle: React.CSSProperties = {
-  padding: '12px 20px',
-  fontSize: 14,
-  fontWeight: 500,
-  color: TEXT_SECONDARY,
-  cursor: 'not-allowed',
-  opacity: 0.5,
-  background: 'transparent',
-};
-
-const toolbarStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  flexWrap: 'wrap',
-  gap: 8,
-  padding: '12px 20px',
-  borderBottom: `1px solid ${BORDER}`,
-};
-
-const actionLinkStyle: React.CSSProperties = {
-  fontSize: 12,
-  padding: '0 4px',
-  height: 'auto',
-  color: PRIMARY,
-};
-
-// Config modal sidebar
-const sidebarItemStyle = (active: boolean): React.CSSProperties => ({
-  padding: '10px 16px',
-  cursor: 'pointer',
-  fontSize: 13,
-  color: active ? PRIMARY : TEXT_PRIMARY,
-  background: active ? PRIMARY_LIGHT : 'transparent',
-  borderLeft: active ? `3px solid ${PRIMARY}` : '3px solid transparent',
-  fontWeight: active ? 600 : 400,
-  transition: 'all 0.15s',
-});
+import { usePalette, mono } from '@/hooks/usePalette';
 
 // ---------------------------------------------------------------------------
 // Config modal sections
@@ -120,6 +39,7 @@ interface DomainInfo {
 }
 
 function DomainManagerPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }) {
+  const { p } = usePalette();
   const [domains, setDomains] = useState<DomainInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [newDomain, setNewDomain] = useState('');
@@ -167,10 +87,10 @@ function DomainManagerPanel({ siteId, siteDomain }: { siteId: number; siteDomain
   return (
     <div>
       <div style={{ marginBottom: 16 }}>
-        <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+        <span style={{ fontSize: 12, color: p.textMuted, display: 'block', marginBottom: 8 }}>
           A domain per line, the default port is 80.<br />
           Wildcard domain format: *.domain.com
-        </Text>
+        </span>
         <div style={{ display: 'flex', gap: 8 }}>
           <Input
             value={newDomain}
@@ -180,7 +100,7 @@ function DomainManagerPanel({ siteId, siteDomain }: { siteId: number; siteDomain
             style={{ flex: 1 }}
           />
           <Button type="primary" onClick={handleAdd} loading={adding}
-            style={{ background: PRIMARY, borderColor: PRIMARY }}
+            style={{ background: p.accent, borderColor: p.accent }}
           >
             Add
           </Button>
@@ -197,20 +117,23 @@ function DomainManagerPanel({ siteId, siteDomain }: { siteId: number; siteDomain
           {
             title: 'Domain name', dataIndex: 'domain', key: 'domain',
             render: (d: string, r: DomainInfo) => (
-              <span>
+              <span style={{ fontFamily: mono, fontSize: 13 }}>
                 {d}
                 {r.is_primary === 1 && (
-                  <Badge count="Primary" style={{ background: PRIMARY, marginLeft: 8, fontSize: 10 }} />
+                  <span style={{
+                    fontSize: 10, padding: '2px 8px', borderRadius: 4, marginLeft: 8,
+                    background: `${p.accent}15`, color: p.accent, fontWeight: 500,
+                  }}>Primary</span>
                 )}
               </span>
             ),
           },
-          { title: 'Port', key: 'port', width: 80, render: () => '80' },
+          { title: 'Port', key: 'port', width: 80, render: () => <span style={{ fontFamily: mono, fontSize: 12, color: p.textMuted }}>80</span> },
           {
             title: 'Operate', key: 'op', width: 80,
             render: (_: unknown, r: DomainInfo) =>
               r.is_primary === 1 ? (
-                <Text type="secondary" style={{ fontSize: 12 }}>Primary</Text>
+                <span style={{ fontSize: 12, color: p.textMuted }}>Primary</span>
               ) : (
                 <Popconfirm title="Remove this domain?" onConfirm={() => handleRemove(r.id)}>
                   <Button type="link" size="small" danger style={{ fontSize: 12, padding: 0 }}>Delete</Button>
@@ -227,6 +150,7 @@ function DomainManagerPanel({ siteId, siteDomain }: { siteId: number; siteDomain
 // Config editor sub-component
 // ---------------------------------------------------------------------------
 function ConfigEditorPanel({ siteId, webserver }: { siteId: number; webserver: string }) {
+  const { p } = usePalette();
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -261,9 +185,9 @@ function ConfigEditorPanel({ siteId, webserver }: { siteId: number; webserver: s
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <Text type="secondary" style={{ fontSize: 12 }}>{webserver?.toUpperCase()} virtual host configuration</Text>
+        <span style={{ fontSize: 12, color: p.textMuted }}>{webserver?.toUpperCase()} virtual host configuration</span>
         <Button type="primary" size="small" onClick={handleSave} loading={saving}
-          style={{ background: PRIMARY, borderColor: PRIMARY }}
+          style={{ background: p.accent, borderColor: p.accent }}
         >
           Save
         </Button>
@@ -274,11 +198,11 @@ function ConfigEditorPanel({ siteId, webserver }: { siteId: number; webserver: s
           onChange={e => setContent(e.target.value)}
           rows={22}
           style={{
-            fontFamily: "'JetBrains Mono', monospace",
+            fontFamily: mono,
             fontSize: 12,
-            background: '#1B2A4A',
-            color: '#E0E0E0',
-            border: `1px solid ${BORDER}`,
+            background: p.codeBg,
+            color: p.text,
+            border: `1px solid ${p.cardBorder}`,
             borderRadius: 6,
             lineHeight: 1.6,
           }}
@@ -292,6 +216,7 @@ function ConfigEditorPanel({ siteId, webserver }: { siteId: number; webserver: s
 // PHP version sub-component
 // ---------------------------------------------------------------------------
 function PHPVersionPanel({ siteId, currentVersion, phpVersions }: { siteId: number; currentVersion?: string; phpVersions: string[] }) {
+  const { p } = usePalette();
   const [version, setVersion] = useState(currentVersion || '');
   const [saving, setSaving] = useState(false);
 
@@ -309,9 +234,9 @@ function PHPVersionPanel({ siteId, currentVersion, phpVersions }: { siteId: numb
 
   return (
     <div>
-      <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 12 }}>
+      <span style={{ fontSize: 12, color: p.textMuted, display: 'block', marginBottom: 12 }}>
         Select the PHP version for this site. The web server config will be regenerated.
-      </Text>
+      </span>
       <div style={{ display: 'flex', gap: 8, maxWidth: 400 }}>
         <Select
           value={version}
@@ -322,7 +247,7 @@ function PHPVersionPanel({ siteId, currentVersion, phpVersions }: { siteId: numb
           options={phpVersions.map(v => ({ value: v, label: `PHP ${v}` }))}
         />
         <Button type="primary" onClick={handleSwitch} loading={saving}
-          style={{ background: PRIMARY, borderColor: PRIMARY }}
+          style={{ background: p.accent, borderColor: p.accent }}
         >
           Apply
         </Button>
@@ -335,23 +260,26 @@ function PHPVersionPanel({ siteId, currentVersion, phpVersions }: { siteId: numb
 // Site info / directory panel
 // ---------------------------------------------------------------------------
 function DirectoryPanel({ site }: { site: Site }) {
+  const { p } = usePalette();
   return (
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '12px 16px', fontSize: 13 }}>
-        <Text type="secondary">Document Root:</Text>
-        <Text code style={{ fontSize: 12 }}>{site.path || `/ITDLUPanel/wwwroot/${site.domain}`}</Text>
-        <Text type="secondary">Domain:</Text>
-        <Text strong>{site.domain}</Text>
-        <Text type="secondary">Web Server:</Text>
-        <Text>{site.webserver?.toUpperCase()}</Text>
-        <Text type="secondary">PHP Version:</Text>
-        <Text>{site.php_version || 'Not set'}</Text>
-        <Text type="secondary">Status:</Text>
-        <span style={{ color: site.status === 1 ? SUCCESS : ERROR, fontWeight: 500 }}>
+        <span style={{ color: p.textMuted }}>Document Root:</span>
+        <span style={{ fontSize: 12, fontFamily: mono, padding: '2px 6px', borderRadius: 4, background: p.codeBg }}>
+          {site.path || `/ITDLUPanel/wwwroot/${site.domain}`}
+        </span>
+        <span style={{ color: p.textMuted }}>Domain:</span>
+        <span style={{ fontWeight: 600, fontFamily: mono, color: p.text }}>{site.domain}</span>
+        <span style={{ color: p.textMuted }}>Web Server:</span>
+        <span style={{ color: p.text }}>{site.webserver?.toUpperCase()}</span>
+        <span style={{ color: p.textMuted }}>PHP Version:</span>
+        <span style={{ fontFamily: mono, color: p.text }}>{site.php_version || 'Not set'}</span>
+        <span style={{ color: p.textMuted }}>Status:</span>
+        <span style={{ color: site.status === 1 ? p.green : p.red, fontWeight: 500 }}>
           {site.status === 1 ? 'Running' : 'Stopped'}
         </span>
-        <Text type="secondary">Created:</Text>
-        <Text>{site.created_at}</Text>
+        <span style={{ color: p.textMuted }}>Created:</span>
+        <span style={{ fontFamily: mono, fontSize: 12, color: p.text }}>{site.created_at}</span>
       </div>
     </div>
   );
@@ -361,8 +289,9 @@ function DirectoryPanel({ site }: { site: Site }) {
 // Placeholder panel
 // ---------------------------------------------------------------------------
 function PlaceholderPanel({ title }: { title: string }) {
+  const { p } = usePalette();
   return (
-    <div style={{ textAlign: 'center', padding: '40px 0', color: TEXT_SECONDARY }}>
+    <div style={{ textAlign: 'center', padding: '40px 0', color: p.textMuted }}>
       <CloudOutlined style={{ fontSize: 32, marginBottom: 12, opacity: 0.3 }} />
       <div style={{ fontSize: 13 }}>{title} — Coming soon</div>
     </div>
@@ -373,6 +302,7 @@ function PlaceholderPanel({ title }: { title: string }) {
 // Site config modal (matches website2.png)
 // ---------------------------------------------------------------------------
 function SiteConfigModal({ site, open, onClose, phpVersions }: { site: Site | null; open: boolean; onClose: () => void; phpVersions: string[] }) {
+  const { p } = usePalette();
   const [section, setSection] = useState<ConfigSection>('domain');
   const isMobile = useIsMobile();
 
@@ -408,9 +338,9 @@ function SiteConfigModal({ site, open, onClose, phpVersions }: { site: Site | nu
       centered
       destroyOnHidden
       title={
-        <span style={{ fontSize: 14, color: TEXT_PRIMARY }}>
-          Site modification [{site.domain}]
-          <span style={{ color: TEXT_SECONDARY, fontWeight: 400, fontSize: 12, marginLeft: 8 }}>
+        <span style={{ fontSize: 14, color: p.text }}>
+          Site modification [<span style={{ fontFamily: mono }}>{site.domain}</span>]
+          <span style={{ color: p.textMuted, fontWeight: 400, fontSize: 12, marginLeft: 8 }}>
             — Created {site.created_at}
           </span>
         </span>
@@ -421,31 +351,44 @@ function SiteConfigModal({ site, open, onClose, phpVersions }: { site: Site | nu
         {/* Left sidebar */}
         <div style={{
           width: isMobile ? '100%' : 180,
-          borderRight: isMobile ? 'none' : `1px solid ${BORDER}`,
-          borderBottom: isMobile ? `1px solid ${BORDER}` : 'none',
+          borderRight: isMobile ? 'none' : `1px solid ${p.cardBorder}`,
+          borderBottom: isMobile ? `1px solid ${p.cardBorder}` : 'none',
           display: 'flex',
           flexDirection: isMobile ? 'row' : 'column',
           overflowX: isMobile ? 'auto' : 'visible',
-          background: '#FAFBFC',
+          background: p.headerBg,
           flexShrink: 0,
           paddingTop: isMobile ? 0 : 8,
         }}>
-          {CONFIG_SECTIONS.map(s => (
-            <div
-              key={s.key}
-              style={sidebarItemStyle(section === s.key)}
-              onClick={() => setSection(s.key)}
-              onMouseEnter={e => {
-                if (section !== s.key) (e.currentTarget.style.background = '#f0f4f8');
-              }}
-              onMouseLeave={e => {
-                if (section !== s.key) (e.currentTarget.style.background = 'transparent');
-              }}
-            >
-              <span style={{ marginRight: 8, fontSize: 12 }}>{s.icon}</span>
-              {s.label}
-            </div>
-          ))}
+          {CONFIG_SECTIONS.map(s => {
+            const active = section === s.key;
+            return (
+              <div
+                key={s.key}
+                style={{
+                  padding: '10px 16px',
+                  cursor: 'pointer',
+                  fontSize: 13,
+                  borderRadius: 6,
+                  margin: isMobile ? '4px 2px' : '2px 8px',
+                  color: active ? p.accent : p.textMuted,
+                  background: active ? `${p.accent}15` : 'transparent',
+                  fontWeight: active ? 600 : 400,
+                  transition: 'all 0.15s',
+                }}
+                onClick={() => setSection(s.key)}
+                onMouseEnter={e => {
+                  if (!active) (e.currentTarget.style.background = p.rowHover);
+                }}
+                onMouseLeave={e => {
+                  if (!active) (e.currentTarget.style.background = 'transparent');
+                }}
+              >
+                <span style={{ marginRight: 8, fontSize: 12 }}>{s.icon}</span>
+                {s.label}
+              </div>
+            );
+          })}
         </div>
 
         {/* Right content */}
@@ -462,6 +405,7 @@ function SiteConfigModal({ site, open, onClose, phpVersions }: { site: Site | nu
 // ---------------------------------------------------------------------------
 function WebsitesContent() {
   const { t } = useTranslation();
+  const { p, isDark } = usePalette();
   const isMobile = useIsMobile();
   const [loading, setLoading] = useState(true);
   const [sites, setSites] = useState<Site[]>([]);
@@ -561,18 +505,18 @@ function WebsitesContent() {
       render: (_: unknown, r: Site) => (
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <GlobalOutlined style={{ color: PRIMARY, fontSize: 13 }} />
+            <GlobalOutlined style={{ color: p.accent, fontSize: 13 }} />
             <a
               href={`http${r.ssl_enabled ? 's' : ''}://${r.domain}`}
               target="_blank"
               rel="noreferrer"
-              style={{ color: PRIMARY, fontWeight: 500, fontSize: 13 }}
+              style={{ color: p.accent, fontWeight: 500, fontSize: 13, fontFamily: mono }}
             >
               {r.domain}
             </a>
-            <LinkOutlined style={{ fontSize: 10, color: TEXT_SECONDARY }} />
+            <LinkOutlined style={{ fontSize: 10, color: p.textMuted }} />
           </div>
-          <div style={{ fontSize: 11, color: TEXT_SECONDARY, marginLeft: 19 }}>
+          <div style={{ fontSize: 11, color: p.textMuted, marginLeft: 19, fontFamily: mono }}>
             {r.name !== r.domain ? r.name : r.path || `/ITDLUPanel/wwwroot/${r.domain}`}
           </div>
         </div>
@@ -588,7 +532,7 @@ function WebsitesContent() {
             type="text"
             size="small"
             icon={r.status === 1 ? <EyeOutlined /> : <EyeInvisibleOutlined />}
-            style={{ color: r.status === 1 ? SUCCESS : TEXT_SECONDARY }}
+            style={{ color: r.status === 1 ? p.green : p.textMuted }}
             onClick={() => handleToggleStatus(r)}
           />
         </Tooltip>
@@ -599,48 +543,45 @@ function WebsitesContent() {
       key: 'quick',
       width: 140,
       render: (_: unknown, r: Site) => (
-        <Space size={4}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <Tooltip title="Open directory">
             <Button type="text" size="small" icon={<FolderOpenOutlined />}
-              style={{ color: TEXT_SECONDARY, fontSize: 13 }}
+              style={{ color: p.textMuted, fontSize: 13 }}
               onClick={() => {
                 window.location.href = `/files?path=${encodeURIComponent(r.path || `/ITDLUPanel/wwwroot/${r.domain}`)}`;
               }}
             />
           </Tooltip>
           {r.php_version && (
-            <Badge
-              count={`PHP ${r.php_version}`}
-              style={{
-                background: PRIMARY_LIGHT,
-                color: PRIMARY_DARK,
-                fontSize: 10,
-                fontWeight: 600,
-                borderRadius: 3,
-                boxShadow: 'none',
-              }}
-            />
+            <span style={{
+              fontSize: 10, fontWeight: 600, fontFamily: mono,
+              padding: '2px 8px', borderRadius: 4,
+              background: `${p.purple}15`, color: p.purple,
+              boxShadow: 'none',
+            }}>
+              PHP {r.php_version}
+            </span>
           )}
-        </Space>
+        </div>
       ),
     },
     {
       title: 'Expiration',
       key: 'expiry',
       width: 100,
-      render: () => <span style={{ fontSize: 12, color: TEXT_SECONDARY }}>Perpetual</span>,
+      render: () => <span style={{ fontSize: 12, color: p.textMuted }}>Perpetual</span>,
     },
     {
       title: 'SSL',
       key: 'ssl',
       width: 100,
       render: (_: unknown, r: Site) => r.ssl_enabled ? (
-        <span style={{ color: SUCCESS, fontSize: 12, fontWeight: 500 }}>
+        <span style={{ color: p.green, fontSize: 12, fontWeight: 500 }}>
           <SafetyCertificateOutlined style={{ marginRight: 4 }} />
           {r.ssl_expiry || 'Active'}
         </span>
       ) : (
-        <span style={{ color: ERROR, fontSize: 12 }}>Not Set</span>
+        <span style={{ color: p.red, fontSize: 12 }}>Not Set</span>
       ),
     },
     {
@@ -648,87 +589,148 @@ function WebsitesContent() {
       key: 'actions',
       width: 180,
       render: (_: unknown, r: Site) => (
-        <Space size={0} split={<span style={{ color: '#E0E0E0', margin: '0 2px' }}>|</span>}>
-          <Button type="link" size="small" style={actionLinkStyle}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+          <button
+            style={{
+              padding: '3px 8px', fontSize: 11, fontWeight: 500, borderRadius: 4,
+              border: 'none', background: 'transparent', color: p.accent,
+              cursor: 'pointer', transition: 'all 0.15s',
+            }}
             onClick={() => { setConfigSite(r); setConfigOpen(true); }}
           >
             Conf
-          </Button>
-          <Button type="link" size="small" style={actionLinkStyle}
-            onClick={() => {
-              setConfigSite(r);
-              setConfigOpen(true);
+          </button>
+          <span style={{ color: p.cardBorder, margin: '0 2px' }}>|</span>
+          <button
+            style={{
+              padding: '3px 8px', fontSize: 11, fontWeight: 500, borderRadius: 4,
+              border: 'none', background: 'transparent', color: p.accent,
+              cursor: 'pointer', transition: 'all 0.15s',
             }}
+            onClick={() => { setConfigSite(r); setConfigOpen(true); }}
           >
             Log
-          </Button>
+          </button>
+          <span style={{ color: p.cardBorder, margin: '0 2px' }}>|</span>
           <Popconfirm
             title={t('common.confirm_delete')}
             onConfirm={() => handleDelete(r.id)}
             okText={t('common.yes')} cancelText={t('common.no')}
             okButtonProps={{ danger: true }}
           >
-            <Button type="link" size="small" style={{ ...actionLinkStyle, color: ERROR }}>
+            <button
+              style={{
+                padding: '3px 8px', fontSize: 11, fontWeight: 500, borderRadius: 4,
+                border: 'none', background: 'transparent', color: p.red,
+                cursor: 'pointer', transition: 'all 0.15s',
+              }}
+            >
               Del
-            </Button>
+            </button>
           </Popconfirm>
           <Tooltip title="More options">
             <Button type="text" size="small" icon={<MoreOutlined />}
-              style={{ color: TEXT_SECONDARY, fontSize: 14 }}
+              style={{ color: p.textMuted, fontSize: 14 }}
               onClick={() => { setConfigSite(r); setConfigOpen(true); }}
             />
           </Tooltip>
-        </Space>
+        </div>
       ),
     },
   ];
 
   return (
     <div>
-      <div style={cardStyle}>
-        {/* Tab bar */}
-        <div style={tabBarStyle}>
-          <div style={activeTabStyle}>
-            <GlobalOutlined style={{ marginRight: 6 }} /> PHP Project
+      <div style={{
+        background: p.card,
+        borderRadius: 12,
+        border: `1px solid ${p.cardBorder}`,
+        boxShadow: isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.06)',
+        overflow: 'hidden',
+      }}>
+        {/* Header bar */}
+        <div style={{
+          padding: '14px 20px',
+          borderBottom: `1px solid ${p.cardBorder}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: p.headerBg,
+          flexWrap: 'wrap', gap: 10,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 15, fontWeight: 600, color: p.text }}>Websites</span>
+            <span style={{
+              fontSize: 11, fontFamily: mono,
+              padding: '2px 9px', borderRadius: 4,
+              background: `${p.accent}15`, color: p.accent,
+              fontWeight: 500,
+            }}>
+              {filteredSites.length}
+            </span>
           </div>
-          <div style={inactiveTabStyle}>Node Project</div>
-          <div style={inactiveTabStyle}>Proxy Project</div>
+          <button
+            onClick={() => setModalOpen(true)}
+            style={{
+              padding: '6px 16px', borderRadius: 6,
+              border: 'none', cursor: 'pointer',
+              fontSize: 12, fontWeight: 500,
+              background: p.accent, color: '#fff',
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              transition: 'all 0.15s',
+            }}
+          >
+            <PlusOutlined /> {t('websites.add_site')}
+          </button>
+        </div>
+
+        {/* Tab bar */}
+        <div style={{
+          padding: '8px 20px',
+          borderBottom: `1px solid ${p.cardBorder}`,
+          display: 'flex', gap: 4, alignItems: 'center',
+        }}>
+          {[
+            { key: 'php', label: 'PHP Project', icon: <GlobalOutlined style={{ marginRight: 6 }} />, active: true },
+            { key: 'node', label: 'Node Project', active: false },
+            { key: 'proxy', label: 'Proxy Project', active: false },
+          ].map(tab => (
+            <button
+              key={tab.key}
+              style={{
+                padding: '6px 16px', borderRadius: 6,
+                border: 'none', cursor: tab.active ? 'pointer' : 'not-allowed',
+                fontSize: 12, fontWeight: 500,
+                background: tab.active ? `${p.accent}15` : 'transparent',
+                color: tab.active ? p.accent : p.textMuted,
+                opacity: tab.active ? 1 : 0.5,
+                transition: 'all 0.15s',
+                display: 'inline-flex', alignItems: 'center',
+              }}
+            >
+              {tab.icon}{tab.label}
+            </button>
+          ))}
           <div style={{ flex: 1 }} />
           {nginxVersion && (
-            <Badge
-              count={nginxVersion}
-              style={{
-                background: PRIMARY_LIGHT,
-                color: PRIMARY,
-                fontSize: 11,
-                fontWeight: 600,
-                borderRadius: 4,
-                padding: '0 8px',
-                boxShadow: 'none',
-              }}
-            />
+            <span style={{
+              fontSize: 11, fontFamily: mono, fontWeight: 600,
+              padding: '2px 8px', borderRadius: 4,
+              background: `${p.accent}15`, color: p.accent,
+            }}>
+              {nginxVersion}
+            </span>
           )}
         </div>
 
         {/* Toolbar */}
-        <div style={toolbarStyle}>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => setModalOpen(true)}
-            style={{ background: PRIMARY, borderColor: PRIMARY, fontWeight: 500 }}
-          >
-            {!isMobile && t('websites.add_site')}
-          </Button>
-          <Button icon={<EditOutlined />} onClick={() => message.info('Advanced setup coming soon')}>
-            {!isMobile && 'Advanced Setup'}
-          </Button>
-
+        <div style={{
+          display: 'flex', alignItems: 'center', flexWrap: 'wrap',
+          gap: 8, padding: '12px 20px',
+          borderBottom: `1px solid ${p.cardBorder}`,
+        }}>
           <div style={{ flex: 1 }} />
-
           <Input
             placeholder="Domain or Remarks"
-            prefix={<SearchOutlined style={{ color: TEXT_SECONDARY }} />}
+            prefix={<SearchOutlined style={{ color: p.textDim }} />}
             value={searchText}
             onChange={e => setSearchText(e.target.value)}
             allowClear
@@ -736,7 +738,18 @@ function WebsitesContent() {
             size="middle"
           />
           <Tooltip title="Refresh">
-            <Button icon={<ReloadOutlined />} onClick={fetchData} />
+            <button
+              onClick={fetchData}
+              style={{
+                padding: '5px 10px', borderRadius: 6,
+                border: `1px solid ${p.cardBorder}`,
+                background: 'transparent', color: p.textMuted,
+                cursor: 'pointer', display: 'inline-flex', alignItems: 'center',
+                transition: 'all 0.15s',
+              }}
+            >
+              <ReloadOutlined />
+            </button>
           </Tooltip>
         </div>
 
@@ -753,7 +766,7 @@ function WebsitesContent() {
               pageSize: 10,
               showSizeChanger: true,
               size: 'small',
-              showTotal: (total) => <span style={{ color: TEXT_SECONDARY, fontSize: 13 }}>Total {total}</span>,
+              showTotal: (total) => <span style={{ color: p.textMuted, fontSize: 13 }}>Total {total}</span>,
               style: { padding: '8px 16px', margin: 0 },
             }}
             style={{ fontSize: 13 }}
@@ -765,7 +778,7 @@ function WebsitesContent() {
       <Modal
         title={
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <GlobalOutlined style={{ color: PRIMARY }} />
+            <GlobalOutlined style={{ color: p.accent }} />
             {t('websites.add_site')}
           </span>
         }
@@ -777,7 +790,7 @@ function WebsitesContent() {
         cancelText={t('common.cancel')}
         destroyOnHidden
         width={isMobile ? '95%' : 520}
-        okButtonProps={{ style: { background: PRIMARY, borderColor: PRIMARY } }}
+        okButtonProps={{ style: { background: p.accent, borderColor: p.accent } }}
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           <Form.Item name="domain" label={t('websites.domain')}
@@ -812,7 +825,7 @@ function WebsitesContent() {
         </Form>
       </Modal>
 
-      {/* Site Config Modal (aaPanel-style left sidebar) */}
+      {/* Site Config Modal */}
       <SiteConfigModal
         site={configSite}
         open={configOpen}

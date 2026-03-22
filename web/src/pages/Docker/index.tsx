@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Table, Card, Button, Modal, Form, Input, Tabs, Space, Tag, Typography, Row, Col, Statistic, message, Popconfirm, Alert } from 'antd';
+import { Table, Modal, Form, Input, message, Popconfirm, Alert } from 'antd';
 import {
-  PlusOutlined, DeleteOutlined, ReloadOutlined, PlayCircleOutlined,
+  DeleteOutlined, ReloadOutlined, PlayCircleOutlined,
   PauseCircleOutlined, RedoOutlined, CloudServerOutlined, FileImageOutlined,
-  InfoCircleOutlined, DownloadOutlined,
+  DownloadOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { usePalette, mono } from '@/hooks/usePalette';
 import type { ApiResponse } from '@/types';
 import api from '@/services/api';
 
@@ -44,6 +45,8 @@ const defaultInfo: DockerInfo = {
 export default function Docker() {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
+  const { p, isDark } = usePalette();
+  const [activeTab, setActiveTab] = useState<string>('containers');
   const [info, setInfo] = useState<DockerInfo>(defaultInfo);
   const [containers, setContainers] = useState<DockerContainer[]>([]);
   const [images, setImages] = useState<DockerImage[]>([]);
@@ -159,9 +162,9 @@ export default function Docker() {
   };
 
   const stateColor = (state: string): string => {
-    if (state === 'running') return '#4CAF50';
-    if (state === 'paused') return '#faad14';
-    return '#ff4d4f';
+    if (state === 'running') return p.green;
+    if (state === 'paused') return p.amber;
+    return p.red;
   };
 
   const formatSize = (bytes: number) => {
@@ -175,65 +178,135 @@ export default function Docker() {
       title: t('common.name'),
       dataIndex: 'name',
       key: 'name',
-      render: (val: string) => <Typography.Text strong>{val}</Typography.Text>,
+      render: (val: string) => <span style={{ fontWeight: 600, color: p.text }}>{val}</span>,
     },
     { title: 'Image', dataIndex: 'image', key: 'image', ellipsis: true },
     {
       title: t('common.status'),
       key: 'state',
-      render: (_: unknown, r: DockerContainer) => (
-        <Space>
-          <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: stateColor(r.state) }} />
-          {r.status}
-        </Space>
-      ),
+      render: (_: unknown, r: DockerContainer) => {
+        const color = stateColor(r.state);
+        return (
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+            padding: '2px 10px', borderRadius: 99,
+            background: `${color}15`, color, fontSize: 11, fontWeight: 500,
+          }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }} />
+            {r.status}
+          </span>
+        );
+      },
     },
-    { title: 'Ports', dataIndex: 'ports', key: 'ports', ellipsis: true, render: (val: string) => val || '-' },
+    {
+      title: 'Ports',
+      dataIndex: 'ports',
+      key: 'ports',
+      ellipsis: true,
+      render: (val: string) => val
+        ? <span style={{ fontFamily: mono, fontSize: 12 }}>{val}</span>
+        : '-',
+    },
     {
       title: 'Created',
       dataIndex: 'created',
       key: 'created',
-      render: (val: string) => val ? new Date(val).toLocaleString() : '-',
+      render: (val: string) => val
+        ? <span style={{ fontFamily: mono, fontSize: 12, color: p.textMuted }}>{new Date(val).toLocaleString()}</span>
+        : '-',
     },
     {
       title: t('common.actions'),
       key: 'actions',
       width: 280,
       render: (_: unknown, r: DockerContainer) => (
-        <Space size="small" wrap>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
           {r.state !== 'running' && (
-            <Button size="small" type="primary" icon={<PlayCircleOutlined />} onClick={() => containerAction(r.id, 'start')}>
-              {t('common.start')}
-            </Button>
+            <button onClick={() => containerAction(r.id, 'start')} style={{
+              padding: '3px 8px', borderRadius: 6, border: 'none', cursor: 'pointer',
+              background: p.accent, color: '#fff', fontSize: 11, fontWeight: 500,
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+            }}>
+              <PlayCircleOutlined /> {t('common.start')}
+            </button>
           )}
           {r.state === 'running' && (
-            <Button size="small" icon={<PauseCircleOutlined />} onClick={() => containerAction(r.id, 'stop')}>
-              {t('common.stop')}
-            </Button>
+            <button onClick={() => containerAction(r.id, 'stop')} style={{
+              padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+              background: 'transparent', color: p.textMuted, fontSize: 11, cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+            }}>
+              <PauseCircleOutlined /> {t('common.stop')}
+            </button>
           )}
-          <Button size="small" icon={<RedoOutlined />} onClick={() => containerAction(r.id, 'restart')}>
-            {t('common.restart')}
-          </Button>
-          <Button size="small" onClick={() => viewLogs(r)}>Logs</Button>
+          <button onClick={() => containerAction(r.id, 'restart')} style={{
+            padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+            background: 'transparent', color: p.textMuted, fontSize: 11, cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+          }}>
+            <RedoOutlined /> {t('common.restart')}
+          </button>
+          <button onClick={() => viewLogs(r)} style={{
+            padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+            background: 'transparent', color: p.textMuted, fontSize: 11, cursor: 'pointer',
+          }}>
+            Logs
+          </button>
           <Popconfirm title={t('common.confirm_delete')} onConfirm={() => containerAction(r.id, 'remove')}>
-            <Button size="small" danger icon={<DeleteOutlined />} />
+            <button style={{
+              padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.red}`,
+              background: 'transparent', color: p.red, fontSize: 11, cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+            }}>
+              <DeleteOutlined />
+            </button>
           </Popconfirm>
-        </Space>
+        </div>
       ),
     },
   ];
 
   const imageColumns = [
     { title: 'Repository', dataIndex: 'repository', key: 'repository' },
-    { title: 'Tag', dataIndex: 'tag', key: 'tag', render: (val: string) => <Tag>{val || 'latest'}</Tag> },
-    { title: t('common.size'), dataIndex: 'size', key: 'size', render: (val: number) => formatSize(val) },
-    { title: 'Created', dataIndex: 'created', key: 'created', render: (val: string) => val ? new Date(val).toLocaleString() : '-' },
+    {
+      title: 'Tag',
+      dataIndex: 'tag',
+      key: 'tag',
+      render: (val: string) => (
+        <span style={{
+          fontSize: 11, fontFamily: mono, padding: '2px 9px', borderRadius: 4,
+          background: `${p.accent}15`, color: p.accent, fontWeight: 500,
+        }}>
+          {val || 'latest'}
+        </span>
+      ),
+    },
+    {
+      title: t('common.size'),
+      dataIndex: 'size',
+      key: 'size',
+      render: (val: number) => <span style={{ fontFamily: mono, fontSize: 12 }}>{formatSize(val)}</span>,
+    },
+    {
+      title: 'Created',
+      dataIndex: 'created',
+      key: 'created',
+      render: (val: string) => val
+        ? <span style={{ fontFamily: mono, fontSize: 12, color: p.textMuted }}>{new Date(val).toLocaleString()}</span>
+        : '-',
+    },
     {
       title: t('common.actions'),
       key: 'actions',
       render: (_: unknown, r: DockerImage) => (
         <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDeleteImage(r.id)}>
-          <Button size="small" danger icon={<DeleteOutlined />}>{t('common.delete')}</Button>
+          <button style={{
+            padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.red}`,
+            background: 'transparent', color: p.red, fontSize: 11, cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+          }}>
+            <DeleteOutlined /> {t('common.delete')}
+          </button>
         </Popconfirm>
       ),
     },
@@ -241,76 +314,137 @@ export default function Docker() {
 
   if (notInstalled && !loadingInfo) {
     return (
-      <div>
-        <Typography.Title level={3} style={{ marginBottom: 24 }}>{t('sidebar.docker')}</Typography.Title>
-        <Alert
-          message="Docker Not Installed"
-          description="Docker is not installed or not running on this server. Please install Docker to manage containers."
-          type="warning"
-          showIcon
-          action={
-            <Button type="primary" icon={<DownloadOutlined />} onClick={() => message.info('Please install Docker via Terminal or App Store')}>
-              {t('common.install')}
-            </Button>
-          }
-        />
+      <div style={{
+        background: p.card, borderRadius: 12,
+        border: `1px solid ${p.cardBorder}`,
+        boxShadow: isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.06)',
+        overflow: 'hidden',
+      }}>
+        <div style={{
+          padding: '14px 20px',
+          borderBottom: `1px solid ${p.cardBorder}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: p.headerBg,
+        }}>
+          <span style={{ fontSize: 15, fontWeight: 600, color: p.text }}>{t('sidebar.docker')}</span>
+        </div>
+        <div style={{ padding: 16 }}>
+          <Alert
+            message="Docker Not Installed"
+            description="Docker is not installed or not running on this server. Please install Docker to manage containers."
+            type="warning"
+            showIcon
+            action={
+              <button onClick={() => message.info('Please install Docker via Terminal or App Store')} style={{
+                padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                background: p.accent, color: '#fff', fontSize: 13, fontWeight: 500,
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+              }}>
+                <DownloadOutlined /> {t('common.install')}
+              </button>
+            }
+          />
+        </div>
       </div>
     );
   }
 
   return (
-    <div>
-      <Typography.Title level={3} style={{ marginBottom: 24 }}>{t('sidebar.docker')}</Typography.Title>
+    <div style={{
+      background: p.card, borderRadius: 12,
+      border: `1px solid ${p.cardBorder}`,
+      boxShadow: isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.06)',
+      overflow: 'hidden',
+    }}>
+      {/* Header bar */}
+      <div style={{
+        padding: '14px 20px',
+        borderBottom: `1px solid ${p.cardBorder}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        background: p.headerBg,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 15, fontWeight: 600, color: p.text }}>{t('sidebar.docker')}</span>
+          {!loadingInfo && (
+            <>
+              <span style={{
+                fontSize: 11, fontFamily: mono, padding: '2px 9px', borderRadius: 4,
+                background: `${p.accent}15`, color: p.accent, fontWeight: 500,
+              }}>
+                v{info.version}
+              </span>
+              <span style={{
+                fontSize: 11, fontFamily: mono, padding: '2px 9px', borderRadius: 4,
+                background: `${p.green}15`, color: p.green, fontWeight: 500,
+              }}>
+                {info.containers} containers ({info.containers_running} running)
+              </span>
+              <span style={{
+                fontSize: 11, fontFamily: mono, padding: '2px 9px', borderRadius: 4,
+                background: `${p.purple}15`, color: p.purple, fontWeight: 500,
+              }}>
+                {info.images} images
+              </span>
+            </>
+          )}
+        </div>
+        <button onClick={refreshAll} style={{
+          padding: '5px 14px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+          background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
+          display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+        }}>
+          <ReloadOutlined /> {t('common.refresh')}
+        </button>
+      </div>
 
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={24} sm={8}>
-          <Card loading={loadingInfo}>
-            <Statistic title="Docker Version" value={info.version} prefix={<InfoCircleOutlined />} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={8}>
-          <Card loading={loadingInfo}>
-            <Statistic title="Containers" value={info.containers} prefix={<CloudServerOutlined />}
-              suffix={<Typography.Text type="secondary" style={{ fontSize: 14 }}>({info.containers_running} running)</Typography.Text>} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={8}>
-          <Card loading={loadingInfo}>
-            <Statistic title="Images" value={info.images} prefix={<FileImageOutlined />} />
-          </Card>
-        </Col>
-      </Row>
+      {/* Tab bar */}
+      <div style={{
+        padding: '8px 20px',
+        borderBottom: `1px solid ${p.cardBorder}`,
+        display: 'flex', gap: 4,
+      }}>
+        {[
+          { key: 'containers', label: 'Containers', icon: <CloudServerOutlined /> },
+          { key: 'images', label: 'Images', icon: <FileImageOutlined /> },
+        ].map(tab => (
+          <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
+            padding: '6px 16px', borderRadius: 6,
+            border: 'none', cursor: 'pointer',
+            fontSize: 12, fontWeight: 500,
+            background: activeTab === tab.key ? `${p.accent}15` : 'transparent',
+            color: activeTab === tab.key ? p.accent : p.textMuted,
+            transition: 'all 0.15s',
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+          }}>
+            {tab.icon} {tab.label}
+          </button>
+        ))}
+      </div>
 
-      <Card
-        extra={<Button icon={<ReloadOutlined />} onClick={refreshAll}>{t('common.refresh')}</Button>}
-      >
-        <Tabs items={[
-          {
-            key: 'containers',
-            label: <span><CloudServerOutlined /> Containers</span>,
-            children: (
-              <Table columns={containerColumns} dataSource={containers} rowKey="id" loading={loadingContainers}
-                pagination={{ pageSize: 10, showSizeChanger: true }} />
-            ),
-          },
-          {
-            key: 'images',
-            label: <span><FileImageOutlined /> Images</span>,
-            children: (
-              <>
-                <div style={{ marginBottom: 16, textAlign: 'right' }}>
-                  <Button type="primary" icon={<DownloadOutlined />} onClick={() => setPullOpen(true)}>
-                    Pull Image
-                  </Button>
-                </div>
-                <Table columns={imageColumns} dataSource={images} rowKey="id" loading={loadingImages}
-                  pagination={{ pageSize: 10, showSizeChanger: true }} />
-              </>
-            ),
-          },
-        ]} />
-      </Card>
+      {/* Content */}
+      <div style={{ padding: 16 }}>
+        {activeTab === 'containers' && (
+          <Table columns={containerColumns} dataSource={containers} rowKey="id"
+            loading={loadingContainers} pagination={{ pageSize: 10, showSizeChanger: true }} />
+        )}
+        {activeTab === 'images' && (
+          <>
+            <div style={{ marginBottom: 16, textAlign: 'right' }}>
+              <button onClick={() => setPullOpen(true)} style={{
+                padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                background: p.accent, color: '#fff', fontSize: 13, fontWeight: 500,
+                display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'opacity 0.15s',
+              }}>
+                <DownloadOutlined /> Pull Image
+              </button>
+            </div>
+            <Table columns={imageColumns} dataSource={images} rowKey="id"
+              loading={loadingImages} pagination={{ pageSize: 10, showSizeChanger: true }} />
+          </>
+        )}
+      </div>
 
+      {/* Pull Image Modal */}
       <Modal
         title="Pull Docker Image"
         open={pullOpen}
@@ -326,11 +460,16 @@ export default function Docker() {
         </Form>
       </Modal>
 
+      {/* Logs Modal */}
       <Modal
         title={`Logs — ${logsTitle}`}
         open={logsOpen}
         onCancel={() => setLogsOpen(false)}
-        footer={<Button onClick={() => setLogsOpen(false)}>{t('common.close')}</Button>}
+        footer={<button onClick={() => setLogsOpen(false)} style={{
+          padding: '6px 16px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+          background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
+          transition: 'all 0.15s',
+        }}>{t('common.close')}</button>}
         width={isMobile ? '95%' : 720}
       >
         <pre style={{
@@ -341,7 +480,7 @@ export default function Docker() {
           maxHeight: '60vh',
           overflow: 'auto',
           fontSize: isMobile ? 11 : 13,
-          fontFamily: 'monospace',
+          fontFamily: mono,
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-all',
         }}>
