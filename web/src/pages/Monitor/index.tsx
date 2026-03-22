@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Col, Row, Table, Typography, Spin, Modal, Tooltip } from 'antd';
+import { Col, Row, Typography, Spin, Modal, Tooltip } from 'antd';
 import {
   FullscreenOutlined,
   FullscreenExitOutlined,
@@ -19,6 +19,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import ProcessTable from './ProcessTable';
 
 const { Text } = Typography;
 
@@ -94,6 +95,8 @@ interface ProcessInfo {
   memory: number;
   user: string;
   command: string;
+  status: string;
+  threads: number;
 }
 
 interface TimePoint {
@@ -530,33 +533,6 @@ export default function Monitor() {
   const openFullscreen = useCallback((key: ChartKey) => setFullscreenChart(key), []);
   const closeFullscreen = useCallback(() => setFullscreenChart(null), []);
 
-  // ---- Process table columns ----
-  const procColumns = [
-    { title: 'PID', dataIndex: 'pid', key: 'pid', width: 80, sorter: (a: ProcessInfo, b: ProcessInfo) => a.pid - b.pid },
-    { title: 'Name', dataIndex: 'name', key: 'name', width: 160, ellipsis: true },
-    {
-      title: 'CPU %', dataIndex: 'cpu', key: 'cpu', width: 90,
-      sorter: (a: ProcessInfo, b: ProcessInfo) => a.cpu - b.cpu,
-      defaultSortOrder: 'descend' as const,
-      render: (v: number) => (
-        <span style={{ color: v > 80 ? colors.error : v > 50 ? colors.warning : '#1A1A2E' }}>
-          {(v ?? 0).toFixed(1)}%
-        </span>
-      ),
-    },
-    {
-      title: 'MEM %', dataIndex: 'memory', key: 'mem', width: 90,
-      sorter: (a: ProcessInfo, b: ProcessInfo) => a.memory - b.memory,
-      render: (v: number) => (
-        <span style={{ color: v > 80 ? colors.error : v > 50 ? colors.warning : '#1A1A2E' }}>
-          {(v ?? 0).toFixed(1)}%
-        </span>
-      ),
-    },
-    { title: 'User', dataIndex: 'user', key: 'user', width: 100, ellipsis: true },
-    { title: 'Command', dataIndex: 'command', key: 'cmd', ellipsis: true },
-  ];
-
   // ---- Loading state ----
   if (loading) {
     return (
@@ -701,30 +677,7 @@ export default function Monitor() {
       </Row>
 
       {/* Process table */}
-      <div style={{ ...cardStyle, marginBottom: 16 }}>
-        <div style={cardHeaderStyle}>
-          <span style={cardTitleStyle}>Processes</span>
-          <span style={{ fontSize: 12, color: '#94A3B8' }}>
-            {processes.length} total
-          </span>
-        </div>
-        <div style={{ padding: '0 4px 4px' }}>
-          <Table
-            columns={procColumns}
-            dataSource={processes}
-            rowKey="pid"
-            size="small"
-            pagination={{
-              pageSize: 20,
-              showSizeChanger: true,
-              size: 'small',
-              showTotal: (total) => `${total} processes`,
-            }}
-            scroll={{ x: 600, y: isMobile ? 300 : 420 }}
-            style={{ fontSize: 13 }}
-          />
-        </div>
-      </div>
+      <ProcessTable processes={processes} onRefresh={() => fetchData()} />
 
       {/* Fullscreen modal */}
       <Modal

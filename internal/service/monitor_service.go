@@ -151,6 +151,8 @@ type ProcessInfo struct {
 	Memory  float32 `json:"memory"`
 	User    string  `json:"user"`
 	Command string  `json:"command"`
+	Status  string  `json:"status"`
+	Threads int32   `json:"threads"`
 }
 
 // ServiceStatus describes the status of a managed system service.
@@ -415,6 +417,13 @@ func (s *MonitorService) GetProcessList(limit int) ([]ProcessInfo, error) {
 		name, _ := p.Name()
 		user, _ := p.Username()
 		cmdline, _ := p.Cmdline()
+		status, _ := p.Status()
+		threads, _ := p.NumThreads()
+
+		statusStr := "unknown"
+		if len(status) > 0 {
+			statusStr = status[0]
+		}
 
 		result = append(result, ProcessInfo{
 			PID:     p.Pid,
@@ -423,6 +432,8 @@ func (s *MonitorService) GetProcessList(limit int) ([]ProcessInfo, error) {
 			Memory:  memPct,
 			User:    user,
 			Command: cmdline,
+			Status:  statusStr,
+			Threads: threads,
 		})
 	}
 
@@ -442,6 +453,18 @@ func (s *MonitorService) GetProcessList(limit int) ([]ProcessInfo, error) {
 	}
 
 	return result, nil
+}
+
+// KillProcess terminates a process by PID using SIGKILL.
+func (s *MonitorService) KillProcess(pid int32) error {
+	p, err := process.NewProcess(pid)
+	if err != nil {
+		return fmt.Errorf("process %d not found: %w", pid, err)
+	}
+	if err := p.Kill(); err != nil {
+		return fmt.Errorf("failed to kill process %d: %w", pid, err)
+	}
+	return nil
 }
 
 // GetServiceStatuses returns the status of managed system services.

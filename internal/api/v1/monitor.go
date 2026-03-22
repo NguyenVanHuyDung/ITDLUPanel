@@ -28,6 +28,7 @@ func (h *MonitorHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	{
 		monitor.GET("/system", h.systemMetrics)
 		monitor.GET("/processes", h.processList)
+		monitor.POST("/processes/kill", h.killProcess)
 		monitor.GET("/services", h.services)
 		monitor.GET("/network", h.network)
 		monitor.GET("/disk", h.diskStats)
@@ -60,6 +61,30 @@ func (h *MonitorHandler) processList(c *gin.Context) {
 		return
 	}
 	response.Success(c, procs)
+}
+
+// killProcess terminates a process by PID.
+func (h *MonitorHandler) killProcess(c *gin.Context) {
+	var req struct {
+		PID int32 `json:"pid" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "pid", Message: "valid process ID is required"},
+		})
+		return
+	}
+	if req.PID <= 1 {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "pid", Message: "cannot kill PID 0 or 1"},
+		})
+		return
+	}
+	if err := h.monitorService.KillProcess(req.PID); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"pid": req.PID, "killed": true})
 }
 
 // services returns the status of managed services.
