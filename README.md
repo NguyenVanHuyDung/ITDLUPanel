@@ -100,6 +100,27 @@ CGO_ENABLED=0 go build -o bin/itdlupanel ./cmd/panel
 
 The panel starts on **http://localhost:8888** by default.
 
+### Default Credentials
+
+| Field | Value |
+|-------|-------|
+| Username | `admin` |
+| Password | `admin@123456` |
+
+> ⚠️ **Change the default password immediately after first login.**
+
+### Reset Admin Password
+
+```bash
+./bin/itdlupanel reset-password -password "NewPassword123"
+
+# Reset for a specific user
+./bin/itdlupanel reset-password -user admin -password "NewPassword123"
+
+# With custom config path
+./bin/itdlupanel reset-password -config /path/to/panel.json -password "NewPassword123"
+```
+
 ### Configuration
 
 Config file auto-generated at `config/panel.json`:
