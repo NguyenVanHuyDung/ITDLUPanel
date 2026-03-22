@@ -1,23 +1,19 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Modal, message, Select, Input, Spin, Descriptions, Tag, Tabs, Space, Button, Typography } from 'antd';
 import {
-  Tabs, Card, Row, Col, Button, Tag, Badge, Space, Typography,
-  message, Modal, Select, Progress, Empty, Spin, Tooltip, Descriptions, Input,
-} from 'antd';
-import {
-  AppstoreOutlined, CheckCircleOutlined, DownloadOutlined,
-  PlayCircleOutlined, PauseCircleOutlined, ReloadOutlined,
-  CloudServerOutlined, DatabaseOutlined, CodeOutlined,
-  ExclamationCircleOutlined, ThunderboltOutlined, SettingOutlined, FileTextOutlined,
-  DeleteOutlined, LinkOutlined,
+  ExclamationCircleOutlined, PlayCircleOutlined, PauseCircleOutlined,
+  ReloadOutlined, SettingOutlined, FileTextOutlined, DeleteOutlined, LinkOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { usePalette, mono } from '@/hooks/usePalette';
 import { useTaskStore } from '@/stores/task';
 import api from '@/services/api';
 import type { ApiResponse, Software } from '@/types';
 import NginxManageModal from '@/components/NginxManageModal';
+import { getSoftwareIcon } from './SoftwareIcons';
 
-const { Title, Text, Paragraph } = Typography;
+const { Text } = Typography;
 
 interface AvailableSoftware {
   name: string;
@@ -30,48 +26,21 @@ interface AvailableSoftware {
   icon?: string;
 }
 
-const CATEGORY_ICONS: Record<string, React.ReactNode> = {
-  webserver: <CloudServerOutlined />,
-  database: <DatabaseOutlined />,
-  runtime: <CodeOutlined />,
-  cache: <ThunderboltOutlined />,
-  tool: <SettingOutlined />,
-  ftp: <CloudServerOutlined />,
-  default: <AppstoreOutlined />,
-};
-
 const SOFTWARE_COLORS: Record<string, string> = {
-  nginx: '#009639',
-  apache: '#D22128',
-  mysql: '#4479A1',
-  mariadb: '#003545',
-  postgresql: '#336791',
-  php: '#777BB4',
-  phpmyadmin: '#F89C0E',
-  nodejs: '#339933',
-  redis: '#DC382D',
-  memcached: '#3C7E31',
-  python: '#3776AB',
-  docker: '#2496ED',
-  mongodb: '#47A248',
-  openlitespeed: '#3A7BD5',
-  pureftpd: '#6C757D',
+  nginx: '#009639', apache: '#D22128', mysql: '#4479A1', mariadb: '#003545',
+  postgresql: '#336791', php: '#777BB4', phpmyadmin: '#F89C0E', nodejs: '#339933',
+  redis: '#DC382D', memcached: '#3C7E31', python: '#3776AB', docker: '#2496ED',
+  mongodb: '#47A248', openlitespeed: '#3A7BD5', pureftpd: '#6C757D',
 };
-
-const MONO_FONT = '"Cascadia Code", "Fira Code", "JetBrains Mono", monospace';
-
-function getStatusBadge(status: number) {
-  if (status === 1) return <Badge status="success" text={<Text type="success">Running</Text>} />;
-  return <Badge status="error" text={<Text type="secondary">Stopped</Text>} />;
-}
 
 export default function AppStore() {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
+  const { p, isDark } = usePalette();
+  const [activeTab, setActiveTab] = useState<'installed' | 'available'>('installed');
   const [installed, setInstalled] = useState<Software[]>([]);
   const [available, setAvailable] = useState<AvailableSoftware[]>([]);
   const [installedLoading, setInstalledLoading] = useState(false);
-  const [availableLoading, setAvailableLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
 
   // Install modal
@@ -94,9 +63,7 @@ export default function AppStore() {
   const { addTask, setModalOpen: openTaskModal, setActiveTab: setTaskTab } = useTaskStore();
   const tasks = useTaskStore((s) => s.tasks);
 
-  // ---------------------------------------------------------------------------
-  // Data fetching
-  // ---------------------------------------------------------------------------
+  /* ───────── Data fetching ───────── */
 
   const fetchInstalled = useCallback(async () => {
     setInstalledLoading(true);
@@ -111,16 +78,8 @@ export default function AppStore() {
     }
   }, []);
 
-  const fetchAvailable = useCallback(async () => {
-    // Available software is fetched together with installed in fetchInstalled
-  }, []);
+  useEffect(() => { fetchInstalled(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    fetchInstalled();
-    fetchAvailable();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Re-fetch software list when install/uninstall tasks complete
   const prevCompletedRef = useRef<Set<number>>(new Set());
   useEffect(() => {
     const completedIds = new Set<number>();
@@ -134,31 +93,19 @@ export default function AppStore() {
     }
     const prev = prevCompletedRef.current;
     let hasNew = false;
-    for (const id of completedIds) {
-      if (!prev.has(id)) {
-        hasNew = true;
-        break;
-      }
-    }
+    for (const id of completedIds) { if (!prev.has(id)) { hasNew = true; break; } }
     prevCompletedRef.current = completedIds;
-    if (hasNew) {
-      fetchInstalled();
-    }
+    if (hasNew) fetchInstalled();
   }, [tasks, fetchInstalled]);
 
-  // ---------------------------------------------------------------------------
-  // Task tracking via global store
-  // ---------------------------------------------------------------------------
+  /* ───────── Task tracking ───────── */
 
   const trackTask = useCallback(
     (taskId: number, name: string, type: 'install' | 'uninstall') => {
       addTask({
-        id: taskId,
-        name,
+        id: taskId, name,
         type: type === 'install' ? 'software_install' : 'software_uninstall',
-        status: 'running',
-        progress: 0,
-        created_at: new Date().toISOString(),
+        status: 'running', progress: 0, created_at: new Date().toISOString(),
       });
       openTaskModal(true);
       setTaskTab('tasks');
@@ -166,9 +113,7 @@ export default function AppStore() {
     [addTask, openTaskModal, setTaskTab],
   );
 
-  // ---------------------------------------------------------------------------
-  // Service actions
-  // ---------------------------------------------------------------------------
+  /* ───────── Service actions ───────── */
 
   const handleServiceAction = async (name: string, action: 'start' | 'stop' | 'restart') => {
     if (action === 'stop') {
@@ -196,9 +141,7 @@ export default function AppStore() {
     }
   };
 
-  // ---------------------------------------------------------------------------
-  // Install / Uninstall
-  // ---------------------------------------------------------------------------
+  /* ───────── Install / Uninstall ───────── */
 
   const openInstallModal = (sw: AvailableSoftware) => {
     setInstallTarget(sw);
@@ -211,8 +154,7 @@ export default function AppStore() {
     setInstalling(true);
     try {
       const { data } = await api.post<ApiResponse<{ task_id: number }>>('/software/install', {
-        name: installTarget.name,
-        version: installVersion,
+        name: installTarget.name, version: installVersion,
       });
       const taskId = data.data?.task_id;
       if (taskId) {
@@ -241,9 +183,7 @@ export default function AppStore() {
         okButtonProps: { danger: true },
         onOk: async () => {
           try {
-            const { data } = await api.delete<ApiResponse<{ task_id: number }>>(
-              `/software/${sw.name}`,
-            );
+            const { data } = await api.delete<ApiResponse<{ task_id: number }>>(`/software/${sw.name}`);
             const taskId = data.data?.task_id;
             if (taskId) {
               trackTask(taskId, `Uninstall ${sw.display_name}`, 'uninstall');
@@ -262,15 +202,10 @@ export default function AppStore() {
     [trackTask, fetchInstalled],
   );
 
-  // ---------------------------------------------------------------------------
-  // Management modal
-  // ---------------------------------------------------------------------------
+  /* ───────── Management modal ───────── */
 
   const openManageModal = async (sw: Software) => {
-    if (sw.name === 'nginx') {
-      setNginxModalOpen(true);
-      return;
-    }
+    if (sw.name === 'nginx') { setNginxModalOpen(true); return; }
     setManageSW(sw);
     setManageTab('status');
     setSwStatus(null);
@@ -310,181 +245,304 @@ export default function AppStore() {
     }
   };
 
-  // ---------------------------------------------------------------------------
-  // Helpers
-  // ---------------------------------------------------------------------------
+  /* ───────── Helpers ───────── */
 
   const isInstalled = (name: string) => installed.some((s) => s.name === name);
+  const runningCount = installed.filter(s => s.status === 1).length;
 
-  // ---------------------------------------------------------------------------
-  // Tab content
-  // ---------------------------------------------------------------------------
+  const actionBtn = (color: string, disabled?: boolean, busy?: boolean): React.CSSProperties => ({
+    padding: '4px 10px', borderRadius: 5,
+    border: `1px solid ${disabled ? p.cardBorder : color}`,
+    background: 'transparent',
+    color: disabled ? p.textDim : color,
+    fontSize: 11, fontWeight: 500, fontFamily: mono,
+    cursor: disabled || busy ? 'not-allowed' : 'pointer',
+    opacity: busy ? 0.5 : 1,
+    transition: 'all 0.15s',
+    display: 'inline-flex', alignItems: 'center', gap: 4,
+    lineHeight: 1.3,
+  });
 
-  const tabItems = [
-    {
-      key: 'installed',
-      label: <span><CheckCircleOutlined /> Installed ({installed.length})</span>,
-      children: (
-        <Spin spinning={installedLoading}>
-          {installed.length === 0 ? (
-            <Empty description="No software installed" />
-          ) : (
-            <Row gutter={[16, 16]}>
-              {installed.map((sw) => (
-                <Col xs={24} sm={12} lg={8} xl={6} key={sw.name}>
-                  <Card
-                    hoverable
-                    styles={{ body: { padding: 20 } }}
-                    onClick={() => openManageModal(sw)}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                      <div style={{
-                        width: 40, height: 40, borderRadius: 10,
-                        background: SOFTWARE_COLORS[sw.name] ?? '#1565C0',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        color: '#fff', fontSize: 18, fontWeight: 700, flexShrink: 0,
-                      }}>
-                        {sw.display_name.charAt(0).toUpperCase()}
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <Text strong style={{ display: 'block' }}>{sw.display_name}</Text>
-                        <Text type="secondary" style={{ fontSize: 12 }}>v{sw.version}</Text>
-                      </div>
-                      {getStatusBadge(sw.status)}
-                    </div>
-                    <Space wrap size="small" onClick={(e) => e.stopPropagation()}>
-                      <Tooltip title={t('common.start')}>
-                        <Button
-                          size="small"
-                          type="primary"
-                          ghost
-                          icon={<PlayCircleOutlined />}
-                          loading={actionLoading[sw.name]}
-                          disabled={sw.status === 1}
-                          onClick={() => handleServiceAction(sw.name, 'start')}
-                        >
-                          {t('common.start')}
-                        </Button>
-                      </Tooltip>
-                      <Tooltip title={t('common.stop')}>
-                        <Button
-                          size="small"
-                          danger
-                          ghost
-                          icon={<PauseCircleOutlined />}
-                          loading={actionLoading[sw.name]}
-                          disabled={sw.status !== 1}
-                          onClick={() => handleServiceAction(sw.name, 'stop')}
-                        >
-                          {t('common.stop')}
-                        </Button>
-                      </Tooltip>
-                      <Tooltip title={t('common.restart')}>
-                        <Button
-                          size="small"
-                          icon={<ReloadOutlined />}
-                          loading={actionLoading[sw.name]}
-                          onClick={() => handleServiceAction(sw.name, 'restart')}
-                        >
-                          {t('common.restart')}
-                        </Button>
-                      </Tooltip>
-                      <Tooltip title="Uninstall">
-                        <Button
-                          size="small"
-                          danger
-                          icon={<DeleteOutlined />}
-                          onClick={() => handleUninstall(sw)}
-                        >
-                          Uninstall
-                        </Button>
-                      </Tooltip>
-                    </Space>
-                  </Card>
-                </Col>
-              ))}
-            </Row>
-          )}
-        </Spin>
-      ),
-    },
-    {
-      key: 'available',
-      label: <span><DownloadOutlined /> Available</span>,
-      children: (
-        <Spin spinning={availableLoading}>
-          {available.length === 0 ? (
-            <Empty description="No software available" />
-          ) : (
-            <Row gutter={[16, 16]}>
-              {available.map((sw) => {
-                const alreadyInstalled = isInstalled(sw.name);
-                const catIcon = CATEGORY_ICONS[sw.type || sw.category || ''] ?? CATEGORY_ICONS.default;
-                return (
-                  <Col xs={24} sm={12} lg={8} xl={6} key={sw.name}>
-                    <Card
-                      hoverable={!alreadyInstalled}
-                      styles={{ body: { padding: 20 } }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                        <div style={{
-                          width: 48, height: 48, borderRadius: 12,
-                          background: SOFTWARE_COLORS[sw.name] ?? '#1565C0',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          color: '#fff', fontSize: 22, fontWeight: 700, flexShrink: 0,
-                        }}>
-                          {sw.display_name.charAt(0).toUpperCase()}
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <Text strong style={{ fontSize: 15 }}>{sw.display_name}</Text>
-                          <div><Tag style={{ margin: 0 }}>{catIcon} {sw.type || sw.category}</Tag></div>
-                        </div>
-                      </div>
-                      <Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ marginBottom: 12, minHeight: 40 }}>
-                        {sw.description || `${sw.display_name} — ${sw.type || sw.category || 'software'}`}
-                      </Paragraph>
-                      {alreadyInstalled ? (
-                        <Tag color="success" icon={<CheckCircleOutlined />}>Installed</Tag>
-                      ) : (
-                        <Button
-                          type="primary"
-                          icon={<DownloadOutlined />}
-                          block
-                          onClick={() => openInstallModal(sw)}
-                        >
-                          {t('common.install')}
-                        </Button>
-                      )}
-                    </Card>
-                  </Col>
-                );
-              })}
-            </Row>
-          )}
-        </Spin>
-      ),
-    },
-  ];
-
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
+  /* ═══════════════════════════════════════════════════════════════════════
+     RENDER
+  ═══════════════════════════════════════════════════════════════════════ */
 
   return (
-    <div>
-      <Title level={3} style={{ marginBottom: 24 }}>{t('sidebar.appstore')}</Title>
-      <Tabs
-        items={tabItems}
-        tabBarExtraContent={
-          <Button icon={<ReloadOutlined />} onClick={() => { fetchInstalled(); fetchAvailable(); }}>
-            {t('common.refresh')}
-          </Button>
-        }
-      />
+    <div style={{
+      background: p.card, borderRadius: 12,
+      border: `1px solid ${p.cardBorder}`,
+      boxShadow: isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.06)',
+      overflow: 'hidden',
+    }}>
 
-      {/* ── Install Modal ─────────────────────────────────────────────────── */}
+      {/* ── Header bar ─────────────────────────────────────────────────── */}
+      <div style={{
+        padding: '14px 20px',
+        borderBottom: `1px solid ${p.cardBorder}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        background: p.headerBg,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 15, fontWeight: 600, color: p.text, letterSpacing: '-0.01em' }}>
+            App Store
+          </span>
+          <span style={{
+            fontSize: 11, fontFamily: mono, padding: '2px 9px', borderRadius: 4,
+            background: `${p.accent}15`, color: p.accent, fontWeight: 500,
+          }}>
+            {installed.length} installed
+          </span>
+          {runningCount > 0 && (
+            <span style={{
+              fontSize: 11, fontFamily: mono, padding: '2px 9px', borderRadius: 4,
+              background: `${p.green}15`, color: p.green, fontWeight: 500,
+            }}>
+              {runningCount} running
+            </span>
+          )}
+        </div>
+        <button
+          onClick={() => fetchInstalled()}
+          style={{
+            padding: '5px 14px', borderRadius: 6,
+            border: `1px solid ${p.cardBorder}`,
+            background: 'transparent', color: p.textMuted,
+            fontSize: 12, fontFamily: mono, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: 5,
+            transition: 'all 0.15s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = p.accent; e.currentTarget.style.color = p.accent; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = p.cardBorder; e.currentTarget.style.color = p.textMuted; }}
+        >
+          ↻ Refresh
+        </button>
+      </div>
+
+      {/* ── Tab bar ────────────────────────────────────────────────────── */}
+      <div style={{
+        padding: '8px 20px',
+        borderBottom: `1px solid ${p.cardBorder}`,
+        display: 'flex', gap: 4,
+      }}>
+        {([
+          { key: 'installed' as const, label: `✓ Installed (${installed.length})` },
+          { key: 'available' as const, label: `↓ Available (${available.length})` },
+        ]).map(tab => {
+          const active = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              style={{
+                padding: '6px 16px', borderRadius: 6,
+                border: 'none', cursor: 'pointer',
+                fontFamily: mono, fontSize: 12, fontWeight: 500,
+                background: active ? `${p.accent}15` : 'transparent',
+                color: active ? p.accent : p.textMuted,
+                transition: 'all 0.15s',
+              }}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Content ────────────────────────────────────────────────────── */}
+      <div style={{ padding: 16, minHeight: 200 }}>
+        {installedLoading ? (
+          <div style={{ textAlign: 'center', padding: 48, color: p.textMuted, fontSize: 13 }}>
+            <div style={{
+              width: 24, height: 24, border: `2px solid ${p.cardBorder}`,
+              borderTopColor: p.accent, borderRadius: '50%',
+              margin: '0 auto 12px',
+              animation: 'spin 0.8s linear infinite',
+            }} />
+            Loading software…
+            <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+          </div>
+        ) : activeTab === 'installed' ? (
+          /* ── INSTALLED TAB ── */
+          installed.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 48, color: p.textMuted, fontSize: 13 }}>
+              No software installed yet. Switch to Available to get started.
+            </div>
+          ) : (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '100%' : '320px'}, 1fr))`,
+              gap: 10,
+            }}>
+              {installed.map(sw => {
+                const running = sw.status === 1;
+                const busy = !!actionLoading[sw.name];
+                return (
+                  <div
+                    key={sw.name}
+                    style={{
+                      padding: 16, borderRadius: 10,
+                      border: `1px solid ${p.cardBorder}`,
+                      background: isDark ? p.rowAlt : p.card,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s',
+                    }}
+                    onClick={() => openManageModal(sw)}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = `${p.accent}60`; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = p.cardBorder; }}
+                  >
+                    {/* Row 1: icon + name + status */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                      {getSoftwareIcon(sw.name)}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, color: p.text, fontSize: 14 }}>
+                          {sw.display_name}
+                        </div>
+                        <div style={{ fontSize: 11, fontFamily: mono, color: p.textMuted }}>
+                          v{sw.version} · {sw.type}
+                        </div>
+                      </div>
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: 5,
+                        padding: '3px 10px', borderRadius: 99,
+                        background: running ? `${p.green}15` : `${p.red}15`,
+                        fontSize: 11, fontWeight: 500, fontFamily: mono,
+                        color: running ? p.green : p.red,
+                      }}>
+                        <span style={{
+                          width: 6, height: 6, borderRadius: 3, display: 'inline-block',
+                          background: running ? p.green : p.red,
+                        }} />
+                        {running ? 'Running' : 'Stopped'}
+                      </div>
+                    </div>
+
+                    {/* Row 2: action buttons */}
+                    <div
+                      style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <button
+                        style={actionBtn(p.green, running, busy)}
+                        disabled={running || busy}
+                        onClick={() => handleServiceAction(sw.name, 'start')}
+                      >▶ Start</button>
+                      <button
+                        style={actionBtn(p.red, !running, busy)}
+                        disabled={!running || busy}
+                        onClick={() => handleServiceAction(sw.name, 'stop')}
+                      >■ Stop</button>
+                      <button
+                        style={actionBtn(p.accent, false, busy)}
+                        disabled={busy}
+                        onClick={() => handleServiceAction(sw.name, 'restart')}
+                      >↻ Restart</button>
+                      <button
+                        style={{ ...actionBtn(p.red), marginLeft: 'auto' }}
+                        onClick={() => handleUninstall(sw)}
+                      >× Remove</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )
+        ) : (
+          /* ── AVAILABLE TAB ── */
+          available.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 48, color: p.textMuted, fontSize: 13 }}>
+              No additional software available.
+            </div>
+          ) : (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '100%' : '260px'}, 1fr))`,
+              gap: 10,
+            }}>
+              {available.map(sw => {
+                const done = isInstalled(sw.name);
+                return (
+                  <div
+                    key={sw.name}
+                    style={{
+                      padding: 16, borderRadius: 10,
+                      border: `1px solid ${p.cardBorder}`,
+                      background: isDark ? p.rowAlt : p.card,
+                      transition: 'all 0.15s',
+                      opacity: done ? 0.6 : 1,
+                      display: 'flex', flexDirection: 'column',
+                    }}
+                    onMouseEnter={e => { if (!done) e.currentTarget.style.borderColor = `${p.accent}60`; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = p.cardBorder; }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+                      {getSoftwareIcon(sw.name)}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, color: p.text, fontSize: 14 }}>
+                          {sw.display_name}
+                        </div>
+                        <span style={{
+                          fontSize: 10, padding: '2px 7px', borderRadius: 4,
+                          background: `${p.accent}12`, color: p.accent,
+                          fontFamily: mono, fontWeight: 500,
+                        }}>
+                          {sw.type || sw.category}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div style={{
+                      fontSize: 12, color: p.textMuted, marginBottom: 14,
+                      lineHeight: 1.5, flex: 1,
+                      display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const,
+                      overflow: 'hidden',
+                    }}>
+                      {sw.description || `${sw.display_name} — ${sw.type || sw.category || 'software'}`}
+                    </div>
+
+                    {done ? (
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: 5,
+                        fontSize: 12, fontWeight: 500, fontFamily: mono, color: p.green,
+                        padding: '6px 0',
+                      }}>
+                        <span style={{
+                          width: 6, height: 6, borderRadius: 3,
+                          background: p.green, display: 'inline-block',
+                        }} />
+                        Installed
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => openInstallModal(sw)}
+                        style={{
+                          width: '100%', padding: '8px 0',
+                          borderRadius: 7, border: 'none',
+                          background: p.accent, color: '#fff',
+                          fontSize: 13, fontWeight: 500, fontFamily: mono,
+                          cursor: 'pointer', transition: 'opacity 0.15s',
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.opacity = '0.85'; }}
+                        onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+                      >
+                        Install
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )
+        )}
+      </div>
+
+      {/* ── Install Modal ──────────────────────────────────────────────── */}
       <Modal
-        title={<><DownloadOutlined /> Install {installTarget?.display_name}</>}
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {installTarget && getSoftwareIcon(installTarget.name)}
+            <span>Install {installTarget?.display_name}</span>
+          </div>
+        }
         open={installModalOpen}
         onCancel={() => { if (!installing) setInstallModalOpen(false); }}
         footer={[
@@ -498,10 +556,12 @@ export default function AppStore() {
         closable={!installing}
         maskClosable={!installing}
       >
-        <Space direction="vertical" style={{ width: '100%' }} size="middle">
-          <Paragraph>{installTarget?.description}</Paragraph>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <p style={{ color: p.textMuted, margin: 0, fontSize: 13 }}>
+            {installTarget?.description}
+          </p>
           <div>
-            <Text strong style={{ display: 'block', marginBottom: 8 }}>Select Version</Text>
+            <div style={{ fontWeight: 500, marginBottom: 6, fontSize: 13 }}>Select Version</div>
             <Select
               value={installVersion}
               onChange={setInstallVersion}
@@ -509,23 +569,16 @@ export default function AppStore() {
               options={installTarget?.versions.map((v) => ({ value: v, label: `v${v}` })) ?? []}
             />
           </div>
-        </Space>
+        </div>
       </Modal>
 
-      {/* ── Software Management Modal ─────────────────────────────────────── */}
+      {/* ── Management Modal ───────────────────────────────────────────── */}
       <Modal
         title={
-          <Space>
-            <div style={{
-              width: 32, height: 32, borderRadius: 8,
-              background: SOFTWARE_COLORS[manageSW?.name ?? ''] ?? '#1565C0',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: '#fff', fontSize: 16, fontWeight: 700,
-            }}>
-              {manageSW?.display_name?.charAt(0).toUpperCase()}
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {manageSW && getSoftwareIcon(manageSW.name)}
             <span>{manageSW?.display_name} Management</span>
-          </Space>
+          </div>
         }
         open={manageModalOpen}
         onCancel={() => setManageModalOpen(false)}
@@ -547,21 +600,54 @@ export default function AppStore() {
                   <div>
                     <Descriptions bordered size="small" column={1} style={{ marginBottom: 16 }}>
                       <Descriptions.Item label="Name">{manageSW.display_name}</Descriptions.Item>
-                      <Descriptions.Item label="Version">{manageSW.version}</Descriptions.Item>
+                      <Descriptions.Item label="Version">
+                        <span style={{ fontFamily: mono }}>{manageSW.version}</span>
+                      </Descriptions.Item>
                       <Descriptions.Item label="Type"><Tag>{manageSW.type}</Tag></Descriptions.Item>
-                      <Descriptions.Item label="Status">{getStatusBadge(manageSW.status)}</Descriptions.Item>
+                      <Descriptions.Item label="Status">
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 5,
+                          fontWeight: 500, fontSize: 13,
+                          color: manageSW.status === 1 ? p.green : p.red,
+                        }}>
+                          <span style={{
+                            width: 7, height: 7, borderRadius: 4,
+                            background: manageSW.status === 1 ? p.green : p.red,
+                            display: 'inline-block',
+                          }} />
+                          {manageSW.status === 1 ? 'Running' : 'Stopped'}
+                        </span>
+                      </Descriptions.Item>
                       {swStatus && !swStatus.error && (
                         <>
-                          {swStatus.ActiveState && <Descriptions.Item label="Active State"><Tag color={swStatus.ActiveState === 'active' ? 'success' : 'default'}>{swStatus.ActiveState}</Tag></Descriptions.Item>}
-                          {swStatus.SubState && <Descriptions.Item label="Sub State">{swStatus.SubState}</Descriptions.Item>}
-                          {swStatus.MainPID && swStatus.MainPID !== '0' && <Descriptions.Item label="Main PID">{swStatus.MainPID}</Descriptions.Item>}
-                          {swStatus.MemoryCurrent && swStatus.MemoryCurrent !== '18446744073709551615' && (
-                            <Descriptions.Item label="Memory">{(parseInt(swStatus.MemoryCurrent) / 1024 / 1024).toFixed(1)} MB</Descriptions.Item>
+                          {swStatus.ActiveState && (
+                            <Descriptions.Item label="Active State">
+                              <Tag color={swStatus.ActiveState === 'active' ? 'success' : 'default'}>{swStatus.ActiveState}</Tag>
+                            </Descriptions.Item>
                           )}
-                          {swStatus.ActiveEnterTimestamp && <Descriptions.Item label="Started">{swStatus.ActiveEnterTimestamp}</Descriptions.Item>}
+                          {swStatus.SubState && <Descriptions.Item label="Sub State">{swStatus.SubState}</Descriptions.Item>}
+                          {swStatus.MainPID && swStatus.MainPID !== '0' && (
+                            <Descriptions.Item label="Main PID">
+                              <span style={{ fontFamily: mono }}>{swStatus.MainPID}</span>
+                            </Descriptions.Item>
+                          )}
+                          {swStatus.MemoryCurrent && swStatus.MemoryCurrent !== '18446744073709551615' && (
+                            <Descriptions.Item label="Memory">
+                              <span style={{ fontFamily: mono }}>
+                                {(parseInt(swStatus.MemoryCurrent) / 1024 / 1024).toFixed(1)} MB
+                              </span>
+                            </Descriptions.Item>
+                          )}
+                          {swStatus.ActiveEnterTimestamp && (
+                            <Descriptions.Item label="Started">{swStatus.ActiveEnterTimestamp}</Descriptions.Item>
+                          )}
                         </>
                       )}
-                      {swStatus?.error && <Descriptions.Item label="Error"><Text type="danger">{swStatus.error}</Text></Descriptions.Item>}
+                      {swStatus?.error && (
+                        <Descriptions.Item label="Error">
+                          <Text type="danger">{swStatus.error}</Text>
+                        </Descriptions.Item>
+                      )}
                     </Descriptions>
                     <Space wrap>
                       {manageSW.name === 'phpmyadmin' && (
@@ -572,14 +658,13 @@ export default function AppStore() {
                             const host = window.location.hostname;
                             window.open(`http://${host}/phpmyadmin/`, '_blank');
                           }}
-                          style={{ background: '#1565C0', borderColor: '#1565C0' }}
+                          style={{ background: p.accent, borderColor: p.accent }}
                         >
                           Open phpMyAdmin
                         </Button>
                       )}
                       <Button
-                        type="primary"
-                        ghost
+                        type="primary" ghost
                         icon={<PlayCircleOutlined />}
                         loading={actionLoading[manageSW.name]}
                         disabled={manageSW.status === 1}
@@ -587,12 +672,9 @@ export default function AppStore() {
                           await doServiceAction(manageSW.name, 'start');
                           openManageModal({ ...manageSW, status: 1 });
                         }}
-                      >
-                        {t('common.start')}
-                      </Button>
+                      >{t('common.start')}</Button>
                       <Button
-                        danger
-                        ghost
+                        danger ghost
                         icon={<PauseCircleOutlined />}
                         loading={actionLoading[manageSW.name]}
                         disabled={manageSW.status !== 1}
@@ -600,9 +682,7 @@ export default function AppStore() {
                           await doServiceAction(manageSW.name, 'stop');
                           openManageModal({ ...manageSW, status: 0 });
                         }}
-                      >
-                        {t('common.stop')}
-                      </Button>
+                      >{t('common.stop')}</Button>
                       <Button
                         icon={<ReloadOutlined />}
                         loading={actionLoading[manageSW.name]}
@@ -610,16 +690,12 @@ export default function AppStore() {
                           await doServiceAction(manageSW.name, 'restart');
                           openManageModal({ ...manageSW, status: 1 });
                         }}
-                      >
-                        {t('common.restart')}
-                      </Button>
+                      >{t('common.restart')}</Button>
                       <Button
                         danger
                         icon={<DeleteOutlined />}
                         onClick={() => handleUninstall(manageSW)}
-                      >
-                        Uninstall
-                      </Button>
+                      >Uninstall</Button>
                     </Space>
                   </div>
                 ),
@@ -633,7 +709,7 @@ export default function AppStore() {
                       value={swConfig}
                       onChange={(e) => setSwConfig(e.target.value)}
                       rows={18}
-                      style={{ fontFamily: MONO_FONT, fontSize: 13 }}
+                      style={{ fontFamily: mono, fontSize: 13 }}
                     />
                     <div style={{ marginTop: 12, textAlign: 'right' }}>
                       <Button type="primary" loading={savingConfig} onClick={saveConfig}>
