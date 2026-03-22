@@ -130,6 +130,30 @@ func (s *UserService) DeleteUser(id int64, currentUserID int64) error {
 	return nil
 }
 
+// ResetPassword resets a user's password (admin operation).
+func (s *UserService) ResetPassword(id int64, newPassword string) error {
+	user, err := s.userRepo.GetByID(id)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to get user")
+	}
+	if user == nil {
+		return apperrors.New(apperrors.ErrNotFound, "user not found")
+	}
+
+	cfg := config.Get()
+	hashed, err := crypto.HashPassword(newPassword, cfg.Auth.BcryptCost)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to hash password")
+	}
+
+	user.Password = hashed
+	if err := s.userRepo.Update(user); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to update password")
+	}
+
+	return nil
+}
+
 // ListUsers returns a paginated list of users.
 func (s *UserService) ListUsers(page, perPage int) ([]models.User, int64, error) {
 	users, total, err := s.userRepo.List(page, perPage)

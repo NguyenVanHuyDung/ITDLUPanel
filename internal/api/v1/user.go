@@ -31,6 +31,7 @@ func (h *UserHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gin.Ha
 		users.GET("", h.ListUsers)
 		users.POST("", h.CreateUser)
 		users.PUT("/:id", h.UpdateUser)
+		users.PUT("/:id/password", h.ResetPassword)
 		users.DELETE("/:id", h.DeleteUser)
 	}
 }
@@ -148,6 +149,43 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	}
 
 	response.Success(c, user)
+}
+
+type resetPasswordRequest struct {
+	Password string `json:"password" validate:"required,min=8"`
+}
+
+// ResetPassword resets a user's password (admin only).
+func (h *UserHandler) ResetPassword(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.Response{
+			Code:    http.StatusBadRequest,
+			Message: "invalid user ID",
+		})
+		return
+	}
+
+	var req resetPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid request body"},
+		})
+		return
+	}
+
+	if errs := validator.Validate(req); errs != nil {
+		response.ValidationError(c, errs)
+		return
+	}
+
+	if err := h.userService.ResetPassword(id, req.Password); err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"message": "password reset successfully"})
 }
 
 // DeleteUser deletes a user.
