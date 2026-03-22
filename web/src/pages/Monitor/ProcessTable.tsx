@@ -10,6 +10,7 @@ import {
   CodeOutlined,
 } from '@ant-design/icons';
 import api from '@/services/api';
+import { useThemeStore } from '@/stores/theme';
 
 /* ─── Types ──────────────────────────────────────────────────────────── */
 
@@ -29,20 +30,48 @@ interface Props {
   onRefresh?: () => void;
 }
 
-/* ─── Palette ────────────────────────────────────────────────────────── */
+/* ─── Dual palette ───────────────────────────────────────────────────── */
 
-const palette = {
-  bg: '#0B1120',
+interface Palette {
+  card: string;
+  cardBorder: string;
+  headerBg: string;
+  colHeaderBg: string;
+  rowHover: string;
+  rowAlt: string;
+  text: string;
+  textMuted: string;
+  textDim: string;
+  barTrack: string;
+  expandBg: string;
+  codeBg: string;
+  inputBg: string;
+  accent: string;
+  green: string;
+  greenDim: string;
+  amber: string;
+  amberDim: string;
+  red: string;
+  redDim: string;
+  purple: string;
+  cyan: string;
+}
+
+const darkPalette: Palette = {
   card: '#111827',
   cardBorder: '#1E293B',
   headerBg: '#0F172A',
-  rowHover: 'rgba(56, 189, 248, 0.04)',
-  rowAlt: 'rgba(15, 23, 42, 0.5)',
+  colHeaderBg: 'rgba(15,23,42,0.3)',
+  rowHover: 'rgba(56,189,248,0.04)',
+  rowAlt: 'rgba(15,23,42,0.5)',
   text: '#E2E8F0',
   textMuted: '#64748B',
   textDim: '#475569',
+  barTrack: 'rgba(30,41,59,0.8)',
+  expandBg: 'rgba(15,23,42,0.6)',
+  codeBg: 'rgba(0,0,0,0.3)',
+  inputBg: 'rgba(15,23,42,0.6)',
   accent: '#38BDF8',
-  accentDim: '#0EA5E9',
   green: '#34D399',
   greenDim: '#059669',
   amber: '#FBBF24',
@@ -50,13 +79,43 @@ const palette = {
   red: '#F87171',
   redDim: '#DC2626',
   purple: '#A78BFA',
-  purpleDim: '#7C3AED',
   cyan: '#22D3EE',
 };
 
-/* ─── Helpers ────────────────────────────────────────────────────────── */
+const lightPalette: Palette = {
+  card: '#FFFFFF',
+  cardBorder: '#E2E8F0',
+  headerBg: '#F8FAFC',
+  colHeaderBg: '#F1F5F9',
+  rowHover: 'rgba(37,99,235,0.04)',
+  rowAlt: '#F8FAFC',
+  text: '#1E293B',
+  textMuted: '#64748B',
+  textDim: '#94A3B8',
+  barTrack: '#E2E8F0',
+  expandBg: '#F1F5F9',
+  codeBg: '#F8FAFC',
+  inputBg: '#F1F5F9',
+  accent: '#2563EB',
+  green: '#16A34A',
+  greenDim: '#15803D',
+  amber: '#D97706',
+  amberDim: '#B45309',
+  red: '#DC2626',
+  redDim: '#B91C1C',
+  purple: '#7C3AED',
+  cyan: '#0891B2',
+};
 
-const userColors = [
+/* ─── Theme-aware helpers ────────────────────────────────────────────── */
+
+function hashStr(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+const darkUserColors = [
   { bg: 'rgba(56,189,248,0.12)', text: '#38BDF8', border: 'rgba(56,189,248,0.25)' },
   { bg: 'rgba(52,211,153,0.12)', text: '#34D399', border: 'rgba(52,211,153,0.25)' },
   { bg: 'rgba(167,139,250,0.12)', text: '#A78BFA', border: 'rgba(167,139,250,0.25)' },
@@ -65,75 +124,77 @@ const userColors = [
   { bg: 'rgba(34,211,238,0.12)', text: '#22D3EE', border: 'rgba(34,211,238,0.25)' },
 ];
 
-function hashStr(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
-  return Math.abs(h);
+const lightUserColors = [
+  { bg: '#EFF6FF', text: '#2563EB', border: '#BFDBFE' },
+  { bg: '#F0FDF4', text: '#16A34A', border: '#BBF7D0' },
+  { bg: '#F5F3FF', text: '#7C3AED', border: '#DDD6FE' },
+  { bg: '#FFFBEB', text: '#D97706', border: '#FDE68A' },
+  { bg: '#FEF2F2', text: '#DC2626', border: '#FECACA' },
+  { bg: '#ECFEFF', text: '#0891B2', border: '#A5F3FC' },
+];
+
+function getUserColor(user: string, isDark: boolean) {
+  const colors = isDark ? darkUserColors : lightUserColors;
+  if (user === 'root') {
+    return isDark
+      ? { bg: 'rgba(248,113,113,0.15)', text: '#F87171', border: 'rgba(248,113,113,0.3)' }
+      : { bg: '#FEF2F2', text: '#DC2626', border: '#FECACA' };
+  }
+  return colors[hashStr(user) % colors.length];
 }
 
-function getUserColor(user: string) {
-  if (user === 'root') return { bg: 'rgba(248,113,113,0.15)', text: '#F87171', border: 'rgba(248,113,113,0.3)' };
-  return userColors[hashStr(user) % userColors.length];
+function cpuColor(v: number, p: Palette): string {
+  if (v > 80) return p.red;
+  if (v > 50) return p.amber;
+  if (v > 20) return p.green;
+  return p.accent;
 }
 
-function cpuColor(v: number): string {
-  if (v > 80) return palette.red;
-  if (v > 50) return palette.amber;
-  if (v > 20) return palette.green;
-  return palette.accent;
+function memColor(v: number, p: Palette): string {
+  if (v > 80) return p.red;
+  if (v > 50) return p.purple;
+  if (v > 20) return p.accent;
+  return p.cyan;
 }
 
-function memColor(v: number): string {
-  if (v > 80) return palette.red;
-  if (v > 50) return palette.purple;
-  if (v > 20) return palette.accent;
-  return palette.cyan;
+function cpuGradient(v: number, isDark: boolean): string {
+  if (v > 80) return isDark ? 'linear-gradient(90deg, #DC2626, #F87171)' : 'linear-gradient(90deg, #B91C1C, #EF4444)';
+  if (v > 50) return isDark ? 'linear-gradient(90deg, #D97706, #FBBF24)' : 'linear-gradient(90deg, #B45309, #F59E0B)';
+  if (v > 20) return isDark ? 'linear-gradient(90deg, #059669, #34D399)' : 'linear-gradient(90deg, #15803D, #22C55E)';
+  return isDark ? 'linear-gradient(90deg, #0369A1, #38BDF8)' : 'linear-gradient(90deg, #1D4ED8, #3B82F6)';
 }
 
-function cpuGradient(v: number): string {
-  if (v > 80) return 'linear-gradient(90deg, #DC2626 0%, #F87171 100%)';
-  if (v > 50) return 'linear-gradient(90deg, #D97706 0%, #FBBF24 100%)';
-  if (v > 20) return 'linear-gradient(90deg, #059669 0%, #34D399 100%)';
-  return 'linear-gradient(90deg, #0369A1 0%, #38BDF8 100%)';
+function memGradient(v: number, isDark: boolean): string {
+  if (v > 80) return isDark ? 'linear-gradient(90deg, #DC2626, #F87171)' : 'linear-gradient(90deg, #B91C1C, #EF4444)';
+  if (v > 50) return isDark ? 'linear-gradient(90deg, #7C3AED, #A78BFA)' : 'linear-gradient(90deg, #6D28D9, #8B5CF6)';
+  if (v > 20) return isDark ? 'linear-gradient(90deg, #0284C7, #38BDF8)' : 'linear-gradient(90deg, #1D4ED8, #3B82F6)';
+  return isDark ? 'linear-gradient(90deg, #0891B2, #22D3EE)' : 'linear-gradient(90deg, #0E7490, #06B6D4)';
 }
 
-function memGradient(v: number): string {
-  if (v > 80) return 'linear-gradient(90deg, #DC2626 0%, #F87171 100%)';
-  if (v > 50) return 'linear-gradient(90deg, #7C3AED 0%, #A78BFA 100%)';
-  if (v > 20) return 'linear-gradient(90deg, #0284C7 0%, #38BDF8 100%)';
-  return 'linear-gradient(90deg, #0891B2 0%, #22D3EE 100%)';
-}
-
-function statusLabel(s: string): { label: string; color: string } {
+function statusLabel(s: string, p: Palette): { label: string; color: string } {
   switch (s) {
-    case 'R': case 'running': return { label: 'RUN', color: palette.green };
-    case 'S': case 'sleeping': return { label: 'SLP', color: palette.accent };
-    case 'D': case 'disk-sleep': return { label: 'IO', color: palette.amber };
-    case 'Z': case 'zombie': return { label: 'ZMB', color: palette.red };
-    case 'T': case 'stopped': return { label: 'STP', color: palette.amberDim };
-    case 'I': case 'idle': return { label: 'IDL', color: palette.textDim };
-    default: return { label: s?.slice(0, 3).toUpperCase() || '?', color: palette.textDim };
+    case 'R': case 'running': return { label: 'RUN', color: p.green };
+    case 'S': case 'sleeping': case 'sleep': return { label: 'SLP', color: p.accent };
+    case 'D': case 'disk-sleep': return { label: 'IO', color: p.amber };
+    case 'Z': case 'zombie': return { label: 'ZMB', color: p.red };
+    case 'T': case 'stopped': return { label: 'STP', color: p.amberDim };
+    case 'I': case 'idle': return { label: 'IDL', color: p.textDim };
+    default: return { label: s?.slice(0, 3).toUpperCase() || '?', color: p.textDim };
   }
 }
 
 type SortField = 'pid' | 'cpu' | 'memory' | 'name' | 'threads';
+const mono = '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace';
 
 /* ─── Inline bar ─────────────────────────────────────────────────────── */
 
-function ResourceBar({ value, gradient, color }: { value: number; gradient: string; color: string }) {
+function ResourceBar({ value, gradient, color, trackColor }: {
+  value: number; gradient: string; color: string; trackColor: string;
+}) {
   const w = Math.min(100, Math.max(0, value));
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 120 }}>
-      <div
-        style={{
-          flex: 1,
-          height: 6,
-          borderRadius: 3,
-          background: 'rgba(30,41,59,0.8)',
-          overflow: 'hidden',
-          position: 'relative',
-        }}
-      >
+      <div style={{ flex: 1, height: 6, borderRadius: 3, background: trackColor, overflow: 'hidden' }}>
         <div
           style={{
             width: `${w}%`,
@@ -141,20 +202,11 @@ function ResourceBar({ value, gradient, color }: { value: number; gradient: stri
             borderRadius: 3,
             background: gradient,
             transition: 'width 0.6s cubic-bezier(0.4,0,0.2,1)',
-            boxShadow: w > 50 ? `0 0 8px ${color}40` : 'none',
+            boxShadow: w > 50 ? `0 0 6px ${color}40` : 'none',
           }}
         />
       </div>
-      <span
-        style={{
-          fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-          fontSize: 11,
-          fontWeight: 600,
-          color,
-          minWidth: 42,
-          textAlign: 'right',
-        }}
-      >
+      <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 600, color, minWidth: 42, textAlign: 'right' }}>
         {value.toFixed(1)}%
       </span>
     </div>
@@ -163,44 +215,27 @@ function ResourceBar({ value, gradient, color }: { value: number; gradient: stri
 
 /* ─── Sort header ────────────────────────────────────────────────────── */
 
-function SortableHeader({
-  label,
-  field,
-  sortField,
-  sortDir,
-  onClick,
-}: {
-  label: string;
-  field: SortField;
-  sortField: SortField;
-  sortDir: 'asc' | 'desc';
-  onClick: (f: SortField) => void;
+function SortableHeader({ label, field, sortField, sortDir, onClick, p }: {
+  label: string; field: SortField; sortField: SortField; sortDir: 'asc' | 'desc';
+  onClick: (f: SortField) => void; p: Palette;
 }) {
   const active = sortField === field;
   return (
     <button
       onClick={() => onClick(field)}
       style={{
-        background: 'none',
-        border: 'none',
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 3,
-        padding: 0,
-        color: active ? palette.accent : palette.textMuted,
-        fontWeight: active ? 700 : 600,
-        fontSize: 10,
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase',
-        fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+        background: 'none', border: 'none', cursor: 'pointer',
+        display: 'flex', alignItems: 'center', gap: 3, padding: 0,
+        color: active ? p.accent : p.textMuted,
+        fontWeight: active ? 700 : 600, fontSize: 10,
+        letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: mono,
         transition: 'color 0.2s',
       }}
     >
       {label}
       <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 0, marginTop: -1 }}>
-        <CaretUpFilled style={{ fontSize: 8, color: active && sortDir === 'asc' ? palette.accent : palette.textDim }} />
-        <CaretDownFilled style={{ fontSize: 8, color: active && sortDir === 'desc' ? palette.accent : palette.textDim, marginTop: -2 }} />
+        <CaretUpFilled style={{ fontSize: 8, color: active && sortDir === 'asc' ? p.accent : p.textDim }} />
+        <CaretDownFilled style={{ fontSize: 8, color: active && sortDir === 'desc' ? p.accent : p.textDim, marginTop: -2 }} />
       </span>
     </button>
   );
@@ -208,49 +243,34 @@ function SortableHeader({
 
 /* ─── Stat card ──────────────────────────────────────────────────────── */
 
-function StatCard({ icon, label, value, sub, color }: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  sub?: string;
-  color: string;
+function StatCard({ icon, label, value, color, p }: {
+  icon: React.ReactNode; label: string; value: string; color: string; p: Palette;
 }) {
   return (
     <div
       style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        padding: '10px 14px',
-        borderRadius: 8,
-        background: `${color}08`,
-        border: `1px solid ${color}20`,
-        minWidth: 140,
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: '10px 14px', borderRadius: 8, minWidth: 140,
+        background: `${color}0A`, border: `1px solid ${color}20`,
       }}
     >
       <div
         style={{
-          width: 32,
-          height: 32,
-          borderRadius: 8,
-          background: `${color}15`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color,
-          fontSize: 14,
+          width: 32, height: 32, borderRadius: 8,
+          background: `${color}18`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color, fontSize: 14,
         }}
       >
         {icon}
       </div>
       <div>
-        <div style={{ fontSize: 10, color: palette.textMuted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+        <div style={{ fontSize: 10, color: p.textMuted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
           {label}
         </div>
-        <div style={{ fontSize: 16, fontWeight: 700, color: palette.text, fontFamily: '"JetBrains Mono", "Fira Code", monospace' }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: p.text, fontFamily: mono }}>
           {value}
         </div>
-        {sub && <div style={{ fontSize: 10, color: palette.textDim }}>{sub}</div>}
       </div>
     </div>
   );
@@ -259,6 +279,10 @@ function StatCard({ icon, label, value, sub, color }: {
 /* ═══ MAIN COMPONENT ═════════════════════════════════════════════════ */
 
 export default function ProcessTable({ processes, onRefresh }: Props) {
+  const { mode } = useThemeStore();
+  const isDark = mode === 'dark';
+  const p = isDark ? darkPalette : lightPalette;
+
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState<SortField>('cpu');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -280,10 +304,10 @@ export default function ProcessTable({ processes, onRefresh }: Props) {
   const handleKill = useCallback(async (pid: number) => {
     try {
       await api.post('/monitor/processes/kill', { pid });
-      message.success(`Process ${pid} killed`);
+      message.success(`Process ${pid} terminated`);
       onRefresh?.();
     } catch {
-      message.error(`Failed to kill process ${pid}`);
+      message.error(`Failed to terminate process ${pid}`);
     }
   }, [onRefresh]);
 
@@ -293,11 +317,11 @@ export default function ProcessTable({ processes, onRefresh }: Props) {
     if (search.trim()) {
       const q = search.toLowerCase();
       data = data.filter(
-        (p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.command.toLowerCase().includes(q) ||
-          p.user.toLowerCase().includes(q) ||
-          String(p.pid).includes(q),
+        (proc) =>
+          proc.name.toLowerCase().includes(q) ||
+          proc.command.toLowerCase().includes(q) ||
+          proc.user.toLowerCase().includes(q) ||
+          String(proc.pid).includes(q),
       );
     }
     data = [...data].sort((a, b) => {
@@ -315,62 +339,45 @@ export default function ProcessTable({ processes, onRefresh }: Props) {
   const pageData = filtered.slice(safePage * pageSize, (safePage + 1) * pageSize);
 
   /* ─── Aggregate stats ─── */
-  const totalCpu = processes.reduce((s, p) => s + p.cpu, 0);
-  const totalMem = processes.reduce((s, p) => s + p.memory, 0);
-  const zombieCount = processes.filter((p) => p.status === 'Z' || p.status === 'zombie').length;
+  const totalCpu = processes.reduce((s, proc) => s + proc.cpu, 0);
+  const totalMem = processes.reduce((s, proc) => s + proc.memory, 0);
+  const zombieCount = processes.filter((proc) => proc.status === 'Z' || proc.status === 'zombie').length;
+
+  const colHeaderStyle: React.CSSProperties = {
+    fontSize: 10, color: p.textDim, fontWeight: 600,
+    textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: mono,
+  };
 
   return (
     <div
       style={{
-        background: palette.card,
-        borderRadius: 12,
-        border: `1px solid ${palette.cardBorder}`,
-        overflow: 'hidden',
-        marginBottom: 16,
+        background: p.card, borderRadius: 12,
+        border: `1px solid ${p.cardBorder}`,
+        overflow: 'hidden', marginBottom: 16,
+        boxShadow: isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.06)',
       }}
     >
       {/* ── Header ──────────────────────────────────────────────── */}
-      <div
-        style={{
-          background: palette.headerBg,
-          borderBottom: `1px solid ${palette.cardBorder}`,
-          padding: '16px 20px',
-        }}
-      >
+      <div style={{ background: p.headerBg, borderBottom: `1px solid ${p.cardBorder}`, padding: '16px 20px' }}>
         {/* Title row */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div
               style={{
-                width: 8,
-                height: 8,
-                borderRadius: '50%',
-                background: palette.green,
-                boxShadow: `0 0 8px ${palette.green}60`,
-                animation: 'pulse-dot 2s ease-in-out infinite',
+                width: 8, height: 8, borderRadius: '50%',
+                background: p.green,
+                boxShadow: `0 0 8px ${p.green}60`,
+                animation: 'ptPulse 2s ease-in-out infinite',
               }}
             />
-            <span
-              style={{
-                fontSize: 15,
-                fontWeight: 700,
-                color: palette.text,
-                letterSpacing: '-0.01em',
-              }}
-            >
+            <span style={{ fontSize: 15, fontWeight: 700, color: p.text, letterSpacing: '-0.01em' }}>
               Processes
             </span>
             <Tag
               style={{
-                background: 'rgba(56,189,248,0.1)',
-                border: '1px solid rgba(56,189,248,0.2)',
-                color: palette.accent,
-                fontSize: 11,
-                fontWeight: 700,
-                fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                borderRadius: 6,
-                padding: '0 8px',
-                lineHeight: '22px',
+                background: `${p.accent}12`, border: `1px solid ${p.accent}30`,
+                color: p.accent, fontSize: 11, fontWeight: 700, fontFamily: mono,
+                borderRadius: 6, padding: '0 8px', lineHeight: '22px',
               }}
             >
               {processes.length}
@@ -378,69 +385,37 @@ export default function ProcessTable({ processes, onRefresh }: Props) {
             {zombieCount > 0 && (
               <Tag
                 style={{
-                  background: 'rgba(248,113,113,0.12)',
-                  border: '1px solid rgba(248,113,113,0.25)',
-                  color: palette.red,
-                  fontSize: 10,
-                  fontWeight: 700,
-                  borderRadius: 6,
-                  padding: '0 6px',
-                  lineHeight: '20px',
+                  background: `${p.red}15`, border: `1px solid ${p.red}30`,
+                  color: p.red, fontSize: 10, fontWeight: 700,
+                  borderRadius: 6, padding: '0 6px', lineHeight: '20px',
                 }}
               >
                 {zombieCount} zombie
               </Tag>
             )}
           </div>
-
-          {/* Search */}
           <Input
-            prefix={<SearchOutlined style={{ color: palette.textDim }} />}
+            prefix={<SearchOutlined style={{ color: p.textDim }} />}
             placeholder="Filter processes..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(0); }}
             allowClear
             size="small"
             style={{
-              width: 220,
-              background: 'rgba(15,23,42,0.6)',
-              borderColor: palette.cardBorder,
-              borderRadius: 8,
-              color: palette.text,
-              fontSize: 12,
+              width: 220, background: p.inputBg,
+              borderColor: p.cardBorder, borderRadius: 8,
+              color: p.text, fontSize: 12,
             }}
-            styles={{
-              input: { background: 'transparent', color: palette.text },
-            }}
+            styles={{ input: { background: 'transparent', color: p.text } }}
           />
         </div>
 
         {/* Stats ribbon */}
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          <StatCard
-            icon={<ThunderboltOutlined />}
-            label="Total CPU"
-            value={`${totalCpu.toFixed(1)}%`}
-            color={palette.accent}
-          />
-          <StatCard
-            icon="▧"
-            label="Total MEM"
-            value={`${totalMem.toFixed(1)}%`}
-            color={palette.purple}
-          />
-          <StatCard
-            icon={<UserOutlined />}
-            label="Users"
-            value={String(new Set(processes.map((p) => p.user)).size)}
-            color={palette.green}
-          />
-          <StatCard
-            icon={<CodeOutlined />}
-            label="Threads"
-            value={String(processes.reduce((s, p) => s + (p.threads || 0), 0))}
-            color={palette.cyan}
-          />
+          <StatCard icon={<ThunderboltOutlined />} label="Total CPU" value={`${totalCpu.toFixed(1)}%`} color={p.accent} p={p} />
+          <StatCard icon="▧" label="Total MEM" value={`${totalMem.toFixed(1)}%`} color={p.purple} p={p} />
+          <StatCard icon={<UserOutlined />} label="Users" value={String(new Set(processes.map((proc) => proc.user)).size)} color={p.green} p={p} />
+          <StatCard icon={<CodeOutlined />} label="Threads" value={String(processes.reduce((s, proc) => s + (proc.threads || 0), 0))} color={p.cyan} p={p} />
         </div>
       </div>
 
@@ -449,38 +424,34 @@ export default function ProcessTable({ processes, onRefresh }: Props) {
         style={{
           display: 'grid',
           gridTemplateColumns: '60px 50px 1fr 160px 160px 90px 70px 40px',
-          gap: 0,
           padding: '8px 16px',
-          borderBottom: `1px solid ${palette.cardBorder}`,
-          background: 'rgba(15,23,42,0.3)',
+          borderBottom: `1px solid ${p.cardBorder}`,
+          background: p.colHeaderBg,
         }}
       >
-        <SortableHeader label="PID" field="pid" sortField={sortField} sortDir={sortDir} onClick={handleSort} />
-        <span style={{ fontSize: 10, color: palette.textDim, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: '"JetBrains Mono", "Fira Code", monospace' }}>
-          ST
-        </span>
-        <SortableHeader label="Name" field="name" sortField={sortField} sortDir={sortDir} onClick={handleSort} />
-        <SortableHeader label="CPU" field="cpu" sortField={sortField} sortDir={sortDir} onClick={handleSort} />
-        <SortableHeader label="Memory" field="memory" sortField={sortField} sortDir={sortDir} onClick={handleSort} />
-        <span style={{ fontSize: 10, color: palette.textDim, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: '"JetBrains Mono", "Fira Code", monospace' }}>
-          User
-        </span>
-        <SortableHeader label="THR" field="threads" sortField={sortField} sortDir={sortDir} onClick={handleSort} />
+        <SortableHeader label="PID" field="pid" sortField={sortField} sortDir={sortDir} onClick={handleSort} p={p} />
+        <span style={colHeaderStyle}>ST</span>
+        <SortableHeader label="Name" field="name" sortField={sortField} sortDir={sortDir} onClick={handleSort} p={p} />
+        <SortableHeader label="CPU" field="cpu" sortField={sortField} sortDir={sortDir} onClick={handleSort} p={p} />
+        <SortableHeader label="Memory" field="memory" sortField={sortField} sortDir={sortDir} onClick={handleSort} p={p} />
+        <span style={colHeaderStyle}>User</span>
+        <SortableHeader label="THR" field="threads" sortField={sortField} sortDir={sortDir} onClick={handleSort} p={p} />
         <span />
       </div>
 
       {/* ── Rows ────────────────────────────────────────────────── */}
       <div style={{ maxHeight: 520, overflowY: 'auto' }}>
         {pageData.length === 0 && (
-          <div style={{ padding: 40, textAlign: 'center', color: palette.textDim, fontSize: 13 }}>
+          <div style={{ padding: 40, textAlign: 'center', color: p.textDim, fontSize: 13 }}>
             No processes match your filter
           </div>
         )}
         {pageData.map((proc, idx) => {
-          const st = statusLabel(proc.status);
-          const uc = getUserColor(proc.user);
+          const st = statusLabel(proc.status, p);
+          const uc = getUserColor(proc.user, isDark);
           const isExpanded = expandedPid === proc.pid;
           const isOdd = idx % 2 === 1;
+          const rowBg = isOdd ? p.rowAlt : 'transparent';
 
           return (
             <div key={proc.pid}>
@@ -489,159 +460,115 @@ export default function ProcessTable({ processes, onRefresh }: Props) {
                 style={{
                   display: 'grid',
                   gridTemplateColumns: '60px 50px 1fr 160px 160px 90px 70px 40px',
-                  gap: 0,
-                  padding: '7px 16px',
-                  alignItems: 'center',
-                  cursor: 'pointer',
-                  background: isOdd ? palette.rowAlt : 'transparent',
-                  borderBottom: `1px solid rgba(30,41,59,0.4)`,
+                  padding: '7px 16px', alignItems: 'center',
+                  cursor: 'pointer', background: rowBg,
+                  borderBottom: `1px solid ${isDark ? 'rgba(30,41,59,0.4)' : '#F1F5F9'}`,
                   transition: 'background 0.15s',
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = palette.rowHover; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = isOdd ? palette.rowAlt : 'transparent'; }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = p.rowHover; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = rowBg; }}
               >
-                {/* PID */}
-                <span
-                  style={{
-                    fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                    fontSize: 11,
-                    color: palette.textMuted,
-                    fontWeight: 500,
-                  }}
-                >
+                <span style={{ fontFamily: mono, fontSize: 11, color: p.textMuted, fontWeight: 500 }}>
                   {proc.pid}
                 </span>
 
-                {/* Status */}
                 <span
                   style={{
-                    fontSize: 9,
-                    fontWeight: 800,
-                    fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                    color: st.color,
-                    background: `${st.color}15`,
-                    padding: '2px 5px',
-                    borderRadius: 4,
+                    fontSize: 9, fontWeight: 800, fontFamily: mono,
+                    color: st.color, background: `${st.color}15`,
+                    padding: '2px 5px', borderRadius: 4,
                     border: `1px solid ${st.color}30`,
-                    textAlign: 'center',
-                    width: 'fit-content',
+                    textAlign: 'center', width: 'fit-content',
                   }}
                 >
                   {st.label}
                 </span>
 
-                {/* Name */}
                 <Tooltip title={proc.command || proc.name} placement="topLeft">
                   <span
                     style={{
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: palette.text,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      paddingRight: 8,
+                      fontSize: 12, fontWeight: 600, color: p.text,
+                      overflow: 'hidden', textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap', paddingRight: 8,
                     }}
                   >
                     {proc.name || '—'}
                   </span>
                 </Tooltip>
 
-                {/* CPU bar */}
-                <ResourceBar value={proc.cpu} gradient={cpuGradient(proc.cpu)} color={cpuColor(proc.cpu)} />
+                <ResourceBar
+                  value={proc.cpu}
+                  gradient={cpuGradient(proc.cpu, isDark)}
+                  color={cpuColor(proc.cpu, p)}
+                  trackColor={p.barTrack}
+                />
 
-                {/* MEM bar */}
-                <ResourceBar value={proc.memory} gradient={memGradient(proc.memory)} color={memColor(proc.memory)} />
+                <ResourceBar
+                  value={proc.memory}
+                  gradient={memGradient(proc.memory, isDark)}
+                  color={memColor(proc.memory, p)}
+                  trackColor={p.barTrack}
+                />
 
-                {/* User badge */}
                 <span
                   style={{
-                    fontSize: 10,
-                    fontWeight: 600,
-                    color: uc.text,
-                    background: uc.bg,
-                    border: `1px solid ${uc.border}`,
-                    borderRadius: 5,
-                    padding: '2px 7px',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    maxWidth: 80,
-                    display: 'inline-block',
+                    fontSize: 10, fontWeight: 600,
+                    color: uc.text, background: uc.bg,
+                    border: `1px solid ${uc.border}`, borderRadius: 5,
+                    padding: '2px 7px', whiteSpace: 'nowrap',
+                    overflow: 'hidden', textOverflow: 'ellipsis',
+                    maxWidth: 80, display: 'inline-block',
                   }}
                 >
                   {proc.user || '—'}
                 </span>
 
-                {/* Threads */}
-                <span
-                  style={{
-                    fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                    fontSize: 11,
-                    color: palette.textDim,
-                    textAlign: 'center',
-                  }}
-                >
+                <span style={{ fontFamily: mono, fontSize: 11, color: p.textDim, textAlign: 'center' }}>
                   {proc.threads || '—'}
                 </span>
 
-                {/* Kill */}
                 <Popconfirm
-                  title={`Kill process ${proc.pid}?`}
+                  title={`Terminate process ${proc.pid}?`}
                   description={`${proc.name} (${proc.user})`}
                   onConfirm={(e) => { e?.stopPropagation(); handleKill(proc.pid); }}
                   onCancel={(e) => e?.stopPropagation()}
-                  okText="Kill"
+                  okText="Terminate"
                   cancelText="Cancel"
                   okButtonProps={{ danger: true, size: 'small' }}
                 >
                   <button
                     onClick={(e) => e.stopPropagation()}
                     style={{
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      color: palette.textDim,
-                      fontSize: 14,
-                      padding: 4,
-                      borderRadius: 4,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      color: p.textDim, fontSize: 14, padding: 4, borderRadius: 4,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
                       transition: 'color 0.2s, background 0.2s',
                     }}
-                    onMouseEnter={(e) => { e.currentTarget.style.color = palette.red; e.currentTarget.style.background = 'rgba(248,113,113,0.1)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.color = palette.textDim; e.currentTarget.style.background = 'none'; }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = p.red; e.currentTarget.style.background = `${p.red}15`; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = p.textDim; e.currentTarget.style.background = 'none'; }}
                   >
                     <CloseCircleOutlined />
                   </button>
                 </Popconfirm>
               </div>
 
-              {/* Expanded command row */}
               {isExpanded && (
                 <div
                   style={{
                     padding: '8px 16px 8px 76px',
-                    background: 'rgba(15,23,42,0.6)',
-                    borderBottom: `1px solid ${palette.cardBorder}`,
+                    background: p.expandBg,
+                    borderBottom: `1px solid ${p.cardBorder}`,
                   }}
                 >
-                  <div style={{ fontSize: 10, color: palette.textDim, marginBottom: 3, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <div style={{ fontSize: 10, color: p.textDim, marginBottom: 3, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Full Command
                   </div>
                   <code
                     style={{
-                      fontSize: 11,
-                      color: palette.accent,
-                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                      wordBreak: 'break-all',
-                      lineHeight: 1.5,
-                      display: 'block',
-                      background: 'rgba(0,0,0,0.3)',
-                      padding: '6px 10px',
-                      borderRadius: 6,
-                      border: `1px solid ${palette.cardBorder}`,
+                      fontSize: 11, color: p.accent, fontFamily: mono,
+                      wordBreak: 'break-all', lineHeight: 1.5, display: 'block',
+                      background: p.codeBg, padding: '6px 10px',
+                      borderRadius: 6, border: `1px solid ${p.cardBorder}`,
                     }}
                   >
                     {proc.command || proc.name}
@@ -656,15 +583,12 @@ export default function ProcessTable({ processes, onRefresh }: Props) {
       {/* ── Footer / pagination ─────────────────────────────────── */}
       <div
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '10px 16px',
-          borderTop: `1px solid ${palette.cardBorder}`,
-          background: palette.headerBg,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '10px 16px', borderTop: `1px solid ${p.cardBorder}`,
+          background: p.headerBg,
         }}
       >
-        <span style={{ fontSize: 11, color: palette.textDim }}>
+        <span style={{ fontSize: 11, color: p.textDim }}>
           {filtered.length === processes.length
             ? `${processes.length} processes`
             : `${filtered.length} of ${processes.length} processes`}
@@ -674,31 +598,21 @@ export default function ProcessTable({ processes, onRefresh }: Props) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
               let pageIdx: number;
-              if (totalPages <= 7) {
-                pageIdx = i;
-              } else if (safePage < 4) {
-                pageIdx = i;
-              } else if (safePage > totalPages - 5) {
-                pageIdx = totalPages - 7 + i;
-              } else {
-                pageIdx = safePage - 3 + i;
-              }
+              if (totalPages <= 7) pageIdx = i;
+              else if (safePage < 4) pageIdx = i;
+              else if (safePage > totalPages - 5) pageIdx = totalPages - 7 + i;
+              else pageIdx = safePage - 3 + i;
               return (
                 <button
                   key={pageIdx}
                   onClick={() => setPage(pageIdx)}
                   style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: 6,
-                    border: pageIdx === safePage ? `1px solid ${palette.accent}40` : '1px solid transparent',
-                    background: pageIdx === safePage ? `${palette.accent}15` : 'transparent',
-                    color: pageIdx === safePage ? palette.accent : palette.textDim,
-                    fontSize: 11,
-                    fontWeight: pageIdx === safePage ? 700 : 500,
-                    cursor: 'pointer',
-                    fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                    transition: 'all 0.15s',
+                    width: 28, height: 28, borderRadius: 6,
+                    border: pageIdx === safePage ? `1px solid ${p.accent}40` : '1px solid transparent',
+                    background: pageIdx === safePage ? `${p.accent}15` : 'transparent',
+                    color: pageIdx === safePage ? p.accent : p.textDim,
+                    fontSize: 11, fontWeight: pageIdx === safePage ? 700 : 500,
+                    cursor: 'pointer', fontFamily: mono, transition: 'all 0.15s',
                   }}
                 >
                   {pageIdx + 1}
@@ -709,11 +623,10 @@ export default function ProcessTable({ processes, onRefresh }: Props) {
         )}
       </div>
 
-      {/* Keyframe for pulse dot */}
       <style>{`
-        @keyframes pulse-dot {
-          0%, 100% { opacity: 1; box-shadow: 0 0 8px ${palette.green}60; }
-          50% { opacity: 0.5; box-shadow: 0 0 4px ${palette.green}30; }
+        @keyframes ptPulse {
+          0%, 100% { opacity: 1; box-shadow: 0 0 8px ${p.green}60; }
+          50% { opacity: 0.5; box-shadow: 0 0 4px ${p.green}30; }
         }
       `}</style>
     </div>
