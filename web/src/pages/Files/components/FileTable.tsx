@@ -230,7 +230,7 @@ export default function FileTable({
                 <span style={{ flexShrink: 0, fontSize: 16 }}>{getFileIcon(file)}</span>
                 <span
                   style={{
-                    fontSize: 12, fontWeight: file.is_dir ? 600 : 400,
+                    fontSize: 12, fontWeight: 400,
                     color: file.is_dir ? p.text : p.textMuted,
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}
