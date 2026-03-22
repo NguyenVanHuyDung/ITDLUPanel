@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { DatePicker, Switch, Tooltip, Spin, InputNumber, message, Collapse, Popconfirm } from 'antd';
+import { Col, Row, DatePicker, Switch, Tooltip, Spin, InputNumber, message, Collapse, Popconfirm, Modal } from 'antd';
 import {
   HistoryOutlined,
   SettingOutlined,
@@ -7,6 +7,8 @@ import {
   DatabaseOutlined,
   ClockCircleOutlined,
   DeleteOutlined,
+  FullscreenOutlined,
+  FullscreenExitOutlined,
 } from '@ant-design/icons';
 import {
   AreaChart,
@@ -21,7 +23,6 @@ import {
 } from 'recharts';
 import dayjs from 'dayjs';
 import api from '@/services/api';
-import { useThemeStore } from '@/stores/theme';
 
 const { RangePicker } = DatePicker;
 
@@ -65,104 +66,314 @@ interface HistoryResponse {
 }
 
 type TimeRange = '1d' | '7d' | '30d' | 'custom';
+type HistChartKey = 'cpu' | 'memory' | 'load' | 'disk' | 'diskIO' | 'networkIO' | 'swap';
 
 // ---------------------------------------------------------------------------
-// Palette system (light / dark)
+// Reuse the exact same style constants from the realtime charts (index.tsx)
 // ---------------------------------------------------------------------------
-interface Palette {
-  bg: string;
-  cardBg: string;
-  cardBorder: string;
-  headerBg: string;
-  text: string;
-  textSecondary: string;
-  textMuted: string;
-  accent: string;
-  accentFaded: string;
-  controlBg: string;
-  controlBorder: string;
-  controlHover: string;
-  activeTabBg: string;
-  activeTabText: string;
-  inactiveTabBg: string;
-  inactiveTabText: string;
-  chartGrid: string;
-  chartTick: string;
-  tooltipBg: string;
-  tooltipBorder: string;
-  divider: string;
-  tagBg: string;
-  tagText: string;
-  emptyText: string;
+const CHART_HEIGHT = 220;
+
+const colors = {
+  primary: '#1565C0',
+  lightBlue: '#1E88E5',
+  accent: '#0288D1',
+  success: '#4CAF50',
+  warning: '#FF9800',
+  purple: '#7E57C2',
+  read: '#4CAF50',
+  write: '#FF9800',
+  upstream: '#1E88E5',
+  downstream: '#4CAF50',
+};
+
+const cardStyle: React.CSSProperties = {
+  background: '#fff',
+  borderRadius: 8,
+  border: '1px solid #E8EDF2',
+  padding: 0,
+  overflow: 'hidden',
+};
+
+const cardHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  padding: '12px 16px 4px',
+};
+
+const cardTitleStyle: React.CSSProperties = {
+  fontWeight: 600,
+  fontSize: 14,
+  color: '#1A1A2E',
+  margin: 0,
+};
+
+const legendDotStyle = (color: string): React.CSSProperties => ({
+  display: 'inline-block',
+  width: 8,
+  height: 8,
+  borderRadius: '50%',
+  background: color,
+  marginRight: 4,
+});
+
+const axisProps = {
+  tick: { fontSize: 11, fill: '#94A3B8' },
+  axisLine: { stroke: '#E2E8F0' },
+  tickLine: false,
+};
+
+const gridProps = {
+  strokeDasharray: '3 3' as const,
+  stroke: '#F1F5F9',
+  vertical: false,
+};
+
+const controlBarStyle: React.CSSProperties = {
+  background: 'linear-gradient(135deg, #FFF8E1 0%, #FFECB3 100%)',
+  borderRadius: 8,
+  padding: '12px 20px',
+  marginBottom: 16,
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 16,
+  alignItems: 'center',
+  border: '1px solid #FFE082',
+};
+
+// ---------------------------------------------------------------------------
+// Sub-components — same MonitorCard pattern as realtime charts
+// ---------------------------------------------------------------------------
+
+function ChartTooltipContent({ active, payload, label, unit = '%' }: {
+  active?: boolean;
+  payload?: Array<{ name: string; value: number; color: string }>;
+  label?: string;
+  unit?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{
+      background: '#fff',
+      border: '1px solid #E8EDF2',
+      borderRadius: 6,
+      padding: '8px 12px',
+      fontSize: 12,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+    }}>
+      <div style={{ color: '#64748B', marginBottom: 4 }}>{label}</div>
+      {payload.map((p) => (
+        <div key={p.name} style={{ color: p.color, display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+          <span>{p.name}</span>
+          <span style={{ fontWeight: 600 }}>{p.value?.toFixed(2)}{unit}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
-const lightPalette: Palette = {
-  bg: 'transparent',
-  cardBg: '#FFFFFF',
-  cardBorder: '#E2E8F0',
-  headerBg: 'linear-gradient(135deg, #FFF8E1 0%, #FFECB3 100%)',
-  text: '#1A1A2E',
-  textSecondary: '#475569',
-  textMuted: '#94A3B8',
-  accent: '#D97706',
-  accentFaded: 'rgba(217, 119, 6, 0.08)',
-  controlBg: '#F8FAFC',
-  controlBorder: '#E2E8F0',
-  controlHover: '#F1F5F9',
-  activeTabBg: '#D97706',
-  activeTabText: '#FFFFFF',
-  inactiveTabBg: '#F1F5F9',
-  inactiveTabText: '#64748B',
-  chartGrid: '#F1F5F9',
-  chartTick: '#94A3B8',
-  tooltipBg: '#FFFFFF',
-  tooltipBorder: '#E2E8F0',
-  divider: '#E2E8F0',
-  tagBg: '#FEF3C7',
-  tagText: '#92400E',
-  emptyText: '#94A3B8',
-};
+interface HistCardProps {
+  title: string;
+  chartKey: HistChartKey;
+  onFullscreen: (key: HistChartKey) => void;
+  legend?: { color: string; label: string }[];
+  children: React.ReactNode;
+}
 
-const darkPalette: Palette = {
-  bg: 'transparent',
-  cardBg: '#1E293B',
-  cardBorder: '#334155',
-  headerBg: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
-  text: '#F1F5F9',
-  textSecondary: '#CBD5E1',
-  textMuted: '#64748B',
-  accent: '#F59E0B',
-  accentFaded: 'rgba(245, 158, 11, 0.12)',
-  controlBg: '#0F172A',
-  controlBorder: '#334155',
-  controlHover: '#1E293B',
-  activeTabBg: '#F59E0B',
-  activeTabText: '#0F172A',
-  inactiveTabBg: '#1E293B',
-  inactiveTabText: '#94A3B8',
-  chartGrid: '#1E293B',
-  chartTick: '#64748B',
-  tooltipBg: '#1E293B',
-  tooltipBorder: '#334155',
-  divider: '#334155',
-  tagBg: 'rgba(245, 158, 11, 0.15)',
-  tagText: '#F59E0B',
-  emptyText: '#475569',
-};
+function HistCard({ title, chartKey, onFullscreen, legend, children }: HistCardProps) {
+  return (
+    <div style={cardStyle}>
+      <div style={cardHeaderStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={cardTitleStyle}>{title}</span>
+          {legend && (
+            <span style={{ display: 'flex', gap: 10, marginLeft: 4 }}>
+              {legend.map((l) => (
+                <span key={l.label} style={{ fontSize: 11, color: '#64748B', display: 'flex', alignItems: 'center' }}>
+                  <span style={legendDotStyle(l.color)} />
+                  {l.label}
+                </span>
+              ))}
+            </span>
+          )}
+        </div>
+        <Tooltip title="Fullscreen">
+          <FullscreenOutlined
+            style={{ fontSize: 15, color: '#64748B', cursor: 'pointer' }}
+            onClick={() => onFullscreen(chartKey)}
+          />
+        </Tooltip>
+      </div>
+      <div style={{ padding: '4px 8px 12px' }}>{children}</div>
+    </div>
+  );
+}
 
-// Chart colors
-const chartColors = {
-  cpu: '#E67E22',
-  memory: '#2980B9',
-  swap: '#8E44AD',
-  disk: '#27AE60',
-  diskRead: '#3498DB',
-  diskWrite: '#E74C3C',
-  netSent: '#E67E22',
-  netRecv: '#2ECC71',
-  load1: '#E74C3C',
-  load5: '#F39C12',
-  load15: '#3498DB',
+// ---------------------------------------------------------------------------
+// Chart renderers — identical to realtime charts (same gradients, strokes, etc.)
+// ---------------------------------------------------------------------------
+
+interface ChartDataPoint {
+  time: string;
+  cpu: number;
+  memory: number;
+  swap: number;
+  disk: number;
+  diskRead: number;
+  diskWrite: number;
+  netSent: number;
+  netRecv: number;
+  load1: number;
+  load5: number;
+  load15: number;
+}
+
+function HistCpuChart({ data, height = CHART_HEIGHT }: { data: ChartDataPoint[]; height?: number }) {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <AreaChart data={data} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+        <defs>
+          <linearGradient id="histCpuGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={colors.primary} stopOpacity={0.3} />
+            <stop offset="95%" stopColor={colors.primary} stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid {...gridProps} />
+        <XAxis dataKey="time" {...axisProps} />
+        <YAxis domain={[0, 100]} {...axisProps} tickFormatter={(v: number) => `${v}%`} />
+        <RTooltip content={<ChartTooltipContent unit="%" />} />
+        <Area type="monotone" dataKey="cpu" name="CPU" stroke={colors.primary} fill="url(#histCpuGrad)" strokeWidth={2} dot={false} isAnimationActive={false} />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+function HistMemoryChart({ data, height = CHART_HEIGHT }: { data: ChartDataPoint[]; height?: number }) {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <AreaChart data={data} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+        <defs>
+          <linearGradient id="histMemGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={colors.accent} stopOpacity={0.3} />
+            <stop offset="95%" stopColor={colors.accent} stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid {...gridProps} />
+        <XAxis dataKey="time" {...axisProps} />
+        <YAxis domain={[0, 100]} {...axisProps} tickFormatter={(v: number) => `${v}%`} />
+        <RTooltip content={<ChartTooltipContent unit="%" />} />
+        <Area type="monotone" dataKey="memory" name="Memory" stroke={colors.accent} fill="url(#histMemGrad)" strokeWidth={2} dot={false} isAnimationActive={false} />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+function HistLoadChart({ data, height = CHART_HEIGHT }: { data: ChartDataPoint[]; height?: number }) {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <LineChart data={data} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+        <CartesianGrid {...gridProps} />
+        <XAxis dataKey="time" {...axisProps} />
+        <YAxis {...axisProps} />
+        <RTooltip content={<ChartTooltipContent unit="" />} />
+        <Line type="monotone" dataKey="load1" name="1 min" stroke={colors.lightBlue} strokeWidth={2} dot={false} isAnimationActive={false} />
+        <Line type="monotone" dataKey="load5" name="5 min" stroke={colors.success} strokeWidth={2} dot={false} isAnimationActive={false} />
+        <Line type="monotone" dataKey="load15" name="15 min" stroke={colors.purple} strokeWidth={2} dot={false} isAnimationActive={false} />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+function HistDiskChart({ data, height = CHART_HEIGHT }: { data: ChartDataPoint[]; height?: number }) {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <AreaChart data={data} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+        <defs>
+          <linearGradient id="histDiskGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={colors.success} stopOpacity={0.3} />
+            <stop offset="95%" stopColor={colors.success} stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid {...gridProps} />
+        <XAxis dataKey="time" {...axisProps} />
+        <YAxis domain={[0, 100]} {...axisProps} tickFormatter={(v: number) => `${v}%`} />
+        <RTooltip content={<ChartTooltipContent unit="%" />} />
+        <Area type="monotone" dataKey="disk" name="Disk" stroke={colors.success} fill="url(#histDiskGrad)" strokeWidth={2} dot={false} isAnimationActive={false} />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+function HistDiskIOChart({ data, height = CHART_HEIGHT }: { data: ChartDataPoint[]; height?: number }) {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <LineChart data={data} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+        <CartesianGrid {...gridProps} />
+        <XAxis dataKey="time" {...axisProps} />
+        <YAxis {...axisProps} tickFormatter={(v: number) => `${v}`} />
+        <RTooltip content={<ChartTooltipContent unit=" KB/s" />} />
+        <Line type="monotone" dataKey="diskRead" name="Read" stroke={colors.read} strokeWidth={2} dot={false} isAnimationActive={false} />
+        <Line type="monotone" dataKey="diskWrite" name="Write" stroke={colors.write} strokeWidth={2} dot={false} isAnimationActive={false} />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+function HistNetworkIOChart({ data, height = CHART_HEIGHT }: { data: ChartDataPoint[]; height?: number }) {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <LineChart data={data} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+        <CartesianGrid {...gridProps} />
+        <XAxis dataKey="time" {...axisProps} />
+        <YAxis {...axisProps} tickFormatter={(v: number) => `${v}`} />
+        <RTooltip content={<ChartTooltipContent unit=" KB/s" />} />
+        <Line type="monotone" dataKey="netSent" name="Upstream" stroke={colors.upstream} strokeWidth={2} dot={false} isAnimationActive={false} />
+        <Line type="monotone" dataKey="netRecv" name="Downstream" stroke={colors.downstream} strokeWidth={2} dot={false} isAnimationActive={false} />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+function HistSwapChart({ data, height = CHART_HEIGHT }: { data: ChartDataPoint[]; height?: number }) {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <AreaChart data={data} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+        <defs>
+          <linearGradient id="histSwapGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={colors.warning} stopOpacity={0.25} />
+            <stop offset="95%" stopColor={colors.warning} stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid {...gridProps} />
+        <XAxis dataKey="time" {...axisProps} />
+        <YAxis domain={[0, 100]} {...axisProps} tickFormatter={(v: number) => `${v}%`} />
+        <RTooltip content={<ChartTooltipContent unit="%" />} />
+        <Area type="monotone" dataKey="swap" name="Swap" stroke={colors.warning} fill="url(#histSwapGrad)" strokeWidth={2} dot={false} isAnimationActive={false} />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+function renderHistChart(key: HistChartKey, data: ChartDataPoint[], height?: number) {
+  switch (key) {
+    case 'cpu': return <HistCpuChart data={data} height={height} />;
+    case 'memory': return <HistMemoryChart data={data} height={height} />;
+    case 'load': return <HistLoadChart data={data} height={height} />;
+    case 'disk': return <HistDiskChart data={data} height={height} />;
+    case 'diskIO': return <HistDiskIOChart data={data} height={height} />;
+    case 'networkIO': return <HistNetworkIOChart data={data} height={height} />;
+    case 'swap': return <HistSwapChart data={data} height={height} />;
+  }
+}
+
+const histChartTitles: Record<HistChartKey, string> = {
+  cpu: 'CPU Usage',
+  memory: 'Memory Usage',
+  load: 'Load Average',
+  disk: 'Disk Usage',
+  diskIO: 'Disk I/O',
+  networkIO: 'Network I/O',
+  swap: 'Swap Usage',
 };
 
 // ---------------------------------------------------------------------------
@@ -180,146 +391,9 @@ function fmtTimestamp(ts: string, range_: TimeRange): string {
 }
 
 // ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
-
-function ChartTooltip({ active, payload, label, unit = '%', p }: {
-  active?: boolean;
-  payload?: Array<{ name: string; value: number; color: string }>;
-  label?: string;
-  unit?: string;
-  p: Palette;
-}) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div style={{
-      background: p.tooltipBg,
-      border: `1px solid ${p.tooltipBorder}`,
-      borderRadius: 6,
-      padding: '8px 12px',
-      fontSize: 12,
-      fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-    }}>
-      <div style={{ color: p.textMuted, marginBottom: 4, fontSize: 11 }}>{label}</div>
-      {payload.map((entry) => (
-        <div key={entry.name} style={{ color: entry.color, display: 'flex', justifyContent: 'space-between', gap: 16 }}>
-          <span style={{ color: p.textSecondary }}>{entry.name}</span>
-          <span style={{ fontWeight: 600 }}>{entry.value?.toFixed(2)}{unit}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-interface HistChartProps {
-  title: string;
-  data: Array<Record<string, unknown>>;
-  lines: Array<{ key: string; name: string; color: string }>;
-  unit?: string;
-  domain?: [number, number];
-  p: Palette;
-  useArea?: boolean;
-}
-
-function HistChart({ title, data, lines, unit = '%', domain, p, useArea }: HistChartProps) {
-  const axisProps = {
-    tick: { fontSize: 10, fill: p.chartTick, fontFamily: "'JetBrains Mono', monospace" },
-    axisLine: { stroke: p.divider },
-    tickLine: false,
-  };
-
-  const ChartComponent = useArea ? AreaChart : LineChart;
-
-  return (
-    <div style={{
-      background: p.cardBg,
-      border: `1px solid ${p.cardBorder}`,
-      borderRadius: 8,
-      overflow: 'hidden',
-    }}>
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '10px 14px 6px',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{
-            fontSize: 13,
-            fontWeight: 600,
-            color: p.text,
-            letterSpacing: '-0.01em',
-          }}>{title}</span>
-        </div>
-        <div style={{ display: 'flex', gap: 10 }}>
-          {lines.map((l) => (
-            <span key={l.key} style={{ fontSize: 10, color: p.textMuted, display: 'flex', alignItems: 'center', gap: 3 }}>
-              <span style={{
-                width: 8, height: 3, borderRadius: 1,
-                background: l.color, display: 'inline-block',
-              }} />
-              {l.name}
-            </span>
-          ))}
-        </div>
-      </div>
-      <div style={{ padding: '0 4px 10px' }}>
-        <ResponsiveContainer width="100%" height={180}>
-          <ChartComponent data={data} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
-            <defs>
-              {useArea && lines.map((l) => (
-                <linearGradient key={l.key} id={`hist-grad-${l.key}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={l.color} stopOpacity={0.25} />
-                  <stop offset="95%" stopColor={l.color} stopOpacity={0.02} />
-                </linearGradient>
-              ))}
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke={p.chartGrid} vertical={false} />
-            <XAxis dataKey="time" {...axisProps} />
-            <YAxis domain={domain} {...axisProps} tickFormatter={(v: number) => unit === '%' ? `${v}%` : `${v}`} />
-            <RTooltip content={<ChartTooltip unit={unit} p={p} />} />
-            {lines.map((l) =>
-              useArea ? (
-                <Area
-                  key={l.key}
-                  type="monotone"
-                  dataKey={l.key}
-                  name={l.name}
-                  stroke={l.color}
-                  fill={`url(#hist-grad-${l.key})`}
-                  strokeWidth={1.5}
-                  dot={false}
-                  isAnimationActive={false}
-                />
-              ) : (
-                <Line
-                  key={l.key}
-                  type="monotone"
-                  dataKey={l.key}
-                  name={l.name}
-                  stroke={l.color}
-                  strokeWidth={1.5}
-                  dot={false}
-                  isAnimationActive={false}
-                />
-              )
-            )}
-          </ChartComponent>
-        </ResponsiveContainer>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
 export default function HistoricalMonitor() {
-  const { mode } = useThemeStore();
-  const isDark = mode === 'dark';
-  const p = isDark ? darkPalette : lightPalette;
-
   const [range_, setRange] = useState<TimeRange>('1d');
   const [customDates, setCustomDates] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
   const [data, setData] = useState<MetricRecord[]>([]);
@@ -329,15 +403,14 @@ export default function HistoricalMonitor() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [editSettings, setEditSettings] = useState<MonitorSettings | null>(null);
+  const [fullscreenChart, setFullscreenChart] = useState<HistChartKey | null>(null);
 
-  // Fetch settings on mount
   useEffect(() => {
     api.get('/monitor/settings').then((res) => {
       setSettings(res.data.data);
     }).catch(() => {});
   }, []);
 
-  // Fetch history
   const fetchHistory = useCallback(async () => {
     setLoading(true);
     try {
@@ -359,14 +432,10 @@ export default function HistoricalMonitor() {
     }
   }, [range_, customDates]);
 
-  useEffect(() => {
-    fetchHistory();
-  }, [fetchHistory]);
+  useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
-  // Transform data for charts
-  const chartData = useMemo(() => {
+  const chartData: ChartDataPoint[] = useMemo(() => {
     if (!data.length) return [];
-    // Calculate rates for network/disk I/O from cumulative counters
     return data.map((r, i) => {
       const prev = i > 0 ? data[i - 1] : null;
       let diskReadRate = 0, diskWriteRate = 0, netSentRate = 0, netRecvRate = 0;
@@ -396,7 +465,6 @@ export default function HistoricalMonitor() {
     });
   }, [data, range_]);
 
-  // Handle settings save
   const handleSaveSettings = async () => {
     if (!editSettings) return;
     setSavingSettings(true);
@@ -406,7 +474,6 @@ export default function HistoricalMonitor() {
       setEditSettings(null);
       setSettingsOpen(false);
       message.success('Monitor settings updated');
-      // Re-fetch data since monitoring state may have changed
       setTimeout(() => fetchHistory(), 1000);
     } catch {
       message.error('Failed to update settings');
@@ -452,136 +519,89 @@ export default function HistoricalMonitor() {
 
   return (
     <div style={{ marginBottom: 24 }}>
-      {/* Control bar */}
-      <div style={{
-        background: p.headerBg,
-        borderRadius: 10,
-        border: `1px solid ${isDark ? '#F59E0B22' : '#D9770622'}`,
-        padding: '12px 16px',
-        marginBottom: 16,
-        display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        gap: 12,
-      }}>
-        {/* Title */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: 8 }}>
-          <HistoryOutlined style={{ fontSize: 16, color: p.accent }} />
-          <span style={{
-            fontSize: 14,
-            fontWeight: 700,
-            color: p.text,
-            letterSpacing: '-0.02em',
-          }}>
-            Historical Data
-          </span>
-        </div>
-
-        {/* Divider */}
-        <div style={{ width: 1, height: 24, background: p.divider, margin: '0 4px' }} />
+      {/* Control bar — warm amber to visually separate from realtime blue bar */}
+      <div style={controlBarStyle}>
+        <HistoryOutlined style={{ fontSize: 15, color: '#E65100' }} />
+        <span style={{ fontSize: 13, fontWeight: 600, color: '#E65100', whiteSpace: 'nowrap' }}>
+          Historical Data
+        </span>
+        <span style={{ color: '#FFE082' }}>|</span>
 
         {/* Range tabs */}
-        <div style={{ display: 'flex', gap: 4 }}>
-          {rangeButtons.map((rb) => (
-            <button
-              key={rb.key}
-              onClick={() => setRange(rb.key)}
-              style={{
-                padding: '4px 12px',
-                borderRadius: 6,
-                border: 'none',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-                background: range_ === rb.key ? p.activeTabBg : p.inactiveTabBg,
-                color: range_ === rb.key ? p.activeTabText : p.inactiveTabText,
-                letterSpacing: '0.02em',
-              }}
-            >
-              {rb.label}
-            </button>
-          ))}
-        </div>
+        {rangeButtons.map((rb) => (
+          <span
+            key={rb.key}
+            onClick={() => setRange(rb.key)}
+            style={{
+              padding: '3px 10px',
+              borderRadius: 4,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              background: range_ === rb.key ? '#E65100' : 'rgba(255,255,255,0.6)',
+              color: range_ === rb.key ? '#FFF' : '#795548',
+              transition: 'all 0.15s',
+            }}
+          >
+            {rb.label}
+          </span>
+        ))}
 
-        {/* Custom date picker */}
         {range_ === 'custom' && (
           <RangePicker
             size="small"
             value={customDates}
             onChange={(dates) => {
-              if (dates && dates[0] && dates[1]) {
-                setCustomDates([dates[0], dates[1]]);
-              }
+              if (dates && dates[0] && dates[1]) setCustomDates([dates[0], dates[1]]);
             }}
-            style={{ maxWidth: 260 }}
+            style={{ maxWidth: 250 }}
           />
         )}
 
-        {/* Resolution tag */}
         {resolution && data.length > 0 && (
-          <span style={{
-            fontSize: 10,
-            fontWeight: 600,
-            padding: '2px 8px',
-            borderRadius: 4,
-            background: p.tagBg,
-            color: p.tagText,
-            letterSpacing: '0.05em',
-            textTransform: 'uppercase',
-            fontFamily: "'JetBrains Mono', monospace",
-          }}>
-            <ClockCircleOutlined style={{ marginRight: 3, fontSize: 9 }} />
+          <span style={{ fontSize: 11, color: '#795548', fontWeight: 500 }}>
+            <ClockCircleOutlined style={{ marginRight: 3 }} />
             {resolutionLabel} · {data.length} pts
           </span>
         )}
 
-        {/* Spacer */}
         <div style={{ flex: 1 }} />
 
-        {/* Monitoring toggle */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 12, color: p.textSecondary, fontWeight: 500 }}>
-            <DatabaseOutlined style={{ marginRight: 4 }} />
-            Collection
-          </span>
-          <Switch
-            size="small"
-            checked={settings?.enabled ?? false}
-            loading={savingSettings}
-            onChange={handleToggleMonitoring}
-          />
-        </div>
+        {/* Collection toggle */}
+        <span style={{ fontSize: 12, color: '#795548', fontWeight: 500 }}>
+          <DatabaseOutlined style={{ marginRight: 4 }} />Collection
+        </span>
+        <Switch
+          size="small"
+          checked={settings?.enabled ?? false}
+          loading={savingSettings}
+          onChange={handleToggleMonitoring}
+        />
 
-        {/* Refresh */}
+        <span style={{ color: '#FFE082' }}>|</span>
+
         <Tooltip title="Refresh">
           <ReloadOutlined
-            style={{ fontSize: 14, color: p.accent, cursor: 'pointer' }}
+            style={{ fontSize: 14, color: '#E65100', cursor: 'pointer' }}
             spin={loading}
             onClick={fetchHistory}
           />
         </Tooltip>
-
-        {/* Clean log */}
         <Popconfirm
           title="Clean all monitor logs?"
-          description="This will delete all historical data from all resolution tables."
+          description="This will delete all historical data."
           onConfirm={handleCleanLog}
           okText="Clean"
           okButtonProps={{ danger: true }}
           cancelText="Cancel"
         >
           <Tooltip title="Clean log">
-            <DeleteOutlined
-              style={{ fontSize: 14, color: p.textMuted, cursor: 'pointer' }}
-            />
+            <DeleteOutlined style={{ fontSize: 14, color: '#795548', cursor: 'pointer' }} />
           </Tooltip>
         </Popconfirm>
-
-        {/* Settings gear */}
         <Tooltip title="Collection settings">
           <SettingOutlined
-            style={{ fontSize: 14, color: p.textMuted, cursor: 'pointer' }}
+            style={{ fontSize: 14, color: '#795548', cursor: 'pointer' }}
             onClick={() => {
               setEditSettings(settings ? { ...settings } : null);
               setSettingsOpen(!settingsOpen);
@@ -590,93 +610,47 @@ export default function HistoricalMonitor() {
         </Tooltip>
       </div>
 
-      {/* Settings panel (collapsible) */}
+      {/* Settings panel */}
       {settingsOpen && editSettings && (
-        <div style={{
-          background: p.cardBg,
-          border: `1px solid ${p.cardBorder}`,
-          borderRadius: 8,
-          padding: '14px 18px',
-          marginBottom: 16,
-        }}>
+        <div style={{ ...cardStyle, padding: '14px 18px', marginBottom: 16 }}>
           <Collapse
             ghost
             defaultActiveKey={['general']}
             items={[{
               key: 'general',
-              label: <span style={{ fontSize: 13, fontWeight: 600, color: p.text }}>Collection Settings</span>,
+              label: <span style={{ fontSize: 13, fontWeight: 600, color: '#1A1A2E' }}>Collection Settings</span>,
               children: (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-end' }}>
                   <div>
-                    <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4 }}>Interval (sec)</div>
-                    <InputNumber
-                      size="small"
-                      min={10}
-                      max={3600}
-                      value={editSettings.interval}
-                      onChange={(v) => setEditSettings({ ...editSettings, interval: v || 60 })}
-                      style={{ width: 100 }}
-                    />
+                    <div style={{ fontSize: 11, color: '#94A3B8', marginBottom: 4 }}>Interval (sec)</div>
+                    <InputNumber size="small" min={10} max={3600} value={editSettings.interval}
+                      onChange={(v) => setEditSettings({ ...editSettings, interval: v || 60 })} style={{ width: 100 }} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4 }}>Raw retention (days)</div>
-                    <InputNumber
-                      size="small"
-                      min={1}
-                      max={30}
-                      value={editSettings.retention_raw}
-                      onChange={(v) => setEditSettings({ ...editSettings, retention_raw: v || 2 })}
-                      style={{ width: 100 }}
-                    />
+                    <div style={{ fontSize: 11, color: '#94A3B8', marginBottom: 4 }}>Raw retention (days)</div>
+                    <InputNumber size="small" min={1} max={30} value={editSettings.retention_raw}
+                      onChange={(v) => setEditSettings({ ...editSettings, retention_raw: v || 2 })} style={{ width: 100 }} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4 }}>5-min retention (days)</div>
-                    <InputNumber
-                      size="small"
-                      min={1}
-                      max={90}
-                      value={editSettings.retention_5m}
-                      onChange={(v) => setEditSettings({ ...editSettings, retention_5m: v || 7 })}
-                      style={{ width: 100 }}
-                    />
+                    <div style={{ fontSize: 11, color: '#94A3B8', marginBottom: 4 }}>5-min retention (days)</div>
+                    <InputNumber size="small" min={1} max={90} value={editSettings.retention_5m}
+                      onChange={(v) => setEditSettings({ ...editSettings, retention_5m: v || 7 })} style={{ width: 100 }} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4 }}>Hourly retention (days)</div>
-                    <InputNumber
-                      size="small"
-                      min={1}
-                      max={365}
-                      value={editSettings.retention_1h}
-                      onChange={(v) => setEditSettings({ ...editSettings, retention_1h: v || 90 })}
-                      style={{ width: 100 }}
-                    />
+                    <div style={{ fontSize: 11, color: '#94A3B8', marginBottom: 4 }}>Hourly retention (days)</div>
+                    <InputNumber size="small" min={1} max={365} value={editSettings.retention_1h}
+                      onChange={(v) => setEditSettings({ ...editSettings, retention_1h: v || 90 })} style={{ width: 100 }} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4 }}>Daily retention (days)</div>
-                    <InputNumber
-                      size="small"
-                      min={1}
-                      max={3650}
-                      value={editSettings.retention_1d}
-                      onChange={(v) => setEditSettings({ ...editSettings, retention_1d: v || 365 })}
-                      style={{ width: 100 }}
-                    />
+                    <div style={{ fontSize: 11, color: '#94A3B8', marginBottom: 4 }}>Daily retention (days)</div>
+                    <InputNumber size="small" min={1} max={3650} value={editSettings.retention_1d}
+                      onChange={(v) => setEditSettings({ ...editSettings, retention_1d: v || 365 })} style={{ width: 100 }} />
                   </div>
-                  <button
-                    onClick={handleSaveSettings}
-                    disabled={savingSettings}
-                    style={{
-                      padding: '5px 18px',
-                      borderRadius: 6,
-                      border: 'none',
-                      fontSize: 12,
-                      fontWeight: 600,
-                      cursor: savingSettings ? 'not-allowed' : 'pointer',
-                      background: p.accent,
-                      color: '#fff',
-                      opacity: savingSettings ? 0.6 : 1,
-                    }}
-                  >
+                  <button onClick={handleSaveSettings} disabled={savingSettings} style={{
+                    padding: '5px 18px', borderRadius: 6, border: 'none', fontSize: 12, fontWeight: 600,
+                    cursor: savingSettings ? 'not-allowed' : 'pointer',
+                    background: '#E65100', color: '#fff', opacity: savingSettings ? 0.6 : 1,
+                  }}>
                     {savingSettings ? 'Saving...' : 'Save'}
                   </button>
                 </div>
@@ -686,100 +660,112 @@ export default function HistoricalMonitor() {
         </div>
       )}
 
-      {/* Charts grid */}
+      {/* Charts — same Row/Col grid as realtime section */}
       {loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
           <Spin size="large" />
         </div>
       ) : chartData.length === 0 ? (
-        <div style={{
-          textAlign: 'center',
-          padding: '48px 20px',
-          background: p.cardBg,
-          border: `1px solid ${p.cardBorder}`,
-          borderRadius: 8,
-        }}>
-          <DatabaseOutlined style={{ fontSize: 36, color: p.emptyText, display: 'block', marginBottom: 12 }} />
-          <div style={{ fontSize: 14, color: p.emptyText, fontWeight: 500 }}>
-            No historical data available yet
-          </div>
-          <div style={{ fontSize: 12, color: p.textMuted, marginTop: 4 }}>
-            {settings?.enabled
-              ? 'Data will appear after the first collection cycle'
-              : 'Enable monitoring to start collecting data'}
+        <div style={{ textAlign: 'center', padding: '48px 20px', ...cardStyle }}>
+          <DatabaseOutlined style={{ fontSize: 36, color: '#94A3B8', display: 'block', marginBottom: 12 }} />
+          <div style={{ fontSize: 14, color: '#94A3B8', fontWeight: 500 }}>No historical data available yet</div>
+          <div style={{ fontSize: 12, color: '#CBD5E1', marginTop: 4 }}>
+            {settings?.enabled ? 'Data will appear after the first collection cycle' : 'Enable monitoring to start collecting data'}
           </div>
         </div>
       ) : (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))',
-          gap: 12,
-        }}>
-          <HistChart
-            title="CPU Usage"
-            data={chartData}
-            lines={[{ key: 'cpu', name: 'CPU', color: chartColors.cpu }]}
-            domain={[0, 100]}
-            p={p}
-            useArea
-          />
-          <HistChart
-            title="Memory Usage"
-            data={chartData}
-            lines={[{ key: 'memory', name: 'Memory', color: chartColors.memory }]}
-            domain={[0, 100]}
-            p={p}
-            useArea
-          />
-          <HistChart
-            title="Load Average"
-            data={chartData}
-            lines={[
-              { key: 'load1', name: '1min', color: chartColors.load1 },
-              { key: 'load5', name: '5min', color: chartColors.load5 },
-              { key: 'load15', name: '15min', color: chartColors.load15 },
-            ]}
-            unit=""
-            p={p}
-          />
-          <HistChart
-            title="Disk Usage"
-            data={chartData}
-            lines={[{ key: 'disk', name: 'Disk', color: chartColors.disk }]}
-            domain={[0, 100]}
-            p={p}
-            useArea
-          />
-          <HistChart
-            title="Disk I/O"
-            data={chartData}
-            lines={[
-              { key: 'diskRead', name: 'Read', color: chartColors.diskRead },
-              { key: 'diskWrite', name: 'Write', color: chartColors.diskWrite },
-            ]}
-            unit=" KB/s"
-            p={p}
-          />
-          <HistChart
-            title="Network I/O"
-            data={chartData}
-            lines={[
-              { key: 'netSent', name: 'Sent', color: chartColors.netSent },
-              { key: 'netRecv', name: 'Recv', color: chartColors.netRecv },
-            ]}
-            unit=" KB/s"
-            p={p}
-          />
-          <HistChart
-            title="Swap Usage"
-            data={chartData}
-            lines={[{ key: 'swap', name: 'Swap', color: chartColors.swap }]}
-            domain={[0, 100]}
-            p={p}
-            useArea
-          />
-        </div>
+        <>
+          {/* Row 1: CPU + Memory */}
+          <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+            <Col xs={24} lg={12}>
+              <HistCard title="CPU Usage" chartKey="cpu" onFullscreen={setFullscreenChart}
+                legend={[{ color: colors.primary, label: 'CPU %' }]}>
+                <HistCpuChart data={chartData} />
+              </HistCard>
+            </Col>
+            <Col xs={24} lg={12}>
+              <HistCard title="Memory Usage" chartKey="memory" onFullscreen={setFullscreenChart}
+                legend={[{ color: colors.accent, label: 'Memory %' }]}>
+                <HistMemoryChart data={chartData} />
+              </HistCard>
+            </Col>
+          </Row>
+
+          {/* Row 2: Load + Disk */}
+          <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+            <Col xs={24} lg={12}>
+              <HistCard title="Load Average" chartKey="load" onFullscreen={setFullscreenChart}
+                legend={[
+                  { color: colors.lightBlue, label: '1 min' },
+                  { color: colors.success, label: '5 min' },
+                  { color: colors.purple, label: '15 min' },
+                ]}>
+                <HistLoadChart data={chartData} />
+              </HistCard>
+            </Col>
+            <Col xs={24} lg={12}>
+              <HistCard title="Disk Usage" chartKey="disk" onFullscreen={setFullscreenChart}
+                legend={[{ color: colors.success, label: 'Disk %' }]}>
+                <HistDiskChart data={chartData} />
+              </HistCard>
+            </Col>
+          </Row>
+
+          {/* Row 3: Disk I/O + Network I/O */}
+          <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+            <Col xs={24} lg={12}>
+              <HistCard title="Disk I/O" chartKey="diskIO" onFullscreen={setFullscreenChart}
+                legend={[
+                  { color: colors.read, label: 'Read' },
+                  { color: colors.write, label: 'Write' },
+                ]}>
+                <HistDiskIOChart data={chartData} />
+              </HistCard>
+            </Col>
+            <Col xs={24} lg={12}>
+              <HistCard title="Network I/O" chartKey="networkIO" onFullscreen={setFullscreenChart}
+                legend={[
+                  { color: colors.upstream, label: 'Upstream' },
+                  { color: colors.downstream, label: 'Downstream' },
+                ]}>
+                <HistNetworkIOChart data={chartData} />
+              </HistCard>
+            </Col>
+          </Row>
+
+          {/* Row 4: Swap */}
+          <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+            <Col xs={24} lg={12}>
+              <HistCard title="Swap Usage" chartKey="swap" onFullscreen={setFullscreenChart}
+                legend={[{ color: colors.warning, label: 'Swap %' }]}>
+                <HistSwapChart data={chartData} />
+              </HistCard>
+            </Col>
+          </Row>
+        </>
       )}
+
+      {/* Fullscreen modal — same as realtime charts */}
+      <Modal
+        open={fullscreenChart !== null}
+        onCancel={() => setFullscreenChart(null)}
+        footer={null}
+        width="90vw"
+        centered
+        destroyOnClose
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>{fullscreenChart ? histChartTitles[fullscreenChart] + ' (Historical)' : ''}</span>
+            <FullscreenExitOutlined
+              style={{ fontSize: 14, color: '#64748B', cursor: 'pointer' }}
+              onClick={() => setFullscreenChart(null)}
+            />
+          </div>
+        }
+        styles={{ body: { padding: '16px 8px' } }}
+      >
+        {fullscreenChart && renderHistChart(fullscreenChart, chartData, 500)}
+      </Modal>
     </div>
   );
 }
