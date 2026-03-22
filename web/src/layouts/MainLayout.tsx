@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Menu, Dropdown, Button, Avatar, Space, Typography, Drawer, Tooltip } from 'antd';
+import { Layout, Menu, Dropdown, Button, Avatar, Space, Typography, Drawer, Tooltip, Badge } from 'antd';
 import {
   DashboardOutlined,
   GlobalOutlined,
@@ -27,10 +27,14 @@ import {
   CloseOutlined,
   SunOutlined,
   MoonOutlined,
+  BellOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/stores/auth';
 import { useThemeStore } from '@/stores/theme';
+import { useTaskStore } from '@/stores/task';
+import { useTaskWebSocket } from '@/hooks/useTaskWebSocket';
+import MessagesBox from '@/components/MessagesBox';
 import api from '@/services/api';
 import type { MenuProps } from 'antd';
 
@@ -69,6 +73,11 @@ export default function MainLayout() {
   const { mode: themeMode, toggle: toggleTheme } = useThemeStore();
   const isDark = themeMode === 'dark';
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { summary, setModalOpen } = useTaskStore();
+  const taskCount = summary.running + summary.pending;
+
+  // Connect WebSocket for real-time task updates
+  useTaskWebSocket();
 
   const fetchSysInfo = useCallback(async () => {
     try {
@@ -284,8 +293,21 @@ export default function MainLayout() {
             )}
           </div>
 
-          {/* Right: language + user */}
+          {/* Right: tasks + language + user */}
           <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 8, flexShrink: 0 }}>
+            <Tooltip title={t('task.messages_box')}>
+              <Badge count={taskCount} size="small" offset={[-2, 2]}
+                style={{ backgroundColor: taskCount > 0 ? '#52c41a' : undefined }}
+              >
+                <Button
+                  type="text"
+                  icon={<BellOutlined />}
+                  onClick={() => setModalOpen(true)}
+                  size="small"
+                  style={{ color: 'rgba(255,255,255,0.9)', fontSize: 15 }}
+                />
+              </Badge>
+            </Tooltip>
             <Tooltip title={isDark ? 'Light mode' : 'Dark mode'}>
               <Button
                 type="text"
@@ -334,6 +356,7 @@ export default function MainLayout() {
             </>
           )}
         </div>
+        <MessagesBox />
       </Layout>
     </Layout>
   );

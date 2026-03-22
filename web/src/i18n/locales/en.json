@@ -161,5 +161,20 @@
     "notifications": "Notifications",
     "backup": "Backup",
     "panel_settings": "Panel Settings"
+  },
+  "task": {
+    "messages_box": "Messages Box",
+    "task_list": "Task list",
+    "message_list": "Message list",
+    "execution_log": "Execution log",
+    "no_tasks": "Currently no tasks!",
+    "no_messages": "No completed tasks",
+    "time_consumption": "Time Consumption",
+    "creation_time": "Creation time",
+    "detail": "Detail",
+    "elapsed": "Elapsed",
+    "select_task_log": "Select a task to view execution log",
+    "waiting_start": "Waiting to start…",
+    "running_tasks": "{{count}} task(s) running"
   }
 }

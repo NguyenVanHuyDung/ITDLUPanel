@@ -25,6 +25,7 @@ func (h *TaskHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	tasks := rg.Group("/tasks")
 	{
 		tasks.GET("", h.list)
+		tasks.GET("/summary", h.summary)
 		tasks.GET("/:id", h.get)
 		tasks.GET("/:id/log", h.getLog)
 		tasks.DELETE("/:id", h.cancel)
@@ -88,6 +89,16 @@ func (h *TaskHandler) getLog(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"log": log})
+}
+
+// summary returns task counts grouped by status.
+func (h *TaskHandler) summary(c *gin.Context) {
+	s, err := h.queue.GetTaskSummary()
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, s)
 }
 
 // cancel cancels a running or pending task.

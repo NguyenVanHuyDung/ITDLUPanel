@@ -161,5 +161,20 @@
     "notifications": "Thông báo",
     "backup": "Sao lưu",
     "panel_settings": "Cài đặt Panel"
+  },
+  "task": {
+    "messages_box": "Hộp thông báo",
+    "task_list": "Danh sách tác vụ",
+    "message_list": "Danh sách thông báo",
+    "execution_log": "Nhật ký thực thi",
+    "no_tasks": "Hiện không có tác vụ nào!",
+    "no_messages": "Không có tác vụ đã hoàn thành",
+    "time_consumption": "Thời gian thực hiện",
+    "creation_time": "Thời gian tạo",
+    "detail": "Chi tiết",
+    "elapsed": "Đã chạy",
+    "select_task_log": "Chọn một tác vụ để xem nhật ký thực thi",
+    "waiting_start": "Đang chờ bắt đầu…",
+    "running_tasks": "{{count}} tác vụ đang chạy"
   }
 }

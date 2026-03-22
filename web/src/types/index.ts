@@ -94,5 +94,12 @@ export interface Software {
 
 export interface Task {
   id: number; type: string; name: string; status: string;
-  progress: number; created_at: string;
+  progress: number; log?: string; result?: string; error?: string;
+  created_by?: number; started_at?: string; completed_at?: string;
+  created_at: string; duration?: string;
+}
+
+export interface TaskSummary {
+  running: number; pending: number; completed: number;
+  failed: number; total: number;
 }

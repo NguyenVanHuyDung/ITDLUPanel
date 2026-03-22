@@ -229,6 +229,81 @@ func (s *SoftwareService) registerTaskHandlers() {
 		progress(100, fmt.Sprintf("%s uninstalled successfully", name))
 		return nil
 	})
+
+	// Extension install handler: Name format "php-8.3:fileinfo" or "php-8.3:fileinfo,mbstring"
+	s.queue.RegisterHandler("extension_install", func(ctx context.Context, t *task.TaskInfo, progress func(int, string)) error {
+		software, extStr, err := parseExtensionTaskName(t.Name)
+		if err != nil {
+			return err
+		}
+
+		inst, ok := s.registry.Get(software)
+		if !ok {
+			return fmt.Errorf("unknown software: %s", software)
+		}
+
+		exts := strings.Split(extStr, ",")
+		progress(0, fmt.Sprintf("Installing extensions [%s] for %s", extStr, software))
+
+		// Currently only PHP supports extensions
+		if phpInst, ok := inst.(*installer.PHPInstaller); ok {
+			// Extract version from software name (e.g., "php-8.3" → "8.3")
+			version := strings.TrimPrefix(software, "php-")
+			if version == software {
+				version = "8.2" // default
+			}
+			if err := phpInst.InstallExtensions(ctx, version, exts); err != nil {
+				return err
+			}
+		} else {
+			return fmt.Errorf("software %s does not support extensions", software)
+		}
+
+		progress(100, fmt.Sprintf("Extensions [%s] installed successfully", extStr))
+		return nil
+	})
+
+	// Extension uninstall handler: Name format "php-8.3:fileinfo" or "php-8.3:fileinfo,mbstring"
+	s.queue.RegisterHandler("extension_uninstall", func(ctx context.Context, t *task.TaskInfo, progress func(int, string)) error {
+		software, extStr, err := parseExtensionTaskName(t.Name)
+		if err != nil {
+			return err
+		}
+
+		exts := strings.Split(extStr, ",")
+		progress(0, fmt.Sprintf("Removing extensions [%s] from %s", extStr, software))
+
+		osInfo := system.GetOSInfo()
+		version := strings.TrimPrefix(software, "php-")
+		if version == software {
+			version = "8.2"
+		}
+
+		packages := make([]string, 0, len(exts))
+		for _, ext := range exts {
+			ext = strings.TrimSpace(ext)
+			if ext == "" {
+				continue
+			}
+			if osInfo.PkgManager == "apt" {
+				packages = append(packages, fmt.Sprintf("php%s-%s", version, ext))
+			} else {
+				packages = append(packages, fmt.Sprintf("php%s-php-%s", version, ext))
+			}
+		}
+
+		if len(packages) == 0 {
+			return fmt.Errorf("no extensions specified")
+		}
+
+		args := append([]string{"remove", "-y"}, packages...)
+		if _, execErr := system.Exec(ctx, osInfo.PkgManager, args...); execErr != nil {
+			return fmt.Errorf("failed to remove extensions: %w", execErr)
+		}
+
+		progress(100, fmt.Sprintf("Extensions [%s] removed successfully", extStr))
+		return nil
+	})
 }
 
 // ListInstalled returns all software recorded in the database with live status.
@@ -315,6 +390,28 @@ func (s *SoftwareService) UninstallSoftware(name string, createdBy int64) (int64
 		return 0, fmt.Errorf("unknown software: %s", name)
 	}
 	return s.queue.Enqueue("software_uninstall", name, createdBy)
+}
+
+// InstallExtension enqueues a background extension install task.
+// software: base software name (e.g., "php"), version: e.g., "8.3", extensions: e.g., ["fileinfo","mbstring"]
+func (s *SoftwareService) InstallExtension(software, version string, extensions []string, createdBy int64) (int64, error) {
+	taskName := fmt.Sprintf("php-%s:%s", version, strings.Join(extensions, ","))
+	return s.queue.Enqueue("extension_install", taskName, createdBy)
+}
+
+// UninstallExtension enqueues a background extension uninstall task.
+func (s *SoftwareService) UninstallExtension(software, version string, extensions []string, createdBy int64) (int64, error) {
+	taskName := fmt.Sprintf("php-%s:%s", version, strings.Join(extensions, ","))
+	return s.queue.Enqueue("extension_uninstall", taskName, createdBy)
+}
+
+// parseExtensionTaskName parses "php-8.3:fileinfo,mbstring" into ("php", "fileinfo,mbstring").
+func parseExtensionTaskName(name string) (software, extensions string, err error) {
+	parts := strings.SplitN(name, ":", 2)
+	if len(parts) != 2 || parts[1] == "" {
+		return "", "", fmt.Errorf("invalid extension task name: %s (expected format: software-version:ext1,ext2)", name)
+	}
+	return parts[0], parts[1], nil
 }
 
 // StartService starts a systemd service.

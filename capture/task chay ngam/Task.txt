@@ -1,0 +1,9 @@
+Task chay ngam cua he thong:
+	+ So luong task dang chay: nam sau ten panel tren thanh menu
+	+ Khi click chuột vào thì sẽ hiển thị cửa sổ
+		+ Task-list hiển thị các task đang chạy ngầm
+		Các task chạy ngầm bao gồm
+			+ Cài đặt/Xóa một ứng dụng nào đó
+			+ Cài đặt hoặc xóa một extension nào đó (php..) Chuẩn bị sẵn để triển khai module quản lý php, sql...
+
+Phân tích và thiết kế lại chỗ này trên toàn bộ kiến trúc và áp dụng chung cho toàn bộ hệ thống.

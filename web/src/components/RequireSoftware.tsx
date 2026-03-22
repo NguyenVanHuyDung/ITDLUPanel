@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Result, Button, Space, Tag, Spin, message, Modal, Select, Progress, Typography } from 'antd';
+import { Result, Button, Space, Tag, Spin, message, Modal, Select, Typography } from 'antd';
 import { DownloadOutlined, WarningOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { useTaskStore } from '@/stores/task';
 import api from '@/services/api';
 import type { ApiResponse } from '@/types';
 
@@ -41,7 +42,9 @@ export default function RequireSoftware({ softwareTypes, label, children }: Prop
   const [installTarget, setInstallTarget] = useState<AvailableSW | null>(null);
   const [installVersion, setInstallVersion] = useState('');
   const [installing, setInstalling] = useState(false);
-  const [installProgress, setInstallProgress] = useState<{ status: string; progress: number } | null>(null);
+
+  // Global task store
+  const { addTask, setModalOpen: openTaskModal, setActiveTab: setTaskTab, tasks } = useTaskStore();
 
   const checkSoftware = useCallback(async () => {
     setChecking(true);
@@ -65,6 +68,16 @@ export default function RequireSoftware({ softwareTypes, label, children }: Prop
 
   useEffect(() => { checkSoftware(); }, [checkSoftware]);
 
+  // Re-check software when a task completes
+  useEffect(() => {
+    const completedTasks = Object.values(tasks).filter(
+      (t) => t.type === 'software_install' && t.status === 'completed'
+    );
+    if (completedTasks.length > 0 && !hasRequired) {
+      checkSoftware();
+    }
+  }, [tasks, hasRequired, checkSoftware]);
+
   const handleInstall = async () => {
     if (!installTarget) return;
     setInstalling(true);
@@ -75,36 +88,26 @@ export default function RequireSoftware({ softwareTypes, label, children }: Prop
       });
       const taskId = data.data?.task_id;
       if (taskId) {
-        setInstallProgress({ status: 'running', progress: 0 });
-        const poll = setInterval(async () => {
-          try {
-            const { data: taskData } = await api.get(`/tasks/${taskId}`);
-            const task = taskData.data;
-            setInstallProgress({ status: task.status, progress: task.progress });
-            if (task.status === 'completed' || task.status === 'failed') {
-              clearInterval(poll);
-              setInstalling(false);
-              if (task.status === 'completed') {
-                message.success(`${installTarget.display_name} installed successfully!`);
-                setInstallModalOpen(false);
-                checkSoftware();
-              } else {
-                message.error(`Installation of ${installTarget.display_name} failed`);
-              }
-            }
-          } catch {
-            clearInterval(poll);
-            setInstalling(false);
-          }
-        }, 2000);
+        addTask({
+          id: taskId,
+          name: `${installTarget.name}:${installVersion}`,
+          type: 'software_install',
+          status: 'running',
+          progress: 0,
+          created_at: new Date().toISOString(),
+        });
+        openTaskModal(true);
+        setTaskTab('tasks');
+        message.info(`Installation of ${installTarget.display_name} started`);
+        setInstallModalOpen(false);
       } else {
         message.success(`${installTarget.display_name} installed`);
-        setInstalling(false);
         setInstallModalOpen(false);
         checkSoftware();
       }
     } catch {
       message.error(t('common.error'));
+    } finally {
       setInstalling(false);
     }
   };
@@ -137,7 +140,6 @@ export default function RequireSoftware({ softwareTypes, label, children }: Prop
                     onClick={() => {
                       setInstallTarget(sw);
                       setInstallVersion(sw.versions[sw.versions.length - 1] ?? '');
-                      setInstallProgress(null);
                       setInstallModalOpen(true);
                     }}
                   >
@@ -158,7 +160,7 @@ export default function RequireSoftware({ softwareTypes, label, children }: Prop
           title={<><DownloadOutlined /> Install {installTarget?.display_name}</>}
           open={installModalOpen}
           onCancel={() => { if (!installing) setInstallModalOpen(false); }}
-          footer={installProgress ? null : [
+          footer={[
             <Button key="cancel" onClick={() => setInstallModalOpen(false)}>{t('common.cancel')}</Button>,
             <Button key="install" type="primary" loading={installing} onClick={handleInstall}>
               {t('common.install')}
@@ -167,42 +169,20 @@ export default function RequireSoftware({ softwareTypes, label, children }: Prop
           closable={!installing}
           maskClosable={!installing}
         >
-          {installProgress ? (
-            <div style={{ textAlign: 'center', padding: 24 }}>
-              <Typography.Title level={5}>
-                {installProgress.status === 'completed' ? 'Installation Complete!' :
-                 installProgress.status === 'failed' ? 'Installation Failed' :
-                 `Installing ${installTarget?.display_name}...`}
-              </Typography.Title>
-              <Progress
-                percent={installProgress.progress}
-                status={
-                  installProgress.status === 'completed' ? 'success' :
-                  installProgress.status === 'failed' ? 'exception' : 'active'
-                }
+          <Space direction="vertical" style={{ width: '100%' }} size="middle">
+            <Typography.Paragraph>
+              Install {installTarget?.display_name} on your server.
+            </Typography.Paragraph>
+            <div>
+              <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>Select Version</Typography.Text>
+              <Select
+                value={installVersion}
+                onChange={setInstallVersion}
+                style={{ width: '100%' }}
+                options={installTarget?.versions.map(v => ({ value: v, label: v })) ?? []}
               />
-              {(installProgress.status === 'completed' || installProgress.status === 'failed') && (
-                <Button type="primary" style={{ marginTop: 16 }} onClick={() => setInstallModalOpen(false)}>
-                  {t('common.close')}
-                </Button>
-              )}
             </div>
-          ) : (
-            <Space direction="vertical" style={{ width: '100%' }} size="middle">
-              <Typography.Paragraph>
-                Install {installTarget?.display_name} on your server.
-              </Typography.Paragraph>
-              <div>
-                <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>Select Version</Typography.Text>
-                <Select
-                  value={installVersion}
-                  onChange={setInstallVersion}
-                  style={{ width: '100%' }}
-                  options={installTarget?.versions.map(v => ({ value: v, label: v })) ?? []}
-                />
-              </div>
-            </Space>
-          )}
+          </Space>
         </Modal>
       </>
     );

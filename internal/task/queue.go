@@ -40,6 +40,16 @@ type TaskInfo struct {
 	StartedAt   *time.Time `json:"started_at,omitempty"`
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
+	Duration    string     `json:"duration,omitempty"`
+}
+
+// TaskSummary holds counts of tasks by status.
+type TaskSummary struct {
+	Running   int64 `json:"running"`
+	Pending   int64 `json:"pending"`
+	Completed int64 `json:"completed"`
+	Failed    int64 `json:"failed"`
+	Total     int64 `json:"total"`
 }
 
 // Queue manages background task execution.
@@ -203,6 +213,36 @@ func (q *Queue) ListTasks(page, perPage int, status string) ([]TaskInfo, int64, 
 	return tasks, total, rows.Err()
 }
 
+// GetTaskSummary returns counts of tasks grouped by status.
+func (q *Queue) GetTaskSummary() (*TaskSummary, error) {
+	summary := &TaskSummary{}
+	rows, err := q.db.Query("SELECT status, COUNT(*) FROM tasks GROUP BY status")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get task summary: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var status string
+		var count int64
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, fmt.Errorf("failed to scan task summary: %w", err)
+		}
+		summary.Total += count
+		switch TaskStatus(status) {
+		case StatusRunning:
+			summary.Running = count
+		case StatusPending:
+			summary.Pending = count
+		case StatusCompleted:
+			summary.Completed = count
+		case StatusFailed:
+			summary.Failed = count
+		}
+	}
+	return summary, rows.Err()
+}
+
 // GetTaskLog returns the log content for a task.
 func (q *Queue) GetTaskLog(taskID int64) (string, error) {
 	var log sql.NullString
@@ -330,6 +370,7 @@ func (q *Queue) scanTask(row *sql.Row) (*TaskInfo, error) {
 	if completedAt.Valid {
 		t.CompletedAt = &completedAt.Time
 	}
+	t.Duration = computeDuration(t.StartedAt, t.CompletedAt, t.Status)
 	return t, nil
 }
 
@@ -351,5 +392,29 @@ func (q *Queue) scanTaskRow(rows *sql.Rows) (*TaskInfo, error) {
 	if completedAt.Valid {
 		t.CompletedAt = &completedAt.Time
 	}
+	t.Duration = computeDuration(t.StartedAt, t.CompletedAt, t.Status)
 	return t, nil
+}
+
+// computeDuration calculates a human-readable duration string.
+// For completed tasks it uses started_at → completed_at; for running tasks it uses started_at → now.
+func computeDuration(startedAt, completedAt *time.Time, status TaskStatus) string {
+	if startedAt == nil {
+		return ""
+	}
+	end := time.Now()
+	if completedAt != nil {
+		end = *completedAt
+	}
+	d := end.Sub(*startedAt)
+	if d < 0 {
+		return "0s"
+	}
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm%ds", int(d.Minutes()), int(d.Seconds())%60)
+	}
+	return fmt.Sprintf("%dh%dm%ds", int(d.Hours()), int(d.Minutes())%60, int(d.Seconds())%60)
 }

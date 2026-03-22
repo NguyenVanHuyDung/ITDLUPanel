@@ -14,12 +14,28 @@ import (
 	"github.com/ITDLUPanel/panel/internal/service"
 )
 
-// AuthMiddleware validates JWT access token from the Authorization header.
+// AuthMiddleware validates JWT access token from the Authorization header
+// or from the "token" query parameter (for WebSocket connections).
 // Sets "user_id", "username", "role" in the gin context.
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		var tokenStr string
+
+		// 1. Check Authorization header first
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
+		if authHeader != "" {
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) == 2 && strings.EqualFold(parts[0], "bearer") {
+				tokenStr = parts[1]
+			}
+		}
+
+		// 2. Fall back to "token" query parameter (for WebSocket)
+		if tokenStr == "" {
+			tokenStr = c.Query("token")
+		}
+
+		if tokenStr == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"code":    http.StatusUnauthorized,
 				"message": "authorization header is required",
@@ -27,16 +43,7 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"code":    http.StatusUnauthorized,
-				"message": "authorization header must be Bearer {token}",
-			})
-			return
-		}
-
-		claims, err := service.ValidateAccessToken(parts[1])
+		claims, err := service.ValidateAccessToken(tokenStr)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"code":    http.StatusUnauthorized,
