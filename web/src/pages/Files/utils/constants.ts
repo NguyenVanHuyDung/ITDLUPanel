@@ -7,9 +7,7 @@ export const VIEW_MODE_KEY = 'itdlu_file_view_mode';
 export const DEFAULT_PATH = '/root';
 
 export const DEFAULT_BOOKMARKS = [
-  { path: '/www', label: 'www' },
-  { path: '/root', label: 'root' },
-  { path: '/var/log', label: 'log' },
+  { path: '/www/wwwroot', label: 'wwwroot' },
 ];
 
 export const PAGE_SIZE_OPTIONS = [
