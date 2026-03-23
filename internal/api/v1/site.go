@@ -44,6 +44,12 @@ func (h *SiteHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, sitesMW gin.Ha
 		sites.POST("/:id/domains", h.AddDomain)
 		sites.DELETE("/:id/domains/:did", h.RemoveDomain)
 		sites.GET("/:id/domains", h.ListDomains)
+
+		// SSL
+		sites.GET("/:id/ssl", h.GetSSLInfo)
+		sites.POST("/:id/ssl/enable", h.EnableSSL)
+		sites.POST("/:id/ssl/disable", h.DisableSSL)
+		sites.POST("/:id/ssl/apply", h.ApplySSLFromHolder)
 	}
 }
 
@@ -369,6 +375,111 @@ func (h *SiteHandler) ListDomains(c *gin.Context) {
 func (h *SiteHandler) ListPHPVersions(c *gin.Context) {
 	versions := service.DetectInstalledPHPVersions()
 	response.Success(c, gin.H{"versions": versions})
+}
+
+// ---------------------------------------------------------------------------
+// SSL
+// ---------------------------------------------------------------------------
+
+// GetSSLInfo returns SSL certificate information for a site.
+func (h *SiteHandler) GetSSLInfo(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+
+	info, err := h.siteService.GetSSLInfo(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, info)
+}
+
+type enableSSLRequest struct {
+	CertPath string `json:"cert_path" validate:"required"`
+	KeyPath  string `json:"key_path" validate:"required"`
+	SSLType  string `json:"ssl_type"`
+}
+
+// EnableSSL enables SSL for a site with specified certificate paths.
+func (h *SiteHandler) EnableSSL(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+
+	var req enableSSLRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid request body: cert_path and key_path are required"},
+		})
+		return
+	}
+
+	if errs := validator.Validate(req); errs != nil {
+		response.ValidationError(c, errs)
+		return
+	}
+
+	sslType := req.SSLType
+	if sslType == "" {
+		sslType = "custom"
+	}
+
+	if err := h.siteService.EnableSSL(id, req.CertPath, req.KeyPath, sslType); err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"message": "SSL enabled successfully"})
+}
+
+// DisableSSL disables SSL for a site.
+func (h *SiteHandler) DisableSSL(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+
+	if err := h.siteService.DisableSSL(id); err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"message": "SSL disabled successfully"})
+}
+
+type applySSLRequest struct {
+	SourceDomain string `json:"source_domain" validate:"required"`
+}
+
+// ApplySSLFromHolder applies an existing certificate to a site.
+func (h *SiteHandler) ApplySSLFromHolder(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+
+	var req applySSLRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "source_domain is required"},
+		})
+		return
+	}
+
+	if errs := validator.Validate(req); errs != nil {
+		response.ValidationError(c, errs)
+		return
+	}
+
+	if err := h.siteService.EnableSSLFromHolder(id, req.SourceDomain); err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"message": "certificate applied successfully"})
 }
 
 // ---------------------------------------------------------------------------

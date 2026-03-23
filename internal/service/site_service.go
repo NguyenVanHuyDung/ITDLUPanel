@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"crypto/x509"
 	"database/sql"
+	"encoding/pem"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -634,6 +636,11 @@ func (s *SiteService) regenerateVhost(site *Site) error {
 		SSLEnabled: site.SSLEnabled == 1,
 	}
 
+	// Resolve SSL cert/key paths if SSL is enabled
+	if cfg.SSLEnabled {
+		cfg.SSLCert, cfg.SSLKey = s.resolveSSLPaths(site.Domain, site.SSLType)
+	}
+
 	content, err := gen.Generate(cfg)
 	if err != nil {
 		return err
@@ -645,6 +652,188 @@ func (s *SiteService) regenerateVhost(site *Site) error {
 	}
 
 	return gen.ReloadServer()
+}
+
+// resolveSSLPaths returns cert and key file paths for a domain.
+func (s *SiteService) resolveSSLPaths(domain string, sslType *string) (string, string) {
+	certBase := "/ITDLUPanel/server/data/ssl"
+	subDir := "custom"
+	if sslType != nil {
+		switch *sslType {
+		case "letsencrypt":
+			subDir = "letsencrypt"
+		case "custom":
+			subDir = "custom"
+		}
+	}
+	certDir := filepath.Join(certBase, subDir, domain)
+	return filepath.Join(certDir, "fullchain.pem"), filepath.Join(certDir, "privkey.pem")
+}
+
+// ---------------------------------------------------------------------------
+// SSL Management
+// ---------------------------------------------------------------------------
+
+// EnableSSL enables SSL for a site with the given certificate paths.
+func (s *SiteService) EnableSSL(id int64, certPath, keyPath, sslType string) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	// Verify cert files exist
+	if _, err := os.Stat(certPath); os.IsNotExist(err) {
+		return apperrors.New(apperrors.ErrValidation, "certificate file not found: "+certPath)
+	}
+	if _, err := os.Stat(keyPath); os.IsNotExist(err) {
+		return apperrors.New(apperrors.ErrValidation, "private key file not found: "+keyPath)
+	}
+
+	// Update DB
+	if _, err := s.db.Exec(
+		`UPDATE sites SET ssl_enabled = 1, ssl_type = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		sslType, id,
+	); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to update SSL status")
+	}
+
+	// Refresh site data and regenerate vhost
+	site.SSLEnabled = 1
+	site.SSLType = &sslType
+	if err := s.regenerateVhost(site); err != nil {
+		// Rollback DB change
+		_, _ = s.db.Exec(`UPDATE sites SET ssl_enabled = 0, ssl_type = NULL WHERE id = ?`, id)
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to regenerate vhost config with SSL")
+	}
+
+	logger.Info().Int64("id", id).Str("domain", site.Domain).Str("type", sslType).Msg("SSL enabled for site")
+	return nil
+}
+
+// EnableSSLFromHolder applies an existing certificate (from another domain) to this site.
+func (s *SiteService) EnableSSLFromHolder(id int64, sourceDomain string) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	// Look for cert in both letsencrypt and custom dirs
+	certBase := "/ITDLUPanel/server/data/ssl"
+	var certPath, keyPath, sslType string
+
+	for _, dir := range []string{"letsencrypt", "custom"} {
+		cp := filepath.Join(certBase, dir, sourceDomain, "fullchain.pem")
+		kp := filepath.Join(certBase, dir, sourceDomain, "privkey.pem")
+		if _, err := os.Stat(cp); err == nil {
+			if _, err := os.Stat(kp); err == nil {
+				certPath = cp
+				keyPath = kp
+				sslType = dir
+				break
+			}
+		}
+	}
+
+	if certPath == "" {
+		return apperrors.New(apperrors.ErrNotFound, "no certificate found for domain: "+sourceDomain)
+	}
+
+	// Copy cert to site's domain directory
+	siteCertDir := filepath.Join(certBase, sslType, site.Domain)
+	if err := os.MkdirAll(siteCertDir, 0700); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to create cert directory")
+	}
+
+	// Copy cert and key
+	for _, pair := range [][2]string{
+		{certPath, filepath.Join(siteCertDir, "fullchain.pem")},
+		{keyPath, filepath.Join(siteCertDir, "privkey.pem")},
+	} {
+		data, err := os.ReadFile(pair[0])
+		if err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to read "+pair[0])
+		}
+		if err := os.WriteFile(pair[1], data, 0600); err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to write "+pair[1])
+		}
+	}
+
+	return s.EnableSSL(id, filepath.Join(siteCertDir, "fullchain.pem"), filepath.Join(siteCertDir, "privkey.pem"), sslType)
+}
+
+// DisableSSL disables SSL for a site.
+func (s *SiteService) DisableSSL(id int64) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	if _, err := s.db.Exec(
+		`UPDATE sites SET ssl_enabled = 0, ssl_type = NULL, ssl_expiry = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		id,
+	); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to update SSL status")
+	}
+
+	site.SSLEnabled = 0
+	site.SSLType = nil
+	if err := s.regenerateVhost(site); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to regenerate vhost config")
+	}
+
+	logger.Info().Int64("id", id).Str("domain", site.Domain).Msg("SSL disabled for site")
+	return nil
+}
+
+// GetSSLInfo returns the SSL certificate information for a site.
+func (s *SiteService) GetSSLInfo(id int64) (map[string]interface{}, error) {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	result := map[string]interface{}{
+		"ssl_enabled": site.SSLEnabled == 1,
+		"domain":      site.Domain,
+	}
+
+	if site.SSLEnabled == 0 {
+		return result, nil
+	}
+
+	sslType := "custom"
+	if site.SSLType != nil {
+		sslType = *site.SSLType
+	}
+	result["ssl_type"] = sslType
+
+	certPath, keyPath := s.resolveSSLPaths(site.Domain, site.SSLType)
+	result["cert_path"] = certPath
+	result["key_path"] = keyPath
+
+	// Read cert to extract expiry info
+	certData, err := os.ReadFile(certPath)
+	if err == nil {
+		block, _ := pem.Decode(certData)
+		if block != nil {
+			cert, err := x509.ParseCertificate(block.Bytes)
+			if err == nil {
+				result["issuer"] = cert.Issuer.CommonName
+				result["not_before"] = cert.NotBefore
+				result["not_after"] = cert.NotAfter
+				result["subject"] = cert.Subject.CommonName
+				result["dns_names"] = cert.DNSNames
+
+				// Update ssl_expiry in DB
+				_, _ = s.db.Exec(
+					`UPDATE sites SET ssl_expiry = ? WHERE id = ?`,
+					cert.NotAfter.Format("2006-01-02"), id,
+				)
+			}
+		}
+	}
+
+	return result, nil
 }
 
 // defaultIndexHTML returns a welcome page for newly created sites.

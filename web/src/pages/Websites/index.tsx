@@ -286,6 +286,267 @@ function DirectoryPanel({ site }: { site: Site }) {
 }
 
 // ---------------------------------------------------------------------------
+// SSL panel
+// ---------------------------------------------------------------------------
+interface CertInfo {
+  domain: string;
+  ssl_type: string;
+  issuer: string;
+  valid_from: string;
+  valid_until: string;
+  dns_names: string[];
+  cert_path: string;
+  key_path: string;
+}
+
+const SSL_TABS = [
+  { key: 'current', label: 'Current Cert' },
+  { key: 'custom', label: 'Custom Certificate' },
+  { key: 'letsencrypt', label: "Let's Encrypt" },
+  { key: 'holder', label: 'Certificate Holder' },
+] as const;
+
+type SSLTab = (typeof SSL_TABS)[number]['key'];
+
+function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }) {
+  const { p, isDark } = usePalette();
+  const [activeTab, setActiveTab] = useState<SSLTab>('current');
+  const [sslInfo, setSslInfo] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [certs, setCerts] = useState<CertInfo[]>([]);
+  const [certPEM, setCertPEM] = useState('');
+  const [keyPEM, setKeyPEM] = useState('');
+  const [email, setEmail] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const fetchSSL = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await api.get(`/sites/${siteId}/ssl`);
+      setSslInfo(res.data?.data ?? res.data ?? null);
+    } catch {
+      setSslInfo(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [siteId]);
+
+  const fetchCerts = useCallback(async () => {
+    try {
+      const res = await api.get('/ssl/certificates');
+      setCerts(res.data?.data ?? res.data ?? []);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { fetchSSL(); }, [fetchSSL]);
+  useEffect(() => { if (activeTab === 'holder') fetchCerts(); }, [activeTab, fetchCerts]);
+
+  const enableSSL = async (certPath: string, keyPath: string, sslType: string) => {
+    await api.post(`/sites/${siteId}/ssl/enable`, { cert_path: certPath, key_path: keyPath, ssl_type: sslType });
+    await fetchSSL();
+  };
+
+  const handleDisable = async () => {
+    try {
+      setSubmitting(true);
+      await api.post(`/sites/${siteId}/ssl/disable`);
+      message.success('SSL disabled');
+      await fetchSSL();
+    } catch (e: any) {
+      message.error(e?.response?.data?.message || 'Failed to disable SSL');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleUploadCustom = async () => {
+    if (!certPEM.trim() || !keyPEM.trim()) { message.error('Please provide both certificate and private key'); return; }
+    try {
+      setSubmitting(true);
+      const res = await api.post('/ssl/upload', { domain: siteDomain, cert: certPEM, key: keyPEM });
+      const d = res.data?.data ?? res.data;
+      await enableSSL(d.cert_path, d.key_path, 'custom');
+      message.success('Custom certificate installed');
+      setCertPEM(''); setKeyPEM('');
+      setActiveTab('current');
+    } catch (e: any) {
+      message.error(e?.response?.data?.message || 'Failed to upload certificate');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleLetsEncrypt = async () => {
+    if (!email.trim()) { message.error('Please enter an email address'); return; }
+    try {
+      setSubmitting(true);
+      const res = await api.post('/ssl/letsencrypt', { domain: siteDomain, email });
+      const d = res.data?.data ?? res.data;
+      await enableSSL(d.cert_path, d.key_path, 'letsencrypt');
+      message.success("Let's Encrypt certificate issued");
+      setActiveTab('current');
+    } catch (e: any) {
+      message.error(e?.response?.data?.message || "Failed to issue Let's Encrypt certificate");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleForceRenew = async () => {
+    try {
+      setSubmitting(true);
+      const res = await api.post('/ssl/letsencrypt', { domain: siteDomain, email: sslInfo?.email || '' });
+      const d = res.data?.data ?? res.data;
+      await enableSSL(d.cert_path, d.key_path, 'letsencrypt');
+      message.success('Certificate renewed');
+    } catch (e: any) {
+      message.error(e?.response?.data?.message || 'Failed to renew certificate');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleApply = async (sourceDomain: string) => {
+    try {
+      setSubmitting(true);
+      await api.post(`/sites/${siteId}/ssl/apply`, { source_domain: sourceDomain });
+      message.success('Certificate applied');
+      await fetchSSL();
+      setActiveTab('current');
+    } catch (e: any) {
+      message.error(e?.response?.data?.message || 'Failed to apply certificate');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const isExpired = (d: string) => new Date(d) < new Date();
+  const isExpiringSoon = (d: string) => { const diff = new Date(d).getTime() - Date.now(); return diff > 0 && diff < 30 * 86400000; };
+  const enabled = sslInfo && sslInfo.enabled !== false && sslInfo.valid_until;
+
+  const primaryBtn: React.CSSProperties = { padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', background: p.accent, color: '#fff', fontSize: 12, fontWeight: 500 };
+  const dangerBtn: React.CSSProperties = { padding: '6px 14px', borderRadius: 6, border: `1px solid ${p.red}`, background: 'transparent', color: p.red, fontSize: 12, fontWeight: 500, cursor: 'pointer' };
+  const badge = (label: string, bg: string, fg: string): React.ReactNode => (
+    <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 500, background: bg, color: fg }}>{label}</span>
+  );
+  const kvRow = (label: string, value: React.ReactNode) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${p.cardBorder}` }}>
+      <span style={{ fontSize: 12, color: p.textMuted }}>{label}</span>
+      <span style={{ fontSize: 12, fontWeight: 500, color: p.text }}>{value}</span>
+    </div>
+  );
+  const textareaStyle: React.CSSProperties = { width: '100%', minHeight: 120, padding: 10, borderRadius: 6, border: `1px solid ${p.cardBorder}`, background: p.card, color: p.text, fontFamily: 'monospace', fontSize: 12, resize: 'vertical' };
+
+  if (loading) return <div style={{ textAlign: 'center', padding: '40px 0' }}><Spin /></div>;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 16, flexWrap: 'wrap' }}>
+        {SSL_TABS.map(t => (
+          <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
+            padding: '5px 12px', borderRadius: 5, border: 'none', cursor: 'pointer',
+            fontSize: 11, fontWeight: 500,
+            background: activeTab === t.key ? `${p.accent}15` : 'transparent',
+            color: activeTab === t.key ? p.accent : p.textMuted,
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {activeTab === 'current' && (
+        !enabled ? (
+          <div style={{ textAlign: 'center', padding: '30px 0', color: p.textMuted }}>
+            <LockOutlined style={{ fontSize: 28, opacity: 0.3, marginBottom: 8 }} />
+            <div style={{ fontSize: 13 }}>SSL is not enabled for this site</div>
+          </div>
+        ) : (
+          <div>
+            {kvRow('Status', isExpired(sslInfo.valid_until)
+              ? badge('Expired', `${p.red}20`, p.red)
+              : badge('Active', `${p.green}20`, p.green)
+            )}
+            {kvRow('Type', badge(sslInfo.ssl_type === 'letsencrypt' ? "Let's Encrypt" : 'Custom',
+              `${p.accent}15`, p.accent))}
+            {sslInfo.issuer && kvRow('Issuer', sslInfo.issuer)}
+            {sslInfo.valid_from && kvRow('Valid From', new Date(sslInfo.valid_from).toLocaleDateString())}
+            {kvRow('Valid Until', <span style={{
+              color: isExpired(sslInfo.valid_until) ? p.red : isExpiringSoon(sslInfo.valid_until) ? '#d97706' : p.text,
+              fontWeight: 500, fontSize: 12,
+            }}>{new Date(sslInfo.valid_until).toLocaleDateString()}</span>)}
+            {sslInfo.dns_names?.length > 0 && kvRow('Domain(s)', sslInfo.dns_names.join(', '))}
+            {sslInfo.cert_path && kvRow('Certificate Path', <span style={{ fontSize: 11, fontFamily: 'monospace' }}>{sslInfo.cert_path}</span>)}
+            {sslInfo.key_path && kvRow('Key Path', <span style={{ fontSize: 11, fontFamily: 'monospace' }}>{sslInfo.key_path}</span>)}
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <button style={dangerBtn} onClick={handleDisable} disabled={submitting}>Disable SSL</button>
+              {sslInfo.ssl_type === 'letsencrypt' && (
+                <button style={primaryBtn} onClick={handleForceRenew} disabled={submitting}>Force Renew</button>
+              )}
+            </div>
+          </div>
+        )
+      )}
+
+      {activeTab === 'custom' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 500, color: p.text, marginBottom: 4, display: 'block' }}>Private Key</label>
+            <textarea style={textareaStyle} placeholder={"-----BEGIN PRIVATE KEY-----\n..."} value={keyPEM} onChange={e => setKeyPEM(e.target.value)} />
+          </div>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 500, color: p.text, marginBottom: 4, display: 'block' }}>Certificate / CRT / PEM</label>
+            <textarea style={textareaStyle} placeholder={"-----BEGIN CERTIFICATE-----\n..."} value={certPEM} onChange={e => setCertPEM(e.target.value)} />
+          </div>
+          <button style={{ ...primaryBtn, alignSelf: 'flex-start' }} onClick={handleUploadCustom} disabled={submitting}>
+            {submitting ? 'Uploading…' : 'Upload & Enable SSL'}
+          </button>
+        </div>
+      )}
+
+      {activeTab === 'letsencrypt' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 500, color: p.text, marginBottom: 4, display: 'block' }}>Email Address</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="admin@example.com"
+              style={{ width: '100%', maxWidth: 360, padding: '7px 10px', borderRadius: 6, border: `1px solid ${p.cardBorder}`, background: p.card, color: p.text, fontSize: 12 }} />
+          </div>
+          <div style={{ fontSize: 12, color: p.textMuted, lineHeight: 1.6 }}>
+            HTTP-01 file verification. Ensure your domain's DNS A record points to this server and port 80 is accessible.
+          </div>
+          <button style={{ ...primaryBtn, alignSelf: 'flex-start' }} onClick={handleLetsEncrypt} disabled={submitting}>
+            {submitting ? 'Issuing…' : 'Issue Certificate'}
+          </button>
+          <div style={{ fontSize: 11, color: p.textMuted, fontStyle: 'italic', marginTop: 4 }}>
+            For wildcard certificates (*.domain.com), DNS verification is required. This feature will be available in a future update.
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'holder' && (
+        certs.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '30px 0', color: p.textMuted, fontSize: 13 }}>
+            No certificates found. Issue or upload a certificate first.
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
+            {certs.map((c, i) => (
+              <div key={i} style={{ padding: '12px 14px', borderRadius: 8, border: `1px solid ${p.cardBorder}`, background: isDark ? p.rowAlt : p.headerBg }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: p.text, marginBottom: 6 }}>{c.domain}</div>
+                <div style={{ marginBottom: 6 }}>
+                  {badge(c.ssl_type === 'letsencrypt' ? "LE" : 'Custom', `${p.accent}15`, p.accent)}
+                </div>
+                <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 8 }}>
+                  Expires: {new Date(c.valid_until).toLocaleDateString()}
+                </div>
+                <button style={{ ...primaryBtn, padding: '4px 10px', fontSize: 11 }} onClick={() => handleApply(c.domain)} disabled={submitting}>Apply</button>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Placeholder panel
 // ---------------------------------------------------------------------------
 function PlaceholderPanel({ title }: { title: string }) {
@@ -319,7 +580,7 @@ function SiteConfigModal({ site, open, onClose, phpVersions }: { site: Site | nu
       case 'php':
         return <PHPVersionPanel siteId={site.id} currentVersion={site.php_version} phpVersions={phpVersions} />;
       case 'ssl':
-        return <PlaceholderPanel title="SSL Certificate Management" />;
+        return <SSLPanel siteId={site.id} siteDomain={site.domain} />;
       case 'redirect':
         return <PlaceholderPanel title="Redirect Rules" />;
       case 'log':
