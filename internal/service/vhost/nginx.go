@@ -236,6 +236,11 @@ func NewNginxGenerator() *NginxGenerator {
 
 // Generate renders an Nginx vhost config from the given VhostConfig.
 func (n *NginxGenerator) Generate(cfg VhostConfig) (string, error) {
+	// Ensure enable-php snippet exists when PHP is configured
+	if cfg.PHPVersion != "" {
+		n.ensurePHPSnippet(cfg.PHPVersion)
+	}
+
 	tmpl, err := template.New("nginx").Parse(nginxTemplate)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse nginx template: %w", err)
@@ -310,4 +315,35 @@ func (n *NginxGenerator) TestConfig() error {
 		return fmt.Errorf("nginx config test failed: %s", result.Stderr)
 	}
 	return nil
+}
+
+// ensurePHPSnippet creates /etc/nginx/enable-php-X.Y.conf if it doesn't exist.
+func (n *NginxGenerator) ensurePHPSnippet(version string) {
+	snippetPath := fmt.Sprintf("/etc/nginx/enable-php-%s.conf", version)
+	if _, err := os.Stat(snippetPath); err == nil {
+		return
+	}
+
+	sockPath := fmt.Sprintf("/run/php/php%s-fpm.sock", version)
+	content := fmt.Sprintf(`location ~ [^/]\.php(/|$) {
+    try_files $uri =404;
+    fastcgi_pass unix:%s;
+    fastcgi_index index.php;
+    include fastcgi_params;
+    fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    fastcgi_connect_timeout 300;
+    fastcgi_send_timeout 300;
+    fastcgi_read_timeout 300;
+    fastcgi_buffer_size 64k;
+    fastcgi_buffers 4 64k;
+    fastcgi_busy_buffers_size 128k;
+    fastcgi_temp_file_write_size 256k;
+}
+`, sockPath)
+
+	if err := os.WriteFile(snippetPath, []byte(content), 0644); err != nil {
+		logger.Warn().Err(err).Str("path", snippetPath).Msg("failed to create PHP snippet")
+	} else {
+		logger.Info().Str("path", snippetPath).Msg("created nginx PHP snippet")
+	}
 }
