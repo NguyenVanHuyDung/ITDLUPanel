@@ -422,6 +422,8 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
 
   const isExpired = (d: string) => new Date(d) < new Date();
   const isExpiringSoon = (d: string) => { const diff = new Date(d).getTime() - Date.now(); return diff > 0 && diff < 30 * 86400000; };
+  const daysUntil = (d: string) => { const diff = Math.ceil((new Date(d).getTime() - Date.now()) / 86400000); return diff; };
+  const fmtDate = (d: string) => { const dt = new Date(d); return dt.toLocaleDateString('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }); };
   const enabled = sslInfo && sslInfo.enabled !== false && sslInfo.valid_until;
 
   const primaryBtn: React.CSSProperties = { padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', background: p.accent, color: '#fff', fontSize: 12, fontWeight: 500 };
@@ -464,17 +466,19 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
               ? badge('Expired', `${p.red}20`, p.red)
               : badge('Active', `${p.green}20`, p.green)
             )}
-            {kvRow('Type', badge(sslInfo.ssl_type === 'letsencrypt' ? "Let's Encrypt" : 'Custom',
+            {kvRow('Certificate type', badge(sslInfo.ssl_type === 'letsencrypt' ? "Let's Encrypt" : 'Custom certificate',
               `${p.accent}15`, p.accent))}
-            {sslInfo.issuer && kvRow('Issuer', sslInfo.issuer)}
-            {sslInfo.valid_from && kvRow('Valid From', new Date(sslInfo.valid_from).toLocaleDateString())}
-            {kvRow('Valid Until', <span style={{
+            {sslInfo.issuer_cn && kvRow('Certificate brand', sslInfo.issuer_cn)}
+            {sslInfo.dns_names?.length > 0 && kvRow('Certificate domain(s)', sslInfo.dns_names.join(', '))}
+            {sslInfo.valid_from && kvRow('Issued', fmtDate(sslInfo.valid_from))}
+            {kvRow('Expired', <span style={{
               color: isExpired(sslInfo.valid_until) ? p.red : isExpiringSoon(sslInfo.valid_until) ? '#d97706' : p.text,
               fontWeight: 500, fontSize: 12,
-            }}>{new Date(sslInfo.valid_until).toLocaleDateString()}</span>)}
-            {sslInfo.dns_names?.length > 0 && kvRow('Domain(s)', sslInfo.dns_names.join(', '))}
-            {sslInfo.cert_path && kvRow('Certificate Path', <span style={{ fontSize: 11, fontFamily: 'monospace' }}>{sslInfo.cert_path}</span>)}
-            {sslInfo.key_path && kvRow('Key Path', <span style={{ fontSize: 11, fontFamily: 'monospace' }}>{sslInfo.key_path}</span>)}
+            }}>{fmtDate(sslInfo.valid_until)}{!isExpired(sslInfo.valid_until)
+              ? `, Exp in ${daysUntil(sslInfo.valid_until)} days`
+              : `, Expired ${Math.abs(daysUntil(sslInfo.valid_until))} days ago`
+            }</span>)}
+            {kvRow('Force HTTPS', <span style={{ fontSize: 12, fontWeight: 500, color: p.green }}>Enabled</span>)}
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
               <button style={dangerBtn} onClick={handleDisable} disabled={submitting}>Disable SSL</button>
               {sslInfo.ssl_type === 'letsencrypt' && (
@@ -534,7 +538,7 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
                   {badge(c.ssl_type === 'letsencrypt' ? "LE" : 'Custom', `${p.accent}15`, p.accent)}
                 </div>
                 <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 8 }}>
-                  Expires: {new Date(c.valid_until).toLocaleDateString()}
+                  Expires: {fmtDate(c.valid_until)}
                 </div>
                 <button style={{ ...primaryBtn, padding: '4px 10px', fontSize: 11 }} onClick={() => handleApply(c.domain)} disabled={submitting}>Apply</button>
               </div>

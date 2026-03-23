@@ -810,8 +810,8 @@ func (s *SiteService) GetSSLInfo(id int64) (map[string]interface{}, error) {
 	}
 
 	result := map[string]interface{}{
-		"ssl_enabled": site.SSLEnabled == 1,
-		"domain":      site.Domain,
+		"enabled": site.SSLEnabled == 1,
+		"domain":  site.Domain,
 	}
 
 	if site.SSLEnabled == 0 {
@@ -828,16 +828,23 @@ func (s *SiteService) GetSSLInfo(id int64) (map[string]interface{}, error) {
 	result["cert_path"] = certPath
 	result["key_path"] = keyPath
 
-	// Read cert to extract expiry info
+	// Read cert to extract detailed info
 	certData, err := os.ReadFile(certPath)
 	if err == nil {
 		block, _ := pem.Decode(certData)
 		if block != nil {
 			cert, err := x509.ParseCertificate(block.Bytes)
 			if err == nil {
-				result["issuer"] = cert.Issuer.CommonName
-				result["not_before"] = cert.NotBefore
-				result["not_after"] = cert.NotAfter
+				// Issuer organization / brand (e.g. "Sectigo RSA ...")
+				issuerOrg := cert.Issuer.CommonName
+				if len(cert.Issuer.Organization) > 0 {
+					issuerOrg = cert.Issuer.Organization[0]
+				}
+
+				result["issuer"] = issuerOrg
+				result["issuer_cn"] = cert.Issuer.CommonName
+				result["valid_from"] = cert.NotBefore.Format("2006-01-02")
+				result["valid_until"] = cert.NotAfter.Format("2006-01-02")
 				result["subject"] = cert.Subject.CommonName
 				result["dns_names"] = cert.DNSNames
 
