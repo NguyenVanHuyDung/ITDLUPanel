@@ -1,18 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Table, Card, Button, Modal, Form, Input, Select, Space, Tag, message, Typography, Popconfirm, Badge } from 'antd';
-import { PlusOutlined, DeleteOutlined, EditOutlined, KeyOutlined, ReloadOutlined, UserOutlined, LockOutlined, UnlockOutlined } from '@ant-design/icons';
+import { Table, Modal, Form, Input, Select, message, Popconfirm } from 'antd';
+import { PlusOutlined, DeleteOutlined, EditOutlined, KeyOutlined, ReloadOutlined, LockOutlined, UnlockOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
-import { useIsMobile } from '@/hooks/useIsMobile';
+import { usePalette } from '@/hooks/usePalette';
 import api from '@/services/api';
 import type { User } from '@/types';
 
-const { Title } = Typography;
-
-const roleColors: Record<string, string> = { admin: 'red', operator: 'blue', viewer: 'green' };
+const roleColorKey: Record<string, 'red' | 'accent' | 'green'> = { admin: 'red', operator: 'accent', viewer: 'green' };
 
 export default function Users() {
   const { t } = useTranslation();
-  const isMobile = useIsMobile();
+  const { p, isDark } = usePalette();
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<User[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
@@ -108,51 +106,127 @@ export default function Users() {
     }
   };
 
+  const btnOutline: React.CSSProperties = {
+    padding: '5px 14px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+    background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
+  };
+  const btnPrimary: React.CSSProperties = {
+    padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
+    background: p.accent, color: '#fff', fontSize: 13, fontWeight: 500,
+  };
+  const btnAction: React.CSSProperties = {
+    padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+    background: 'transparent', color: p.textMuted, fontSize: 11, cursor: 'pointer',
+    display: 'inline-flex', alignItems: 'center', gap: 4,
+  };
+  const btnDanger: React.CSSProperties = {
+    padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.red}30`,
+    background: 'transparent', color: p.red, fontSize: 11, cursor: 'pointer',
+    display: 'inline-flex', alignItems: 'center', gap: 4,
+  };
+
   const columns = [
-    { title: t('auth.username'), dataIndex: 'username', key: 'username', render: (v: string) => <><UserOutlined style={{ marginRight: 8 }} />{v}</> },
-    { title: 'Email', dataIndex: 'email', key: 'email', render: (v: string) => v || '—' },
+    {
+      title: t('auth.username'), dataIndex: 'username', key: 'username',
+      render: (v: string) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{
+            width: 28, height: 28, borderRadius: 14, background: `${p.accent}20`,
+            color: p.accent, fontSize: 12, fontWeight: 600,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            {v?.charAt(0).toUpperCase()}
+          </div>
+          <span style={{ fontWeight: 500, color: p.text, fontSize: 13 }}>{v}</span>
+        </div>
+      ),
+    },
+    {
+      title: 'Email', dataIndex: 'email', key: 'email',
+      render: (v: string) => <span style={{ fontSize: 13, color: v ? p.text : p.textDim }}>{v || '—'}</span>,
+    },
     {
       title: 'Role', dataIndex: 'role', key: 'role',
-      render: (role: string) => <Tag color={roleColors[role] || 'default'}>{role?.toUpperCase()}</Tag>,
+      render: (role: string) => {
+        const c = p[roleColorKey[role] || 'accent'];
+        return (
+          <span style={{ padding: '2px 9px', borderRadius: 4, fontSize: 11, fontWeight: 500, background: c + '15', color: c }}>
+            {role?.toUpperCase()}
+          </span>
+        );
+      },
     },
     {
       title: t('common.status'), key: 'status',
-      render: (_: unknown, r: User) => r.status === 1
-        ? <Badge status="success" text={t('common.active')} />
-        : <Badge status="error" text={t('common.inactive')} />,
+      render: (_: unknown, r: User) => {
+        const active = r.status === 1;
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 6, height: 6, borderRadius: 3, background: active ? p.green : p.red, display: 'inline-block', flexShrink: 0 }} />
+            <span style={{ fontSize: 12, color: p.textMuted }}>{active ? t('common.active') : t('common.inactive')}</span>
+          </div>
+        );
+      },
     },
     {
       title: 'Last Login', dataIndex: 'last_login', key: 'last_login',
-      render: (v: string) => v ? new Date(v).toLocaleString() : 'Never',
+      render: (v: string) => <span style={{ fontSize: 12, color: p.textMuted }}>{v ? new Date(v).toLocaleString() : 'Never'}</span>,
     },
     {
       title: t('common.actions'), key: 'actions',
       render: (_: unknown, r: User) => (
-        <Space>
-          <Button type="text" size="small" icon={<EditOutlined />} onClick={() => { setSelectedUser(r); editForm.setFieldsValue({ username: r.username, email: r.email, role: r.role }); setEditModalOpen(true); }} />
-          <Button type="text" size="small" icon={<KeyOutlined />} title="Reset Password" onClick={() => { setSelectedUser(r); setPasswordModalOpen(true); }} />
-          <Button type="text" size="small" icon={r.status === 1 ? <LockOutlined /> : <UnlockOutlined />} title={r.status === 1 ? t('common.disable') : t('common.enable')} onClick={() => handleToggleStatus(r)} />
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <button style={btnAction} onClick={() => { setSelectedUser(r); editForm.setFieldsValue({ username: r.username, email: r.email, role: r.role }); setEditModalOpen(true); }}>
+            <EditOutlined />
+          </button>
+          <button style={btnAction} title="Reset Password" onClick={() => { setSelectedUser(r); setPasswordModalOpen(true); }}>
+            <KeyOutlined />
+          </button>
+          <button style={btnAction} title={r.status === 1 ? t('common.disable') : t('common.enable')} onClick={() => handleToggleStatus(r)}>
+            {r.status === 1 ? <LockOutlined /> : <UnlockOutlined />}
+          </button>
           <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(r.id)} okText={t('common.yes')} cancelText={t('common.no')}>
-            <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+            <button style={btnDanger}><DeleteOutlined /></button>
           </Popconfirm>
-        </Space>
+        </div>
       ),
     },
   ];
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 8 }}>
-        <Title level={3} style={{ margin: 0 }}>{t('sidebar.users')}</Title>
-        <Space>
-          <Button icon={<ReloadOutlined />} onClick={fetchData} />
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>Add User</Button>
-        </Space>
+    <div style={{
+      background: p.card, borderRadius: 12,
+      border: `1px solid ${p.cardBorder}`,
+      boxShadow: isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.06)',
+      overflow: 'hidden',
+    }}>
+      {/* Header */}
+      <div style={{
+        padding: '14px 20px',
+        borderBottom: `1px solid ${p.cardBorder}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        background: p.headerBg, flexWrap: 'wrap', gap: 8,
+      }}>
+        <span style={{ fontSize: 15, fontWeight: 600, color: p.text }}>{t('sidebar.users')}</span>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button style={btnOutline} onClick={fetchData}><ReloadOutlined /></button>
+          <button style={btnPrimary} onClick={() => setModalOpen(true)}>
+            <PlusOutlined style={{ marginRight: 6 }} />Add User
+          </button>
+        </div>
       </div>
 
-      <Card>
-        <Table columns={columns} dataSource={users} rowKey="id" loading={loading} pagination={{ pageSize: 10, showTotal: total => `${t('common.total')}: ${total}` }} scroll={{ x: 500 }} />
-      </Card>
+      {/* Content */}
+      <div style={{ padding: 20 }}>
+        <Table
+          columns={columns}
+          dataSource={users}
+          rowKey="id"
+          loading={loading}
+          pagination={{ pageSize: 10, showTotal: total => `${t('common.total')}: ${total}` }}
+          scroll={{ x: 500 }}
+        />
+      </div>
 
       {/* Create User Modal */}
       <Modal title="Add User" open={modalOpen} onOk={handleCreate} onCancel={() => { setModalOpen(false); form.resetFields(); }} confirmLoading={submitting} okText={t('common.create')} cancelText={t('common.cancel')} destroyOnHidden>
