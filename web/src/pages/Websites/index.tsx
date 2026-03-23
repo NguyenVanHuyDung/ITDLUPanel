@@ -8,6 +8,8 @@ import {
   MoreOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import Editor from '@monaco-editor/react';
+import '@/lib/monaco-setup';
 import api from '@/services/api';
 import type { Site } from '@/types';
 import RequireSoftware from '@/components/RequireSoftware';
@@ -150,7 +152,7 @@ function DomainManagerPanel({ siteId, siteDomain }: { siteId: number; siteDomain
 // Config editor sub-component
 // ---------------------------------------------------------------------------
 function ConfigEditorPanel({ siteId, webserver }: { siteId: number; webserver: string }) {
-  const { p } = usePalette();
+  const { p, isDark } = usePalette();
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -183,8 +185,8 @@ function ConfigEditorPanel({ siteId, webserver }: { siteId: number; webserver: s
   };
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
         <span style={{ fontSize: 12, color: p.textMuted }}>{webserver?.toUpperCase()} virtual host configuration</span>
         <Button type="primary" size="small" onClick={handleSave} loading={saving}
           style={{ background: p.accent, borderColor: p.accent }}
@@ -193,20 +195,29 @@ function ConfigEditorPanel({ siteId, webserver }: { siteId: number; webserver: s
         </Button>
       </div>
       {loading ? <Spin /> : (
-        <Input.TextArea
-          value={content}
-          onChange={e => setContent(e.target.value)}
-          rows={22}
-          style={{
-            
-            fontSize: 12,
-            background: p.codeBg,
-            color: p.text,
-            border: `1px solid ${p.cardBorder}`,
-            borderRadius: 6,
-            lineHeight: 1.6,
-          }}
-        />
+        <div style={{ border: `1px solid ${p.cardBorder}`, borderRadius: 6, overflow: 'hidden', flex: 1 }}>
+          <Editor
+            height="420px"
+            theme={isDark ? 'vs-dark' : 'light'}
+            language="ini"
+            value={content}
+            onChange={(v) => setContent(v ?? '')}
+            options={{
+              fontSize: 13,
+              tabSize: 4,
+              wordWrap: 'on',
+              minimap: { enabled: false },
+              lineNumbers: 'on',
+              scrollBeyondLastLine: false,
+              automaticLayout: true,
+              renderWhitespace: 'selection',
+              bracketPairColorization: { enabled: true },
+              smoothScrolling: true,
+              cursorSmoothCaretAnimation: 'on',
+              padding: { top: 8 },
+            }}
+          />
+        </div>
       )}
     </div>
   );
