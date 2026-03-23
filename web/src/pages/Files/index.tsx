@@ -114,6 +114,7 @@ export default function Files() {
   }, []);
 
   const handleDownload = useCallback(async (file: FileItem) => {
+    const hide = message.loading(`Downloading ${file.name}…`, 0);
     try {
       const res = await api.get('/files/download', {
         params: { path: file.path },
@@ -127,8 +128,11 @@ export default function Files() {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+      message.success(`Downloaded ${file.name}`);
     } catch {
       message.error('Download failed');
+    } finally {
+      hide();
     }
   }, []);
 

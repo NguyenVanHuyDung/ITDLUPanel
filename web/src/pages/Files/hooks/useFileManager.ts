@@ -138,42 +138,57 @@ export function useFileManager() {
   }, [fetchFiles, currentPath]);
 
   const handleCopy = useCallback(async (src: string, dst: string) => {
+    const name = src.split('/').pop() || 'item';
+    const hide = message.loading(`Copying ${name}…`, 0);
     try {
       await api.post('/files/copy', { src, dst });
       message.success('Copied successfully');
       await fetchFiles(currentPath);
     } catch {
       message.error('Copy failed');
+    } finally {
+      hide();
     }
   }, [fetchFiles, currentPath]);
 
   const handleMove = useCallback(async (src: string, dst: string) => {
+    const name = src.split('/').pop() || 'item';
+    const hide = message.loading(`Moving ${name}…`, 0);
     try {
       await api.post('/files/move', { src, dst });
       message.success('Moved successfully');
       await fetchFiles(currentPath);
     } catch {
       message.error('Move failed');
+    } finally {
+      hide();
     }
   }, [fetchFiles, currentPath]);
 
   const handleCompress = useCallback(async (paths: string[], dest: string, format: string) => {
+    const hide = message.loading(`Compressing ${paths.length} item(s)…`, 0);
     try {
       await api.post('/files/compress', { paths, dest, format });
       message.success('Compressed successfully');
       await fetchFiles(currentPath);
     } catch {
       message.error('Compress failed');
+    } finally {
+      hide();
     }
   }, [fetchFiles, currentPath]);
 
   const handleDecompress = useCallback(async (path: string, dest: string) => {
+    const name = path.split('/').pop() || 'archive';
+    const hide = message.loading(`Extracting ${name}…`, 0);
     try {
       await api.post('/files/decompress', { path, dest });
       message.success('Decompressed successfully');
       await fetchFiles(currentPath);
     } catch {
       message.error('Decompress failed');
+    } finally {
+      hide();
     }
   }, [fetchFiles, currentPath]);
 
