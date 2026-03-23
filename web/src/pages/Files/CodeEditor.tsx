@@ -720,6 +720,33 @@ export default function CodeEditor({ initialFiles, onClose, visible, initialDir 
 
   return (
     <div style={windowStyle}>
+      {/* Ant Design Tree dark mode overrides */}
+      <style>{`
+        .code-editor-tree .ant-tree {
+          background: transparent !important;
+          color: ${textColor} !important;
+        }
+        .code-editor-tree .ant-tree-treenode,
+        .code-editor-tree .ant-tree-node-content-wrapper,
+        .code-editor-tree .ant-tree-title {
+          color: ${textColor} !important;
+        }
+        .code-editor-tree .ant-tree-node-content-wrapper:hover {
+          background: ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'} !important;
+        }
+        .code-editor-tree .ant-tree-node-selected .ant-tree-node-content-wrapper,
+        .code-editor-tree .ant-tree-node-content-wrapper-open,
+        .code-editor-tree .ant-tree-node-content-wrapper.ant-tree-node-selected {
+          background: ${isDark ? 'rgba(78,201,176,0.12)' : 'rgba(0,120,212,0.1)'} !important;
+          color: ${textColor} !important;
+        }
+        .code-editor-tree .ant-tree-switcher {
+          color: ${textMuted} !important;
+        }
+        .code-editor-tree .ant-tree-indent-unit {
+          border-color: ${isDark ? '#3e3e3e' : '#e0e0e0'} !important;
+        }
+      `}</style>
       {/* ── Title Bar ────────────────────────────────────── */}
       <div
         onMouseDown={handleTitleMouseDown}
@@ -870,7 +897,7 @@ export default function CodeEditor({ initialFiles, onClose, visible, initialDir 
           </div>
 
           {/* Tree view */}
-          <div style={{ flex: 1, overflow: 'auto', padding: '4px 0' }}>
+          <div className="code-editor-tree" style={{ flex: 1, overflow: 'auto', padding: '4px 0' }}>
             {sidebarLoading ? (
               <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}><Spin size="small" /></div>
             ) : (
