@@ -22,6 +22,16 @@ export default function CompressModal({ open, paths, defaultDest, onOk, onCancel
     }
   }, [open, defaultDest]);
 
+  const updateFormat = (newFormat: string) => {
+    const extMap: Record<string, string> = { zip: '.zip', 'tar.gz': '.tar.gz', tar: '.tar' };
+    const oldExt = extMap[format] || '';
+    const newExt = extMap[newFormat] || '';
+    if (oldExt && dest.endsWith(oldExt)) {
+      setDest(dest.slice(0, -oldExt.length) + newExt);
+    }
+    setFormat(newFormat);
+  };
+
   const handleOk = () => {
     if (!dest.trim()) return;
     onOk(paths, dest.trim(), format);
@@ -49,7 +59,7 @@ export default function CompressModal({ open, paths, defaultDest, onOk, onCancel
         <div style={{ marginBottom: 4 }}>Format</div>
         <Select
           value={format}
-          onChange={setFormat}
+          onChange={updateFormat}
           options={COMPRESS_FORMATS}
           style={{ width: 160 }}
         />

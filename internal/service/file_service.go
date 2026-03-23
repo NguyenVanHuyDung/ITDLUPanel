@@ -717,11 +717,76 @@ func (s *FileService) Compress(paths []string, destPath string, format string) e
 	switch format {
 	case "zip":
 		return s.compressZip(cleanPaths, cleanDest)
+	case "tar":
+		return s.compressTar(cleanPaths, cleanDest)
 	case "tar.gz", "":
 		return s.compressTarGz(cleanPaths, cleanDest)
 	default:
-		return apperrors.New(apperrors.ErrValidation, "unsupported format: "+format+"; use tar.gz or zip")
+		return apperrors.New(apperrors.ErrValidation, "unsupported format: "+format+"; use tar.gz, tar, or zip")
 	}
+}
+
+func (s *FileService) compressTar(paths []string, dest string) error {
+	outFile, err := os.Create(dest)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to create archive file")
+	}
+	defer outFile.Close()
+
+	tw := tar.NewWriter(outFile)
+	defer tw.Close()
+
+	for _, srcPath := range paths {
+		baseDir := filepath.Dir(srcPath)
+		err := filepath.WalkDir(srcPath, func(file string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+
+			fi, err := os.Lstat(file)
+			if err != nil {
+				return err
+			}
+
+			header, err := tar.FileInfoHeader(fi, "")
+			if err != nil {
+				return err
+			}
+
+			relPath, _ := filepath.Rel(baseDir, file)
+			header.Name = relPath
+
+			if fi.Mode()&os.ModeSymlink != 0 {
+				link, err := os.Readlink(file)
+				if err != nil {
+					return err
+				}
+				header.Linkname = link
+			}
+
+			if err := tw.WriteHeader(header); err != nil {
+				return err
+			}
+
+			if fi.Mode().IsRegular() {
+				f, err := os.Open(file)
+				if err != nil {
+					return err
+				}
+				defer f.Close()
+				if _, err := io.Copy(tw, f); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to compress: "+srcPath)
+		}
+	}
+
+	logger.Info().Str("dest", dest).Int("sources", len(paths)).Msg("tar archive created")
+	return nil
 }
 
 func (s *FileService) compressTarGz(paths []string, dest string) error {
@@ -882,12 +947,64 @@ func (s *FileService) Decompress(archivePath, destDir string) error {
 	switch {
 	case strings.HasSuffix(lower, ".tar.gz") || strings.HasSuffix(lower, ".tgz"):
 		return s.decompressTarGz(cleanArchive, cleanDest)
+	case strings.HasSuffix(lower, ".tar"):
+		return s.decompressTar(cleanArchive, cleanDest)
 	case strings.HasSuffix(lower, ".zip"):
 		return s.decompressZip(cleanArchive, cleanDest)
 	default:
 		// Fall back to system commands for other formats.
 		return s.decompressWithSystem(cleanArchive, cleanDest)
 	}
+}
+
+func (s *FileService) decompressTar(archivePath, destDir string) error {
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to open archive")
+	}
+	defer f.Close()
+
+	tr := tar.NewReader(f)
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to read tar entry")
+		}
+
+		target := filepath.Join(destDir, header.Name)
+
+		if !strings.HasPrefix(filepath.Clean(target), filepath.Clean(destDir)+string(os.PathSeparator)) && filepath.Clean(target) != filepath.Clean(destDir) {
+			return apperrors.New(apperrors.ErrValidation, "archive contains path traversal: "+header.Name)
+		}
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, os.FileMode(header.Mode)); err != nil {
+				return apperrors.Wrap(err, apperrors.ErrInternal, "failed to create directory")
+			}
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+				return err
+			}
+			if err := extractTarFile(tr, target, os.FileMode(header.Mode)); err != nil {
+				return err
+			}
+		case tar.TypeSymlink:
+			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+				return err
+			}
+			_ = os.Remove(target)
+			if err := os.Symlink(header.Linkname, target); err != nil {
+				return apperrors.Wrap(err, apperrors.ErrInternal, "failed to create symlink")
+			}
+		}
+	}
+
+	logger.Info().Str("archive", archivePath).Str("dest", destDir).Msg("tar extracted")
+	return nil
 }
 
 func (s *FileService) decompressTarGz(archivePath, destDir string) error {
