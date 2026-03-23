@@ -141,7 +141,7 @@ function DatabasesContent() {
 
   const openPma = () => {
     const host = window.location.hostname;
-    window.open(`http://${host}/phpmyadmin/`, '_blank');
+    window.open(`http://${host}:888/`, '_blank');
   };
 
   const filteredDatabases = searchText

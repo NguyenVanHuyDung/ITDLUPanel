@@ -131,113 +131,43 @@ func randomHex(n int) string {
 	return hex.EncodeToString(b)
 }
 
-const phpMyAdminNginxSnippet = `/etc/nginx/snippets/phpmyadmin.conf`
+const phpMyAdminNginxConfPath = `/etc/nginx/conf.d/phpmyadmin.conf`
 const phpMyAdminNginxConf = `# phpMyAdmin - managed by ITDLUPanel
-location /phpmyadmin/ {
-    alias /ITDLUPanel/server/phpmyadmin/www/;
-    index index.php;
+server {
+    listen 888;
+    server_name _;
+    root /ITDLUPanel/server/phpmyadmin/www;
+    index index.php index.html;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
 
     location ~ \.php$ {
         fastcgi_pass unix:/var/run/php/php8.3-fpm.sock;
-        fastcgi_param SCRIPT_FILENAME $request_filename;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
+    }
+
+    location ~ /tmp/ {
+        deny all;
     }
 }
 `
 
 func setupPhpMyAdminNginx(ctx context.Context) {
-	// Write snippet
-	if err := os.WriteFile(phpMyAdminNginxSnippet, []byte(phpMyAdminNginxConf), 0644); err != nil {
-		logger.Warn().Err(err).Msg("failed to write phpMyAdmin nginx snippet")
+	os.MkdirAll("/etc/nginx/conf.d", 0755)
+	if err := os.WriteFile(phpMyAdminNginxConfPath, []byte(phpMyAdminNginxConf), 0644); err != nil {
+		logger.Warn().Err(err).Msg("failed to write phpMyAdmin nginx config")
 		return
 	}
 
-	// Check if already included in default site
-	defaultSite := "/etc/nginx/sites-enabled/default"
-	data, err := os.ReadFile(defaultSite)
-	if err != nil {
-		logger.Warn().Err(err).Msg("cannot read default nginx site")
-		return
-	}
-
-	if !contains(string(data), "snippets/phpmyadmin.conf") {
-		// Insert include after the index line
-		content := string(data)
-		needle := "index index.html index.htm index.nginx-debian.html;"
-		if idx := indexOf(content, needle); idx >= 0 {
-			insertAt := idx + len(needle)
-			content = content[:insertAt] + "\n\n\t# phpMyAdmin\n\tinclude snippets/phpmyadmin.conf;" + content[insertAt:]
-			os.WriteFile(defaultSite, []byte(content), 0644)
-		}
-	}
-
-	// Reload nginx
 	system.ExecWithTimeout(5*time.Second, "nginx", "-t")
 	system.ExecWithTimeout(5*time.Second, "systemctl", "reload", "nginx")
 	logger.Info().Msg("phpMyAdmin nginx config applied")
 }
 
 func removePhpMyAdminNginx(ctx context.Context) {
-	os.Remove(phpMyAdminNginxSnippet)
-
-	// Remove include from default site
-	defaultSite := "/etc/nginx/sites-enabled/default"
-	data, err := os.ReadFile(defaultSite)
-	if err != nil {
-		return
-	}
-	content := string(data)
-	// Remove the include lines
-	lines := splitLines(content)
-	var filtered []string
-	for i := 0; i < len(lines); i++ {
-		if contains(lines[i], "# phpMyAdmin") {
-			continue
-		}
-		if contains(lines[i], "snippets/phpmyadmin.conf") {
-			continue
-		}
-		filtered = append(filtered, lines[i])
-	}
-	os.WriteFile(defaultSite, []byte(joinLines(filtered)), 0644)
+	os.Remove(phpMyAdminNginxConfPath)
 	system.ExecWithTimeout(5*time.Second, "systemctl", "reload", "nginx")
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && indexOf(s, substr) >= 0
-}
-
-func indexOf(s, substr string) int {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
-}
-
-func splitLines(s string) []string {
-	var lines []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			lines = append(lines, s[start:i])
-			start = i + 1
-		}
-	}
-	if start < len(s) {
-		lines = append(lines, s[start:])
-	}
-	return lines
-}
-
-func joinLines(lines []string) string {
-	result := ""
-	for i, l := range lines {
-		if i > 0 {
-			result += "\n"
-		}
-		result += l
-	}
-	return result
 }

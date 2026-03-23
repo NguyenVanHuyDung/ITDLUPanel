@@ -870,7 +870,7 @@ export default function AppStore() {
                           icon={<LinkOutlined />}
                           onClick={() => {
                             const host = window.location.hostname;
-                            window.open(`http://${host}/phpmyadmin/`, '_blank');
+                            window.open(`http://${host}:888/`, '_blank');
                           }}
                           style={{ background: p.accent, borderColor: p.accent }}
                         >
