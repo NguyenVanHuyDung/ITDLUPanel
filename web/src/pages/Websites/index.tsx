@@ -292,6 +292,7 @@ interface CertInfo {
   domain: string;
   ssl_type: string;
   issuer: string;
+  issuer_cn: string;
   valid_from: string;
   valid_until: string;
   dns_names: string[];
@@ -543,7 +544,10 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
             {certs.map((c, i) => (
               <div key={i} style={{ padding: '12px 14px', borderRadius: 8, border: `1px solid ${p.cardBorder}`, background: isDark ? p.rowAlt : p.headerBg }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: p.text, marginBottom: 6 }}>{c.domain}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: p.text, marginBottom: 4 }}>
+                  {c.dns_names?.length > 0 ? c.dns_names.join(', ') : c.domain}
+                </div>
+                <div style={{ fontSize: 10, color: p.textMuted, marginBottom: 6 }}>{c.issuer_cn || c.issuer}</div>
                 <div style={{ marginBottom: 6 }}>
                   {badge(c.ssl_type === 'letsencrypt' ? "LE" : 'Custom', `${p.accent}15`, p.accent)}
                 </div>
