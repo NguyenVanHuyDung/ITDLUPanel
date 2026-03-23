@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Modal, message } from 'antd';
 import { ExclamationCircleOutlined } from '@ant-design/icons';
+import api from '@/services/api';
 
 import type { FileItem, ViewMode, ContextMenuState, MoveMode } from './types';
 import { PAGE_SIZE_KEY } from './utils/constants';
@@ -112,13 +113,23 @@ export default function Files() {
     setEditorVisible(true);
   }, []);
 
-  const handleDownload = useCallback((file: FileItem) => {
-    const link = document.createElement('a');
-    link.href = `/api/v1/files/download?path=${encodeURIComponent(file.path)}`;
-    link.download = file.name;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleDownload = useCallback(async (file: FileItem) => {
+    try {
+      const res = await api.get('/files/download', {
+        params: { path: file.path },
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(res.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = file.name;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch {
+      message.error('Download failed');
+    }
   }, []);
 
   const handleDeleteConfirm = useCallback((paths: string[]) => {
