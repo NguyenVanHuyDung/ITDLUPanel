@@ -358,7 +358,15 @@ func (s *SiteService) GetConfig(id int64) (string, error) {
 	data, err := os.ReadFile(confPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", apperrors.New(apperrors.ErrNotFound, "vhost config file not found")
+			// Config file missing — regenerate it
+			if regErr := s.regenerateVhost(site); regErr != nil {
+				return "", apperrors.Wrap(regErr, apperrors.ErrInternal, "config missing and failed to regenerate")
+			}
+			data, err = os.ReadFile(confPath)
+			if err != nil {
+				return "", apperrors.New(apperrors.ErrNotFound, "vhost config file not found after regeneration")
+			}
+			return string(data), nil
 		}
 		return "", apperrors.Wrap(err, apperrors.ErrInternal, "failed to read config")
 	}
