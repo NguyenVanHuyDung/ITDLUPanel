@@ -35,6 +35,11 @@ const nginxTemplate = `server {
     access_log /var/log/nginx/{{ .Domain }}.access.log;
     error_log  /var/log/nginx/{{ .Domain }}.error.log;
 
+    # Error pages
+    error_page 403 /403.html;
+    error_page 404 /404.html;
+    error_page 502 /502.html;
+
     # Security headers
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
@@ -144,6 +149,7 @@ server {
     error_log  /var/log/nginx/{{ .Domain }}.error.log;
 
     # Error pages
+    error_page 403 /403.html;
     error_page 404 /404.html;
     error_page 502 /502.html;
     error_page 497 https://$host$request_uri;

@@ -112,12 +112,13 @@ func (s *SiteService) Create(req CreateSiteRequest, userID int64) (*Site, error)
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create document root")
 	}
 
-	// 3. Create default index.html
-	indexPath := filepath.Join(docRoot, "index.html")
-	if _, err := os.Stat(indexPath); os.IsNotExist(err) {
-		indexContent := defaultIndexHTML(req.Domain)
-		if err := os.WriteFile(indexPath, []byte(indexContent), 0644); err != nil {
-			return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create index.html")
+	// 3. Create default pages (index.html, 404.html, 502.html, 403.html)
+	for name, content := range defaultSitePages(req.Domain) {
+		p := filepath.Join(docRoot, name)
+		if _, err := os.Stat(p); os.IsNotExist(err) {
+			if err := os.WriteFile(p, []byte(content), 0644); err != nil {
+				return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create "+name)
+			}
 		}
 	}
 
@@ -842,32 +843,6 @@ func (s *SiteService) GetSSLInfo(id int64) (map[string]interface{}, error) {
 	}
 
 	return result, nil
-}
-
-// defaultIndexHTML returns a welcome page for newly created sites.
-func defaultIndexHTML(domain string) string {
-	return fmt.Sprintf(`<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Welcome to %s</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-               display: flex; justify-content: center; align-items: center;
-               min-height: 100vh; margin: 0; background: #f5f5f5; color: #333; }
-        .container { text-align: center; padding: 2rem; }
-        h1 { font-size: 2rem; margin-bottom: 0.5rem; }
-        p  { color: #666; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Welcome to %s</h1>
-        <p>This site is managed by ITDLUPanel.</p>
-    </div>
-</body>
-</html>`, domain, domain)
 }
 
 // DetectInstalledPHPVersions checks common PHP-FPM binaries and returns
