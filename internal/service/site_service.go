@@ -284,6 +284,12 @@ func (s *SiteService) Delete(id int64) error {
 		logger.Warn().Err(err).Str("domain", site.Domain).Msg("failed to reload webserver during delete")
 	}
 
+	// Remove document root
+	docRoot := filepath.Join(wwwrootBase, site.Domain)
+	if err := os.RemoveAll(docRoot); err != nil {
+		logger.Warn().Err(err).Str("path", docRoot).Msg("failed to remove document root during delete")
+	}
+
 	// Delete DB record (domains cascade)
 	_, err = s.db.Exec("DELETE FROM sites WHERE id = ?", id)
 	if err != nil {
