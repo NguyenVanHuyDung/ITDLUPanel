@@ -353,24 +353,29 @@ function ConfigTab() {
 // ============================================================================
 function VersionTab() {
   const [currentVersion, setCurrentVersion] = useState('');
+  const [versionType, setVersionType] = useState('');
   const [versions] = useState(['stable', 'mainline']);
   const [selected, setSelected] = useState('');
   const [loading, setLoading] = useState(true);
   const [switching, setSwitching] = useState(false);
+  const [confirmVisible, setConfirmVisible] = useState(false);
 
   useEffect(() => {
     (async () => {
       try {
         const { data: resp } = await api.get('/software/nginx/status');
-        const ver = resp.data?.version || 'unknown';
-        setCurrentVersion(ver);
-        setSelected(ver.includes('mainline') ? 'mainline' : 'stable');
+        const d = resp.data || {};
+        setCurrentVersion(d.version_display || d.version || 'unknown');
+        const vt = d.version_type || 'stable';
+        setVersionType(vt);
+        setSelected(vt);
       } catch {}
       setLoading(false);
     })();
   }, []);
 
   const handleSwitch = async () => {
+    setConfirmVisible(false);
     setSwitching(true);
     try {
       await api.post('/software/install', { name: 'nginx', version: selected });
@@ -411,7 +416,7 @@ function VersionTab() {
                 label: (
                   <Space>
                     <span>{v === 'stable' ? 'Nginx Stable' : 'Nginx Mainline'}</span>
-                    {currentVersion.includes(v) && <CheckCircleFilled style={{ color: SUCCESS, fontSize: 12 }} />}
+                    {v === versionType && <CheckCircleFilled style={{ color: SUCCESS, fontSize: 12 }} />}
                   </Space>
                 ),
               }))}
@@ -419,8 +424,15 @@ function VersionTab() {
             <Button
               type="primary"
               icon={<SwapOutlined />}
-              onClick={handleSwitch}
+              onClick={() => {
+                if (selected === versionType) {
+                  message.info('Already on this version channel');
+                  return;
+                }
+                setConfirmVisible(true);
+              }}
               loading={switching}
+              disabled={selected === versionType}
               style={{ background: PRIMARY, borderColor: PRIMARY, borderRadius: 6 }}
             >
               Switch
@@ -432,8 +444,27 @@ function VersionTab() {
             fontSize: 12, color: TEXT_SECONDARY,
           }}>
             <InfoCircleOutlined style={{ marginRight: 6, color: PRIMARY }} />
-            Switching version will reinstall Nginx. Your configuration files will be preserved.
+            Switching version will reinstall Nginx from nginx.org repository. Your configuration files will be preserved.
           </div>
+
+          <Modal
+            title="Confirm Version Switch"
+            open={confirmVisible}
+            onOk={handleSwitch}
+            onCancel={() => setConfirmVisible(false)}
+            okText="Switch Now"
+            okButtonProps={{ danger: true }}
+          >
+            <p>
+              This will <strong>uninstall</strong> the current Nginx and <strong>reinstall</strong> from the{' '}
+              <strong>{selected === 'mainline' ? 'Mainline' : 'Stable'}</strong> channel via nginx.org.
+            </p>
+            <p>Your configuration files will be backed up and restored automatically.</p>
+            <p style={{ color: WARNING }}>
+              <InfoCircleOutlined style={{ marginRight: 4 }} />
+              Nginx will be briefly unavailable during the switch.
+            </p>
+          </Modal>
         </>
       )}
     </div>

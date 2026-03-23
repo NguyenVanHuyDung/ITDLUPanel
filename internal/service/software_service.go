@@ -490,9 +490,25 @@ func (s *SoftwareService) GetServiceStatus(name string) (map[string]interface{},
 			if strings.Contains(vStr, "/") {
 				parts := strings.SplitN(vStr, "/", 2)
 				if len(parts) == 2 {
-					result["version"] = strings.TrimSpace(parts[1])
+					ver := strings.TrimSpace(parts[1])
+					// Strip parenthetical suffix like "(Ubuntu)"
+					if idx := strings.Index(ver, " ("); idx > 0 {
+						ver = ver[:idx]
+					}
+					result["version"] = ver
 				}
 			}
+		}
+
+		// Detect stable vs mainline
+		vType := installer.DetectNginxVersionType()
+		result["version_type"] = vType
+		if ver, ok := result["version"].(string); ok && ver != "" {
+			label := "Stable"
+			if vType == "mainline" {
+				label = "Mainline"
+			}
+			result["version_display"] = fmt.Sprintf("%s (%s)", ver, label)
 		}
 	}
 
