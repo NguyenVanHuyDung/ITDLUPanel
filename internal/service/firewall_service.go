@@ -40,7 +40,31 @@ type FirewallRule struct {
 	Description string `json:"description"`
 	Status      int    `json:"status"`
 	SortOrder   int    `json:"sort_order"`
+	IsDefault   int    `json:"is_default"`
 	CreatedAt   string `json:"created_at"`
+}
+
+// FirewallSettings holds global firewall toggle states.
+type FirewallSettings struct {
+	Enabled   bool `json:"enabled"`
+	ICMPBlock bool `json:"icmp_block"`
+}
+
+// softwarePortMap maps software names to their default ports.
+var softwarePortMap = map[string][]struct {
+	Port     string
+	Protocol string
+	Desc     string
+}{
+	"nginx":          {{Port: "80", Protocol: "tcp", Desc: "HTTP (Nginx)"}, {Port: "443", Protocol: "tcp", Desc: "HTTPS (Nginx)"}},
+	"apache":         {{Port: "80", Protocol: "tcp", Desc: "HTTP (Apache)"}, {Port: "443", Protocol: "tcp", Desc: "HTTPS (Apache)"}},
+	"openlitespeed":  {{Port: "80", Protocol: "tcp", Desc: "HTTP (OLS)"}, {Port: "443", Protocol: "tcp", Desc: "HTTPS (OLS)"}, {Port: "7080", Protocol: "tcp", Desc: "OLS Admin"}},
+	"mysql":          {{Port: "3306", Protocol: "tcp", Desc: "MySQL"}},
+	"mariadb":        {{Port: "3306", Protocol: "tcp", Desc: "MariaDB"}},
+	"postgresql":     {{Port: "5432", Protocol: "tcp", Desc: "PostgreSQL"}},
+	"redis":          {{Port: "6379", Protocol: "tcp", Desc: "Redis"}},
+	"pureftpd":       {{Port: "21", Protocol: "tcp", Desc: "FTP Control"}, {Port: "20", Protocol: "tcp", Desc: "FTP Data"}},
+	"memcached":      {{Port: "11211", Protocol: "tcp", Desc: "Memcached"}},
 }
 
 // ---------------------------------------------------------------------------
@@ -60,7 +84,7 @@ func NewFirewallService(db *sql.DB) *FirewallService {
 // ListRules returns all firewall rules.
 func (s *FirewallService) ListRules() ([]*FirewallRule, error) {
 	rows, err := s.db.Query(
-		`SELECT id, type, protocol, port, ip, action, direction, description, status, sort_order, created_at
+		`SELECT id, type, protocol, port, ip, action, direction, description, status, sort_order, COALESCE(is_default, 0), created_at
 		 FROM firewall_rules ORDER BY sort_order ASC, id ASC`,
 	)
 	if err != nil {
@@ -73,7 +97,7 @@ func (s *FirewallService) ListRules() ([]*FirewallRule, error) {
 		r := &FirewallRule{}
 		var port, ip, description sql.NullString
 		if err := rows.Scan(&r.ID, &r.Type, &r.Protocol, &port, &ip, &r.Action,
-			&r.Direction, &description, &r.Status, &r.SortOrder, &r.CreatedAt); err != nil {
+			&r.Direction, &description, &r.Status, &r.SortOrder, &r.IsDefault, &r.CreatedAt); err != nil {
 			return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to scan firewall rule")
 		}
 		r.Port = port.String
@@ -272,6 +296,205 @@ func (s *FirewallService) UnblockIP(ip string) error {
 
 	logger.Info().Str("ip", ip).Msg("IP unblocked")
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Global settings
+// ---------------------------------------------------------------------------
+
+// GetSettings returns the global firewall settings.
+func (s *FirewallService) GetSettings() (*FirewallSettings, error) {
+	settings := &FirewallSettings{}
+	rows, err := s.db.Query("SELECT key, value FROM firewall_settings")
+	if err != nil {
+		return settings, nil // table may not exist yet
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			continue
+		}
+		switch k {
+		case "enabled":
+			settings.Enabled = v == "true"
+		case "icmp_block":
+			settings.ICMPBlock = v == "true"
+		}
+	}
+	return settings, nil
+}
+
+// UpdateSettings updates a firewall setting and applies the change.
+func (s *FirewallService) UpdateSettings(key string, value bool) error {
+	val := "false"
+	if value {
+		val = "true"
+	}
+
+	_, err := s.db.Exec(
+		"INSERT OR REPLACE INTO firewall_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+		key, val,
+	)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to update firewall setting")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	switch key {
+	case "enabled":
+		if value {
+			return s.enableFirewall(ctx)
+		}
+		return s.disableFirewall(ctx)
+	case "icmp_block":
+		if value {
+			return s.blockICMP(ctx)
+		}
+		return s.unblockICMP(ctx)
+	}
+
+	return nil
+}
+
+// enableFirewall applies all enabled rules and saves.
+func (s *FirewallService) enableFirewall(ctx context.Context) error {
+	rules, err := s.ListRules()
+	if err != nil {
+		return err
+	}
+
+	for _, r := range rules {
+		if r.Status == 1 {
+			if err := s.applyRule(r); err != nil {
+				logger.Error().Err(err).Int64("id", r.ID).Msg("failed to apply rule during enable")
+			}
+		}
+	}
+
+	// Check ICMP setting — re-apply if needed
+	settings, _ := s.GetSettings()
+	if settings.ICMPBlock {
+		_ = s.blockICMP(ctx)
+	}
+
+	s.saveIptables(ctx)
+	logger.Info().Msg("firewall enabled")
+	return nil
+}
+
+// disableFirewall flushes panel-managed iptables rules.
+func (s *FirewallService) disableFirewall(ctx context.Context) error {
+	rules, err := s.ListRules()
+	if err != nil {
+		return err
+	}
+
+	// Remove each managed rule from iptables
+	for _, r := range rules {
+		if r.Status == 1 {
+			_ = s.removeRule(r)
+		}
+	}
+
+	// Remove ICMP block if active
+	_ = s.unblockICMP(ctx)
+
+	s.saveIptables(ctx)
+	logger.Info().Msg("firewall disabled")
+	return nil
+}
+
+// blockICMP adds iptables rule to drop ICMP echo-request.
+func (s *FirewallService) blockICMP(ctx context.Context) error {
+	// Remove first to avoid duplicates
+	_, _ = system.Exec(ctx, "iptables", "-D", "INPUT", "-p", "icmp", "--icmp-type", "echo-request", "-j", "DROP")
+	_, err := system.Exec(ctx, "iptables", "-A", "INPUT", "-p", "icmp", "--icmp-type", "echo-request", "-j", "DROP")
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to block ICMP")
+	}
+	s.saveIptables(ctx)
+	logger.Info().Msg("ICMP echo-request blocked")
+	return nil
+}
+
+// unblockICMP removes iptables ICMP drop rule.
+func (s *FirewallService) unblockICMP(ctx context.Context) error {
+	_, _ = system.Exec(ctx, "iptables", "-D", "INPUT", "-p", "icmp", "--icmp-type", "echo-request", "-j", "DROP")
+	s.saveIptables(ctx)
+	logger.Info().Msg("ICMP echo-request unblocked")
+	return nil
+}
+
+// OpenPortsForSoftware automatically adds firewall rules for a software package.
+func (s *FirewallService) OpenPortsForSoftware(softwareName string) {
+	ports, ok := softwarePortMap[softwareName]
+	if !ok {
+		return
+	}
+
+	settings, _ := s.GetSettings()
+
+	for _, p := range ports {
+		// Check if rule already exists
+		var count int
+		err := s.db.QueryRow(
+			"SELECT COUNT(*) FROM firewall_rules WHERE port = ? AND protocol = ? AND direction = 'in' AND type = 'port'",
+			p.Port, p.Protocol,
+		).Scan(&count)
+		if err != nil || count > 0 {
+			continue
+		}
+
+		rule, err := s.AddRule(AddRuleRequest{
+			Type:        "port",
+			Port:        p.Port,
+			Protocol:    p.Protocol,
+			Action:      "allow",
+			Direction:   "in",
+			Description: p.Desc,
+		})
+		if err != nil {
+			logger.Warn().Err(err).Str("port", p.Port).Str("software", softwareName).Msg("failed to auto-open port")
+			continue
+		}
+
+		// If firewall is disabled, don't apply to iptables (rule saved in DB only)
+		if !settings.Enabled {
+			// Remove from iptables since AddRule already applied it
+			_ = s.removeRule(rule)
+		}
+
+		logger.Info().Str("port", p.Port).Str("software", softwareName).Msg("auto-opened port for software")
+	}
+}
+
+// ClosePortsForSoftware removes auto-added firewall rules for a software package.
+func (s *FirewallService) ClosePortsForSoftware(softwareName string) {
+	ports, ok := softwarePortMap[softwareName]
+	if !ok {
+		return
+	}
+
+	for _, p := range ports {
+		// Find and delete matching non-default rules
+		var id int64
+		var isDefault int
+		err := s.db.QueryRow(
+			"SELECT id, COALESCE(is_default, 0) FROM firewall_rules WHERE port = ? AND protocol = ? AND direction = 'in' AND type = 'port' LIMIT 1",
+			p.Port, p.Protocol,
+		).Scan(&id, &isDefault)
+		if err != nil || isDefault == 1 {
+			continue // Don't delete default rules
+		}
+
+		if err := s.DeleteRule(id); err != nil {
+			logger.Warn().Err(err).Str("port", p.Port).Str("software", softwareName).Msg("failed to auto-close port")
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------

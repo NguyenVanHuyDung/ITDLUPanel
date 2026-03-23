@@ -13,5 +13,6 @@ func All() []Migration {
 	return []Migration{
 		&Migration001Init{},
 		&Migration002MonitorMetrics{},
+		&Migration003FirewallSettings{},
 	}
 }

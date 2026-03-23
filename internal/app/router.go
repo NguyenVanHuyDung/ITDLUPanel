@@ -103,7 +103,7 @@ func SetupRouter(db *sql.DB) *gin.Engine {
 		backupService := service.NewBackupService(db)
 		terminalService := service.NewTerminalService()
 		installerRegistry := installer.DefaultRegistry()
-		softwareService := service.NewSoftwareService(db, taskQueue, installerRegistry)
+		softwareService := service.NewSoftwareService(db, taskQueue, installerRegistry, firewallService)
 
 		// -------------------------------------------------------
 		// Auth & User (public / admin)

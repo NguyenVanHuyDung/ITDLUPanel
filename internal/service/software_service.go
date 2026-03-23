@@ -151,17 +151,19 @@ type AvailableSoftware struct {
 
 // SoftwareService manages software installation, removal, and service control.
 type SoftwareService struct {
-	db       *sql.DB
-	queue    *task.Queue
-	registry *installer.Registry
+	db              *sql.DB
+	queue           *task.Queue
+	registry        *installer.Registry
+	firewallService *FirewallService
 }
 
 // NewSoftwareService creates a new SoftwareService.
-func NewSoftwareService(db *sql.DB, queue *task.Queue, registry *installer.Registry) *SoftwareService {
+func NewSoftwareService(db *sql.DB, queue *task.Queue, registry *installer.Registry, firewallSvc *FirewallService) *SoftwareService {
 	svc := &SoftwareService{
-		db:       db,
-		queue:    queue,
-		registry: registry,
+		db:              db,
+		queue:           queue,
+		registry:        registry,
+		firewallService: firewallSvc,
 	}
 	svc.registerTaskHandlers()
 	return svc
@@ -204,6 +206,12 @@ func (s *SoftwareService) registerTaskHandlers() {
 		}
 
 		progress(100, fmt.Sprintf("%s installed successfully", name))
+
+		// Auto-open firewall ports for this software
+		if s.firewallService != nil {
+			s.firewallService.OpenPortsForSoftware(name)
+		}
+
 		return nil
 	})
 
@@ -227,6 +235,12 @@ func (s *SoftwareService) registerTaskHandlers() {
 		}
 
 		progress(100, fmt.Sprintf("%s uninstalled successfully", name))
+
+		// Auto-close firewall ports for this software
+		if s.firewallService != nil {
+			s.firewallService.ClosePortsForSoftware(name)
+		}
+
 		return nil
 	})
 

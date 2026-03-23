@@ -33,6 +33,9 @@ func (h *SecurityHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, securityMW
 		firewall.DELETE("/rules/:id", h.DeleteRule)
 		firewall.PUT("/rules/:id/status", h.ToggleRule)
 
+		firewall.GET("/settings", h.GetFirewallSettings)
+		firewall.PUT("/settings", h.UpdateFirewallSettings)
+
 		firewall.GET("/port-status", h.GetPortStatuses)
 		firewall.GET("/blocked-ips", h.GetBlockedIPs)
 		firewall.POST("/blocked-ips", h.BlockIP)
@@ -48,6 +51,48 @@ func (h *SecurityHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, securityMW
 		security.GET("/fail2ban", h.GetFail2banStatus)
 		security.PUT("/fail2ban", h.ConfigureFail2ban)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Firewall settings
+// ---------------------------------------------------------------------------
+
+// GetFirewallSettings returns global firewall settings.
+func (h *SecurityHandler) GetFirewallSettings(c *gin.Context) {
+	settings, err := h.firewallService.GetSettings()
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, settings)
+}
+
+type updateFirewallSettingsRequest struct {
+	Key   string `json:"key" validate:"required,oneof=enabled icmp_block"`
+	Value bool   `json:"value"`
+}
+
+// UpdateFirewallSettings updates a global firewall setting.
+func (h *SecurityHandler) UpdateFirewallSettings(c *gin.Context) {
+	var req updateFirewallSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid request body"},
+		})
+		return
+	}
+
+	if errs := validator.Validate(req); errs != nil {
+		response.ValidationError(c, errs)
+		return
+	}
+
+	if err := h.firewallService.UpdateSettings(req.Key, req.Value); err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"message": "firewall setting updated successfully"})
 }
 
 // ---------------------------------------------------------------------------
