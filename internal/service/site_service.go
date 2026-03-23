@@ -831,11 +831,12 @@ func (s *SiteService) GetSSLInfo(id int64) (map[string]interface{}, error) {
 	// Read cert to extract detailed info
 	certData, err := os.ReadFile(certPath)
 	if err == nil {
+		result["cert_content"] = string(certData)
+
 		block, _ := pem.Decode(certData)
 		if block != nil {
 			cert, err := x509.ParseCertificate(block.Bytes)
 			if err == nil {
-				// Issuer organization / brand (e.g. "Sectigo RSA ...")
 				issuerOrg := cert.Issuer.CommonName
 				if len(cert.Issuer.Organization) > 0 {
 					issuerOrg = cert.Issuer.Organization[0]
@@ -848,13 +849,17 @@ func (s *SiteService) GetSSLInfo(id int64) (map[string]interface{}, error) {
 				result["subject"] = cert.Subject.CommonName
 				result["dns_names"] = cert.DNSNames
 
-				// Update ssl_expiry in DB
 				_, _ = s.db.Exec(
 					`UPDATE sites SET ssl_expiry = ? WHERE id = ?`,
 					cert.NotAfter.Format("2006-01-02"), id,
 				)
 			}
 		}
+	}
+
+	keyData, err := os.ReadFile(keyPath)
+	if err == nil {
+		result["key_content"] = string(keyData)
 	}
 
 	return result, nil

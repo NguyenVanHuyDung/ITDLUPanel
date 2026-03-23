@@ -41,14 +41,16 @@ const (
 
 // CertInfo describes an SSL certificate.
 type CertInfo struct {
-	Domain    string    `json:"domain"`
-	Issuer    string    `json:"issuer"`
-	NotBefore time.Time `json:"not_before"`
-	NotAfter  time.Time `json:"not_after"`
-	Type      string    `json:"type"`
-	AutoRenew bool      `json:"auto_renew"`
-	CertPath  string    `json:"cert_path"`
-	KeyPath   string    `json:"key_path"`
+	Domain     string   `json:"domain"`
+	Issuer     string   `json:"issuer"`
+	IssuerCN   string   `json:"issuer_cn"`
+	ValidFrom  string   `json:"valid_from"`
+	ValidUntil string   `json:"valid_until"`
+	SSLType    string   `json:"ssl_type"`
+	AutoRenew  bool     `json:"auto_renew"`
+	CertPath   string   `json:"cert_path"`
+	KeyPath    string   `json:"key_path"`
+	DNSNames   []string `json:"dns_names"`
 }
 
 // SSLService manages SSL certificates.
@@ -244,7 +246,7 @@ func (s *SSLService) RenewCertificate(domain string) error {
 		return err
 	}
 
-	switch info.Type {
+	switch info.SSLType {
 	case certTypeLetsEncrypt:
 		// Re-issue using autocert manager as a simpler renewal path.
 		email := s.getStoredEmail(domain)
@@ -394,7 +396,8 @@ func (s *SSLService) CheckExpiry() ([]*CertInfo, error) {
 	var expiring []*CertInfo
 	threshold := time.Now().Add(expiryThreshold)
 	for _, cert := range all {
-		if cert.NotAfter.Before(threshold) {
+		expDate, _ := time.Parse("2006-01-02", cert.ValidUntil)
+		if expDate.Before(threshold) {
 			expiring = append(expiring, cert)
 		}
 	}
@@ -503,11 +506,11 @@ func (s *SSLService) GetPanelSSLInfo() (*CertInfo, error) {
 
 	// Determine type from issuer.
 	if info.Issuer == info.Domain || strings.Contains(info.Issuer, "ITDLUPanel") {
-		info.Type = certTypeSelfSigned
+		info.SSLType = certTypeSelfSigned
 	} else if strings.Contains(strings.ToLower(info.Issuer), "let's encrypt") || strings.Contains(strings.ToLower(info.Issuer), "letsencrypt") {
-		info.Type = certTypeLetsEncrypt
+		info.SSLType = certTypeLetsEncrypt
 	} else {
-		info.Type = certTypeCustom
+		info.SSLType = certTypeCustom
 	}
 
 	return info, nil
@@ -549,15 +552,22 @@ func (s *SSLService) parseCertFile(certPath, keyPath, domain, certType string) (
 		}
 	}
 
+	issuerOrg := cert.Issuer.CommonName
+	if len(cert.Issuer.Organization) > 0 {
+		issuerOrg = cert.Issuer.Organization[0]
+	}
+
 	return &CertInfo{
-		Domain:    domain,
-		Issuer:    cert.Issuer.CommonName,
-		NotBefore: cert.NotBefore,
-		NotAfter:  cert.NotAfter,
-		Type:      certType,
-		AutoRenew: autoRenew,
-		CertPath:  certPath,
-		KeyPath:   keyPath,
+		Domain:     domain,
+		Issuer:     issuerOrg,
+		IssuerCN:   cert.Issuer.CommonName,
+		ValidFrom:  cert.NotBefore.Format("2006-01-02"),
+		ValidUntil: cert.NotAfter.Format("2006-01-02"),
+		SSLType:    certType,
+		AutoRenew:  autoRenew,
+		CertPath:   certPath,
+		KeyPath:    keyPath,
+		DNSNames:   cert.DNSNames,
 	}, nil
 }
 

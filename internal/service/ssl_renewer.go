@@ -67,15 +67,15 @@ func (r *SSLRenewer) RenewExpiring() error {
 		if !cert.AutoRenew {
 			logger.Info().
 				Str("domain", cert.Domain).
-				Str("type", cert.Type).
-				Time("expires", cert.NotAfter).
+				Str("type", cert.SSLType).
+				Str("expires", cert.ValidUntil).
 				Msg("certificate expiring but auto-renew is disabled")
 			continue
 		}
 
 		logger.Info().
 			Str("domain", cert.Domain).
-			Time("expires", cert.NotAfter).
+			Str("expires", cert.ValidUntil).
 			Msg("renewing certificate")
 
 		if err := r.sslService.RenewCertificate(cert.Domain); err != nil {

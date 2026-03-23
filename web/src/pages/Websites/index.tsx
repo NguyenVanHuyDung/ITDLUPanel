@@ -491,6 +491,16 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
 
       {activeTab === 'custom' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {enabled && sslInfo.cert_path && (
+            <div style={{ padding: '10px 14px', borderRadius: 8, border: `1px solid ${p.cardBorder}`, background: isDark ? p.rowAlt : p.headerBg, marginBottom: 4 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: p.text, marginBottom: 8 }}>Current Certificate</div>
+              <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4 }}>Private Key — <span style={{ fontFamily: 'monospace', fontSize: 10 }}>{sslInfo.key_path}</span></div>
+              <textarea readOnly style={{ ...textareaStyle, minHeight: 80, cursor: 'text', opacity: 0.8 }} value={sslInfo.key_content || '(Key file not readable)'} onClick={e => (e.target as HTMLTextAreaElement).select()} />
+              <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4, marginTop: 8 }}>Certificate / CRT / PEM — <span style={{ fontFamily: 'monospace', fontSize: 10 }}>{sslInfo.cert_path}</span></div>
+              <textarea readOnly style={{ ...textareaStyle, minHeight: 80, cursor: 'text', opacity: 0.8 }} value={sslInfo.cert_content || '(Cert file not readable)'} onClick={e => (e.target as HTMLTextAreaElement).select()} />
+            </div>
+          )}
+          <div style={{ fontSize: 12, fontWeight: 600, color: p.text }}>{enabled ? 'Replace Certificate' : 'Upload Certificate'}</div>
           <div>
             <label style={{ fontSize: 12, fontWeight: 500, color: p.text, marginBottom: 4, display: 'block' }}>Private Key</label>
             <textarea style={textareaStyle} placeholder={"-----BEGIN PRIVATE KEY-----\n..."} value={keyPEM} onChange={e => setKeyPEM(e.target.value)} />
@@ -843,7 +853,7 @@ function WebsitesContent() {
       render: (_: unknown, r: Site) => r.ssl_enabled ? (
         <span style={{ color: p.green, fontSize: 12, fontWeight: 500 }}>
           <SafetyCertificateOutlined style={{ marginRight: 4 }} />
-          {r.ssl_expiry || 'Active'}
+          {r.ssl_expiry ? r.ssl_expiry.split('T')[0] : 'Active'}
         </span>
       ) : (
         <span style={{ color: p.red, fontSize: 12 }}>Not Set</span>
