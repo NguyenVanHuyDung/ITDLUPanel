@@ -290,7 +290,9 @@ func (s *SiteService) Delete(id int64) error {
 		logger.Warn().Err(err).Str("path", docRoot).Msg("failed to remove document root during delete")
 	}
 
-	// Delete DB record (domains cascade)
+	// Delete DB records — explicitly delete domains first as a safety net
+	// (CASCADE may not fire if foreign_keys pragma isn't active on this connection)
+	_, _ = s.db.Exec("DELETE FROM domains WHERE site_id = ?", id)
 	_, err = s.db.Exec("DELETE FROM sites WHERE id = ?", id)
 	if err != nil {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to delete site")

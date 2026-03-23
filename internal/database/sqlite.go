@@ -34,6 +34,9 @@ func New(dbPath string) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
+	// SQLite does not support true concurrent writes; a single connection
+	// ensures PRAGMA settings (especially foreign_keys) persist.
+	db.SetMaxOpenConns(1)
 
 	if err := db.Ping(); err != nil {
 		db.Close()
