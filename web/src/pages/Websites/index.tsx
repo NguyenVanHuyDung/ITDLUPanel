@@ -279,7 +279,7 @@ function DirectoryPanel({ site }: { site: Site }) {
           {site.status === 1 ? 'Running' : 'Stopped'}
         </span>
         <span style={{ color: p.textMuted }}>Created:</span>
-        <span style={{ fontSize: 12, color: p.text }}>{site.created_at}</span>
+        <span style={{ fontSize: 12, color: p.text }}>{site.created_at?.split('T')[0] || site.created_at}</span>
       </div>
     </div>
   );
@@ -501,7 +501,7 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
               <textarea readOnly style={{ ...textareaStyle, minHeight: 80, cursor: 'text', opacity: 0.8 }} value={sslInfo.cert_content || '(Cert file not readable)'} onClick={e => (e.target as HTMLTextAreaElement).select()} />
             </div>
           )}
-          <div style={{ fontSize: 12, fontWeight: 600, color: p.text }}>{enabled ? 'Replace Certificate' : 'Upload Certificate'}</div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: p.text }}>{enabled ? 'Update Certificate' : 'Upload Certificate'}</div>
           <div>
             <label style={{ fontSize: 12, fontWeight: 500, color: p.text, marginBottom: 4, display: 'block' }}>Private Key</label>
             <textarea style={textareaStyle} placeholder={"-----BEGIN PRIVATE KEY-----\n..."} value={keyPEM} onChange={e => setKeyPEM(e.target.value)} />
@@ -511,7 +511,7 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
             <textarea style={textareaStyle} placeholder={"-----BEGIN CERTIFICATE-----\n..."} value={certPEM} onChange={e => setCertPEM(e.target.value)} />
           </div>
           <button style={{ ...primaryBtn, alignSelf: 'flex-start' }} onClick={handleUploadCustom} disabled={submitting}>
-            {submitting ? 'Uploading…' : 'Upload & Enable SSL'}
+            {submitting ? 'Saving…' : (enabled ? 'Save Certificate' : 'Upload & Enable SSL')}
           </button>
         </div>
       )}
@@ -620,7 +620,7 @@ function SiteConfigModal({ site, open, onClose, phpVersions }: { site: Site | nu
         <span style={{ fontSize: 14, color: p.text }}>
           Site modification [<span style={{  }}>{site.domain}</span>]
           <span style={{ color: p.textMuted, fontWeight: 400, fontSize: 12, marginLeft: 8 }}>
-            — Created {site.created_at}
+            — Created {site.created_at?.split('T')[0] || site.created_at}
           </span>
         </span>
       }
@@ -853,9 +853,9 @@ function WebsitesContent() {
     {
       title: 'SSL',
       key: 'ssl',
-      width: 100,
+      width: 130,
       render: (_: unknown, r: Site) => r.ssl_enabled ? (
-        <span style={{ color: p.green, fontSize: 12, fontWeight: 500 }}>
+        <span style={{ color: p.green, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap' }}>
           <SafetyCertificateOutlined style={{ marginRight: 4 }} />
           {r.ssl_expiry ? r.ssl_expiry.split('T')[0] : 'Active'}
         </span>
