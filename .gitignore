@@ -35,3 +35,7 @@ logs/
 # Env
 .env
 .env.local
+
+# Publish artifacts
+publish/v1/*.tar.gz
+publish/v1/*.sha256
