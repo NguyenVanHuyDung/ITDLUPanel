@@ -6,6 +6,7 @@ import {
   FolderOpenOutlined, EyeOutlined, EyeInvisibleOutlined,
   FileTextOutlined, LinkOutlined, LockOutlined, CloudOutlined,
   MoreOutlined, DeleteOutlined, ExclamationCircleOutlined,
+  CloudUploadOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import Editor from '@monaco-editor/react';
@@ -714,6 +715,8 @@ function WebsitesContent() {
   const [bulkPHPVersion, setBulkPHPVersion] = useState('');
   const [bulkSSLDomain, setBulkSSLDomain] = useState('');
   const [availableCerts, setAvailableCerts] = useState<{ domain: string; type: string; expiry?: string }[]>([]);
+  const [backupCounts, setBackupCounts] = useState<Record<number, number>>({});
+  const [backingUp, setBackingUp] = useState<number | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -746,7 +749,17 @@ function WebsitesContent() {
     } catch { /* ignore */ }
   }, []);
 
-  useEffect(() => { fetchData(); fetchNginxVersion(); fetchPhpVersions(); }, [fetchData, fetchNginxVersion, fetchPhpVersions]);
+  const fetchBackupCounts = useCallback(async () => {
+    try {
+      const { data: resp } = await api.get<ApiResponse<Record<string, number>>>('/backups/site-counts');
+      const raw = resp.data ?? {};
+      const parsed: Record<number, number> = {};
+      for (const [k, v] of Object.entries(raw)) parsed[Number(k)] = v;
+      setBackupCounts(parsed);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { fetchData(); fetchNginxVersion(); fetchPhpVersions(); fetchBackupCounts(); }, [fetchData, fetchNginxVersion, fetchPhpVersions, fetchBackupCounts]);
 
   const handleCreate = async () => {
     try {
@@ -785,6 +798,20 @@ function WebsitesContent() {
       fetchData();
     } catch {
       message.error('Action failed');
+    }
+  };
+
+  const handleBackup = async (site: Site) => {
+    setBackingUp(site.id);
+    try {
+      await api.post('/backups', { type: 'site', target_id: site.id });
+      message.success(`Backup created for ${site.domain}`);
+      fetchBackupCounts();
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(detail || 'Backup failed');
+    } finally {
+      setBackingUp(null);
     }
   };
 
@@ -949,10 +976,37 @@ function WebsitesContent() {
       ),
     },
     {
-      title: 'Expiration',
-      key: 'expiry',
+      title: 'Backup',
+      key: 'backup',
       width: 100,
-      render: () => <span style={{ fontSize: 12, color: p.textMuted }}>Perpetual</span>,
+      render: (_: unknown, r: Site) => {
+        const count = backupCounts[r.id] || 0;
+        const isRunning = backingUp === r.id;
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Tooltip title={`${count} backup(s). Click to create new backup.`}>
+              <button
+                disabled={isRunning}
+                onClick={() => handleBackup(r)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  padding: '3px 10px', borderRadius: 6,
+                  border: `1px solid ${count > 0 ? `${p.green}40` : `${p.cardBorder}`}`,
+                  background: count > 0 ? `${p.green}08` : 'transparent',
+                  color: count > 0 ? p.green : p.textMuted,
+                  fontSize: 11, fontWeight: 500,
+                  cursor: isRunning ? 'wait' : 'pointer',
+                  opacity: isRunning ? 0.6 : 1,
+                  transition: 'all 0.15s',
+                }}
+              >
+                {isRunning ? <Spin size="small" /> : <CloudUploadOutlined style={{ fontSize: 13 }} />}
+                {count > 0 ? count : '—'}
+              </button>
+            </Tooltip>
+          </div>
+        );
+      },
     },
     {
       title: 'SSL',

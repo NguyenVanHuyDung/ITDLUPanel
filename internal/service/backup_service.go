@@ -205,6 +205,28 @@ func (s *BackupService) List(page, pageSize int, backupType string) ([]*Backup, 
 	return backups, total, nil
 }
 
+// SiteBackupCounts returns a map of site_id → backup count for type='site'.
+func (s *BackupService) SiteBackupCounts() (map[int64]int, error) {
+	rows, err := s.db.Query(
+		"SELECT target_id, COUNT(*) FROM backups WHERE type = 'site' AND target_id IS NOT NULL GROUP BY target_id",
+	)
+	if err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to count site backups")
+	}
+	defer rows.Close()
+
+	counts := make(map[int64]int)
+	for rows.Next() {
+		var id int64
+		var cnt int
+		if err := rows.Scan(&id, &cnt); err != nil {
+			continue
+		}
+		counts[id] = cnt
+	}
+	return counts, nil
+}
+
 // GetByID returns a single backup by its ID.
 func (s *BackupService) GetByID(id int64) (*Backup, error) {
 	b := &Backup{}
