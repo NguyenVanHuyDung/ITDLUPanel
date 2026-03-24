@@ -5,12 +5,13 @@ import type { ApiResponse } from '@/types';
 import type { FileItem } from '../types';
 import { joinPath } from '../utils/fileHelpers';
 
-export function useFileManager() {
-  const [currentPath, setCurrentPath] = useState('/root');
+export function useFileManager(initialPath?: string) {
+  const startPath = initialPath || '/root';
+  const [currentPath, setCurrentPath] = useState(startPath);
   const [allFiles, setAllFiles] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
-  const [history, setHistory] = useState<string[]>(['/root']);
+  const [history, setHistory] = useState<string[]>([startPath]);
   const [historyIndex, setHistoryIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<FileItem[] | null>(null);

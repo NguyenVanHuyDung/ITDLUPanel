@@ -49,8 +49,14 @@ function loadPageSize(): number {
 /* ──────────────── Main Component ──────────────── */
 
 export default function Files() {
+  // Read ?path= from URL to allow deep-linking from other pages
+  const urlPath = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('path') || undefined;
+  }, []);
+
   // Core hooks
-  const fm = useFileManager();
+  const fm = useFileManager(urlPath);
   const bm = useBookmarks();
   const sel = useFileSelection();
   const dd = useDragDrop();
