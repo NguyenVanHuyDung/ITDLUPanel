@@ -106,26 +106,36 @@ export default function Firewall() {
   const [form] = Form.useForm();
   const [blockIPForm] = Form.useForm();
 
+  const [firewallError, setFirewallError] = useState<string | null>(null);
+
   // ------- Data fetching -------
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    try {
-      const [rulesRes, statusRes, settingsRes, blockedRes] = await Promise.all([
-        api.get<ApiResponse<FirewallRule[]>>('/firewall/rules'),
-        api.get<ApiResponse<PortStatus[]>>('/firewall/port-status'),
-        api.get<ApiResponse<FirewallSettings>>('/firewall/settings'),
-        api.get<ApiResponse<string[]>>('/firewall/blocked-ips'),
-      ]);
-      setRules(rulesRes.data.data ?? []);
-      setPortStatuses(statusRes.data.data ?? []);
-      if (settingsRes.data.data) setSettings(settingsRes.data.data);
-      setBlockedIPs(blockedRes.data.data ?? []);
-    } catch {
-      message.error(t('common.error'));
-    } finally {
-      setLoading(false);
+    setFirewallError(null);
+    const [rulesRes, statusRes, settingsRes, blockedRes] = await Promise.allSettled([
+      api.get<ApiResponse<FirewallRule[]>>('/firewall/rules'),
+      api.get<ApiResponse<PortStatus[]>>('/firewall/port-status'),
+      api.get<ApiResponse<FirewallSettings>>('/firewall/settings'),
+      api.get<ApiResponse<string[]>>('/firewall/blocked-ips'),
+    ]);
+
+    let failCount = 0;
+    if (rulesRes.status === 'fulfilled') setRules(rulesRes.value.data.data ?? []);
+    else failCount++;
+    if (statusRes.status === 'fulfilled') setPortStatuses(statusRes.value.data.data ?? []);
+    else failCount++;
+    if (settingsRes.status === 'fulfilled' && settingsRes.value.data.data) setSettings(settingsRes.value.data.data);
+    else failCount++;
+    if (blockedRes.status === 'fulfilled') setBlockedIPs(blockedRes.value.data.data ?? []);
+    else failCount++;
+
+    if (failCount === 4) {
+      setFirewallError('Firewall service is not available. Make sure UFW or iptables is installed and running.');
+    } else if (failCount > 0) {
+      setFirewallError('Some firewall data could not be loaded. Partial data is shown.');
     }
-  }, [t]);
+    setLoading(false);
+  }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -139,8 +149,9 @@ export default function Firewall() {
         ? (value ? 'Firewall enabled' : 'Firewall disabled')
         : (value ? 'ICMP blocked' : 'ICMP unblocked')
       );
-    } catch {
-      message.error(t('common.error'));
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(detail || `Failed to toggle ${key === 'enabled' ? 'firewall' : 'ICMP block'}. Is UFW installed?`);
     } finally {
       setSettingsLoading(null);
     }
@@ -647,6 +658,26 @@ export default function Firewall() {
           </div>
         </div>
       </div>
+
+      {/* ===================== ERROR BANNER ===================== */}
+      {firewallError && (
+        <div style={{
+          margin: '12px 20px 0',
+          padding: '12px 16px',
+          borderRadius: 8,
+          background: `${p.amber}12`,
+          border: `1px solid ${p.amber}30`,
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          <FwIcon.Shield size={18} color={p.amber} />
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: p.text }}>{firewallError}</div>
+            <div style={{ fontSize: 11, color: p.textMuted, marginTop: 2 }}>
+              Install UFW with: <code style={{ background: p.codeBg, padding: '1px 6px', borderRadius: 3, fontSize: 11 }}>apt install ufw</code>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ===================== TABS ===================== */}
       <div style={{

@@ -247,8 +247,8 @@ ExecReload=/bin/kill -HUP \$MAINPID
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=65535
-StandardOutput=append:${BASE_DIR}/logs/panel.log
-StandardError=append:${BASE_DIR}/logs/panel-error.log
+StandardOutput=journal
+StandardError=journal
 
 # Security hardening
 NoNewPrivileges=false

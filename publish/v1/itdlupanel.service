@@ -13,8 +13,8 @@ ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=65535
-StandardOutput=append:/ITDLUPanel/logs/panel.log
-StandardError=append:/ITDLUPanel/logs/panel-error.log
+StandardOutput=journal
+StandardError=journal
 
 # Security
 PrivateTmp=true

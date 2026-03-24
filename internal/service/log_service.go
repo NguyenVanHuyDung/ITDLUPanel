@@ -36,7 +36,6 @@ type AuditEntry struct {
 // ---------------------------------------------------------------------------
 
 const (
-	panelLogPath    = "/ITDLUPanel/logs/panel.log"
 	logDefaultLines = 100
 	logMaxLines     = 5000
 	logCmdTimeout   = 30 * time.Second
@@ -44,12 +43,16 @@ const (
 
 // LogService provides log reading and management operations.
 type LogService struct {
-	db *sql.DB
+	db           *sql.DB
+	panelLogPath string
 }
 
 // NewLogService creates a new LogService.
-func NewLogService(db *sql.DB) *LogService {
-	return &LogService{db: db}
+func NewLogService(db *sql.DB, panelLogPath string) *LogService {
+	if panelLogPath == "" {
+		panelLogPath = "/ITDLUPanel/logs/panel.log"
+	}
+	return &LogService{db: db, panelLogPath: panelLogPath}
 }
 
 // ---------------------------------------------------------------------------
@@ -58,7 +61,7 @@ func NewLogService(db *sql.DB) *LogService {
 
 // GetPanelLog reads the last N lines of the panel log file.
 func (s *LogService) GetPanelLog(lines int) ([]string, error) {
-	return readLogFile(panelLogPath, clampLines(lines))
+	return readLogFile(s.panelLogPath, clampLines(lines))
 }
 
 // GetWebsiteAccessLog reads the last N lines of a website's access log.
@@ -142,7 +145,7 @@ func (s *LogService) ClearLog(logType string) error {
 	var logPath string
 	switch logType {
 	case "panel":
-		logPath = panelLogPath
+		logPath = s.panelLogPath
 	case "ssh":
 		logPath = "/var/log/auth.log"
 	default:

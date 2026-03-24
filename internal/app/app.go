@@ -124,7 +124,7 @@ func New(configPath string) (*App, error) {
 	}
 
 	// 7. Setup HTTP router.
-	router := SetupRouter(db.GetDB())
+	router := SetupRouter(db.GetDB(), logDir)
 
 	logger.Info().Msg("Router initialised")
 

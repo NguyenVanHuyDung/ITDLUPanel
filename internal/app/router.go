@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -21,7 +22,7 @@ import (
 )
 
 // SetupRouter creates the Gin engine with all middleware and routes registered.
-func SetupRouter(db *sql.DB) *gin.Engine {
+func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 	// Respect GIN_MODE env var; default to debug.
 	if mode := os.Getenv("GIN_MODE"); mode != "" {
 		gin.SetMode(mode)
@@ -99,7 +100,7 @@ func SetupRouter(db *sql.DB) *gin.Engine {
 		firewallService := service.NewFirewallService(db)
 		securityService := service.NewSecurityService()
 		dockerService := service.NewDockerService()
-		logService := service.NewLogService(db)
+		logService := service.NewLogService(db, filepath.Join(logDir, "panel.log"))
 		backupService := service.NewBackupService(db)
 		terminalService := service.NewTerminalService()
 		installerRegistry := installer.DefaultRegistry()
