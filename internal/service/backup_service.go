@@ -156,8 +156,8 @@ func (s *BackupService) CreatePanelBackup(createdBy int64) (*Backup, error) {
 // List / Get
 // ---------------------------------------------------------------------------
 
-// List returns a paginated list of backups, optionally filtered by type.
-func (s *BackupService) List(page, pageSize int, backupType string) ([]*Backup, int, error) {
+// List returns a paginated list of backups, optionally filtered by type and target_id.
+func (s *BackupService) List(page, pageSize int, backupType string, targetID int64) ([]*Backup, int, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -170,6 +170,14 @@ func (s *BackupService) List(page, pageSize int, backupType string) ([]*Backup, 
 	if backupType != "" {
 		where = " WHERE type = ?"
 		args = append(args, backupType)
+	}
+	if targetID > 0 {
+		if where == "" {
+			where = " WHERE target_id = ?"
+		} else {
+			where += " AND target_id = ?"
+		}
+		args = append(args, targetID)
 	}
 
 	var total int

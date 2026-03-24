@@ -6,7 +6,7 @@ import {
   FolderOpenOutlined, EyeOutlined, EyeInvisibleOutlined,
   FileTextOutlined, LinkOutlined, LockOutlined, CloudOutlined,
   MoreOutlined, DeleteOutlined, ExclamationCircleOutlined,
-  CloudUploadOutlined,
+  CloudUploadOutlined, DownloadOutlined, UndoOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import Editor from '@monaco-editor/react';
@@ -16,6 +16,23 @@ import type { Site, ApiResponse } from '@/types';
 import RequireSoftware from '@/components/RequireSoftware';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { usePalette } from '@/hooks/usePalette';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface BackupRecord {
+  id: number;
+  type: string;
+  name: string;
+  target_id: number | null;
+  target_name: string | null;
+  file_path: string;
+  file_size: number;
+  storage: string;
+  status: string;
+  created_at: string;
+}
 
 // ---------------------------------------------------------------------------
 // Config modal sections
@@ -716,7 +733,11 @@ function WebsitesContent() {
   const [bulkSSLDomain, setBulkSSLDomain] = useState('');
   const [availableCerts, setAvailableCerts] = useState<{ domain: string; type: string; expiry?: string }[]>([]);
   const [backupCounts, setBackupCounts] = useState<Record<number, number>>({});
-  const [backingUp, setBackingUp] = useState<number | null>(null);
+  const [backupSite, setBackupSite] = useState<Site | null>(null);
+  const [backupList, setBackupList] = useState<BackupRecord[]>([]);
+  const [backupListLoading, setBackupListLoading] = useState(false);
+  const [backupCreating, setBackupCreating] = useState(false);
+  const [backupActionId, setBackupActionId] = useState<number | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -802,17 +823,73 @@ function WebsitesContent() {
   };
 
   const handleBackup = async (site: Site) => {
-    setBackingUp(site.id);
+    setBackupCreating(true);
     try {
       await api.post('/backups', { type: 'site', target_id: site.id });
       message.success(`Backup created for ${site.domain}`);
       fetchBackupCounts();
+      if (backupSite?.id === site.id) fetchSiteBackups(site.id);
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       message.error(detail || 'Backup failed');
     } finally {
-      setBackingUp(null);
+      setBackupCreating(false);
     }
+  };
+
+  const fetchSiteBackups = useCallback(async (siteId: number) => {
+    setBackupListLoading(true);
+    try {
+      const { data: resp } = await api.get<ApiResponse<BackupRecord[]>>('/backups', {
+        params: { type: 'site', target_id: siteId, page_size: 100 },
+      });
+      setBackupList(resp.data ?? []);
+    } catch { setBackupList([]); }
+    finally { setBackupListLoading(false); }
+  }, []);
+
+  const openBackupModal = (site: Site) => {
+    setBackupSite(site);
+    fetchSiteBackups(site.id);
+  };
+
+  const handleBackupDelete = async (backupId: number) => {
+    setBackupActionId(backupId);
+    try {
+      await api.delete(`/backups/${backupId}`);
+      message.success('Backup deleted');
+      if (backupSite) fetchSiteBackups(backupSite.id);
+      fetchBackupCounts();
+    } catch { message.error('Delete failed'); }
+    finally { setBackupActionId(null); }
+  };
+
+  const handleBackupRestore = async (backupId: number) => {
+    setBackupActionId(backupId);
+    try {
+      await api.post(`/backups/${backupId}/restore`);
+      message.success('Backup restored successfully');
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(detail || 'Restore failed');
+    } finally { setBackupActionId(null); }
+  };
+
+  const handleBackupDownload = async (backup: BackupRecord) => {
+    const fileName = backup.file_path.split('/').pop() || backup.name;
+    const hide = message.loading(`Downloading ${fileName}…`, 0);
+    try {
+      const res = await api.get(`/backups/${backup.id}/download`, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch { message.error('Download failed'); }
+    finally { hide(); }
   };
 
   // ── Bulk actions ──
@@ -978,33 +1055,28 @@ function WebsitesContent() {
     {
       title: 'Backup',
       key: 'backup',
-      width: 100,
+      width: 90,
       render: (_: unknown, r: Site) => {
         const count = backupCounts[r.id] || 0;
-        const isRunning = backingUp === r.id;
         return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Tooltip title={`${count} backup(s). Click to create new backup.`}>
-              <button
-                disabled={isRunning}
-                onClick={() => handleBackup(r)}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 5,
-                  padding: '3px 10px', borderRadius: 6,
-                  border: `1px solid ${count > 0 ? `${p.green}40` : `${p.cardBorder}`}`,
-                  background: count > 0 ? `${p.green}08` : 'transparent',
-                  color: count > 0 ? p.green : p.textMuted,
-                  fontSize: 11, fontWeight: 500,
-                  cursor: isRunning ? 'wait' : 'pointer',
-                  opacity: isRunning ? 0.6 : 1,
-                  transition: 'all 0.15s',
-                }}
-              >
-                {isRunning ? <Spin size="small" /> : <CloudUploadOutlined style={{ fontSize: 13 }} />}
-                {count > 0 ? count : '—'}
-              </button>
-            </Tooltip>
-          </div>
+          <Tooltip title={`${count} backup(s) — click to manage`}>
+            <button
+              onClick={() => openBackupModal(r)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                padding: '3px 10px', borderRadius: 6,
+                border: `1px solid ${count > 0 ? `${p.green}40` : p.cardBorder}`,
+                background: count > 0 ? `${p.green}08` : 'transparent',
+                color: count > 0 ? p.green : p.textMuted,
+                fontSize: 11, fontWeight: 500,
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}
+            >
+              <CloudUploadOutlined style={{ fontSize: 13 }} />
+              {count > 0 ? count : '—'}
+            </button>
+          </Tooltip>
         );
       },
     },
@@ -1427,6 +1499,164 @@ function WebsitesContent() {
             ))}
           </div>
         </div>
+      </Modal>
+
+      {/* ======================== Backup Management Modal ======================== */}
+      <Modal
+        title={null}
+        open={!!backupSite}
+        onCancel={() => { setBackupSite(null); setBackupList([]); }}
+        footer={null}
+        width={680}
+        destroyOnHidden
+        styles={{ body: { padding: 0 } }}
+      >
+        {backupSite && (
+          <div>
+            {/* Header */}
+            <div style={{
+              padding: '20px 24px 16px',
+              borderBottom: `1px solid ${p.cardBorder}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: p.text, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <CloudUploadOutlined style={{ color: p.accent }} />
+                  Backup — {backupSite.domain}
+                </div>
+                <div style={{ fontSize: 11, color: p.textMuted, marginTop: 2 }}>
+                  {backupList.length} backup(s) available
+                </div>
+              </div>
+              <button
+                onClick={() => handleBackup(backupSite)}
+                disabled={backupCreating}
+                style={{
+                  padding: '7px 16px', borderRadius: 7, border: 'none',
+                  background: p.accent, color: '#fff',
+                  fontSize: 12, fontWeight: 600, cursor: backupCreating ? 'wait' : 'pointer',
+                  opacity: backupCreating ? 0.7 : 1,
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  transition: 'all 0.15s',
+                }}
+              >
+                {backupCreating ? <Spin size="small" /> : <PlusOutlined />}
+                {backupCreating ? 'Creating...' : 'New Backup'}
+              </button>
+            </div>
+
+            {/* Backup list */}
+            <div style={{ padding: '0', maxHeight: 420, overflowY: 'auto' }}>
+              {backupListLoading ? (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
+                  <Spin />
+                </div>
+              ) : backupList.length === 0 ? (
+                <div style={{
+                  padding: '48px 24px', textAlign: 'center', color: p.textMuted,
+                }}>
+                  <CloudOutlined style={{ fontSize: 36, opacity: 0.3, display: 'block', marginBottom: 12 }} />
+                  <div style={{ fontSize: 13 }}>No backups yet</div>
+                  <div style={{ fontSize: 11, marginTop: 4 }}>Click "New Backup" to create the first backup</div>
+                </div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
+                      {['Filename', 'Size', 'Time', 'Actions'].map(h => (
+                        <th key={h} style={{
+                          padding: '8px 16px', fontSize: 11, fontWeight: 600,
+                          color: p.textMuted, textAlign: 'left',
+                          borderBottom: `1px solid ${p.cardBorder}`,
+                        }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {backupList.map(b => {
+                      const fileName = b.file_path.split('/').pop() || b.name;
+                      const sizeStr = b.file_size >= 1048576
+                        ? `${(b.file_size / 1048576).toFixed(1)} MB`
+                        : b.file_size >= 1024
+                          ? `${(b.file_size / 1024).toFixed(1)} KB`
+                          : `${b.file_size} B`;
+                      const timeStr = b.created_at
+                        ? new Date(b.created_at).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                        : '—';
+                      const isActing = backupActionId === b.id;
+                      return (
+                        <tr key={b.id} style={{ borderBottom: `1px solid ${p.cardBorder}` }}>
+                          <td style={{ padding: '10px 16px' }}>
+                            <div style={{ fontSize: 12, fontWeight: 500, color: p.text, wordBreak: 'break-all' }}>{fileName}</div>
+                          </td>
+                          <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
+                            <span style={{ fontSize: 11, color: p.textMuted }}>{sizeStr}</span>
+                          </td>
+                          <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
+                            <span style={{ fontSize: 11, color: p.textMuted }}>{timeStr}</span>
+                          </td>
+                          <td style={{ padding: '10px 12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                              <Tooltip title="Restore">
+                                <Popconfirm
+                                  title="Restore this backup?"
+                                  description="This will overwrite the current site files."
+                                  onConfirm={() => handleBackupRestore(b.id)}
+                                  okText="Restore"
+                                  okButtonProps={{ danger: true }}
+                                >
+                                  <button style={{
+                                    padding: '4px 8px', border: 'none', borderRadius: 4,
+                                    background: 'transparent', cursor: isActing ? 'wait' : 'pointer',
+                                    color: p.amber, fontSize: 13, opacity: isActing ? 0.5 : 1,
+                                    display: 'inline-flex', alignItems: 'center',
+                                  }} disabled={isActing}>
+                                    {isActing ? <Spin size="small" /> : <UndoOutlined />}
+                                  </button>
+                                </Popconfirm>
+                              </Tooltip>
+                              <Tooltip title="Download">
+                                <button
+                                  onClick={() => handleBackupDownload(b)}
+                                  style={{
+                                    padding: '4px 8px', border: 'none', borderRadius: 4,
+                                    background: 'transparent', cursor: 'pointer',
+                                    color: p.accent, fontSize: 13,
+                                    display: 'inline-flex', alignItems: 'center',
+                                  }}
+                                >
+                                  <DownloadOutlined />
+                                </button>
+                              </Tooltip>
+                              <Tooltip title="Delete">
+                                <Popconfirm
+                                  title="Delete this backup?"
+                                  description="This action cannot be undone."
+                                  onConfirm={() => handleBackupDelete(b.id)}
+                                  okText="Delete"
+                                  okButtonProps={{ danger: true }}
+                                >
+                                  <button style={{
+                                    padding: '4px 8px', border: 'none', borderRadius: 4,
+                                    background: 'transparent', cursor: isActing ? 'wait' : 'pointer',
+                                    color: p.red, fontSize: 13, opacity: isActing ? 0.5 : 1,
+                                    display: 'inline-flex', alignItems: 'center',
+                                  }} disabled={isActing}>
+                                    <DeleteOutlined />
+                                  </button>
+                                </Popconfirm>
+                              </Tooltip>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

@@ -42,6 +42,7 @@ type listBackupsQuery struct {
 	Page     int    `form:"page"`
 	PageSize int    `form:"page_size"`
 	Type     string `form:"type"`
+	TargetID int64  `form:"target_id"`
 }
 
 // List returns a paginated list of backups.
@@ -58,7 +59,7 @@ func (h *BackupHandler) List(c *gin.Context) {
 		q.PageSize = 20
 	}
 
-	backups, total, err := h.backupService.List(q.Page, q.PageSize, q.Type)
+	backups, total, err := h.backupService.List(q.Page, q.PageSize, q.Type, q.TargetID)
 	if err != nil {
 		response.Error(c, err)
 		return
