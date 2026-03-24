@@ -288,27 +288,275 @@ function PHPVersionPanel({ siteId, currentVersion, phpVersions }: { siteId: numb
 // ---------------------------------------------------------------------------
 // Site info / directory panel
 // ---------------------------------------------------------------------------
+
 function DirectoryPanel({ site }: { site: Site }) {
   const { p } = usePalette();
+  const [siteDir, setSiteDir] = useState(site.path || `/ITDLUPanel/wwwroot/${site.domain}`);
+  const [savingDir, setSavingDir] = useState(false);
+  const [subdirs, setSubdirs] = useState<string[]>([]);
+  const [runningDir, setRunningDir] = useState('');
+  const [savingRunDir, setSavingRunDir] = useState(false);
+  const [openBasedir, setOpenBasedir] = useState(false);
+  const [savingBasedir, setSavingBasedir] = useState(false);
+  const [accessLog, setAccessLog] = useState(true);
+  const [savingAccessLog, setSavingAccessLog] = useState(false);
+  const [passwordEnabled, setPasswordEnabled] = useState(false);
+  const [passwordUser, setPasswordUser] = useState('');
+  const [passwordPass, setPasswordPass] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [existingUser, setExistingUser] = useState('');
+
+  // Fetch all directory settings on mount
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const [subR, basedirR, logR, passR] = await Promise.allSettled([
+          api.get<ApiResponse<string[]>>(`/sites/${site.id}/subdirs`),
+          api.get<ApiResponse<{ enabled: boolean; value: string }>>(`/sites/${site.id}/open-basedir`),
+          api.get<ApiResponse<{ enabled: boolean }>>(`/sites/${site.id}/access-log`),
+          api.get<ApiResponse<{ enabled: boolean; username: string }>>(`/sites/${site.id}/password-access`),
+        ]);
+        if (subR.status === 'fulfilled') setSubdirs(subR.value.data.data ?? []);
+        if (basedirR.status === 'fulfilled') setOpenBasedir(basedirR.value.data.data?.enabled ?? false);
+        if (logR.status === 'fulfilled') setAccessLog(logR.value.data.data?.enabled ?? true);
+        if (passR.status === 'fulfilled') {
+          const d = passR.value.data.data;
+          if (d?.enabled) {
+            setPasswordEnabled(true);
+            setExistingUser(d.username);
+            setPasswordUser(d.username);
+          }
+        }
+      } catch { /* ignore */ }
+    };
+    fetchSettings();
+  }, [site.id]);
+
+  const handleSaveDir = async () => {
+    setSavingDir(true);
+    try {
+      await api.put(`/sites/${site.id}/directory`, { path: siteDir });
+      message.success('Site directory updated');
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(msg || 'Failed to update directory');
+    } finally { setSavingDir(false); }
+  };
+
+  const handleSaveRunningDir = async () => {
+    setSavingRunDir(true);
+    try {
+      await api.put(`/sites/${site.id}/running-directory`, { subdir: runningDir });
+      message.success('Running directory updated');
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(msg || 'Failed to update running directory');
+    } finally { setSavingRunDir(false); }
+  };
+
+  const handleToggleBasedir = async (checked: boolean) => {
+    setSavingBasedir(true);
+    try {
+      await api.put(`/sites/${site.id}/open-basedir`, { enabled: checked });
+      setOpenBasedir(checked);
+      message.success(checked ? 'open_basedir enabled' : 'open_basedir disabled');
+    } catch { message.error('Failed to update open_basedir'); }
+    finally { setSavingBasedir(false); }
+  };
+
+  const handleToggleAccessLog = async (checked: boolean) => {
+    setSavingAccessLog(true);
+    try {
+      await api.put(`/sites/${site.id}/access-log`, { enabled: checked });
+      setAccessLog(checked);
+      message.success(checked ? 'Access log enabled' : 'Access log disabled');
+    } catch { message.error('Failed to update access log'); }
+    finally { setSavingAccessLog(false); }
+  };
+
+  const handleSavePassword = async () => {
+    setSavingPassword(true);
+    try {
+      await api.put(`/sites/${site.id}/password-access`, {
+        enabled: passwordEnabled,
+        username: passwordUser,
+        password: passwordPass,
+      });
+      if (passwordEnabled) {
+        setExistingUser(passwordUser);
+        message.success('Password protection enabled');
+      } else {
+        setExistingUser('');
+        setPasswordUser('');
+        setPasswordPass('');
+        message.success('Password protection disabled');
+      }
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(msg || 'Failed to update password access');
+    } finally { setSavingPassword(false); }
+  };
+
+  const sectionStyle: React.CSSProperties = {
+    padding: '14px 16px',
+    borderRadius: 8,
+    border: `1px solid ${p.cardBorder}`,
+    marginBottom: 14,
+    background: p.card,
+  };
+
+  const labelStyle: React.CSSProperties = {
+    fontSize: 13, fontWeight: 600, color: p.text, marginBottom: 8,
+    display: 'flex', alignItems: 'center', gap: 8,
+  };
+
+  const hintStyle: React.CSSProperties = {
+    fontSize: 11, color: p.textMuted, marginBottom: 10,
+  };
+
+  const btnStyle = (loading: boolean): React.CSSProperties => ({
+    padding: '5px 16px', borderRadius: 6, border: 'none',
+    background: p.accent, color: '#fff', fontSize: 12, fontWeight: 600,
+    cursor: loading ? 'wait' : 'pointer', opacity: loading ? 0.7 : 1,
+    transition: 'all 0.15s',
+  });
+
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '12px 16px', fontSize: 13 }}>
-        <span style={{ color: p.textMuted }}>Document Root:</span>
-        <span style={{ fontSize: 12, padding: '2px 6px', borderRadius: 4, background: p.codeBg }}>
-          {site.path || `/ITDLUPanel/wwwroot/${site.domain}`}
-        </span>
-        <span style={{ color: p.textMuted }}>Domain:</span>
-        <span style={{ fontWeight: 600, color: p.text }}>{site.domain}</span>
-        <span style={{ color: p.textMuted }}>Web Server:</span>
-        <span style={{ color: p.text }}>{site.webserver?.toUpperCase()}</span>
-        <span style={{ color: p.textMuted }}>PHP Version:</span>
-        <span style={{ color: p.text }}>{site.php_version || 'Not set'}</span>
-        <span style={{ color: p.textMuted }}>Status:</span>
-        <span style={{ color: site.status === 1 ? p.green : p.red, fontWeight: 500 }}>
-          {site.status === 1 ? 'Running' : 'Stopped'}
-        </span>
-        <span style={{ color: p.textMuted }}>Created:</span>
-        <span style={{ fontSize: 12, color: p.text }}>{site.created_at?.split('T')[0] || site.created_at}</span>
+      {/* ── 1. Site Directory ── */}
+      <div style={sectionStyle}>
+        <div style={labelStyle}>
+          <FolderOpenOutlined style={{ color: p.accent }} />
+          Site Directory
+        </div>
+        <div style={hintStyle}>
+          The document root where your site files are stored. Changing this will update the nginx configuration.
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Input
+            value={siteDir}
+            onChange={e => setSiteDir(e.target.value)}
+            style={{ flex: 1, fontSize: 12 }}
+            placeholder="/path/to/site/root"
+          />
+          <button onClick={handleSaveDir} disabled={savingDir} style={btnStyle(savingDir)}>
+            {savingDir ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      </div>
+
+      {/* ── 2. Running Directory ── */}
+      <div style={sectionStyle}>
+        <div style={labelStyle}>
+          <FolderOpenOutlined style={{ color: p.purple || '#8B5CF6' }} />
+          Running Directory
+        </div>
+        <div style={hintStyle}>
+          Select a subfolder of your site directory to serve as the actual web root (e.g. <code style={{ background: p.codeBg, padding: '1px 4px', borderRadius: 3 }}>public</code>, <code style={{ background: p.codeBg, padding: '1px 4px', borderRadius: 3 }}>dist</code>).
+          Leave empty to use the site directory itself.
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Select
+            value={runningDir || undefined}
+            onChange={v => setRunningDir(v || '')}
+            placeholder="/ (site root)"
+            allowClear
+            style={{ flex: 1 }}
+            options={[
+              { value: '', label: '/ (site root)' },
+              ...subdirs.map(d => ({ value: d, label: d })),
+            ]}
+          />
+          <button onClick={handleSaveRunningDir} disabled={savingRunDir} style={btnStyle(savingRunDir)}>
+            {savingRunDir ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      </div>
+
+      {/* ── 3. Anti-XSS (open_basedir) ── */}
+      <div style={sectionStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={labelStyle}>
+              <LockOutlined style={{ color: p.amber || '#F59E0B' }} />
+              Anti-XSS Protection
+            </div>
+            <div style={hintStyle}>
+              Restricts PHP to only access this site's directory and /tmp using <code style={{ background: p.codeBg, padding: '1px 4px', borderRadius: 3 }}>open_basedir</code>. Prevents cross-site file access.
+            </div>
+          </div>
+          <Switch
+            checked={openBasedir}
+            onChange={handleToggleBasedir}
+            loading={savingBasedir}
+          />
+        </div>
+      </div>
+
+      {/* ── 4. Access Log ── */}
+      <div style={sectionStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={labelStyle}>
+              <FileTextOutlined style={{ color: p.green }} />
+              Write Access Log
+            </div>
+            <div style={hintStyle}>
+              Record all HTTP requests to this site. Log path: <code style={{ background: p.codeBg, padding: '1px 4px', borderRadius: 3 }}>/var/log/nginx/{site.domain}.access.log</code>
+            </div>
+          </div>
+          <Switch
+            checked={accessLog}
+            onChange={handleToggleAccessLog}
+            loading={savingAccessLog}
+          />
+        </div>
+      </div>
+
+      {/* ── 5. Password Access ── */}
+      <div style={sectionStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: passwordEnabled ? 12 : 0 }}>
+          <div>
+            <div style={labelStyle}>
+              <LockOutlined style={{ color: p.red }} />
+              Password Access
+            </div>
+            <div style={hintStyle}>
+              Protect this site with HTTP Basic Authentication. Visitors must enter a username and password.
+              {existingUser && !passwordEnabled && <span> (Currently set for user: <strong>{existingUser}</strong>)</span>}
+            </div>
+          </div>
+          <Switch
+            checked={passwordEnabled}
+            onChange={v => setPasswordEnabled(v)}
+          />
+        </div>
+        {passwordEnabled && (
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+              <Input
+                placeholder="Username"
+                value={passwordUser}
+                onChange={e => setPasswordUser(e.target.value)}
+                style={{ fontSize: 12 }}
+              />
+              <Input.Password
+                placeholder="Password"
+                value={passwordPass}
+                onChange={e => setPasswordPass(e.target.value)}
+                style={{ fontSize: 12 }}
+              />
+            </div>
+            <button onClick={handleSavePassword} disabled={savingPassword} style={btnStyle(savingPassword)}>
+              {savingPassword ? 'Saving...' : 'Save Password Protection'}
+            </button>
+          </div>
+        )}
+        {!passwordEnabled && existingUser && (
+          <button onClick={handleSavePassword} disabled={savingPassword} style={{ ...btnStyle(savingPassword), background: p.red }}>
+            {savingPassword ? 'Removing...' : 'Remove Password Protection'}
+          </button>
+        )}
       </div>
     </div>
   );

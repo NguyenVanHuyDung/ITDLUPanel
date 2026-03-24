@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	apperrors "github.com/ITDLUPanel/panel/internal/pkg/errors"
@@ -910,4 +911,483 @@ func DetectInstalledPHPVersions() []string {
 		}
 	}
 	return installed
+}
+
+// ---------------------------------------------------------------------------
+// Directory management
+// ---------------------------------------------------------------------------
+
+// UpdateDirectory changes the document root path and regenerates the vhost config.
+func (s *SiteService) UpdateDirectory(id int64, newPath string) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	newPath = filepath.Clean(newPath)
+	if newPath == "" || newPath == "." {
+		return apperrors.New(apperrors.ErrValidation, "path cannot be empty")
+	}
+
+	// Ensure path exists
+	info, err := os.Stat(newPath)
+	if err != nil || !info.IsDir() {
+		return apperrors.New(apperrors.ErrValidation, "directory does not exist")
+	}
+
+	_, err = s.db.Exec("UPDATE sites SET path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", newPath, id)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to update site directory")
+	}
+
+	site.Path = newPath
+	if err := s.regenerateVhost(site); err != nil {
+		logger.Warn().Err(err).Int64("id", id).Msg("failed to regenerate vhost after directory change")
+		return apperrors.Wrap(err, apperrors.ErrInternal, "directory updated but vhost regeneration failed")
+	}
+
+	logger.Info().Int64("id", id).Str("path", newPath).Msg("site directory updated")
+	return nil
+}
+
+// ListSubdirs lists immediate child directories of a site's document root.
+func (s *SiteService) ListSubdirs(id int64) ([]string, error) {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	entries, err := os.ReadDir(site.Path)
+	if err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read site directory")
+	}
+
+	var dirs []string
+	for _, e := range entries {
+		if e.IsDir() && !isHiddenDir(e.Name()) {
+			dirs = append(dirs, e.Name())
+		}
+	}
+	return dirs, nil
+}
+
+func isHiddenDir(name string) bool {
+	return len(name) > 0 && name[0] == '.'
+}
+
+// GetRunningDirectory returns the current running directory (subfolder) from config_extra.
+func (s *SiteService) GetRunningDirectory(id int64) (string, error) {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return "", err
+	}
+	return s.getConfigExtraField(site, "running_dir"), nil
+}
+
+// SetRunningDirectory sets a subfolder as the actual web root.
+func (s *SiteService) SetRunningDirectory(id int64, subdir string) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	if subdir != "" && subdir != "/" {
+		full := filepath.Join(site.Path, subdir)
+		info, err := os.Stat(full)
+		if err != nil || !info.IsDir() {
+			return apperrors.New(apperrors.ErrValidation, "subdirectory does not exist")
+		}
+	}
+
+	if err := s.setConfigExtraField(id, site, "running_dir", subdir); err != nil {
+		return err
+	}
+
+	// Regenerate vhost with the effective root
+	effectivePath := site.Path
+	if subdir != "" && subdir != "/" {
+		effectivePath = filepath.Join(site.Path, subdir)
+	}
+	origPath := site.Path
+	site.Path = effectivePath
+	if err := s.regenerateVhost(site); err != nil {
+		site.Path = origPath
+		return apperrors.Wrap(err, apperrors.ErrInternal, "running dir saved but vhost regeneration failed")
+	}
+
+	logger.Info().Int64("id", id).Str("running_dir", subdir).Msg("site running directory updated")
+	return nil
+}
+
+// GetOpenBasedir returns the open_basedir status for a site.
+func (s *SiteService) GetOpenBasedir(id int64) (bool, string, error) {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return false, "", err
+	}
+
+	iniPath := filepath.Join(site.Path, ".user.ini")
+	content, err := os.ReadFile(iniPath)
+	if err != nil {
+		return false, "", nil
+	}
+
+	for _, line := range vhostLines(string(content)) {
+		if len(line) > 0 && line[0] != ';' {
+			if strings.HasPrefix(strings.TrimSpace(line), "open_basedir") {
+				return true, line, nil
+			}
+		}
+	}
+	return false, "", nil
+}
+
+// SetOpenBasedir enables or disables open_basedir for a site.
+func (s *SiteService) SetOpenBasedir(id int64, enabled bool) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	iniPath := filepath.Join(site.Path, ".user.ini")
+
+	if enabled {
+		value := fmt.Sprintf("open_basedir=%s:/tmp:/proc", site.Path)
+		existing, _ := os.ReadFile(iniPath)
+		var newLines []string
+		found := false
+		for _, line := range vhostLines(string(existing)) {
+			if strings.HasPrefix(strings.TrimSpace(line), "open_basedir") {
+				newLines = append(newLines, value)
+				found = true
+			} else {
+				newLines = append(newLines, line)
+			}
+		}
+		if !found {
+			newLines = append(newLines, value)
+		}
+		content := vhostJoin(newLines)
+		if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to write .user.ini")
+		}
+	} else {
+		existing, err := os.ReadFile(iniPath)
+		if err != nil {
+			return nil // file doesn't exist, nothing to disable
+		}
+		var newLines []string
+		for _, line := range vhostLines(string(existing)) {
+			if !strings.HasPrefix(strings.TrimSpace(line), "open_basedir") {
+				newLines = append(newLines, line)
+			}
+		}
+		content := vhostJoin(newLines)
+		if len(newLines) == 0 || (len(newLines) == 1 && newLines[0] == "") {
+			_ = os.Remove(iniPath)
+		} else {
+			_ = os.WriteFile(iniPath, []byte(content), 0644)
+		}
+	}
+
+	logger.Info().Int64("id", id).Bool("enabled", enabled).Msg("site open_basedir updated")
+	return nil
+}
+
+// SetAccessLog enables or disables the access log in the nginx vhost config.
+func (s *SiteService) SetAccessLog(id int64, enabled bool) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	gen := generatorFor(site.Webserver)
+	confPath := gen.GetConfigPath(site.Domain)
+	content, err := os.ReadFile(confPath)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to read vhost config")
+	}
+
+	lines := vhostLines(string(content))
+	var newLines []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if enabled {
+			// Uncomment access_log lines
+			if trimmed == "#access_log off;" {
+				newLines = append(newLines, strings.Replace(line, "#access_log off;", fmt.Sprintf("access_log /var/log/nginx/%s.access.log;", site.Domain), 1))
+			} else if isCommentedAccessLog(trimmed) {
+				newLines = append(newLines, vhostUncomment(line))
+			} else {
+				newLines = append(newLines, line)
+			}
+		} else {
+			// Comment out or replace access_log lines
+			if isAccessLogDirective(trimmed) {
+				newLines = append(newLines, strings.Replace(line, trimmed, "#"+trimmed, 1))
+			} else {
+				newLines = append(newLines, line)
+			}
+		}
+	}
+
+	if err := os.WriteFile(confPath, []byte(vhostJoin(newLines)), 0644); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to write vhost config")
+	}
+
+	if err := gen.ReloadServer(); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to reload webserver")
+	}
+
+	logger.Info().Int64("id", id).Bool("enabled", enabled).Msg("site access log toggled")
+	return nil
+}
+
+// GetAccessLogEnabled checks if access_log is enabled (not commented out) in the vhost config.
+func (s *SiteService) GetAccessLogEnabled(id int64) (bool, error) {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return false, err
+	}
+
+	gen := generatorFor(site.Webserver)
+	confPath := gen.GetConfigPath(site.Domain)
+	content, err := os.ReadFile(confPath)
+	if err != nil {
+		return false, nil
+	}
+
+	for _, line := range vhostLines(string(content)) {
+		trimmed := strings.TrimSpace(line)
+		if isAccessLogDirective(trimmed) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// SetPasswordAccess enables or disables HTTP Basic Auth for a site.
+func (s *SiteService) SetPasswordAccess(id int64, enabled bool, username, password string) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	gen := generatorFor(site.Webserver)
+	confPath := gen.GetConfigPath(site.Domain)
+	htpasswdDir := "/ITDLUPanel/server/nginx/htpasswd"
+	htpasswdFile := filepath.Join(htpasswdDir, site.Domain)
+
+	if enabled {
+		if username == "" || password == "" {
+			return apperrors.New(apperrors.ErrValidation, "username and password are required")
+		}
+
+		_ = os.MkdirAll(htpasswdDir, 0755)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		// Check if htpasswd command exists; if not, generate manually
+		if _, err := os.Stat("/usr/bin/htpasswd"); err == nil {
+			_, err = system.Exec(ctx, "htpasswd", "-cb", htpasswdFile, username, password)
+			if err != nil {
+				return apperrors.Wrap(err, apperrors.ErrInternal, "failed to create htpasswd file")
+			}
+		} else {
+			// Generate using openssl
+			out, err := system.Exec(ctx, "openssl", "passwd", "-apr1", password)
+			if err != nil {
+				return apperrors.Wrap(err, apperrors.ErrInternal, "failed to generate password hash")
+			}
+			hash := strings.TrimSpace(out.Stdout)
+			if err := os.WriteFile(htpasswdFile, []byte(fmt.Sprintf("%s:%s\n", username, hash)), 0644); err != nil {
+				return apperrors.Wrap(err, apperrors.ErrInternal, "failed to write htpasswd file")
+			}
+		}
+
+		// Add auth_basic to nginx config
+		if err := s.addNginxAuthBasic(confPath, site.Domain, htpasswdFile); err != nil {
+			return err
+		}
+	} else {
+		// Remove htpasswd file
+		_ = os.Remove(htpasswdFile)
+
+		// Remove auth_basic from nginx config
+		if err := s.removeNginxAuthBasic(confPath); err != nil {
+			return err
+		}
+	}
+
+	if err := gen.ReloadServer(); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to reload webserver")
+	}
+
+	logger.Info().Int64("id", id).Bool("enabled", enabled).Msg("site password access updated")
+	return nil
+}
+
+// GetPasswordAccess returns whether basic auth is enabled and the username.
+func (s *SiteService) GetPasswordAccess(id int64) (bool, string, error) {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return false, "", err
+	}
+
+	htpasswdFile := filepath.Join("/ITDLUPanel/server/nginx/htpasswd", site.Domain)
+	content, err := os.ReadFile(htpasswdFile)
+	if err != nil {
+		return false, "", nil
+	}
+
+	// Parse first line: username:hash
+	lines := vhostLines(string(content))
+	if len(lines) > 0 {
+		parts := strings.SplitN(lines[0], ":", 2)
+		if len(parts) >= 2 {
+			return true, parts[0], nil
+		}
+	}
+	return false, "", nil
+}
+
+// addNginxAuthBasic adds auth_basic directives to the nginx vhost config.
+func (s *SiteService) addNginxAuthBasic(confPath, domain, htpasswdFile string) error {
+	content, err := os.ReadFile(confPath)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to read vhost config")
+	}
+
+	text := string(content)
+	// Already has auth_basic?
+	if strings.Contains(text, "auth_basic") {
+		return nil
+	}
+
+	// Insert after "root" directive
+	lines := vhostLines(text)
+	var newLines []string
+	inserted := false
+	for _, line := range lines {
+		newLines = append(newLines, line)
+		if !inserted && strings.Contains(line, "root ") && !strings.Contains(line, "#") {
+			newLines = append(newLines,
+				fmt.Sprintf("    #PASSWORD_ACCESS_START"),
+				fmt.Sprintf("    auth_basic \"Protected Site\";"),
+				fmt.Sprintf("    auth_basic_user_file %s;", htpasswdFile),
+				fmt.Sprintf("    #PASSWORD_ACCESS_END"),
+			)
+			inserted = true
+		}
+	}
+
+	return os.WriteFile(confPath, []byte(vhostJoin(newLines)), 0644)
+}
+
+// removeNginxAuthBasic removes auth_basic directives from the nginx vhost config.
+func (s *SiteService) removeNginxAuthBasic(confPath string) error {
+	content, err := os.ReadFile(confPath)
+	if err != nil {
+		return nil
+	}
+
+	lines := vhostLines(string(content))
+	var newLines []string
+	inBlock := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "#PASSWORD_ACCESS_START" {
+			inBlock = true
+			continue
+		}
+		if trimmed == "#PASSWORD_ACCESS_END" {
+			inBlock = false
+			continue
+		}
+		if inBlock {
+			continue
+		}
+		// Also remove standalone auth_basic lines not in block
+		if strings.Contains(trimmed, "auth_basic") {
+			continue
+		}
+		newLines = append(newLines, line)
+	}
+
+	return os.WriteFile(confPath, []byte(vhostJoin(newLines)), 0644)
+}
+
+// config_extra JSON helpers
+func (s *SiteService) getConfigExtraField(site *Site, field string) string {
+	if site.ConfigExtra == nil {
+		return ""
+	}
+	// Simple JSON parsing without importing encoding/json to keep it lightweight
+	text := *site.ConfigExtra
+	key := fmt.Sprintf(`"%s":"`, field)
+	idx := strings.Index(text, key)
+	if idx < 0 {
+		return ""
+	}
+	start := idx + len(key)
+	end := strings.Index(text[start:], `"`)
+	if end < 0 {
+		return ""
+	}
+	return text[start : start+end]
+}
+
+func (s *SiteService) setConfigExtraField(id int64, site *Site, field, value string) error {
+	extra := "{}"
+	if site.ConfigExtra != nil && *site.ConfigExtra != "" {
+		extra = *site.ConfigExtra
+	}
+
+	key := fmt.Sprintf(`"%s":"`, field)
+	idx := strings.Index(extra, key)
+	if idx >= 0 {
+		start := idx + len(key)
+		end := strings.Index(extra[start:], `"`)
+		if end >= 0 {
+			extra = extra[:idx+len(key)] + value + extra[start+end:]
+		}
+	} else {
+		// Insert new field
+		if extra == "{}" {
+			extra = fmt.Sprintf(`{"%s":"%s"}`, field, value)
+		} else {
+			// Insert before closing brace
+			extra = extra[:len(extra)-1] + fmt.Sprintf(`,"%s":"%s"}`, field, value)
+		}
+	}
+
+	_, err := s.db.Exec("UPDATE sites SET config_extra = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", extra, id)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to update config_extra")
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Vhost text helpers
+// ---------------------------------------------------------------------------
+
+func vhostLines(s string) []string    { return strings.Split(s, "\n") }
+func vhostJoin(lines []string) string { return strings.Join(lines, "\n") }
+
+func isAccessLogDirective(trimmed string) bool {
+	return strings.HasPrefix(trimmed, "access_log")
+}
+
+func isCommentedAccessLog(trimmed string) bool {
+	return strings.HasPrefix(trimmed, "#access_log")
+}
+
+func vhostUncomment(line string) string {
+	idx := strings.Index(line, "#")
+	if idx < 0 {
+		return line
+	}
+	return line[:idx] + line[idx+1:]
 }

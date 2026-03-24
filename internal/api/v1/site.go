@@ -57,6 +57,17 @@ func (h *SiteHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, sitesMW gin.Ha
 		sites.POST("/:id/ssl/enable", h.EnableSSL)
 		sites.POST("/:id/ssl/disable", h.DisableSSL)
 		sites.POST("/:id/ssl/apply", h.ApplySSLFromHolder)
+
+		// Directory management
+		sites.PUT("/:id/directory", h.UpdateDirectory)
+		sites.GET("/:id/subdirs", h.ListSubdirs)
+		sites.PUT("/:id/running-directory", h.SetRunningDirectory)
+		sites.GET("/:id/open-basedir", h.GetOpenBasedir)
+		sites.PUT("/:id/open-basedir", h.SetOpenBasedir)
+		sites.GET("/:id/access-log", h.GetAccessLog)
+		sites.PUT("/:id/access-log", h.SetAccessLog)
+		sites.GET("/:id/password-access", h.GetPasswordAccess)
+		sites.PUT("/:id/password-access", h.SetPasswordAccess)
 	}
 }
 
@@ -583,6 +594,159 @@ func (h *SiteHandler) BatchApplySSL(c *gin.Context) {
 			"errors":  errors,
 		},
 	})
+}
+
+// ---------------------------------------------------------------------------
+// Directory management handlers
+// ---------------------------------------------------------------------------
+
+func (h *SiteHandler) UpdateDirectory(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	var req struct {
+		Path string `json:"path" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "path", Message: "path is required"}})
+		return
+	}
+	if err := h.siteService.UpdateDirectory(id, req.Path); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "directory updated"})
+}
+
+func (h *SiteHandler) ListSubdirs(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	dirs, err := h.siteService.ListSubdirs(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, dirs)
+}
+
+func (h *SiteHandler) SetRunningDirectory(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	var req struct {
+		Subdir string `json:"subdir"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "subdir", Message: "invalid request"}})
+		return
+	}
+	if err := h.siteService.SetRunningDirectory(id, req.Subdir); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "running directory updated"})
+}
+
+func (h *SiteHandler) GetOpenBasedir(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	enabled, value, err := h.siteService.GetOpenBasedir(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"enabled": enabled, "value": value})
+}
+
+func (h *SiteHandler) SetOpenBasedir(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "enabled", Message: "invalid request"}})
+		return
+	}
+	if err := h.siteService.SetOpenBasedir(id, req.Enabled); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "open_basedir updated"})
+}
+
+func (h *SiteHandler) GetAccessLog(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	enabled, err := h.siteService.GetAccessLogEnabled(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"enabled": enabled})
+}
+
+func (h *SiteHandler) SetAccessLog(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "enabled", Message: "invalid request"}})
+		return
+	}
+	if err := h.siteService.SetAccessLog(id, req.Enabled); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "access log updated"})
+}
+
+func (h *SiteHandler) GetPasswordAccess(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	enabled, username, err := h.siteService.GetPasswordAccess(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"enabled": enabled, "username": username})
+}
+
+func (h *SiteHandler) SetPasswordAccess(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	var req struct {
+		Enabled  bool   `json:"enabled"`
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "body", Message: "invalid request"}})
+		return
+	}
+	if err := h.siteService.SetPasswordAccess(id, req.Enabled, req.Username, req.Password); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "password access updated"})
 }
 
 // ---------------------------------------------------------------------------
