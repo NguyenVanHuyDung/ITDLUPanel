@@ -777,3 +777,76 @@ func writeFile(path, content string) error {
 		fmt.Sprintf("cat > %s << 'IPTABLES_EOF'\n%s\nIPTABLES_EOF", path, content))
 	return err
 }
+
+// ---------------------------------------------------------------------------
+// UFW install
+// ---------------------------------------------------------------------------
+
+// IsUFWInstalled checks whether UFW is installed on the system.
+func (s *FirewallService) IsUFWInstalled() bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := system.Exec(ctx, "which", "ufw")
+	return err == nil
+}
+
+// InstallUFW installs UFW, enables it, and adds default allow rules
+// for the panel port (8888), phpMyAdmin port (888), and SSH (22).
+func (s *FirewallService) InstallUFW() error {
+	osInfo := system.GetOSInfo()
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	logger.Info().Msg("installing UFW")
+
+	// 1. Update package index
+	if _, err := system.Exec(ctx, osInfo.PkgManager, "update", "-y"); err != nil {
+		logger.Warn().Err(err).Msg("package index update had warnings")
+	}
+
+	// 2. Install UFW
+	if _, err := system.Exec(ctx, osInfo.PkgManager, "install", "-y", "ufw"); err != nil {
+		return fmt.Errorf("failed to install ufw: %w", err)
+	}
+
+	// 3. Allow essential ports BEFORE enabling UFW (to avoid lockout)
+	defaultPorts := []struct {
+		Port string
+		Desc string
+	}{
+		{"22", "SSH"},
+		{"8888", "ITDLUPanel"},
+		{"888", "phpMyAdmin"},
+	}
+
+	for _, p := range defaultPorts {
+		if _, err := system.Exec(ctx, "ufw", "allow", p.Port+"/tcp"); err != nil {
+			logger.Warn().Err(err).Str("port", p.Port).Msg("failed to pre-allow port in UFW")
+		}
+	}
+
+	// 4. Enable UFW (non-interactive)
+	if _, err := system.Exec(ctx, "ufw", "--force", "enable"); err != nil {
+		return fmt.Errorf("failed to enable ufw: %w", err)
+	}
+
+	// 5. Add rules to the panel database
+	for _, p := range defaultPorts {
+		_, _ = s.AddRule(AddRuleRequest{
+			Type:        "port",
+			Port:        p.Port,
+			Protocol:    "tcp",
+			Action:      "allow",
+			Direction:   "in",
+			Description: p.Desc,
+		})
+	}
+
+	// 6. Mark firewall as enabled in settings
+	_, _ = s.db.Exec(
+		"INSERT OR REPLACE INTO firewall_settings (key, value, updated_at) VALUES ('enabled', 'true', CURRENT_TIMESTAMP)",
+	)
+
+	logger.Info().Msg("UFW installed and enabled with default rules (22, 888, 8888)")
+	return nil
+}

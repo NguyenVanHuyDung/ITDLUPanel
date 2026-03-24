@@ -107,6 +107,7 @@ export default function Firewall() {
   const [blockIPForm] = Form.useForm();
 
   const [firewallError, setFirewallError] = useState<string | null>(null);
+  const [installingUFW, setInstallingUFW] = useState(false);
 
   // ------- Data fetching -------
   const fetchAll = useCallback(async () => {
@@ -154,6 +155,21 @@ export default function Firewall() {
       message.error(detail || `Failed to toggle ${key === 'enabled' ? 'firewall' : 'ICMP block'}. Is UFW installed?`);
     } finally {
       setSettingsLoading(null);
+    }
+  };
+
+  // ------- Install UFW -------
+  const handleInstallUFW = async () => {
+    setInstallingUFW(true);
+    try {
+      await api.post('/firewall/install');
+      message.success('UFW installed successfully! Default ports 22, 888, 8888 have been allowed.');
+      await fetchAll();
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(detail || 'Failed to install UFW');
+    } finally {
+      setInstallingUFW(false);
     }
   };
 
@@ -663,19 +679,36 @@ export default function Firewall() {
       {firewallError && (
         <div style={{
           margin: '12px 20px 0',
-          padding: '12px 16px',
-          borderRadius: 8,
+          padding: '14px 18px',
+          borderRadius: 10,
           background: `${p.amber}12`,
           border: `1px solid ${p.amber}30`,
-          display: 'flex', alignItems: 'center', gap: 10,
+          display: 'flex', alignItems: 'center', gap: 12,
         }}>
-          <FwIcon.Shield size={18} color={p.amber} />
-          <div>
+          <FwIcon.Shield size={20} color={p.amber} />
+          <div style={{ flex: 1 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: p.text }}>{firewallError}</div>
             <div style={{ fontSize: 11, color: p.textMuted, marginTop: 2 }}>
-              Install UFW with: <code style={{ background: p.codeBg, padding: '1px 6px', borderRadius: 3, fontSize: 11 }}>apt install ufw</code>
+              UFW (Uncomplicated Firewall) is required. Click the button to install it automatically.
             </div>
           </div>
+          <button
+            onClick={handleInstallUFW}
+            disabled={installingUFW}
+            style={{
+              padding: '7px 18px', borderRadius: 7, border: 'none', cursor: installingUFW ? 'wait' : 'pointer',
+              fontSize: 12, fontWeight: 600,
+              background: p.accent,
+              color: '#fff',
+              opacity: installingUFW ? 0.7 : 1,
+              transition: 'all 0.15s',
+              whiteSpace: 'nowrap',
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+            }}
+          >
+            {installingUFW && <Spin size="small" />}
+            {installingUFW ? 'Installing...' : 'Install UFW'}
+          </button>
         </div>
       )}
 

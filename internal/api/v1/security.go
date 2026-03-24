@@ -40,6 +40,9 @@ func (h *SecurityHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, securityMW
 		firewall.GET("/blocked-ips", h.GetBlockedIPs)
 		firewall.POST("/blocked-ips", h.BlockIP)
 		firewall.DELETE("/blocked-ips", h.UnblockIP)
+
+		firewall.GET("/status", h.GetFirewallStatus)
+		firewall.POST("/install", h.InstallUFW)
 	}
 
 	// Security routes
@@ -333,4 +336,27 @@ func (h *SecurityHandler) ConfigureFail2ban(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"message": "fail2ban configuration updated successfully"})
+}
+
+// GetFirewallStatus returns whether UFW is installed and active.
+func (h *SecurityHandler) GetFirewallStatus(c *gin.Context) {
+	installed := h.firewallService.IsUFWInstalled()
+	response.Success(c, gin.H{
+		"ufw_installed": installed,
+	})
+}
+
+// InstallUFW installs UFW and adds default rules.
+func (h *SecurityHandler) InstallUFW(c *gin.Context) {
+	if h.firewallService.IsUFWInstalled() {
+		response.Success(c, gin.H{"message": "UFW is already installed"})
+		return
+	}
+
+	if err := h.firewallService.InstallUFW(); err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"message": "UFW installed and enabled with default rules (ports 22, 888, 8888)"})
 }
