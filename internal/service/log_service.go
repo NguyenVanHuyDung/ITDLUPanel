@@ -70,7 +70,7 @@ func (s *LogService) GetWebsiteAccessLog(siteID int64, lines int) ([]string, err
 	if err != nil {
 		return nil, err
 	}
-	logPath := fmt.Sprintf("/var/log/nginx/%s-access.log", domain)
+	logPath := fmt.Sprintf("/var/log/nginx/%s.access.log", domain)
 	return readLogFile(logPath, clampLines(lines))
 }
 
@@ -80,8 +80,55 @@ func (s *LogService) GetWebsiteErrorLog(siteID int64, lines int) ([]string, erro
 	if err != nil {
 		return nil, err
 	}
-	logPath := fmt.Sprintf("/var/log/nginx/%s-error.log", domain)
+	logPath := fmt.Sprintf("/var/log/nginx/%s.error.log", domain)
 	return readLogFile(logPath, clampLines(lines))
+}
+
+// ClearWebsiteLog clears a website's access or error log.
+func (s *LogService) ClearWebsiteLog(siteID int64, logType string) error {
+	domain, err := s.getSiteDomain(siteID)
+	if err != nil {
+		return err
+	}
+	var logPath string
+	switch logType {
+	case "access":
+		logPath = fmt.Sprintf("/var/log/nginx/%s.access.log", domain)
+	case "error":
+		logPath = fmt.Sprintf("/var/log/nginx/%s.error.log", domain)
+	default:
+		return apperrors.New(apperrors.ErrValidation, "unsupported website log type: "+logType)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), logCmdTimeout)
+	defer cancel()
+
+	if _, err := system.Exec(ctx, "truncate", "-s", "0", logPath); err != nil {
+		logger.Error().Err(err).Str("path", logPath).Msg("failed to clear website log")
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to clear website log file")
+	}
+
+	logger.Info().Str("domain", domain).Str("type", logType).Msg("website log cleared")
+	return nil
+}
+
+// ListSitesMinimal returns a minimal list of sites (id, domain) for dropdowns.
+func (s *LogService) ListSitesMinimal() ([]map[string]interface{}, error) {
+	rows, err := s.db.Query("SELECT id, domain FROM sites ORDER BY domain")
+	if err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to list sites")
+	}
+	defer rows.Close()
+	var sites []map[string]interface{}
+	for rows.Next() {
+		var id int64
+		var domain string
+		if err := rows.Scan(&id, &domain); err != nil {
+			continue
+		}
+		sites = append(sites, map[string]interface{}{"id": id, "domain": domain})
+	}
+	return sites, nil
 }
 
 // GetSSHLog reads the last N lines of the SSH authentication log.

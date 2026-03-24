@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Table, Input, Select, Popconfirm, Tooltip, message } from 'antd';
-import { ReloadOutlined, SearchOutlined, ClearOutlined, InfoCircleOutlined, WarningOutlined, BugOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import { ReloadOutlined, SearchOutlined, ClearOutlined, InfoCircleOutlined, WarningOutlined, BugOutlined, CloseCircleOutlined, GlobalOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { usePalette } from '@/hooks/usePalette';
@@ -30,6 +30,36 @@ interface ParsedLog {
   error?: string;
   extra: Record<string, unknown>;
 }
+
+interface ParsedAccessLog {
+  key: number;
+  raw: string;
+  ip: string;
+  time: string;
+  method: string;
+  path: string;
+  status: number;
+  size: number;
+  referer: string;
+  userAgent: string;
+}
+
+// Parse nginx combined log format:
+// 192.168.1.1 - - [24/Mar/2026:12:00:00 +0700] "GET /path HTTP/1.1" 200 1234 "referer" "user-agent"
+function parseAccessLogLine(raw: string, idx: number): ParsedAccessLog {
+  const m = raw.match(
+    /^(\S+)\s+\S+\s+\S+\s+\[([^\]]+)\]\s+"(\S+)\s+(\S+)\s+\S+"\s+(\d+)\s+(\d+)\s+"([^"]*)"\s+"([^"]*)"/
+  );
+  if (m) {
+    return {
+      key: idx, raw, ip: m[1], time: m[2], method: m[3], path: m[4],
+      status: parseInt(m[5], 10), size: parseInt(m[6], 10), referer: m[7], userAgent: m[8],
+    };
+  }
+  return { key: idx, raw, ip: '', time: '', method: '', path: '', status: 0, size: 0, referer: '', userAgent: '' };
+}
+
+interface SiteMinimal { id: number; domain: string; }
 
 const LEVEL_COLOR: Record<string, { color: string; icon: React.ReactNode }> = {
   debug: { color: '#8b949e', icon: <BugOutlined /> },
@@ -101,6 +131,12 @@ export default function Logs() {
   const [activeTab, setActiveTab] = useState('panel');
   const [levelFilter, setLevelFilter] = useState<string>('all');
 
+  // Website logs state
+  const [sites, setSites] = useState<SiteMinimal[]>([]);
+  const [selectedSiteId, setSelectedSiteId] = useState<number | null>(null);
+  const [websiteLogType, setWebsiteLogType] = useState<'access' | 'error'>('access');
+  const [websiteLines, setWebsiteLines] = useState<string[]>([]);
+
   const fetchPanelLog = useCallback(async (numLines: number) => {
     setLoading(true);
     try {
@@ -143,15 +179,59 @@ export default function Logs() {
     }
   }, [t]);
 
+  // Fetch sites list for website logs dropdown
+  const fetchSites = useCallback(async () => {
+    try {
+      const { data } = await api.get<ApiResponse<SiteMinimal[]>>('/logs/sites');
+      const list = data.data ?? [];
+      setSites(list);
+      if (list.length > 0 && !selectedSiteId) setSelectedSiteId(list[0].id);
+    } catch { /* ignore */ }
+  }, [selectedSiteId]);
+
+  const fetchWebsiteLog = useCallback(async (siteId: number, logType: 'access' | 'error', numLines: number) => {
+    setLoading(true);
+    try {
+      const { data } = await api.get<ApiResponse<{ lines: string | string[] }>>(`/logs/website/${siteId}/${logType}`, { params: { lines: numLines } });
+      const raw = data.data?.lines;
+      if (Array.isArray(raw)) setWebsiteLines(raw);
+      else if (typeof raw === 'string') setWebsiteLines(raw.split('\n').filter(Boolean));
+      else setWebsiteLines([]);
+    } catch {
+      setWebsiteLines([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const refresh = useCallback(() => {
     if (activeTab === 'panel') fetchPanelLog(lines);
     else if (activeTab === 'ssh') fetchSshLog(lines);
+    else if (activeTab === 'website') {
+      if (selectedSiteId) fetchWebsiteLog(selectedSiteId, websiteLogType, lines);
+    }
     else fetchAuditLog();
-  }, [activeTab, lines, fetchPanelLog, fetchSshLog, fetchAuditLog]);
+  }, [activeTab, lines, fetchPanelLog, fetchSshLog, fetchAuditLog, fetchWebsiteLog, selectedSiteId, websiteLogType]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
+  // Load sites when switching to website tab
+  useEffect(() => {
+    if (activeTab === 'website' && sites.length === 0) fetchSites();
+  }, [activeTab, sites.length, fetchSites]);
+
   const handleClearLog = async () => {
+    if (activeTab === 'website') {
+      if (!selectedSiteId) return;
+      try {
+        await api.delete(`/logs/website/${selectedSiteId}/${websiteLogType}`);
+        message.success(t('common.success'));
+        refresh();
+      } catch {
+        message.error(t('common.error'));
+      }
+      return;
+    }
     const endpoint = activeTab === 'panel' ? '/logs/panel' : '/logs/ssh';
     try {
       await api.delete(endpoint);
@@ -401,15 +481,111 @@ export default function Logs() {
     },
   ];
 
+  // Website access log columns
+  const parsedWebsite = useMemo(() => websiteLines.map((l, i) => parseAccessLogLine(l, i)), [websiteLines]);
+  const filteredWebsite = useMemo(() => {
+    if (!search.trim()) return parsedWebsite;
+    const q = search.toLowerCase();
+    return parsedWebsite.filter(l =>
+      l.ip.toLowerCase().includes(q) ||
+      l.path.toLowerCase().includes(q) ||
+      l.method.toLowerCase().includes(q) ||
+      l.userAgent.toLowerCase().includes(q) ||
+      l.raw.toLowerCase().includes(q)
+    );
+  }, [parsedWebsite, search]);
+
+  const websiteAccessColumns = [
+    {
+      title: 'Time', dataIndex: 'time', key: 'time', width: isMobile ? 100 : 180,
+      render: (v: string) => <span style={{ fontSize: 11, color: p.textMuted, whiteSpace: 'nowrap' }}>{v}</span>,
+    },
+    {
+      title: 'IP', dataIndex: 'ip', key: 'ip', width: isMobile ? 90 : 130,
+      render: (v: string) => v ? <span style={{ fontSize: 11, color: p.textMuted }}>{v}</span> : null,
+    },
+    {
+      title: 'Method', dataIndex: 'method', key: 'method', width: 70,
+      render: (v: string) => {
+        const color = v === 'GET' ? p.green : v === 'POST' ? p.accent : v === 'DELETE' ? p.red : p.amber;
+        return v ? (
+          <span style={{
+            fontSize: 10, padding: '2px 8px', borderRadius: 4, fontWeight: 600,
+            background: `${color}15`, color,
+          }}>{v}</span>
+        ) : null;
+      },
+    },
+    {
+      title: 'Path', dataIndex: 'path', key: 'path', ellipsis: true,
+      render: (v: string) => (
+        <span style={{ fontSize: 12, color: p.text, fontFamily: 'monospace' }}>{v}</span>
+      ),
+    },
+    {
+      title: 'Status', dataIndex: 'status', key: 'status', width: 70,
+      render: (v: number) => v ? <StatusBadge status={v} p={p} /> : null,
+    },
+    {
+      title: 'Size', dataIndex: 'size', key: 'size', width: 80,
+      render: (v: number) => {
+        if (!v) return <span style={{ color: p.textDim }}>—</span>;
+        const s = v >= 1048576 ? `${(v / 1048576).toFixed(1)} MB` : v >= 1024 ? `${(v / 1024).toFixed(1)} KB` : `${v} B`;
+        return <span style={{ fontSize: 11, color: p.textMuted }}>{s}</span>;
+      },
+    },
+    ...(!isMobile ? [{
+      title: 'User-Agent', dataIndex: 'userAgent', key: 'ua', ellipsis: true, width: 200,
+      render: (v: string) => <span style={{ fontSize: 11, color: p.textDim }}>{v === '-' ? '' : v}</span>,
+    }] : []),
+  ];
+
+  // Website error log: plain lines
+  const websiteErrorColumns = [
+    {
+      title: 'Time', key: 'time', width: isMobile ? 100 : 180,
+      render: (_: unknown, r: ParsedAccessLog) => {
+        const m = r.raw.match(/^(\d{4}\/\d{2}\/\d{2}\s+\d{2}:\d{2}:\d{2})/);
+        return <span style={{ fontSize: 11, color: p.textMuted, whiteSpace: 'nowrap' }}>{m ? m[1] : ''}</span>;
+      },
+    },
+    {
+      title: 'Level', key: 'level', width: 70,
+      render: (_: unknown, r: ParsedAccessLog) => {
+        const m = r.raw.match(/\[(\w+)\]/);
+        if (!m) return null;
+        const lvl = m[1].toLowerCase();
+        const color = lvl === 'error' || lvl === 'crit' || lvl === 'alert' || lvl === 'emerg' ? p.red
+          : lvl === 'warn' ? p.amber : p.textMuted;
+        return (
+          <span style={{
+            fontSize: 10, padding: '2px 8px', borderRadius: 4, fontWeight: 600,
+            background: `${color}15`, color,
+          }}>{m[1]}</span>
+        );
+      },
+    },
+    {
+      title: 'Message', key: 'message', ellipsis: true,
+      render: (_: unknown, r: ParsedAccessLog) => {
+        // Strip timestamp and level prefix
+        const cleaned = r.raw.replace(/^\d{4}\/\d{2}\/\d{2}\s+\d{2}:\d{2}:\d{2}\s+\[\w+\]\s+\d+#\d+:\s*(\*\d+\s+)?/, '');
+        return <span style={{ fontSize: 12, color: p.text }}>{cleaned || r.raw}</span>;
+      },
+    },
+  ];
+
   const tabCounts: Record<string, number> = {
     panel: panelLines.length,
     ssh: sshLines.length,
+    website: websiteLines.length,
     audit: auditData.length,
   };
 
   const tabs = [
     { key: 'panel', label: 'Panel Log' },
     { key: 'ssh', label: 'SSH Log' },
+    { key: 'website', label: 'Website Logs', icon: <GlobalOutlined /> },
     { key: 'audit', label: 'Audit Log' },
   ];
 
@@ -437,7 +613,27 @@ export default function Logs() {
             allowClear
             style={{ width: isMobile ? 160 : 220 }}
           />
-          {activeTab !== 'audit' && (
+          {activeTab === 'website' && (
+            <>
+              <Select
+                value={selectedSiteId}
+                onChange={(val: number) => { setSelectedSiteId(val); setWebsiteLines([]); }}
+                placeholder="Select website"
+                style={{ width: isMobile ? 160 : 220 }}
+                options={sites.map(s => ({ label: s.domain, value: s.id }))}
+              />
+              <Select
+                value={websiteLogType}
+                onChange={(val: 'access' | 'error') => { setWebsiteLogType(val); setWebsiteLines([]); }}
+                style={{ width: isMobile ? 100 : 130 }}
+                options={[
+                  { label: '📥 Access Log', value: 'access' },
+                  { label: '⚠️ Error Log', value: 'error' },
+                ]}
+              />
+            </>
+          )}
+          {(activeTab === 'panel' || activeTab === 'ssh') && (
             <Select
               value={levelFilter}
               onChange={setLevelFilter}
@@ -561,6 +757,29 @@ export default function Logs() {
                 return '';
               }}
             />
+          )
+        )}
+        {activeTab === 'website' && (
+          selectedSiteId ? (
+            <Table
+              columns={websiteLogType === 'access' ? websiteAccessColumns : websiteErrorColumns}
+              dataSource={websiteLogType === 'access' ? filteredWebsite : filteredWebsite}
+              rowKey="key"
+              loading={loading}
+              size="small"
+              pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (total) => `${total} entries` }}
+              scroll={{ x: 600, y: 'calc(100vh - 380px)' }}
+              rowClassName={(r) => {
+                if (websiteLogType === 'access' && r.status >= 400) return 'log-row-error';
+                if (websiteLogType === 'error') return 'log-row-error';
+                return '';
+              }}
+            />
+          ) : (
+            <div style={{ textAlign: 'center', padding: 60, color: p.textMuted }}>
+              <GlobalOutlined style={{ fontSize: 36, marginBottom: 12, opacity: 0.3 }} />
+              <div style={{ fontSize: 14 }}>Select a website to view logs</div>
+            </div>
           )
         )}
         {activeTab === 'audit' && (

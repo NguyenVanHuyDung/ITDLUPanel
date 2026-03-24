@@ -27,6 +27,8 @@ func (h *LogHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, permMW gin.Hand
 		logs.GET("/panel", h.GetPanelLog)
 		logs.GET("/website/:id/access", h.GetWebsiteAccessLog)
 		logs.GET("/website/:id/error", h.GetWebsiteErrorLog)
+		logs.DELETE("/website/:id/:logType", h.ClearWebsiteLog)
+		logs.GET("/sites", h.ListSitesMinimal)
 		logs.GET("/ssh", h.GetSSHLog)
 		logs.GET("/audit", h.GetAuditLog)
 		logs.DELETE("/:type", h.ClearLog)
@@ -140,6 +142,30 @@ func (h *LogHandler) ClearLog(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": "log cleared successfully"})
+}
+
+// ClearWebsiteLog clears a website's access or error log.
+func (h *LogHandler) ClearWebsiteLog(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	logType := c.Param("logType")
+	if err := h.logService.ClearWebsiteLog(id, logType); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "website log cleared successfully"})
+}
+
+// ListSitesMinimal returns a minimal list of sites for the log viewer dropdown.
+func (h *LogHandler) ListSitesMinimal(c *gin.Context) {
+	sites, err := h.logService.ListSitesMinimal()
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, sites)
 }
 
 type searchLogQuery struct {

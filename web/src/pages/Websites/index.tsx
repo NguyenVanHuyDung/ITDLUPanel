@@ -844,6 +844,161 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
 // ---------------------------------------------------------------------------
 // Placeholder panel
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Response Log Panel — inline log viewer for website config modal
+// ---------------------------------------------------------------------------
+function ResponseLogPanel({ site }: { site: Site }) {
+  const { p, isDark } = usePalette();
+  const [logType, setLogType] = useState<'access' | 'error'>('access');
+  const [lines, setLines] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [numLines, setNumLines] = useState(100);
+
+  const fetchLog = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get<ApiResponse<{ lines: string | string[] }>>(`/logs/website/${site.id}/${logType}`, {
+        params: { lines: numLines },
+      });
+      const raw = data.data?.lines;
+      if (Array.isArray(raw)) setLines(raw);
+      else if (typeof raw === 'string') setLines(raw.split('\n').filter(Boolean));
+      else setLines([]);
+    } catch {
+      setLines([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [site.id, logType, numLines]);
+
+  useEffect(() => { fetchLog(); }, [fetchLog]);
+
+  const statusColor = (status: string) => {
+    const n = parseInt(status, 10);
+    if (n >= 500) return p.red;
+    if (n >= 400) return p.amber;
+    if (n >= 300) return p.accent;
+    return p.green;
+  };
+
+  return (
+    <div style={{ padding: '12px 0' }}>
+      {/* Controls */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        <Select
+          value={logType}
+          onChange={(v: 'access' | 'error') => { setLogType(v); setLines([]); }}
+          style={{ width: 140 }}
+          options={[
+            { label: '📥 Access Log', value: 'access' },
+            { label: '⚠️ Error Log', value: 'error' },
+          ]}
+        />
+        <Select
+          value={numLines}
+          onChange={(v: number) => setNumLines(v)}
+          style={{ width: 110 }}
+          options={[
+            { label: '50 lines', value: 50 },
+            { label: '100 lines', value: 100 },
+            { label: '200 lines', value: 200 },
+            { label: '500 lines', value: 500 },
+          ]}
+        />
+        <button
+          onClick={fetchLog}
+          style={{
+            padding: '4px 12px', borderRadius: 5, border: `1px solid ${p.cardBorder}`,
+            background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+          }}
+        >
+          ↻ Refresh
+        </button>
+        <a
+          href={`/logs`}
+          style={{ fontSize: 12, color: p.accent, marginLeft: 'auto' }}
+          onClick={(e) => { e.preventDefault(); window.location.href = '/logs'; }}
+        >
+          View Full Logs →
+        </a>
+      </div>
+
+      {/* Log content */}
+      <div style={{
+        background: isDark ? 'rgba(0,0,0,0.3)' : '#f8f9fa',
+        border: `1px solid ${p.cardBorder}`,
+        borderRadius: 8,
+        maxHeight: 360,
+        overflow: 'auto',
+        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+        fontSize: 11,
+        lineHeight: 1.7,
+      }}>
+        {loading ? (
+          <div style={{ padding: 40, textAlign: 'center', color: p.textMuted }}>Loading...</div>
+        ) : lines.length === 0 ? (
+          <div style={{ padding: 40, textAlign: 'center', color: p.textMuted }}>No log entries</div>
+        ) : (
+          <div style={{ padding: '8px 12px' }}>
+            {lines.map((line, i) => {
+              if (logType === 'access') {
+                // Parse nginx combined: IP - - [time] "METHOD path" status size ...
+                const m = line.match(
+                  /^(\S+)\s+\S+\s+\S+\s+\[([^\]]+)\]\s+"(\S+)\s+(\S+)\s+\S+"\s+(\d+)\s+(\d+)/
+                );
+                if (m) {
+                  const [, ip, time, method, path, status, size] = m;
+                  const sc = statusColor(status);
+                  return (
+                    <div key={i} style={{
+                      padding: '2px 0', borderBottom: `1px solid ${p.cardBorder}20`,
+                      display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap',
+                    }}>
+                      <span style={{ color: p.textDim, minWidth: 110, flexShrink: 0 }}>{time.split(' ')[0]?.replace(/.*:/, (x) => x) || time}</span>
+                      <span style={{ color: p.textMuted, minWidth: 90 }}>{ip}</span>
+                      <span style={{
+                        padding: '0 5px', borderRadius: 3, fontSize: 10, fontWeight: 600,
+                        background: `${p.accent}15`, color: p.accent,
+                      }}>{method}</span>
+                      <span style={{ color: p.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{path}</span>
+                      <span style={{
+                        padding: '0 5px', borderRadius: 3, fontSize: 10, fontWeight: 600,
+                        background: `${sc}15`, color: sc,
+                      }}>{status}</span>
+                      <span style={{ color: p.textDim, minWidth: 50, textAlign: 'right' }}>
+                        {parseInt(size) >= 1024 ? `${(parseInt(size) / 1024).toFixed(1)}K` : `${size}B`}
+                      </span>
+                    </div>
+                  );
+                }
+              }
+              // Fallback: plain line (error log or unparseable)
+              const isErr = line.includes('[error]') || line.includes('[crit]') || line.includes('[alert]');
+              return (
+                <div key={i} style={{
+                  padding: '2px 0', borderBottom: `1px solid ${p.cardBorder}20`,
+                  color: isErr ? p.red : p.text,
+                }}>{line}</div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Stats summary */}
+      {lines.length > 0 && logType === 'access' && (
+        <div style={{ display: 'flex', gap: 16, marginTop: 10, fontSize: 11, color: p.textMuted }}>
+          <span>Total: <b style={{ color: p.text }}>{lines.length}</b> entries</span>
+          <span>Errors: <b style={{ color: p.red }}>
+            {lines.filter(l => { const m = l.match(/"\s+([45]\d{2})\s/); return !!m; }).length}
+          </b></span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PlaceholderPanel({ title }: { title: string }) {
   const { p } = usePalette();
   return (
@@ -879,7 +1034,7 @@ function SiteConfigModal({ site, open, onClose, phpVersions }: { site: Site | nu
       case 'redirect':
         return <PlaceholderPanel title="Redirect Rules" />;
       case 'log':
-        return <PlaceholderPanel title="Response Log" />;
+        return <ResponseLogPanel site={site} />;
       default:
         return null;
     }
