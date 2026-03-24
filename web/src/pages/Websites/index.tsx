@@ -5,13 +5,13 @@ import {
   SearchOutlined, ReloadOutlined, GlobalOutlined, CodeOutlined,
   FolderOpenOutlined, EyeOutlined, EyeInvisibleOutlined,
   FileTextOutlined, LinkOutlined, LockOutlined, CloudOutlined,
-  MoreOutlined,
+  MoreOutlined, DeleteOutlined, ExclamationCircleOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import Editor from '@monaco-editor/react';
 import '@/lib/monaco-setup';
 import api from '@/services/api';
-import type { Site } from '@/types';
+import type { Site, ApiResponse } from '@/types';
 import RequireSoftware from '@/components/RequireSoftware';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { usePalette } from '@/hooks/usePalette';
@@ -707,6 +707,13 @@ function WebsitesContent() {
   const [configOpen, setConfigOpen] = useState(false);
   const [nginxVersion, setNginxVersion] = useState('');
   const [phpVersions, setPhpVersions] = useState<string[]>([]);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkPHPOpen, setBulkPHPOpen] = useState(false);
+  const [bulkSSLOpen, setBulkSSLOpen] = useState(false);
+  const [bulkPHPVersion, setBulkPHPVersion] = useState('');
+  const [bulkSSLDomain, setBulkSSLDomain] = useState('');
+  const [availableCerts, setAvailableCerts] = useState<{ domain: string; type: string; expiry?: string }[]>([]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -778,6 +785,92 @@ function WebsitesContent() {
       fetchData();
     } catch {
       message.error('Action failed');
+    }
+  };
+
+  // ── Bulk actions ──
+  const selectedIds = selectedRowKeys.map(k => Number(k));
+
+  const handleBulkDelete = () => {
+    Modal.confirm({
+      title: `Delete ${selectedIds.length} website(s)?`,
+      icon: <ExclamationCircleOutlined />,
+      content: 'This will permanently remove the selected websites, their vhost configs, and document roots. This action cannot be undone.',
+      okText: 'Delete All',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setBulkLoading(true);
+        try {
+          const { data } = await api.post<ApiResponse<{ success: number; failed: number; errors: Record<string, string> }>>('/sites/batch/delete', { ids: selectedIds });
+          const d = data.data;
+          if (d && d.failed > 0) {
+            message.warning(`${d.success} deleted, ${d.failed} failed`);
+          } else {
+            message.success(`${selectedIds.length} website(s) deleted`);
+          }
+          setSelectedRowKeys([]);
+          fetchData();
+        } catch {
+          message.error('Batch delete failed');
+        } finally {
+          setBulkLoading(false);
+        }
+      },
+    });
+  };
+
+  const handleBulkPHP = async () => {
+    if (!bulkPHPVersion) { message.warning('Select a PHP version'); return; }
+    setBulkLoading(true);
+    try {
+      const { data } = await api.put<ApiResponse<{ success: number; failed: number }>>('/sites/batch/php', {
+        ids: selectedIds, php_version: bulkPHPVersion,
+      });
+      const d = data.data;
+      if (d && d.failed > 0) {
+        message.warning(`${d.success} updated, ${d.failed} failed`);
+      } else {
+        message.success(`PHP ${bulkPHPVersion} applied to ${selectedIds.length} site(s)`);
+      }
+      setBulkPHPOpen(false);
+      setBulkPHPVersion('');
+      setSelectedRowKeys([]);
+      fetchData();
+    } catch {
+      message.error('Batch PHP switch failed');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const fetchCerts = useCallback(async () => {
+    try {
+      const { data } = await api.get<ApiResponse<{ domain: string; type: string; expiry?: string }[]>>('/ssl/certificates');
+      setAvailableCerts(data.data ?? []);
+    } catch { /* ignore */ }
+  }, []);
+
+  const handleBulkSSL = async () => {
+    if (!bulkSSLDomain) { message.warning('Select a certificate'); return; }
+    setBulkLoading(true);
+    try {
+      const { data } = await api.put<ApiResponse<{ success: number; failed: number }>>('/sites/batch/ssl', {
+        ids: selectedIds, source_domain: bulkSSLDomain,
+      });
+      const d = data.data;
+      if (d && d.failed > 0) {
+        message.warning(`${d.success} updated, ${d.failed} failed`);
+      } else {
+        message.success(`SSL applied to ${selectedIds.length} site(s)`);
+      }
+      setBulkSSLOpen(false);
+      setBulkSSLDomain('');
+      setSelectedRowKeys([]);
+      fetchData();
+    } catch {
+      message.error('Batch SSL apply failed');
+    } finally {
+      setBulkLoading(false);
     }
   };
 
@@ -1016,31 +1109,97 @@ function WebsitesContent() {
           display: 'flex', alignItems: 'center', flexWrap: 'wrap',
           gap: 8, padding: '12px 20px',
           borderBottom: `1px solid ${p.cardBorder}`,
+          background: selectedRowKeys.length > 0 ? (isDark ? 'rgba(59,130,246,0.06)' : 'rgba(59,130,246,0.03)') : undefined,
+          transition: 'background 0.2s',
         }}>
-          <div style={{ flex: 1 }} />
-          <Input
-            placeholder="Domain or Remarks"
-            prefix={<SearchOutlined style={{ color: p.textDim }} />}
-            value={searchText}
-            onChange={e => setSearchText(e.target.value)}
-            allowClear
-            style={{ width: 220 }}
-            size="middle"
-          />
-          <Tooltip title="Refresh">
-            <button
-              onClick={fetchData}
-              style={{
-                padding: '5px 10px', borderRadius: 6,
-                border: `1px solid ${p.cardBorder}`,
-                background: 'transparent', color: p.textMuted,
-                cursor: 'pointer', display: 'inline-flex', alignItems: 'center',
-                transition: 'all 0.15s',
-              }}
-            >
-              <ReloadOutlined />
-            </button>
-          </Tooltip>
+          {selectedRowKeys.length > 0 ? (
+            <>
+              <span style={{
+                fontSize: 12, fontWeight: 600, color: p.accent,
+                padding: '3px 10px', borderRadius: 5,
+                background: `${p.accent}15`,
+              }}>
+                {selectedRowKeys.length} selected
+              </span>
+              <button
+                onClick={() => setSelectedRowKeys([])}
+                style={{
+                  padding: '4px 12px', borderRadius: 6, fontSize: 11, fontWeight: 500,
+                  border: `1px solid ${p.cardBorder}`, background: 'transparent',
+                  color: p.textMuted, cursor: 'pointer',
+                }}
+              >
+                Deselect
+              </button>
+              <div style={{ width: 1, height: 20, background: p.cardBorder, margin: '0 4px' }} />
+              <button
+                onClick={handleBulkDelete}
+                disabled={bulkLoading}
+                style={{
+                  padding: '4px 14px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                  border: `1px solid ${p.red}50`, background: `${p.red}08`,
+                  color: p.red, cursor: bulkLoading ? 'not-allowed' : 'pointer',
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                }}
+              >
+                <DeleteOutlined /> Delete
+              </button>
+              {phpVersions.length > 0 && (
+                <button
+                  onClick={() => setBulkPHPOpen(true)}
+                  disabled={bulkLoading}
+                  style={{
+                    padding: '4px 14px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                    border: `1px solid ${p.purple}50`, background: `${p.purple}08`,
+                    color: p.purple, cursor: bulkLoading ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                  }}
+                >
+                  <SettingOutlined /> Set PHP
+                </button>
+              )}
+              <button
+                onClick={() => { setBulkSSLOpen(true); fetchCerts(); }}
+                disabled={bulkLoading}
+                style={{
+                  padding: '4px 14px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                  border: `1px solid ${p.green}50`, background: `${p.green}08`,
+                  color: p.green, cursor: bulkLoading ? 'not-allowed' : 'pointer',
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                }}
+              >
+                <SafetyCertificateOutlined /> Apply SSL
+              </button>
+              <div style={{ flex: 1 }} />
+            </>
+          ) : (
+            <>
+              <div style={{ flex: 1 }} />
+              <Input
+                placeholder="Domain or Remarks"
+                prefix={<SearchOutlined style={{ color: p.textDim }} />}
+                value={searchText}
+                onChange={e => setSearchText(e.target.value)}
+                allowClear
+                style={{ width: 220 }}
+                size="middle"
+              />
+              <Tooltip title="Refresh">
+                <button
+                  onClick={fetchData}
+                  style={{
+                    padding: '5px 10px', borderRadius: 6,
+                    border: `1px solid ${p.cardBorder}`,
+                    background: 'transparent', color: p.textMuted,
+                    cursor: 'pointer', display: 'inline-flex', alignItems: 'center',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <ReloadOutlined />
+                </button>
+              </Tooltip>
+            </>
+          )}
         </div>
 
         {/* Table */}
@@ -1050,6 +1209,10 @@ function WebsitesContent() {
             scroll={{ x: 750 }}
             dataSource={filteredSites}
             rowKey="id"
+            rowSelection={{
+              selectedRowKeys,
+              onChange: (keys) => setSelectedRowKeys(keys),
+            }}
             loading={{ spinning: loading, indicator: <Spin /> }}
             size="middle"
             pagination={{
@@ -1122,6 +1285,95 @@ function WebsitesContent() {
         onClose={() => { setConfigOpen(false); setConfigSite(null); }}
         phpVersions={phpVersions}
       />
+
+      {/* Bulk Set PHP Modal */}
+      <Modal
+        title={
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <SettingOutlined style={{ color: p.purple }} />
+            Set PHP Version — {selectedRowKeys.length} site(s)
+          </span>
+        }
+        open={bulkPHPOpen}
+        onCancel={() => { setBulkPHPOpen(false); setBulkPHPVersion(''); }}
+        onOk={handleBulkPHP}
+        confirmLoading={bulkLoading}
+        okText="Apply"
+        okButtonProps={{ style: { background: p.purple, borderColor: p.purple } }}
+        width={420}
+        destroyOnHidden
+      >
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 12, color: p.textMuted, marginBottom: 12 }}>
+            This will change the PHP-FPM version for all selected websites and regenerate their vhost configs.
+          </div>
+          <Select
+            placeholder="Select PHP version"
+            value={bulkPHPVersion || undefined}
+            onChange={setBulkPHPVersion}
+            style={{ width: '100%' }}
+            options={phpVersions.map(v => ({ label: `PHP ${v}`, value: v }))}
+          />
+          <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {sites.filter(s => selectedRowKeys.includes(s.id)).map(s => (
+              <span key={s.id} style={{
+                fontSize: 11, padding: '2px 8px', borderRadius: 4,
+                background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                color: p.textMuted,
+              }}>
+                {s.domain}{s.php_version ? ` (PHP ${s.php_version})` : ''}
+              </span>
+            ))}
+          </div>
+        </div>
+      </Modal>
+
+      {/* Bulk Apply SSL Modal */}
+      <Modal
+        title={
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <SafetyCertificateOutlined style={{ color: p.green }} />
+            Apply SSL — {selectedRowKeys.length} site(s)
+          </span>
+        }
+        open={bulkSSLOpen}
+        onCancel={() => { setBulkSSLOpen(false); setBulkSSLDomain(''); }}
+        onOk={handleBulkSSL}
+        confirmLoading={bulkLoading}
+        okText="Apply Certificate"
+        okButtonProps={{ style: { background: p.green, borderColor: p.green } }}
+        width={480}
+        destroyOnHidden
+      >
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 12, color: p.textMuted, marginBottom: 12 }}>
+            Select an existing certificate to apply to all selected websites. The certificate will be copied to each site.
+          </div>
+          <Select
+            placeholder="Select certificate"
+            value={bulkSSLDomain || undefined}
+            onChange={setBulkSSLDomain}
+            style={{ width: '100%' }}
+            options={availableCerts.map(c => ({
+              label: `${c.domain} (${c.type}${c.expiry ? ` — expires ${c.expiry.split('T')[0]}` : ''})`,
+              value: c.domain,
+            }))}
+            showSearch
+            filterOption={(input, option) => (option?.label as string || '').toLowerCase().includes(input.toLowerCase())}
+          />
+          <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {sites.filter(s => selectedRowKeys.includes(s.id)).map(s => (
+              <span key={s.id} style={{
+                fontSize: 11, padding: '2px 8px', borderRadius: 4,
+                background: s.ssl_enabled ? `${p.green}12` : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+                color: s.ssl_enabled ? p.green : p.textMuted,
+              }}>
+                {s.ssl_enabled ? '🔒' : '🔓'} {s.domain}
+              </span>
+            ))}
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

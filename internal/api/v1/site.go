@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -29,6 +30,12 @@ func (h *SiteHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, sitesMW gin.Ha
 		sites.GET("", h.ListSites)
 		sites.POST("", h.CreateSite)
 		sites.GET("/php-versions", h.ListPHPVersions)
+
+		// Batch operations
+		sites.POST("/batch/delete", h.BatchDeleteSites)
+		sites.PUT("/batch/php", h.BatchSwitchPHP)
+		sites.POST("/batch/ssl", h.BatchApplySSL)
+
 		sites.GET("/:id", h.GetSite)
 		sites.PUT("/:id", h.UpdateSite)
 		sites.DELETE("/:id", h.DeleteSite)
@@ -480,6 +487,102 @@ func (h *SiteHandler) ApplySSLFromHolder(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"message": "certificate applied successfully"})
+}
+
+// ---------------------------------------------------------------------------
+// Batch operations
+// ---------------------------------------------------------------------------
+
+type batchIDsRequest struct {
+	IDs []int64 `json:"ids" binding:"required,min=1"`
+}
+
+type batchPHPRequest struct {
+	IDs        []int64 `json:"ids" binding:"required,min=1"`
+	PHPVersion string  `json:"php_version" binding:"required"`
+}
+
+type batchSSLRequest struct {
+	IDs          []int64 `json:"ids" binding:"required,min=1"`
+	SourceDomain string  `json:"source_domain" binding:"required"`
+}
+
+// BatchDeleteSites deletes multiple sites.
+func (h *SiteHandler) BatchDeleteSites(c *gin.Context) {
+	var req batchIDsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "ids", Message: "ids array is required"},
+		})
+		return
+	}
+
+	errors := h.siteService.BatchDelete(req.IDs)
+	total := len(req.IDs)
+	failed := len(errors)
+
+	c.JSON(http.StatusOK, response.Response{
+		Code:    http.StatusOK,
+		Message: fmt.Sprintf("%d of %d sites deleted", total-failed, total),
+		Data: gin.H{
+			"total":   total,
+			"success": total - failed,
+			"failed":  failed,
+			"errors":  errors,
+		},
+	})
+}
+
+// BatchSwitchPHP changes PHP version for multiple sites.
+func (h *SiteHandler) BatchSwitchPHP(c *gin.Context) {
+	var req batchPHPRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "ids and php_version are required"},
+		})
+		return
+	}
+
+	errors := h.siteService.BatchSwitchPHP(req.IDs, req.PHPVersion)
+	total := len(req.IDs)
+	failed := len(errors)
+
+	c.JSON(http.StatusOK, response.Response{
+		Code:    http.StatusOK,
+		Message: fmt.Sprintf("%d of %d sites updated", total-failed, total),
+		Data: gin.H{
+			"total":   total,
+			"success": total - failed,
+			"failed":  failed,
+			"errors":  errors,
+		},
+	})
+}
+
+// BatchApplySSL applies SSL certificate to multiple sites.
+func (h *SiteHandler) BatchApplySSL(c *gin.Context) {
+	var req batchSSLRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "ids and source_domain are required"},
+		})
+		return
+	}
+
+	errors := h.siteService.BatchApplySSL(req.IDs, req.SourceDomain)
+	total := len(req.IDs)
+	failed := len(errors)
+
+	c.JSON(http.StatusOK, response.Response{
+		Code:    http.StatusOK,
+		Message: fmt.Sprintf("%d of %d sites updated", total-failed, total),
+		Data: gin.H{
+			"total":   total,
+			"success": total - failed,
+			"failed":  failed,
+			"errors":  errors,
+		},
+	})
 }
 
 // ---------------------------------------------------------------------------

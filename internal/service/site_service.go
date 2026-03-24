@@ -302,6 +302,39 @@ func (s *SiteService) Delete(id int64) error {
 	return nil
 }
 
+// BatchDelete removes multiple sites. Returns a map of site_id -> error message for failures.
+func (s *SiteService) BatchDelete(ids []int64) map[int64]string {
+	errors := make(map[int64]string)
+	for _, id := range ids {
+		if err := s.Delete(id); err != nil {
+			errors[id] = err.Error()
+		}
+	}
+	return errors
+}
+
+// BatchSwitchPHP changes the PHP version for multiple sites. Returns a map of site_id -> error message for failures.
+func (s *SiteService) BatchSwitchPHP(ids []int64, phpVersion string) map[int64]string {
+	errors := make(map[int64]string)
+	for _, id := range ids {
+		if err := s.SwitchPHP(id, phpVersion); err != nil {
+			errors[id] = err.Error()
+		}
+	}
+	return errors
+}
+
+// BatchApplySSL applies an existing certificate to multiple sites. Returns a map of site_id -> error message for failures.
+func (s *SiteService) BatchApplySSL(ids []int64, sourceDomain string) map[int64]string {
+	errors := make(map[int64]string)
+	for _, id := range ids {
+		if err := s.EnableSSLFromHolder(id, sourceDomain); err != nil {
+			errors[id] = err.Error()
+		}
+	}
+	return errors
+}
+
 // ---------------------------------------------------------------------------
 // Operations
 // ---------------------------------------------------------------------------
