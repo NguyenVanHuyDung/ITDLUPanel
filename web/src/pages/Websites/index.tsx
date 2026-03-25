@@ -578,8 +578,7 @@ interface CertInfo {
 }
 
 const SSL_TABS = [
-  { key: 'current', label: 'Current Cert' },
-  { key: 'custom', label: 'Custom Certificate' },
+  { key: 'current', label: 'Certificate' },
   { key: 'letsencrypt', label: "Let's Encrypt" },
   { key: 'holder', label: 'Certificate Holder' },
 ] as const;
@@ -733,63 +732,77 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
       </div>
 
       {activeTab === 'current' && (
-        !enabled ? (
-          <div style={{ textAlign: 'center', padding: '30px 0', color: p.textMuted }}>
-            <LockOutlined style={{ fontSize: 28, opacity: 0.3, marginBottom: 8 }} />
-            <div style={{ fontSize: 13 }}>SSL is not enabled for this site</div>
-          </div>
-        ) : (
-          <div>
-            {kvRow('Status', isExpired(sslInfo.valid_until)
-              ? badge('Expired', `${p.red}20`, p.red)
-              : badge('Active', `${p.green}20`, p.green)
-            )}
-            {kvRow('Certificate type', badge(sslInfo.ssl_type === 'letsencrypt' ? "Let's Encrypt" : 'Custom certificate',
-              `${p.accent}15`, p.accent))}
-            {sslInfo.issuer_cn && kvRow('Certificate brand', sslInfo.issuer_cn)}
-            {sslInfo.dns_names?.length > 0 && kvRow('Certificate domain(s)', sslInfo.dns_names.join(', '))}
-            {sslInfo.valid_from && kvRow('Issued', fmtDate(sslInfo.valid_from))}
-            {kvRow('Expired', <span style={{
-              color: isExpired(sslInfo.valid_until) ? p.red : isExpiringSoon(sslInfo.valid_until) ? '#d97706' : p.text,
-              fontWeight: 500, fontSize: 12,
-            }}>{fmtDate(sslInfo.valid_until)}{!isExpired(sslInfo.valid_until)
-              ? `, Exp in ${daysUntil(sslInfo.valid_until)} days`
-              : `, Expired ${Math.abs(daysUntil(sslInfo.valid_until))} days ago`
-            }</span>)}
-            {kvRow('Force HTTPS', <span style={{ fontSize: 12, fontWeight: 500, color: p.green }}>Enabled</span>)}
-            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-              <button style={dangerBtn} onClick={handleDisable} disabled={submitting}>Disable SSL</button>
-              {sslInfo.ssl_type === 'letsencrypt' && (
-                <button style={primaryBtn} onClick={handleForceRenew} disabled={submitting}>Force Renew</button>
+        <div>
+          {/* Certificate info section — shown when SSL is enabled */}
+          {enabled && (
+            <div style={{ marginBottom: 16 }}>
+              {kvRow('Status', isExpired(sslInfo.valid_until)
+                ? badge('Expired', `${p.red}20`, p.red)
+                : badge('Active', `${p.green}20`, p.green)
               )}
-            </div>
-          </div>
-        )
-      )}
-
-      {activeTab === 'custom' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {enabled && sslInfo.cert_path && (
-            <div style={{ padding: '10px 14px', borderRadius: 8, border: `1px solid ${p.cardBorder}`, background: isDark ? p.rowAlt : p.headerBg, marginBottom: 4 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: p.text, marginBottom: 8 }}>Current Certificate</div>
-              <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4 }}>Private Key — <span style={{ fontFamily: 'monospace', fontSize: 10 }}>{sslInfo.key_path}</span></div>
-              <textarea readOnly style={{ ...textareaStyle, minHeight: 80, cursor: 'text', opacity: 0.8 }} value={sslInfo.key_content || '(Key file not readable)'} onClick={e => (e.target as HTMLTextAreaElement).select()} />
-              <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4, marginTop: 8 }}>Certificate / CRT / PEM — <span style={{ fontFamily: 'monospace', fontSize: 10 }}>{sslInfo.cert_path}</span></div>
-              <textarea readOnly style={{ ...textareaStyle, minHeight: 80, cursor: 'text', opacity: 0.8 }} value={sslInfo.cert_content || '(Cert file not readable)'} onClick={e => (e.target as HTMLTextAreaElement).select()} />
+              {kvRow('Certificate type', badge(sslInfo.ssl_type === 'letsencrypt' ? "Let's Encrypt" : 'Custom certificate',
+                `${p.accent}15`, p.accent))}
+              {sslInfo.issuer_cn && kvRow('Certificate brand', sslInfo.issuer_cn)}
+              {sslInfo.dns_names?.length > 0 && kvRow('Certificate domain(s)', sslInfo.dns_names.join(', '))}
+              {sslInfo.valid_from && kvRow('Issued', fmtDate(sslInfo.valid_from))}
+              {kvRow('Expired', <span style={{
+                color: isExpired(sslInfo.valid_until) ? p.red : isExpiringSoon(sslInfo.valid_until) ? '#d97706' : p.text,
+                fontWeight: 500, fontSize: 12,
+              }}>{fmtDate(sslInfo.valid_until)}{!isExpired(sslInfo.valid_until)
+                ? `, Exp in ${daysUntil(sslInfo.valid_until)} days`
+                : `, Expired ${Math.abs(daysUntil(sslInfo.valid_until))} days ago`
+              }</span>)}
+              {kvRow('Force HTTPS', <span style={{ fontSize: 12, fontWeight: 500, color: p.green }}>Enabled</span>)}
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <button style={dangerBtn} onClick={handleDisable} disabled={submitting}>Disable SSL</button>
+                {sslInfo.ssl_type === 'letsencrypt' && (
+                  <button style={primaryBtn} onClick={handleForceRenew} disabled={submitting}>Force Renew</button>
+                )}
+              </div>
             </div>
           )}
-          <div style={{ fontSize: 12, fontWeight: 600, color: p.text }}>{enabled ? 'Update Certificate' : 'Upload Certificate'}</div>
-          <div>
-            <label style={{ fontSize: 12, fontWeight: 500, color: p.text, marginBottom: 4, display: 'block' }}>Private Key</label>
-            <textarea style={textareaStyle} placeholder={"-----BEGIN PRIVATE KEY-----\n..."} value={keyPEM} onChange={e => setKeyPEM(e.target.value)} />
+
+          {/* Certificate content display — show current cert/key when available */}
+          {enabled && sslInfo.cert_path && (
+            <div style={{
+              padding: '12px 14px', borderRadius: 8,
+              border: `1px solid ${p.cardBorder}`,
+              background: isDark ? p.rowAlt : p.headerBg,
+              marginBottom: 16,
+            }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: p.text, marginBottom: 10 }}>Current Certificate Content</div>
+              <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4 }}>
+                Private Key — <span style={{ fontFamily: 'monospace', fontSize: 10 }}>{sslInfo.key_path}</span>
+              </div>
+              <textarea readOnly style={{ ...textareaStyle, minHeight: 80, cursor: 'text', opacity: 0.8 }}
+                value={sslInfo.key_content || '(Key file not readable)'}
+                onClick={e => (e.target as HTMLTextAreaElement).select()} />
+              <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4, marginTop: 8 }}>
+                Certificate / CRT / PEM — <span style={{ fontFamily: 'monospace', fontSize: 10 }}>{sslInfo.cert_path}</span>
+              </div>
+              <textarea readOnly style={{ ...textareaStyle, minHeight: 80, cursor: 'text', opacity: 0.8 }}
+                value={sslInfo.cert_content || '(Cert file not readable)'}
+                onClick={e => (e.target as HTMLTextAreaElement).select()} />
+            </div>
+          )}
+
+          {/* Upload / Update certificate form */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: p.text }}>
+              {enabled ? 'Update Certificate' : 'Upload Certificate'}
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 500, color: p.text, marginBottom: 4, display: 'block' }}>Private Key</label>
+              <textarea style={textareaStyle} placeholder={"-----BEGIN PRIVATE KEY-----\n..."} value={keyPEM} onChange={e => setKeyPEM(e.target.value)} />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 500, color: p.text, marginBottom: 4, display: 'block' }}>Certificate / CRT / PEM</label>
+              <textarea style={textareaStyle} placeholder={"-----BEGIN CERTIFICATE-----\n..."} value={certPEM} onChange={e => setCertPEM(e.target.value)} />
+            </div>
+            <button style={{ ...primaryBtn, alignSelf: 'flex-start' }} onClick={handleUploadCustom} disabled={submitting}>
+              {submitting ? 'Saving…' : (enabled ? 'Save Certificate' : 'Upload & Enable SSL')}
+            </button>
           </div>
-          <div>
-            <label style={{ fontSize: 12, fontWeight: 500, color: p.text, marginBottom: 4, display: 'block' }}>Certificate / CRT / PEM</label>
-            <textarea style={textareaStyle} placeholder={"-----BEGIN CERTIFICATE-----\n..."} value={certPEM} onChange={e => setCertPEM(e.target.value)} />
-          </div>
-          <button style={{ ...primaryBtn, alignSelf: 'flex-start' }} onClick={handleUploadCustom} disabled={submitting}>
-            {submitting ? 'Saving…' : (enabled ? 'Save Certificate' : 'Upload & Enable SSL')}
-          </button>
         </div>
       )}
 
