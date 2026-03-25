@@ -101,6 +101,9 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		securityService := service.NewSecurityService()
 		dockerService := service.NewDockerService()
 		logService := service.NewLogService(db, filepath.Join(logDir, "panel.log"))
+		// Ensure website log directory and logrotate config exist
+		_ = logService.EnsureLogDir()
+		_ = logService.SetupLogRotation()
 		backupService := service.NewBackupService(db)
 		terminalService := service.NewTerminalService()
 		installerRegistry := installer.DefaultRegistry()

@@ -866,13 +866,22 @@ function ResponseLogPanel({ site }: { site: Site }) {
   const [lines, setLines] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [numLines, setNumLines] = useState(100);
+  const [logDate, setLogDate] = useState<string>('');
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
+
+  // Fetch available dates
+  useEffect(() => {
+    api.get<ApiResponse<string[]>>(`/logs/website/${site.id}/dates`)
+      .then(({ data }) => setAvailableDates(data.data ?? []))
+      .catch(() => setAvailableDates([]));
+  }, [site.id]);
 
   const fetchLog = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await api.get<ApiResponse<{ lines: string | string[] }>>(`/logs/website/${site.id}/${logType}`, {
-        params: { lines: numLines },
-      });
+      const params: Record<string, string | number> = { lines: numLines };
+      if (logDate) params.date = logDate;
+      const { data } = await api.get<ApiResponse<{ lines: string | string[] }>>(`/logs/website/${site.id}/${logType}`, { params });
       const raw = data.data?.lines;
       if (Array.isArray(raw)) setLines(raw);
       else if (typeof raw === 'string') setLines(raw.split('\n').filter(Boolean));
@@ -882,7 +891,7 @@ function ResponseLogPanel({ site }: { site: Site }) {
     } finally {
       setLoading(false);
     }
-  }, [site.id, logType, numLines]);
+  }, [site.id, logType, numLines, logDate]);
 
   useEffect(() => { fetchLog(); }, [fetchLog]);
 
@@ -905,6 +914,15 @@ function ResponseLogPanel({ site }: { site: Site }) {
           options={[
             { label: '📥 Access Log', value: 'access' },
             { label: '⚠️ Error Log', value: 'error' },
+          ]}
+        />
+        <Select
+          value={logDate}
+          onChange={(v: string) => { setLogDate(v); setLines([]); }}
+          style={{ width: 140 }}
+          options={[
+            { label: '📅 Today', value: '' },
+            ...availableDates.map(d => ({ label: `📅 ${d}`, value: d })),
           ]}
         />
         <Select

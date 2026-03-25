@@ -27,6 +27,7 @@ func (h *LogHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, permMW gin.Hand
 		logs.GET("/panel", h.GetPanelLog)
 		logs.GET("/website/:id/access", h.GetWebsiteAccessLog)
 		logs.GET("/website/:id/error", h.GetWebsiteErrorLog)
+		logs.GET("/website/:id/dates", h.ListWebsiteLogDates)
 		logs.DELETE("/website/:id/:logType", h.ClearWebsiteLog)
 		logs.GET("/sites", h.ListSitesMinimal)
 		logs.GET("/ssh", h.GetSSHLog)
@@ -64,7 +65,8 @@ func (h *LogHandler) GetWebsiteAccessLog(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	data, err := h.logService.GetWebsiteAccessLog(id, getLines(c))
+	date := c.DefaultQuery("date", "")
+	data, err := h.logService.GetWebsiteAccessLog(id, getLines(c), date)
 	if err != nil {
 		response.Error(c, err)
 		return
@@ -78,12 +80,27 @@ func (h *LogHandler) GetWebsiteErrorLog(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	data, err := h.logService.GetWebsiteErrorLog(id, getLines(c))
+	date := c.DefaultQuery("date", "")
+	data, err := h.logService.GetWebsiteErrorLog(id, getLines(c), date)
 	if err != nil {
 		response.Error(c, err)
 		return
 	}
 	response.Success(c, gin.H{"lines": data})
+}
+
+// ListWebsiteLogDates returns available rotated log dates for a website.
+func (h *LogHandler) ListWebsiteLogDates(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	dates, err := h.logService.ListWebsiteLogDates(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, dates)
 }
 
 // GetSSHLog returns the last N lines of the SSH authentication log.

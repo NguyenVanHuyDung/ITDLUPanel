@@ -32,8 +32,8 @@ const nginxTemplate = `server {
     }
     #HTTP_TO_HTTPS_END
 {{ else }}
-    access_log /var/log/nginx/{{ .Domain }}.access.log;
-    error_log  /var/log/nginx/{{ .Domain }}.error.log;
+    access_log /ITDLU/logs/{{ .Domain }}.access.log;
+    error_log  /ITDLU/logs/{{ .Domain }}.error.log;
 
     # Error pages
     error_page 403 /403.html;
@@ -145,8 +145,8 @@ server {
     add_header X-XSS-Protection "1; mode=block" always;
     add_header Referrer-Policy "no-referrer-when-downgrade" always;
 
-    access_log /var/log/nginx/{{ .Domain }}.log;
-    error_log  /var/log/nginx/{{ .Domain }}.error.log;
+    access_log /ITDLU/logs/{{ .Domain }}.access.log;
+    error_log  /ITDLU/logs/{{ .Domain }}.error.log;
 
     # Error pages
     error_page 403 /403.html;

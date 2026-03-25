@@ -136,6 +136,8 @@ export default function Logs() {
   const [selectedSiteId, setSelectedSiteId] = useState<number | null>(null);
   const [websiteLogType, setWebsiteLogType] = useState<'access' | 'error'>('access');
   const [websiteLines, setWebsiteLines] = useState<string[]>([]);
+  const [logDate, setLogDate] = useState<string>('');  // '' = today, 'YYYY-MM-DD' = rotated
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
 
   const fetchPanelLog = useCallback(async (numLines: number) => {
     setLoading(true);
@@ -189,10 +191,24 @@ export default function Logs() {
     } catch { /* ignore */ }
   }, [selectedSiteId]);
 
-  const fetchWebsiteLog = useCallback(async (siteId: number, logType: 'access' | 'error', numLines: number) => {
+  // Fetch available log dates when site changes
+  const fetchLogDates = useCallback(async (siteId: number) => {
+    try {
+      const { data } = await api.get<ApiResponse<string[]>>(`/logs/website/${siteId}/dates`);
+      setAvailableDates(data.data ?? []);
+    } catch { setAvailableDates([]); }
+  }, []);
+
+  useEffect(() => {
+    if (selectedSiteId && activeTab === 'website') fetchLogDates(selectedSiteId);
+  }, [selectedSiteId, activeTab, fetchLogDates]);
+
+  const fetchWebsiteLog = useCallback(async (siteId: number, logType: 'access' | 'error', numLines: number, date: string) => {
     setLoading(true);
     try {
-      const { data } = await api.get<ApiResponse<{ lines: string | string[] }>>(`/logs/website/${siteId}/${logType}`, { params: { lines: numLines } });
+      const params: Record<string, string | number> = { lines: numLines };
+      if (date) params.date = date;
+      const { data } = await api.get<ApiResponse<{ lines: string | string[] }>>(`/logs/website/${siteId}/${logType}`, { params });
       const raw = data.data?.lines;
       if (Array.isArray(raw)) setWebsiteLines(raw);
       else if (typeof raw === 'string') setWebsiteLines(raw.split('\n').filter(Boolean));
@@ -208,10 +224,10 @@ export default function Logs() {
     if (activeTab === 'panel') fetchPanelLog(lines);
     else if (activeTab === 'ssh') fetchSshLog(lines);
     else if (activeTab === 'website') {
-      if (selectedSiteId) fetchWebsiteLog(selectedSiteId, websiteLogType, lines);
+      if (selectedSiteId) fetchWebsiteLog(selectedSiteId, websiteLogType, lines, logDate);
     }
     else fetchAuditLog();
-  }, [activeTab, lines, fetchPanelLog, fetchSshLog, fetchAuditLog, fetchWebsiteLog, selectedSiteId, websiteLogType]);
+  }, [activeTab, lines, fetchPanelLog, fetchSshLog, fetchAuditLog, fetchWebsiteLog, selectedSiteId, websiteLogType, logDate]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -617,7 +633,7 @@ export default function Logs() {
             <>
               <Select
                 value={selectedSiteId}
-                onChange={(val: number) => { setSelectedSiteId(val); setWebsiteLines([]); }}
+                onChange={(val: number) => { setSelectedSiteId(val); setWebsiteLines([]); setLogDate(''); }}
                 placeholder="Select website"
                 style={{ width: isMobile ? 160 : 220 }}
                 options={sites.map(s => ({ label: s.domain, value: s.id }))}
@@ -629,6 +645,15 @@ export default function Logs() {
                 options={[
                   { label: '📥 Access Log', value: 'access' },
                   { label: '⚠️ Error Log', value: 'error' },
+                ]}
+              />
+              <Select
+                value={logDate}
+                onChange={(val: string) => { setLogDate(val); setWebsiteLines([]); }}
+                style={{ width: isMobile ? 110 : 140 }}
+                options={[
+                  { label: '📅 Today', value: '' },
+                  ...availableDates.map(d => ({ label: `📅 ${d}`, value: d })),
                 ]}
               />
             </>

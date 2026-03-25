@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -64,23 +66,28 @@ func (s *LogService) GetPanelLog(lines int) ([]string, error) {
 	return readLogFile(s.panelLogPath, clampLines(lines))
 }
 
+// websiteLogDir is the base directory for website logs.
+const websiteLogDir = "/ITDLU/logs"
+
 // GetWebsiteAccessLog reads the last N lines of a website's access log.
-func (s *LogService) GetWebsiteAccessLog(siteID int64, lines int) ([]string, error) {
+// If date is provided (YYYY-MM-DD), reads the rotated log for that date.
+func (s *LogService) GetWebsiteAccessLog(siteID int64, lines int, date string) ([]string, error) {
 	domain, err := s.getSiteDomain(siteID)
 	if err != nil {
 		return nil, err
 	}
-	logPath := fmt.Sprintf("/var/log/nginx/%s.access.log", domain)
+	logPath := s.websiteLogPath(domain, "access", date)
 	return readLogFile(logPath, clampLines(lines))
 }
 
 // GetWebsiteErrorLog reads the last N lines of a website's error log.
-func (s *LogService) GetWebsiteErrorLog(siteID int64, lines int) ([]string, error) {
+// If date is provided (YYYY-MM-DD), reads the rotated log for that date.
+func (s *LogService) GetWebsiteErrorLog(siteID int64, lines int, date string) ([]string, error) {
 	domain, err := s.getSiteDomain(siteID)
 	if err != nil {
 		return nil, err
 	}
-	logPath := fmt.Sprintf("/var/log/nginx/%s.error.log", domain)
+	logPath := s.websiteLogPath(domain, "error", date)
 	return readLogFile(logPath, clampLines(lines))
 }
 
@@ -93,9 +100,9 @@ func (s *LogService) ClearWebsiteLog(siteID int64, logType string) error {
 	var logPath string
 	switch logType {
 	case "access":
-		logPath = fmt.Sprintf("/var/log/nginx/%s.access.log", domain)
+		logPath = fmt.Sprintf("%s/%s.access.log", websiteLogDir, domain)
 	case "error":
-		logPath = fmt.Sprintf("/var/log/nginx/%s.error.log", domain)
+		logPath = fmt.Sprintf("%s/%s.error.log", websiteLogDir, domain)
 	default:
 		return apperrors.New(apperrors.ErrValidation, "unsupported website log type: "+logType)
 	}
@@ -129,6 +136,81 @@ func (s *LogService) ListSitesMinimal() ([]map[string]interface{}, error) {
 		sites = append(sites, map[string]interface{}{"id": id, "domain": domain})
 	}
 	return sites, nil
+}
+
+// ListWebsiteLogDates returns available log dates for a website.
+// Scans /ITDLU/logs/ for rotated files matching {domain}.access.log.YYYY-MM-DD
+func (s *LogService) ListWebsiteLogDates(siteID int64) ([]string, error) {
+	domain, err := s.getSiteDomain(siteID)
+	if err != nil {
+		return nil, err
+	}
+
+	prefix := domain + ".access.log."
+	entries, err := os.ReadDir(websiteLogDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []string{}, nil
+		}
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read log directory")
+	}
+
+	var dates []string
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasPrefix(name, prefix) && !strings.HasSuffix(name, ".gz") {
+			date := strings.TrimPrefix(name, prefix)
+			// Validate date format YYYY-MM-DD
+			if len(date) == 10 && date[4] == '-' && date[7] == '-' {
+				dates = append(dates, date)
+			}
+		}
+	}
+
+	// Sort descending (newest first)
+	sort.Sort(sort.Reverse(sort.StringSlice(dates)))
+
+	return dates, nil
+}
+
+// websiteLogPath returns the log file path for a domain.
+// If date is empty, returns the current (today) log.
+// If date is YYYY-MM-DD, returns the rotated log for that date.
+func (s *LogService) websiteLogPath(domain, logType, date string) string {
+	base := fmt.Sprintf("%s/%s.%s.log", websiteLogDir, domain, logType)
+	if date == "" {
+		return base
+	}
+	return base + "." + date
+}
+
+// EnsureLogDir creates /ITDLU/logs if it doesn't exist.
+func (s *LogService) EnsureLogDir() error {
+	return os.MkdirAll(websiteLogDir, 0755)
+}
+
+// SetupLogRotation creates a logrotate config for website logs
+// that rotates daily and names files with date suffix.
+func (s *LogService) SetupLogRotation() error {
+	config := `/ITDLU/logs/*.access.log /ITDLU/logs/*.error.log {
+    daily
+    missingok
+    notifempty
+    dateext
+    dateformat .%Y-%m-%d
+    rotate 90
+    compress
+    delaycompress
+    sharedscripts
+    postrotate
+        [ -f /var/run/nginx.pid ] && kill -USR1 $(cat /var/run/nginx.pid) 2>/dev/null || true
+    endscript
+}
+`
+	if err := os.MkdirAll("/etc/logrotate.d", 0755); err != nil {
+		return err
+	}
+	return os.WriteFile("/etc/logrotate.d/itdlu-websites", []byte(config), 0644)
 }
 
 // GetSSHLog reads the last N lines of the SSH authentication log.
