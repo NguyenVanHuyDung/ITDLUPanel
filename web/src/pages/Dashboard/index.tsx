@@ -233,7 +233,6 @@ export default function Dashboard() {
   const [sshPort, setSSHPort] = useState<number | null>(null);
   const [securityLoaded, setSecurityLoaded] = useState(false);
   const [processes, setProcesses] = useState<ProcessInfo[]>([]);
-  const processIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchSoftware = useCallback(async () => {
     try {
@@ -324,16 +323,9 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
-    intervalRef.current = setInterval(() => fetchData(), refreshInterval * 1000);
+    intervalRef.current = setInterval(() => { fetchData(); fetchProcesses(); }, refreshInterval * 1000);
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [fetchData, refreshInterval]);
-
-  // Refresh processes every 30s
-  useEffect(() => {
-    if (processIntervalRef.current) clearInterval(processIntervalRef.current);
-    processIntervalRef.current = setInterval(() => fetchProcesses(), 30000);
-    return () => { if (processIntervalRef.current) clearInterval(processIntervalRef.current); };
-  }, [fetchProcesses]);
+  }, [fetchData, fetchProcesses, refreshInterval]);
 
   if (loading) return <div style={{ textAlign: 'center', padding: 100 }}><Spin size="large" /></div>;
   if (!info) return <div style={{ textAlign: 'center', padding: 100 }}><Text type="secondary">Failed to load dashboard</Text></div>;
