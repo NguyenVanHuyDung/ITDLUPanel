@@ -2757,12 +2757,18 @@ func (s *SiteService) buildHotlinkNginx(site *Site, config HotlinkConfig) error 
 	if config.AllowEmpty {
 		referers = append(referers, "none", "blocked")
 	}
-	referers = append(referers, site.Domain, "*."+site.Domain)
-	for _, d := range config.AllowedDomains {
-		d = strings.TrimSpace(d)
-		if d != "" {
-			referers = append(referers, d)
+	seen := make(map[string]bool)
+	addReferer := func(r string) {
+		r = strings.TrimSpace(r)
+		if r != "" && !seen[r] {
+			seen[r] = true
+			referers = append(referers, r)
 		}
+	}
+	addReferer(site.Domain)
+	addReferer("*." + site.Domain)
+	for _, d := range config.AllowedDomains {
+		addReferer(d)
 	}
 
 	var blockLines []string
