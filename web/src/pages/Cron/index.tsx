@@ -31,6 +31,9 @@ interface CronTemplate {
   type: string;
   icon: React.ReactNode;
   color: string;
+  backupDir?: string;
+  backupPattern?: string;
+  defaultMaxKeep?: number;
 }
 
 function cronToHuman(expr: string): string {
@@ -120,6 +123,7 @@ const CRON_TEMPLATES: CronTemplate[] = [
     schedule: '0 2 * * *',
     command: 'mkdir -p /ITDLUPanel/backup/db && mysqldump --all-databases | gzip > /ITDLUPanel/backup/db/all-db-$(date +\\%Y\\%m\\%d-\\%H\\%M).sql.gz',
     type: 'shell', icon: <DatabaseOutlined />, color: '#4479A1',
+    backupDir: '/ITDLUPanel/backup/db', backupPattern: 'all-db-*.sql.gz', defaultMaxKeep: 10,
   },
   {
     name: 'Backup Single Database',
@@ -127,6 +131,7 @@ const CRON_TEMPLATES: CronTemplate[] = [
     schedule: '0 3 * * *',
     command: 'DB_NAME="mydb"; mkdir -p /ITDLUPanel/backup/db && mysqldump "$DB_NAME" | gzip > /ITDLUPanel/backup/db/${DB_NAME}-$(date +\\%Y\\%m\\%d-\\%H\\%M).sql.gz',
     type: 'shell', icon: <DatabaseOutlined />, color: '#2E7D32',
+    backupDir: '/ITDLUPanel/backup/db', backupPattern: '*.sql.gz', defaultMaxKeep: 10,
   },
   {
     name: 'Backup All Sites',
@@ -134,6 +139,7 @@ const CRON_TEMPLATES: CronTemplate[] = [
     schedule: '0 3 * * 0',
     command: 'mkdir -p /ITDLUPanel/backup/sites && tar czf /ITDLUPanel/backup/sites/all-sites-$(date +\\%Y\\%m\\%d).tar.gz -C /ITDLUPanel/wwwroot .',
     type: 'shell', icon: <CloudServerOutlined />, color: '#1565C0',
+    backupDir: '/ITDLUPanel/backup/sites', backupPattern: 'all-sites-*.tar.gz', defaultMaxKeep: 5,
   },
   {
     name: 'Backup Single Site',
@@ -141,6 +147,7 @@ const CRON_TEMPLATES: CronTemplate[] = [
     schedule: '0 4 * * *',
     command: 'SITE="example.com"; mkdir -p /ITDLUPanel/backup/sites && tar czf /ITDLUPanel/backup/sites/${SITE}-$(date +\\%Y\\%m\\%d).tar.gz -C /ITDLUPanel/wwwroot "$SITE"',
     type: 'shell', icon: <FolderOutlined />, color: '#FF9800',
+    backupDir: '/ITDLUPanel/backup/sites', backupPattern: '*.tar.gz', defaultMaxKeep: 10,
   },
   {
     name: 'Full Backup (DB + Sites)',
@@ -148,6 +155,7 @@ const CRON_TEMPLATES: CronTemplate[] = [
     schedule: '0 1 * * 0',
     command: 'BDIR="/ITDLUPanel/backup/full/$(date +\\%Y\\%m\\%d)"; mkdir -p "$BDIR" && mysqldump --all-databases | gzip > "$BDIR/databases.sql.gz" && tar czf "$BDIR/sites.tar.gz" -C /ITDLUPanel/wwwroot . && tar czf "$BDIR/configs.tar.gz" -C /ITDLUPanel/server .',
     type: 'shell', icon: <SafetyCertificateOutlined />, color: '#9C27B0',
+    backupDir: '/ITDLUPanel/backup/full', backupPattern: '*', defaultMaxKeep: 4,
   },
   {
     name: 'Cleanup Old Backups (30 days)',
@@ -195,6 +203,8 @@ export default function Cron() {
   const [schedState, setSchedState] = useState<ScheduleState>({
     mode: 'builder', preset: '', custom: '', freq: 'day', minute: 0, hour: 2, dom: 1, dow: 0, interval: 5,
   });
+  const [currentTemplate, setCurrentTemplate] = useState<CronTemplate | null>(null);
+  const [maxKeep, setMaxKeep] = useState<number>(10);
 
   const fetchJobs = useCallback(async () => {
     setLoading(true);
@@ -223,12 +233,25 @@ export default function Cron() {
     const schedule = schedMode === 'builder' ? buildCronFromState(schedState) : values.schedule;
     setSubmitting(true);
     try {
-      const payload = { ...values, schedule };
+      let command = values.command;
+      // Append backup retention cleanup if template has backupDir
+      if (currentTemplate?.backupDir && maxKeep > 0) {
+        const dir = currentTemplate.backupDir;
+        const pat = currentTemplate.backupPattern || '*';
+        if (currentTemplate.name.includes('Full Backup')) {
+          // Full backup uses directories, keep last N dirs
+          command += ` && cd ${dir} && ls -dt */ 2>/dev/null | tail -n +$((${maxKeep}+1)) | xargs -r rm -rf`;
+        } else {
+          command += ` && cd ${dir} && ls -t ${pat} 2>/dev/null | tail -n +$((${maxKeep}+1)) | xargs -r rm -f`;
+        }
+      }
+      const payload = { ...values, schedule, command };
       if (editingJob) await api.put(`/crons/${editingJob.id}`, payload);
       else await api.post('/crons', payload);
       message.success(t('common.success'));
       setModalOpen(false);
       setEditingJob(null);
+      setCurrentTemplate(null);
       form.resetFields();
       fetchJobs();
     } catch { message.error(t('common.error')); }
@@ -308,6 +331,7 @@ export default function Cron() {
 
   const openEdit = (record: CronJob) => {
     setEditingJob(record);
+    setCurrentTemplate(null);
     form.setFieldsValue(record);
     const parsed = parseCronToState(record.schedule);
     if (parsed) {
@@ -322,9 +346,11 @@ export default function Cron() {
 
   const openCreate = (template?: CronTemplate) => {
     setEditingJob(null);
+    setCurrentTemplate(template || null);
     form.resetFields();
     setSchedMode('builder');
     setSchedState({ mode: 'builder', preset: '', custom: '', freq: 'day', minute: 0, hour: 2, dom: 1, dow: 0, interval: 5 });
+    setMaxKeep(template?.defaultMaxKeep || 10);
     if (template) {
       form.setFieldsValue({ name: template.name, command: template.command, type: template.type });
       const parsed = parseCronToState(template.schedule);
@@ -770,7 +796,7 @@ export default function Cron() {
       <Modal
         title={editingJob ? 'Edit Cron Job' : 'Add Cron Job'}
         open={modalOpen}
-        onCancel={() => { setModalOpen(false); setEditingJob(null); form.resetFields(); }}
+        onCancel={() => { setModalOpen(false); setEditingJob(null); setCurrentTemplate(null); form.resetFields(); }}
         onOk={() => form.submit()}
         confirmLoading={submitting}
         width={isMobile ? '95%' : 600}
@@ -832,6 +858,35 @@ export default function Cron() {
               )
             }
           </Form.Item>
+
+          {currentTemplate?.backupDir && (
+            <div style={{
+              padding: '12px 16px', borderRadius: 8, marginBottom: 16,
+              border: `1px solid ${p.cardBorder}`,
+              background: isDark ? p.rowAlt : p.headerBg,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                <span style={{ fontWeight: 600, color: p.text, fontSize: 13 }}>Backup Retention</span>
+              </div>
+              <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 10 }}>
+                Automatically delete old backups when exceeding this limit. Set 0 to keep all.
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ color: p.text, fontSize: 12 }}>Max backups to keep:</span>
+                <InputNumber
+                  min={0} max={999}
+                  value={maxKeep}
+                  onChange={(v) => setMaxKeep(v ?? 10)}
+                  style={{ width: 100 }}
+                />
+              </div>
+              {maxKeep > 0 && (
+                <div style={{ fontSize: 11, color: p.green, marginTop: 6 }}>
+                  ✓ Will auto-delete oldest files in <code style={{ background: p.codeBg, padding: '1px 4px', borderRadius: 3 }}>{currentTemplate.backupDir}</code> when count exceeds {maxKeep}
+                </div>
+              )}
+            </div>
+          )}
         </Form>
       </Modal>
 
