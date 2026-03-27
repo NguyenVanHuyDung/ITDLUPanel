@@ -1998,6 +1998,286 @@ function ReverseProxyPanel({ siteId }: { siteId: number }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Redirect Rules Panel
+// ---------------------------------------------------------------------------
+interface RedirectRule {
+  enabled: boolean;
+  name: string;
+  type: 'domain' | 'path';
+  source: string;
+  target_url: string;
+  mode: number;
+  keep_uri: boolean;
+}
+
+function RedirectPanel({ siteId }: { siteId: number }) {
+  const { p } = usePalette();
+  const [rules, setRules] = useState<RedirectRule[]>([]);
+  const [domains, setDomains] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editIndex, setEditIndex] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // Form state
+  const [name, setName] = useState('');
+  const [type, setType] = useState<'domain' | 'path'>('domain');
+  const [source, setSource] = useState('');
+  const [targetUrl, setTargetUrl] = useState('');
+  const [mode, setMode] = useState(301);
+  const [keepUri, setKeepUri] = useState(true);
+  const [enabled, setEnabled] = useState(true);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [rulesR, domainsR] = await Promise.allSettled([
+        api.get<ApiResponse<RedirectRule[]>>(`/sites/${siteId}/redirect-rules`),
+        api.get<ApiResponse<DomainInfo[]>>(`/sites/${siteId}/domains`),
+      ]);
+      if (rulesR.status === 'fulfilled') setRules(rulesR.value.data.data ?? []);
+      if (domainsR.status === 'fulfilled') setDomains((domainsR.value.data.data ?? []).map(d => d.domain));
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
+  }, [siteId]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const resetForm = () => {
+    setName(''); setType('domain'); setSource(''); setTargetUrl('');
+    setMode(301); setKeepUri(true); setEnabled(true);
+    setEditIndex(null); setShowForm(false);
+  };
+
+  const loadRuleToForm = (rule: RedirectRule, idx: number) => {
+    setName(rule.name); setType(rule.type); setSource(rule.source);
+    setTargetUrl(rule.target_url); setMode(rule.mode);
+    setKeepUri(rule.keep_uri); setEnabled(rule.enabled);
+    setEditIndex(idx); setShowForm(true);
+  };
+
+  const handleSubmit = async () => {
+    if (!name.trim() || !source.trim() || !targetUrl.trim()) {
+      message.error('Name, source, and target URL are required');
+      return;
+    }
+    setSaving(true);
+    const payload: RedirectRule = {
+      enabled, name: name.trim(), type, source: source.trim(),
+      target_url: targetUrl.trim(), mode, keep_uri: keepUri,
+    };
+    try {
+      if (editIndex !== null) {
+        await api.put(`/sites/${siteId}/redirect-rules/${editIndex}`, payload);
+        message.success('Redirect rule updated');
+      } else {
+        await api.post(`/sites/${siteId}/redirect-rules`, payload);
+        message.success('Redirect rule added');
+      }
+      resetForm();
+      fetchData();
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(msg || 'Failed to save redirect rule');
+    } finally { setSaving(false); }
+  };
+
+  const handleRemove = async (index: number) => {
+    try {
+      await api.delete(`/sites/${siteId}/redirect-rules/${index}`);
+      message.success('Redirect rule removed');
+      fetchData();
+    } catch { message.error('Failed to remove redirect rule'); }
+  };
+
+  const handleToggle = async (index: number, checked: boolean) => {
+    const rule = { ...rules[index], enabled: checked };
+    try {
+      await api.put(`/sites/${siteId}/redirect-rules/${index}`, rule);
+      message.success(checked ? 'Rule enabled' : 'Rule disabled');
+      fetchData();
+    } catch { message.error('Failed to update rule'); }
+  };
+
+  const sectionStyle: React.CSSProperties = {
+    padding: '14px 16px', borderRadius: 8,
+    border: `1px solid ${p.cardBorder}`, marginBottom: 14, background: p.card,
+  };
+
+  const labelStyle: React.CSSProperties = {
+    fontSize: 13, fontWeight: 600, color: p.text, marginBottom: 8,
+    display: 'flex', alignItems: 'center', gap: 8,
+  };
+
+  const btnStyle = (isLoading: boolean): React.CSSProperties => ({
+    padding: '5px 16px', borderRadius: 6, border: 'none',
+    background: p.accent, color: '#fff', fontSize: 12, fontWeight: 600,
+    cursor: isLoading ? 'wait' : 'pointer', opacity: isLoading ? 0.7 : 1,
+  });
+
+  if (loading) return <Spin />;
+
+  return (
+    <div>
+      {/* Add / Edit form */}
+      {!showForm ? (
+        <div style={{ marginBottom: 14 }}>
+          <button onClick={() => setShowForm(true)} style={btnStyle(false)}>
+            <PlusOutlined /> Add Redirect Rule
+          </button>
+        </div>
+      ) : (
+        <div style={sectionStyle}>
+          <div style={labelStyle}>
+            <LinkOutlined style={{ color: p.accent }} />
+            {editIndex !== null ? 'Edit Redirect Rule' : 'New Redirect Rule'}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+            <Input placeholder="Rule Name" value={name} onChange={e => setName(e.target.value)} style={{ fontSize: 12 }} />
+            <Select value={type} onChange={(v: 'domain' | 'path') => { setType(v); setSource(''); }}
+              style={{ fontSize: 12 }}
+              options={[
+                { value: 'domain', label: 'Domain Redirect' },
+                { value: 'path', label: 'Path Redirect' },
+              ]}
+            />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+            {type === 'domain' ? (
+              <Select placeholder="Select source domain" value={source || undefined}
+                onChange={v => setSource(v)} showSearch style={{ fontSize: 12 }}
+                options={domains.map(d => ({ value: d, label: d }))}
+              />
+            ) : (
+              <Input placeholder="Source path (e.g. /old-page)" value={source}
+                onChange={e => setSource(e.target.value)} style={{ fontSize: 12 }} />
+            )}
+            <Input placeholder="Target URL (e.g. https://example.com)" value={targetUrl}
+              onChange={e => setTargetUrl(e.target.value)} style={{ fontSize: 12 }} />
+          </div>
+
+          <div style={{ display: 'flex', gap: 20, marginBottom: 12, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+              <span style={{ color: p.textMuted }}>Mode:</span>
+              <Select value={mode} onChange={setMode} style={{ width: 180, fontSize: 12 }}
+                options={[
+                  { value: 301, label: '301 — Permanent Redirect' },
+                  { value: 302, label: '302 — Temporary Redirect' },
+                ]}
+              />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: p.text }}>
+              <Switch size="small" checked={keepUri} onChange={setKeepUri} />
+              Keep URI Parameters
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: p.text }}>
+              <Switch size="small" checked={enabled} onChange={setEnabled} />
+              Enabled
+            </div>
+          </div>
+
+          {/* Preview */}
+          <div style={{
+            fontSize: 11, color: p.textMuted, marginBottom: 12, padding: '8px 12px',
+            background: p.codeBg, borderRadius: 6, fontFamily: 'monospace', lineHeight: 1.6,
+          }}>
+            <div style={{ fontWeight: 600, marginBottom: 4, color: p.text }}>Preview:</div>
+            {keepUri ? (
+              <>
+                <span style={{ color: p.amber || '#F59E0B' }}>http://{type === 'domain' ? (source || '...') : `site.com${source || '/...'}`}/page?q=1</span>
+                <span style={{ margin: '0 6px', color: p.accent }}>→ {mode}</span>
+                <span style={{ color: p.green }}>{targetUrl || 'https://...'}/page?q=1</span>
+              </>
+            ) : (
+              <>
+                <span style={{ color: p.amber || '#F59E0B' }}>http://{type === 'domain' ? (source || '...') : `site.com${source || '/...'}`}/page?q=1</span>
+                <span style={{ margin: '0 6px', color: p.accent }}>→ {mode}</span>
+                <span style={{ color: p.green }}>{targetUrl || 'https://...'}</span>
+              </>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={handleSubmit} disabled={saving} style={btnStyle(saving)}>
+              {saving ? 'Saving...' : editIndex !== null ? 'Update Rule' : 'Add Rule'}
+            </button>
+            <button onClick={resetForm} style={{ ...btnStyle(false), background: p.codeBg, color: p.textMuted }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Rules list */}
+      {rules.length === 0 && !showForm && (
+        <div style={{ textAlign: 'center', padding: '30px 0', color: p.textMuted, fontSize: 12 }}>
+          <LinkOutlined style={{ fontSize: 28, opacity: 0.3, marginBottom: 8, display: 'block' }} />
+          No redirect rules configured
+        </div>
+      )}
+      {rules.map((rule, i) => (
+        <div key={i} style={{
+          ...sectionStyle,
+          opacity: rule.enabled ? 1 : 0.6,
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
+              <Switch size="small" checked={rule.enabled} onChange={(v) => handleToggle(i, v)} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: p.text, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {rule.name}
+                  <span style={{
+                    padding: '1px 6px', borderRadius: 3, fontSize: 10, fontWeight: 600,
+                    background: rule.mode === 301 ? `${p.accent}20` : `${(p.amber || '#F59E0B')}20`,
+                    color: rule.mode === 301 ? p.accent : (p.amber || '#F59E0B'),
+                  }}>
+                    {rule.mode}
+                  </span>
+                  <span style={{
+                    padding: '1px 6px', borderRadius: 3, fontSize: 10,
+                    background: `${(p.purple || '#8B5CF6')}20`,
+                    color: p.purple || '#8B5CF6',
+                  }}>
+                    {rule.type}
+                  </span>
+                  {rule.keep_uri && (
+                    <span style={{
+                      padding: '1px 6px', borderRadius: 3, fontSize: 10,
+                      background: `${p.green}20`, color: p.green,
+                    }}>
+                      keep URI
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: 11, color: p.textMuted, marginTop: 2, fontFamily: 'monospace' }}>
+                  <span style={{ color: p.amber || '#F59E0B' }}>{rule.type === 'domain' ? rule.source : `*${rule.source}`}</span>
+                  <span style={{ margin: '0 6px' }}>→</span>
+                  <span style={{ color: p.green }}>{rule.target_url}</span>
+                  {rule.keep_uri && <span style={{ color: p.textMuted }}>$request_uri</span>}
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button onClick={() => loadRuleToForm(rule, i)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: p.accent, fontSize: 12, padding: '4px 6px' }}>
+                <EditOutlined />
+              </button>
+              <Popconfirm title="Remove this redirect rule?" onConfirm={() => handleRemove(i)} okButtonProps={{ danger: true }}>
+                <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: p.red, fontSize: 12, padding: '4px 6px' }}>
+                  <DeleteOutlined />
+                </button>
+              </Popconfirm>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PlaceholderPanel({ title }: { title: string }) {
   const { p } = usePalette();
   return (
@@ -2035,7 +2315,7 @@ function SiteConfigModal({ site, open, onClose, phpVersions }: { site: Site | nu
       case 'proxy':
         return <ReverseProxyPanel siteId={site.id} />;
       case 'redirect':
-        return <PlaceholderPanel title="Redirect Rules" />;
+        return <RedirectPanel siteId={site.id} />;
       case 'log':
         return <ResponseLogPanel site={site} />;
       default:

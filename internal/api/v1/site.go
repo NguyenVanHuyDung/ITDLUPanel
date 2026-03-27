@@ -97,6 +97,12 @@ func (h *SiteHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, sitesMW gin.Ha
 		sites.POST("/:id/reverse-proxy", h.AddReverseProxyRule)
 		sites.PUT("/:id/reverse-proxy/:index", h.UpdateReverseProxyRule)
 		sites.DELETE("/:id/reverse-proxy/:index", h.RemoveReverseProxyRule)
+
+		// Redirect Rules
+		sites.GET("/:id/redirect-rules", h.GetRedirectRules)
+		sites.POST("/:id/redirect-rules", h.AddRedirectRule)
+		sites.PUT("/:id/redirect-rules/:index", h.UpdateRedirectRule)
+		sites.DELETE("/:id/redirect-rules/:index", h.RemoveRedirectRule)
 	}
 }
 
@@ -1068,6 +1074,77 @@ func (h *SiteHandler) RemoveReverseProxyRule(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": "reverse proxy rule removed successfully"})
+}
+
+// ---------------------------------------------------------------------------
+// Redirect Rules handlers
+// ---------------------------------------------------------------------------
+
+func (h *SiteHandler) GetRedirectRules(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	rules, err := h.siteService.GetRedirectRules(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, rules)
+}
+
+func (h *SiteHandler) AddRedirectRule(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	var req service.RedirectRule
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "body", Message: "invalid request body"}})
+		return
+	}
+	if err := h.siteService.AddRedirectRule(id, req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Created(c, gin.H{"message": "redirect rule added successfully"})
+}
+
+func (h *SiteHandler) UpdateRedirectRule(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	index, err := parseID(c, "index")
+	if err != nil {
+		return
+	}
+	var req service.RedirectRule
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "body", Message: "invalid request body"}})
+		return
+	}
+	if err := h.siteService.UpdateRedirectRule(id, int(index), req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "redirect rule updated successfully"})
+}
+
+func (h *SiteHandler) RemoveRedirectRule(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	index, err := parseID(c, "index")
+	if err != nil {
+		return
+	}
+	if err := h.siteService.RemoveRedirectRule(id, int(index)); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "redirect rule removed successfully"})
 }
 
 // ---------------------------------------------------------------------------

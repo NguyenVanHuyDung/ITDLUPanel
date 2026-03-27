@@ -2413,3 +2413,213 @@ func (s *SiteService) rebuildReverseProxyNginx(site *Site, rules []ReverseProxyR
 
 	return s.insertNginxBlock(confPath, "#REVERSE_PROXY_START", "#REVERSE_PROXY_END", blockLines)
 }
+
+// ---------------------------------------------------------------------------
+// Redirect Rules
+// ---------------------------------------------------------------------------
+
+// RedirectRule represents a redirect rule for a site.
+type RedirectRule struct {
+	Enabled   bool   `json:"enabled"`
+	Name      string `json:"name"`
+	Type      string `json:"type"`       // "domain" or "path"
+	Source    string `json:"source"`     // domain name or path
+	TargetURL string `json:"target_url"`
+	Mode      int    `json:"mode"`       // 301 or 302
+	KeepURI   bool   `json:"keep_uri"`   // keep URI parameters
+}
+
+func redirectRulesPath(siteID int64) string {
+	return filepath.Join(siteConfigDir(), fmt.Sprintf("%d_redirect.json", siteID))
+}
+
+// GetRedirectRules returns all redirect rules for a site.
+func (s *SiteService) GetRedirectRules(id int64) ([]RedirectRule, error) {
+	_, err := s.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	var rules []RedirectRule
+	if err := readJSONFile(redirectRulesPath(id), &rules); err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read redirect rules")
+	}
+	if rules == nil {
+		rules = []RedirectRule{}
+	}
+	return rules, nil
+}
+
+// AddRedirectRule adds a redirect rule for a site.
+func (s *SiteService) AddRedirectRule(id int64, rule RedirectRule) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	if rule.Name == "" || rule.Type == "" || rule.Source == "" || rule.TargetURL == "" {
+		return apperrors.New(apperrors.ErrValidation, "name, type, source, and target_url are required")
+	}
+
+	if rule.Mode != 301 && rule.Mode != 302 {
+		return apperrors.New(apperrors.ErrValidation, "mode must be 301 or 302")
+	}
+
+	var rules []RedirectRule
+	_ = readJSONFile(redirectRulesPath(id), &rules)
+
+	// Check for duplicate name
+	for _, r := range rules {
+		if r.Name == rule.Name {
+			return apperrors.New(apperrors.ErrValidation, "rule with this name already exists")
+		}
+	}
+
+	rules = append(rules, rule)
+
+	if err := writeJSONFile(redirectRulesPath(id), rules); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to save redirect rules")
+	}
+
+	if err := s.rebuildRedirectNginx(site, rules); err != nil {
+		return err
+	}
+
+	gen := generatorFor(site.Webserver)
+	if err := gen.ReloadServer(); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to reload webserver")
+	}
+
+	logger.Info().Int64("id", id).Str("name", rule.Name).Str("type", rule.Type).Msg("redirect rule added")
+	return nil
+}
+
+// UpdateRedirectRule updates a redirect rule at the given index.
+func (s *SiteService) UpdateRedirectRule(id int64, index int, rule RedirectRule) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	var rules []RedirectRule
+	_ = readJSONFile(redirectRulesPath(id), &rules)
+
+	if index < 0 || index >= len(rules) {
+		return apperrors.New(apperrors.ErrValidation, "invalid rule index")
+	}
+
+	rules[index] = rule
+
+	if err := writeJSONFile(redirectRulesPath(id), rules); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to save redirect rules")
+	}
+
+	if err := s.rebuildRedirectNginx(site, rules); err != nil {
+		return err
+	}
+
+	gen := generatorFor(site.Webserver)
+	if err := gen.ReloadServer(); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to reload webserver")
+	}
+
+	logger.Info().Int64("id", id).Int("index", index).Msg("redirect rule updated")
+	return nil
+}
+
+// RemoveRedirectRule removes a redirect rule by index.
+func (s *SiteService) RemoveRedirectRule(id int64, index int) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	var rules []RedirectRule
+	_ = readJSONFile(redirectRulesPath(id), &rules)
+
+	if index < 0 || index >= len(rules) {
+		return apperrors.New(apperrors.ErrValidation, "invalid rule index")
+	}
+
+	removed := rules[index]
+	rules = append(rules[:index], rules[index+1:]...)
+
+	if err := writeJSONFile(redirectRulesPath(id), rules); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to save redirect rules")
+	}
+
+	gen := generatorFor(site.Webserver)
+	confPath := gen.GetConfigPath(site.Domain)
+
+	if len(rules) == 0 {
+		if err := s.removeNginxBlock(confPath, "#REDIRECT_RULES_START", "#REDIRECT_RULES_END"); err != nil {
+			return err
+		}
+	} else {
+		if err := s.rebuildRedirectNginx(site, rules); err != nil {
+			return err
+		}
+	}
+
+	if err := gen.ReloadServer(); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to reload webserver")
+	}
+
+	logger.Info().Int64("id", id).Str("name", removed.Name).Msg("redirect rule removed")
+	return nil
+}
+
+func (s *SiteService) rebuildRedirectNginx(site *Site, rules []RedirectRule) error {
+	gen := generatorFor(site.Webserver)
+	confPath := gen.GetConfigPath(site.Domain)
+
+	// Filter only enabled rules
+	var enabledRules []RedirectRule
+	for _, r := range rules {
+		if r.Enabled {
+			enabledRules = append(enabledRules, r)
+		}
+	}
+
+	if len(enabledRules) == 0 {
+		return s.removeNginxBlock(confPath, "#REDIRECT_RULES_START", "#REDIRECT_RULES_END")
+	}
+
+	var blockLines []string
+	for _, r := range enabledRules {
+		switch r.Type {
+		case "domain":
+			// Domain redirect: if the request host matches, redirect
+			if r.KeepURI {
+				blockLines = append(blockLines,
+					fmt.Sprintf("if ($host = %s) {", r.Source),
+					fmt.Sprintf("    return %d %s$request_uri;", r.Mode, strings.TrimRight(r.TargetURL, "/")),
+					"}",
+				)
+			} else {
+				blockLines = append(blockLines,
+					fmt.Sprintf("if ($host = %s) {", r.Source),
+					fmt.Sprintf("    return %d %s;", r.Mode, r.TargetURL),
+					"}",
+				)
+			}
+		case "path":
+			// Path redirect
+			if r.KeepURI {
+				blockLines = append(blockLines,
+					fmt.Sprintf("location ^~ %s {", r.Source),
+					fmt.Sprintf("    return %d %s$request_uri;", r.Mode, strings.TrimRight(r.TargetURL, "/")),
+					"}",
+				)
+			} else {
+				blockLines = append(blockLines,
+					fmt.Sprintf("location ^~ %s {", r.Source),
+					fmt.Sprintf("    return %d %s;", r.Mode, r.TargetURL),
+					"}",
+				)
+			}
+		}
+	}
+
+	return s.insertNginxBlock(confPath, "#REDIRECT_RULES_START", "#REDIRECT_RULES_END", blockLines)
+}
