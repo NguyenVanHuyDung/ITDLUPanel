@@ -163,6 +163,10 @@ func (s *FirewallService) DeleteRule(id int64) error {
 		return err
 	}
 
+	if rule.IsDefault == 1 {
+		return apperrors.New(apperrors.ErrValidation, "default rule cannot be deleted")
+	}
+
 	if rule.Status == 1 {
 		if err := s.removeRule(rule); err != nil {
 			logger.Error().Err(err).Int64("id", id).Msg("failed to remove firewall rule from system")
@@ -498,6 +502,40 @@ func (s *FirewallService) ClosePortsForSoftware(softwareName string) {
 	}
 }
 
+// UpdateDefaultPort updates the port of a default firewall rule identified by
+// its current description. It removes the old UFW rule and applies the new one.
+func (s *FirewallService) UpdateDefaultPort(description, newPort string) error {
+	var id int64
+	var oldPort string
+	err := s.db.QueryRow(
+		"SELECT id, port FROM firewall_rules WHERE description = ? AND is_default = 1 AND type = 'port' LIMIT 1",
+		description,
+	).Scan(&id, &oldPort)
+	if err != nil {
+		return fmt.Errorf("default rule for %s not found: %w", description, err)
+	}
+
+	if oldPort == newPort {
+		return nil // no change
+	}
+
+	// Remove old UFW rule
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	system.Exec(ctx, "ufw", "delete", "allow", oldPort+"/tcp")
+
+	// Update database
+	if _, err := s.db.Exec("UPDATE firewall_rules SET port = ? WHERE id = ?", newPort, id); err != nil {
+		return fmt.Errorf("failed to update default port: %w", err)
+	}
+
+	// Apply new UFW rule
+	system.Exec(ctx, "ufw", "allow", newPort+"/tcp")
+
+	logger.Info().Str("old", oldPort).Str("new", newPort).Str("desc", description).Msg("updated default firewall port")
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -506,10 +544,10 @@ func (s *FirewallService) getRuleByID(id int64) (*FirewallRule, error) {
 	r := &FirewallRule{}
 	var port, ip, description sql.NullString
 	err := s.db.QueryRow(
-		`SELECT id, type, protocol, port, ip, action, direction, description, status, sort_order, created_at
+		`SELECT id, type, protocol, port, ip, action, direction, description, status, sort_order, COALESCE(is_default, 0), created_at
 		 FROM firewall_rules WHERE id = ?`, id,
 	).Scan(&r.ID, &r.Type, &r.Protocol, &port, &ip, &r.Action,
-		&r.Direction, &description, &r.Status, &r.SortOrder, &r.CreatedAt)
+		&r.Direction, &description, &r.Status, &r.SortOrder, &r.IsDefault, &r.CreatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, apperrors.New(apperrors.ErrNotFound, "firewall rule not found")

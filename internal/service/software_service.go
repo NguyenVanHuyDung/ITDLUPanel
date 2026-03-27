@@ -1102,24 +1102,25 @@ func (s *SoftwareService) managePhpMyAdminFirewall(_ context.Context, cfg *PhpMy
 	httpPort := strconv.Itoa(cfg.AccessPort)
 	sslPort := strconv.Itoa(cfg.SSLPort)
 
-	// Always open the HTTP port
-	s.firewallService.OpenPortsForSoftware("phpmyadmin")
+	// Update the default phpMyAdmin port rule (is_default=1)
+	if err := s.firewallService.UpdateDefaultPort("phpMyAdmin", httpPort); err != nil {
+		logger.Warn().Err(err).Str("port", httpPort).Msg("failed to update default phpMyAdmin firewall port")
+	}
 
-	// If SSL is enabled, ensure the SSL port is open
+	// Manage SSL port
 	if cfg.SSLEnabled {
-		s.firewallService.OpenPortsForSoftware("phpmyadmin-ssl")
-		// Register a dynamic entry so the port map matches
 		softwarePortMap["phpmyadmin-ssl"] = []struct {
 			Port     string
 			Protocol string
 			Desc     string
 		}{{Port: sslPort, Protocol: "tcp", Desc: "phpMyAdmin SSL"}}
+		s.firewallService.OpenPortsForSoftware("phpmyadmin-ssl")
 	} else {
 		s.firewallService.ClosePortsForSoftware("phpmyadmin-ssl")
 		delete(softwarePortMap, "phpmyadmin-ssl")
 	}
 
-	// Update the main port in case it changed from the default
+	// Keep softwarePortMap in sync with actual port
 	softwarePortMap["phpmyadmin"] = []struct {
 		Port     string
 		Protocol string

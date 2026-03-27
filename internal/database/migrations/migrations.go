@@ -14,5 +14,6 @@ func All() []Migration {
 		&Migration001Init{},
 		&Migration002MonitorMetrics{},
 		&Migration003FirewallSettings{},
+		&Migration004PhpMyAdminDefaultPort{},
 	}
 }
