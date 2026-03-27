@@ -4,7 +4,8 @@ import {
   PlayCircleOutlined, PauseCircleOutlined, ReloadOutlined, SettingOutlined,
   CodeOutlined, SwapOutlined, DashboardOutlined, ThunderboltOutlined,
   FileTextOutlined, CheckCircleFilled, CloudServerOutlined,
-  InfoCircleOutlined,
+  InfoCircleOutlined, TagOutlined, SafetyCertificateOutlined,
+  RocketOutlined, WarningOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
@@ -351,24 +352,44 @@ function ConfigTab() {
 // ============================================================================
 // Switch Version Tab
 // ============================================================================
+interface VersionInfo {
+  version: string;
+  branch: string;
+  status: string;
+  features: string[];
+}
+interface AvailableVersions {
+  stable: VersionInfo[];
+  mainline: VersionInfo[];
+  current?: { full: string; major: number; minor: number; patch: number; branch: string };
+}
+
 function VersionTab() {
   const [currentVersion, setCurrentVersion] = useState('');
-  const [versionType, setVersionType] = useState('');
-  const [versions] = useState(['stable', 'mainline']);
+  const [currentFull, setCurrentFull] = useState('');
+  const [available, setAvailable] = useState<AvailableVersions | null>(null);
   const [selected, setSelected] = useState('');
   const [loading, setLoading] = useState(true);
   const [switching, setSwitching] = useState(false);
   const [confirmVisible, setConfirmVisible] = useState(false);
+  const [activeTab, setActiveTab] = useState<'stable' | 'mainline'>('stable');
 
   useEffect(() => {
     (async () => {
       try {
-        const { data: resp } = await api.get('/software/nginx/status');
-        const d = resp.data || {};
+        const [statusRes, versionsRes] = await Promise.all([
+          api.get('/software/nginx/status'),
+          api.get('/software/nginx/available-versions'),
+        ]);
+        const d = statusRes.data?.data || {};
         setCurrentVersion(d.version_display || d.version || 'unknown');
-        const vt = d.version_type || 'stable';
-        setVersionType(vt);
-        setSelected(vt);
+        setCurrentFull(d.version || '');
+
+        const av = versionsRes.data?.data as AvailableVersions;
+        if (av) {
+          setAvailable(av);
+          if (av.current?.branch === 'mainline') setActiveTab('mainline');
+        }
       } catch {}
       setLoading(false);
     })();
@@ -387,64 +408,182 @@ function VersionTab() {
     }
   };
 
+  const isCurrentVersion = (v: string) => {
+    if (!currentFull) return false;
+    return currentFull === v || currentFull.startsWith(v + '.');
+  };
+
+  const statusBadge = (status: string) => {
+    const colors: Record<string, string> = { latest: SUCCESS, active: PRIMARY, legacy: WARNING, eol: ERROR };
+    const labels: Record<string, string> = { latest: 'Latest', active: 'Active', legacy: 'Legacy', eol: 'EOL' };
+    return (
+      <span style={{
+        fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4,
+        background: (colors[status] || TEXT_SECONDARY) + '18',
+        color: colors[status] || TEXT_SECONDARY,
+        textTransform: 'uppercase', letterSpacing: 0.5,
+      }}>
+        {labels[status] || status}
+      </span>
+    );
+  };
+
+  const featureTags = (features: string[]) => (
+    <Space size={4} style={{ flexWrap: 'wrap' }}>
+      {features.includes('quic') && (
+        <Tooltip title="HTTP/3 QUIC support">
+          <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: '#E8F5E9', color: '#2E7D32' }}>
+            <RocketOutlined /> QUIC
+          </span>
+        </Tooltip>
+      )}
+      {features.includes('http2_directive') && (
+        <Tooltip title="Modern http2 directive syntax">
+          <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: '#E3F2FD', color: '#1565C0' }}>
+            HTTP/2
+          </span>
+        </Tooltip>
+      )}
+      {features.includes('http2_listen') && (
+        <Tooltip title="Legacy http2 in listen directive">
+          <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: '#FFF3E0', color: '#E65100' }}>
+            HTTP/2 (legacy)
+          </span>
+        </Tooltip>
+      )}
+    </Space>
+  );
+
+  const renderVersionList = (versions: VersionInfo[]) => {
+    if (!versions?.length) return <Text style={{ color: TEXT_SECONDARY, fontSize: 13 }}>No versions available</Text>;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {versions.map((v) => {
+          const isCurrent = isCurrentVersion(v.version);
+          const isSelected = selected === v.version;
+          return (
+            <div
+              key={v.version}
+              onClick={() => { if (!isCurrent && !switching) setSelected(v.version); }}
+              style={{
+                padding: '10px 14px', borderRadius: 8, cursor: isCurrent ? 'default' : 'pointer',
+                border: `1.5px solid ${isSelected ? PRIMARY : isCurrent ? SUCCESS + '60' : BORDER}`,
+                background: isCurrent ? SUCCESS + '08' : isSelected ? PRIMARY + '08' : '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                transition: 'all 0.15s', opacity: switching ? 0.6 : 1,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <TagOutlined style={{ color: isCurrent ? SUCCESS : isSelected ? PRIMARY : TEXT_SECONDARY, fontSize: 14 }} />
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Text style={{ fontSize: 14, fontWeight: 600, color: TEXT_PRIMARY }}>
+                      {v.version}
+                    </Text>
+                    {statusBadge(v.status)}
+                    {isCurrent && (
+                      <span style={{
+                        fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4,
+                        background: SUCCESS + '18', color: SUCCESS,
+                      }}>
+                        <CheckCircleFilled /> INSTALLED
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ marginTop: 4 }}>{featureTags(v.features)}</div>
+                </div>
+              </div>
+              {isSelected && !isCurrent && (
+                <SafetyCertificateOutlined style={{ color: PRIMARY, fontSize: 16 }} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const tabStyle = (active: boolean): React.CSSProperties => ({
+    padding: '8px 20px', cursor: 'pointer', fontSize: 13, fontWeight: active ? 600 : 400,
+    color: active ? PRIMARY : TEXT_SECONDARY,
+    borderBottom: `2px solid ${active ? PRIMARY : 'transparent'}`,
+    transition: 'all 0.15s',
+  });
+
+  const selectedInfo = available
+    ? [...(available.stable || []), ...(available.mainline || [])].find(v => v.version === selected)
+    : null;
+  const isDowngrade = selectedInfo && currentFull && selected < currentFull;
+
   return (
     <div>
-      <Text style={{ fontSize: 16, fontWeight: 600, color: TEXT_PRIMARY, display: 'block', marginBottom: 20 }}>
+      <Text style={{ fontSize: 16, fontWeight: 600, color: TEXT_PRIMARY, display: 'block', marginBottom: 16 }}>
         Switch Version
       </Text>
 
       {loading ? <Spin /> : (
         <>
           <div style={{
-            padding: '12px 16px', borderRadius: 8,
+            padding: '10px 14px', borderRadius: 8,
             background: PRIMARY_LIGHT, border: `1px solid ${PRIMARY}40`,
-            marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8,
+            marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8,
           }}>
             <CheckCircleFilled style={{ color: SUCCESS }} />
             <Text style={{ fontSize: 13 }}>
-              Current version: <strong>{currentVersion}</strong>
+              Current: <strong>{currentVersion}</strong>
             </Text>
           </div>
 
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-            <Select
-              value={selected}
-              onChange={setSelected}
-              style={{ width: 200 }}
-              options={versions.map(v => ({
-                value: v,
-                label: (
-                  <Space>
-                    <span>{v === 'stable' ? 'Nginx Stable' : 'Nginx Mainline'}</span>
-                    {v === versionType && <CheckCircleFilled style={{ color: SUCCESS, fontSize: 12 }} />}
-                  </Space>
-                ),
-              }))}
-            />
-            <Button
-              type="primary"
-              icon={<SwapOutlined />}
-              onClick={() => {
-                if (selected === versionType) {
-                  message.info('Already on this version channel');
-                  return;
-                }
-                setConfirmVisible(true);
-              }}
-              loading={switching}
-              disabled={selected === versionType}
-              style={{ background: PRIMARY, borderColor: PRIMARY, borderRadius: 6 }}
-            >
-              Switch
-            </Button>
+          {/* Branch tabs */}
+          <div style={{ display: 'flex', borderBottom: `1px solid ${BORDER}`, marginBottom: 14 }}>
+            <div style={tabStyle(activeTab === 'stable')} onClick={() => setActiveTab('stable')}>
+              <SafetyCertificateOutlined style={{ marginRight: 4 }} /> Stable
+              {available?.stable?.length ? ` (${available.stable.length})` : ''}
+            </div>
+            <div style={tabStyle(activeTab === 'mainline')} onClick={() => setActiveTab('mainline')}>
+              <RocketOutlined style={{ marginRight: 4 }} /> Mainline
+              {available?.mainline?.length ? ` (${available.mainline.length})` : ''}
+            </div>
           </div>
 
+          {/* Version list */}
+          <div style={{ maxHeight: 320, overflowY: 'auto', paddingRight: 4 }}>
+            {renderVersionList(activeTab === 'stable' ? available?.stable || [] : available?.mainline || [])}
+          </div>
+
+          {/* Action bar */}
+          {selected && !isCurrentVersion(selected) && (
+            <div style={{
+              marginTop: 14, padding: '10px 14px', borderRadius: 8,
+              background: '#FAFAFA', border: `1px solid ${BORDER}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8,
+            }}>
+              <div style={{ fontSize: 13 }}>
+                Switch to <strong>nginx {selected}</strong>
+                {isDowngrade && (
+                  <span style={{ color: WARNING, marginLeft: 8, fontSize: 12 }}>
+                    <WarningOutlined /> Downgrade
+                  </span>
+                )}
+              </div>
+              <Button
+                type="primary"
+                icon={<SwapOutlined />}
+                onClick={() => setConfirmVisible(true)}
+                loading={switching}
+                style={{ background: PRIMARY, borderColor: PRIMARY, borderRadius: 6 }}
+              >
+                Switch
+              </Button>
+            </div>
+          )}
+
           <div style={{
-            marginTop: 20, padding: 12, background: '#F5F5F5', borderRadius: 8,
-            fontSize: 12, color: TEXT_SECONDARY,
+            marginTop: 12, padding: 10, background: '#F5F5F5', borderRadius: 8,
+            fontSize: 11, color: TEXT_SECONDARY,
           }}>
             <InfoCircleOutlined style={{ marginRight: 6, color: PRIMARY }} />
-            Switching version will reinstall Nginx from nginx.org repository. Your configuration files will be preserved.
+            Config files are preserved. Site vhost configs auto-regenerated for version compatibility.
           </div>
 
           <Modal
@@ -456,10 +595,17 @@ function VersionTab() {
             okButtonProps={{ danger: true }}
           >
             <p>
-              This will <strong>uninstall</strong> the current Nginx and <strong>reinstall</strong> from the{' '}
-              <strong>{selected === 'mainline' ? 'Mainline' : 'Stable'}</strong> channel via nginx.org.
+              Switch to <strong>nginx {selected}</strong>
+              {selectedInfo && ` (${selectedInfo.branch})`}.
             </p>
-            <p>Your configuration files will be backed up and restored automatically.</p>
+            <p>Current nginx will be <strong>uninstalled</strong> and the selected version installed from nginx.org.</p>
+            {isDowngrade && (
+              <p style={{ color: WARNING }}>
+                <WarningOutlined style={{ marginRight: 4 }} />
+                This is a <strong>downgrade</strong>. Some features may not be available.
+              </p>
+            )}
+            <p>Your configuration files will be backed up, and all site configs will be regenerated.</p>
             <p style={{ color: WARNING }}>
               <InfoCircleOutlined style={{ marginRight: 4 }} />
               Nginx will be briefly unavailable during the switch.

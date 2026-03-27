@@ -10,6 +10,7 @@ import (
 	apperrors "github.com/ITDLUPanel/panel/internal/pkg/errors"
 	"github.com/ITDLUPanel/panel/internal/pkg/response"
 	"github.com/ITDLUPanel/panel/internal/service"
+	"github.com/ITDLUPanel/panel/internal/service/installer"
 )
 
 // SoftwareHandler handles software management API endpoints.
@@ -49,6 +50,9 @@ func (h *SoftwareHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gi
 		sw.GET("/phpmyadmin/manager", h.getPhpMyAdminConfig)
 		sw.PUT("/phpmyadmin/manager", h.setPhpMyAdminConfig)
 		sw.GET("/phpmyadmin/php-versions", h.getAvailablePHPVersions)
+
+		// Nginx version management
+		sw.GET("/nginx/available-versions", h.getNginxAvailableVersions)
 	}
 }
 
@@ -362,6 +366,16 @@ func (h *SoftwareHandler) setPhpMyAdminConfig(c *gin.Context) {
 // getAvailablePHPVersions returns installed PHP versions with active FPM.
 func (h *SoftwareHandler) getAvailablePHPVersions(c *gin.Context) {
 	versions, err := h.softwareService.GetAvailablePHPVersions()
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, versions)
+}
+
+// getNginxAvailableVersions returns available nginx versions from official repos.
+func (h *SoftwareHandler) getNginxAvailableVersions(c *gin.Context) {
+	versions, err := installer.GetAvailableNginxVersions(c.Request.Context())
 	if err != nil {
 		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
 		return

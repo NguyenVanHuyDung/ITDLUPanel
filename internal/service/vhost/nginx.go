@@ -118,10 +118,18 @@ const nginxTemplate = `server {
 }
 {{ if .SSLEnabled }}
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+{{ if .SupportsQUIC }}
+    listen 443 ssl{{ if not .UsesHTTP2Directive }} http2{{ end }};
+    listen [::]:443 ssl{{ if not .UsesHTTP2Directive }} http2{{ end }};
     listen 443 quic reuseport;
     listen [::]:443 quic reuseport;
+{{ else }}
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+{{ end }}
+{{ if .UsesHTTP2Directive }}
+    http2 on;
+{{ end }}
     server_name {{ .Domain }}{{ range .Aliases }} {{ . }}{{ end }};
     index index.php index.html index.htm;
     root {{ .DocRoot }};
@@ -136,9 +144,10 @@ server {
     ssl_session_timeout 10m;
     ssl_session_tickets on;
     #SSL-END
-
+{{ if .SupportsQUIC }}
     # HTTP/3 Alt-Svc header
     add_header Alt-Svc 'h3=":443"; ma=2592000, h3-29=":443"; ma=2592000' always;
+{{ end }}
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;

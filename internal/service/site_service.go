@@ -18,6 +18,7 @@ import (
 
 	apperrors "github.com/ITDLUPanel/panel/internal/pkg/errors"
 	"github.com/ITDLUPanel/panel/internal/pkg/logger"
+	"github.com/ITDLUPanel/panel/internal/service/installer"
 	"github.com/ITDLUPanel/panel/internal/service/vhost"
 	"github.com/ITDLUPanel/panel/internal/system"
 )
@@ -183,10 +184,13 @@ func (s *SiteService) Create(req CreateSiteRequest, userID int64) (*Site, error)
 
 	// 4. Generate vhost config
 	gen := generatorFor(req.Webserver)
+	nginxVer := installer.DetectNginxVersion()
 	cfg := vhost.VhostConfig{
-		Domain:     req.Domain,
-		DocRoot:    docRoot,
-		PHPVersion: req.PHPVersion,
+		Domain:             req.Domain,
+		DocRoot:            docRoot,
+		PHPVersion:         req.PHPVersion,
+		SupportsQUIC:       nginxVer.SupportsQUIC(),
+		UsesHTTP2Directive: nginxVer.UsesHTTP2Directive(),
 	}
 
 	content, err := gen.Generate(cfg)
@@ -537,11 +541,14 @@ func (s *SiteService) SwitchPHP(id int64, phpVersion string) error {
 		return err
 	}
 
+	nginxVer2 := installer.DetectNginxVersion()
 	cfg := vhost.VhostConfig{
-		Domain:     site.Domain,
-		Aliases:    aliases,
-		DocRoot:    site.Path,
-		PHPVersion: phpVersion,
+		Domain:             site.Domain,
+		Aliases:            aliases,
+		DocRoot:            site.Path,
+		PHPVersion:         phpVersion,
+		SupportsQUIC:       nginxVer2.SupportsQUIC(),
+		UsesHTTP2Directive: nginxVer2.UsesHTTP2Directive(),
 	}
 	if site.SSLEnabled == 1 {
 		cfg.SSLEnabled = true
@@ -723,6 +730,80 @@ func (s *SiteService) domainAliases(siteID int64, primaryDomain string) ([]strin
 	return aliases, nil
 }
 
+// RegenerateAllVhosts rebuilds vhost configs for all nginx sites.
+// Call this after an nginx version switch to update templates.
+func (s *SiteService) RegenerateAllVhosts() error {
+	rows, err := s.db.Query(
+		`SELECT id, name, domain, path, webserver, php_version, ssl_enabled,
+		        ssl_type, ssl_expiry, status, config_extra, created_by, created_at, updated_at
+		 FROM sites WHERE webserver = 'nginx'`,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to query sites: %w", err)
+	}
+	defer rows.Close()
+
+	var errs []string
+	for rows.Next() {
+		site := &Site{}
+		if err := rows.Scan(
+			&site.ID, &site.Name, &site.Domain, &site.Path, &site.Webserver,
+			&site.PHPVersion, &site.SSLEnabled, &site.SSLType, &site.SSLExpiry,
+			&site.Status, &site.ConfigExtra, &site.CreatedBy,
+			&site.CreatedAt, &site.UpdatedAt,
+		); err != nil {
+			errs = append(errs, fmt.Sprintf("scan site: %v", err))
+			continue
+		}
+		if err := s.regenerateVhostNoReload(site); err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", site.Domain, err))
+		}
+	}
+
+	// Single reload after all configs are updated
+	gen := generatorFor("nginx")
+	if err := gen.ReloadServer(); err != nil {
+		errs = append(errs, fmt.Sprintf("reload: %v", err))
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("some sites failed: %s", strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+// regenerateVhostNoReload rebuilds vhost config without reloading nginx.
+func (s *SiteService) regenerateVhostNoReload(site *Site) error {
+	gen := generatorFor(site.Webserver)
+	aliases, err := s.domainAliases(site.ID, site.Domain)
+	if err != nil {
+		return err
+	}
+	phpVersion := ""
+	if site.PHPVersion != nil {
+		phpVersion = *site.PHPVersion
+	}
+	nginxVer := installer.DetectNginxVersion()
+	cfg := vhost.VhostConfig{
+		Domain:             site.Domain,
+		Aliases:            aliases,
+		DocRoot:            site.Path,
+		PHPVersion:         phpVersion,
+		SSLEnabled:         site.SSLEnabled == 1,
+		SupportsQUIC:       nginxVer.SupportsQUIC(),
+		UsesHTTP2Directive: nginxVer.UsesHTTP2Directive(),
+	}
+	if cfg.SSLEnabled {
+		cfg.SSLCert, cfg.SSLKey = s.resolveSSLPaths(site.Domain, site.SSLType)
+	}
+	content, err := gen.Generate(cfg)
+	if err != nil {
+		return err
+	}
+	confPath := gen.GetConfigPath(site.Domain)
+	return os.WriteFile(confPath, []byte(content), 0644)
+}
+
 // regenerateVhost rebuilds the vhost config file from the current site state.
 func (s *SiteService) regenerateVhost(site *Site) error {
 	gen := generatorFor(site.Webserver)
@@ -737,12 +818,15 @@ func (s *SiteService) regenerateVhost(site *Site) error {
 		phpVersion = *site.PHPVersion
 	}
 
+	nginxVer3 := installer.DetectNginxVersion()
 	cfg := vhost.VhostConfig{
-		Domain:     site.Domain,
-		Aliases:    aliases,
-		DocRoot:    site.Path,
-		PHPVersion: phpVersion,
-		SSLEnabled: site.SSLEnabled == 1,
+		Domain:             site.Domain,
+		Aliases:            aliases,
+		DocRoot:            site.Path,
+		PHPVersion:         phpVersion,
+		SSLEnabled:         site.SSLEnabled == 1,
+		SupportsQUIC:       nginxVer3.SupportsQUIC(),
+		UsesHTTP2Directive: nginxVer3.UsesHTTP2Directive(),
 	}
 
 	// Resolve SSL cert/key paths if SSL is enabled

@@ -17,6 +17,7 @@ import (
 	"github.com/ITDLUPanel/panel/internal/service"
 	"github.com/ITDLUPanel/panel/internal/plugin"
 	"github.com/ITDLUPanel/panel/internal/service/installer"
+	"github.com/ITDLUPanel/panel/internal/pkg/logger"
 	"github.com/ITDLUPanel/panel/internal/task"
 	"github.com/ITDLUPanel/panel/internal/websocket"
 )
@@ -109,6 +110,11 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		terminalService := service.NewTerminalService()
 		installerRegistry := installer.DefaultRegistry()
 		softwareService := service.NewSoftwareService(db, taskQueue, installerRegistry, firewallService)
+		softwareService.SetOnNginxVersionChanged(func() {
+			if err := siteService.RegenerateAllVhosts(); err != nil {
+				logger.Warn().Err(err).Msg("failed to regenerate vhosts after nginx version switch")
+			}
+		})
 
 		// -------------------------------------------------------
 		// Auth & User (public / admin)

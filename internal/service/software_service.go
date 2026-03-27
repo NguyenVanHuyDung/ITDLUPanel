@@ -159,6 +159,12 @@ type SoftwareService struct {
 	queue           *task.Queue
 	registry        *installer.Registry
 	firewallService *FirewallService
+	onNginxVersionChanged func() // called after nginx version switch to regenerate vhosts
+}
+
+// SetOnNginxVersionChanged sets a callback invoked after nginx version switch.
+func (s *SoftwareService) SetOnNginxVersionChanged(fn func()) {
+	s.onNginxVersionChanged = fn
 }
 
 // NewSoftwareService creates a new SoftwareService.
@@ -214,6 +220,11 @@ func (s *SoftwareService) registerTaskHandlers() {
 		// Auto-open firewall ports for this software
 		if s.firewallService != nil {
 			s.firewallService.OpenPortsForSoftware(name)
+		}
+
+		// Regenerate vhost configs after nginx version switch
+		if name == "nginx" && s.onNginxVersionChanged != nil {
+			s.onNginxVersionChanged()
 		}
 
 		return nil
