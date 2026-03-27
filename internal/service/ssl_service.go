@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -42,6 +43,7 @@ const (
 // CertInfo describes an SSL certificate.
 type CertInfo struct {
 	Domain     string   `json:"domain"`
+	SSLName    string   `json:"ssl_name"`
 	Issuer     string   `json:"issuer"`
 	IssuerCN   string   `json:"issuer_cn"`
 	ValidFrom  string   `json:"valid_from"`
@@ -274,7 +276,21 @@ func (s *SSLService) UploadCustomCert(domain string, cert, key []byte) error {
 		return apperrors.New(apperrors.ErrValidation, "invalid certificate/key pair: "+err.Error())
 	}
 
-	certDir := filepath.Join(customCertDir, domain)
+	// Parse cert to extract the primary identity (CN or first DNS name)
+	certIdentity := domain
+	block, _ := pem.Decode(cert)
+	if block != nil {
+		if parsed, err := x509.ParseCertificate(block.Bytes); err == nil {
+			if len(parsed.DNSNames) > 0 {
+				certIdentity = sanitizeCertName(parsed.DNSNames[0])
+			} else if parsed.Subject.CommonName != "" {
+				certIdentity = sanitizeCertName(parsed.Subject.CommonName)
+			}
+		}
+	}
+
+	// Store under the cert identity name (e.g., _wildcard_.dlu.edu.vn)
+	certDir := filepath.Join(customCertDir, certIdentity)
 	if err := os.MkdirAll(certDir, 0700); err != nil {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to create certificate directory")
 	}
@@ -289,36 +305,50 @@ func (s *SSLService) UploadCustomCert(domain string, cert, key []byte) error {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to write private key")
 	}
 
-	if err := s.saveCertMeta(domain, certTypeCustom, false); err != nil {
-		logger.Error().Err(err).Str("domain", domain).Msg("failed to save cert metadata")
+	if err := s.saveCertMeta(certIdentity, certTypeCustom, false); err != nil {
+		logger.Error().Err(err).Str("domain", certIdentity).Msg("failed to save cert metadata")
 	}
 
-	logger.Info().Str("domain", domain).Msg("custom certificate uploaded")
+	logger.Info().Str("domain", domain).Str("cert_identity", certIdentity).Msg("custom certificate uploaded")
 	return nil
+}
+
+// sanitizeCertName converts a certificate CN/DNS name into a safe folder name.
+// e.g. "*.dlu.edu.vn" -> "_wildcard_.dlu.edu.vn"
+func sanitizeCertName(name string) string {
+	return strings.ReplaceAll(name, "*", "_wildcard_")
 }
 
 // GetCertInfo returns information about the certificate for a domain.
 func (s *SSLService) GetCertInfo(domain string) (*CertInfo, error) {
-	// Check Let's Encrypt directory first, then custom.
-	for _, entry := range []struct {
-		dir      string
-		certType string
-	}{
-		{filepath.Join(letsencryptDir, domain), certTypeLetsEncrypt},
-		{filepath.Join(customCertDir, domain), certTypeCustom},
-	} {
-		certPath := filepath.Join(entry.dir, certFileName)
-		keyPath := filepath.Join(entry.dir, keyFileName)
+	// Check under original domain name and sanitized cert identity
+	lookups := []string{domain}
+	sanitized := sanitizeCertName(domain)
+	if sanitized != domain {
+		lookups = append(lookups, sanitized)
+	}
 
-		if _, err := os.Stat(certPath); err != nil {
-			continue
-		}
+	for _, lookup := range lookups {
+		for _, entry := range []struct {
+			dir      string
+			certType string
+		}{
+			{filepath.Join(letsencryptDir, lookup), certTypeLetsEncrypt},
+			{filepath.Join(customCertDir, lookup), certTypeCustom},
+		} {
+			certPath := filepath.Join(entry.dir, certFileName)
+			keyPath := filepath.Join(entry.dir, keyFileName)
 
-		info, err := s.parseCertFile(certPath, keyPath, domain, entry.certType)
-		if err != nil {
-			continue
+			if _, err := os.Stat(certPath); err != nil {
+				continue
+			}
+
+			info, err := s.parseCertFile(certPath, keyPath, lookup, entry.certType)
+			if err != nil {
+				continue
+			}
+			return info, nil
 		}
-		return info, nil
 	}
 
 	return nil, apperrors.New(apperrors.ErrNotFound, "no certificate found for domain: "+domain)
@@ -349,9 +379,11 @@ func (s *SSLService) DeleteCertificate(domain string) error {
 	return nil
 }
 
-// ListCertificates returns all managed certificates.
+// ListCertificates returns all managed certificates, deduplicated by cert content.
+// When the same certificate exists under both its cert-identity folder (e.g. _wildcard_.dlu.edu.vn)
+// and a site-specific copy, only the cert-identity entry is returned.
 func (s *SSLService) ListCertificates() ([]*CertInfo, error) {
-	var certs []*CertInfo
+	var allCerts []*CertInfo
 
 	for _, entry := range []struct {
 		baseDir  string
@@ -362,7 +394,6 @@ func (s *SSLService) ListCertificates() ([]*CertInfo, error) {
 	} {
 		entries, err := os.ReadDir(entry.baseDir)
 		if err != nil {
-			// Directory may not exist yet.
 			continue
 		}
 
@@ -379,11 +410,46 @@ func (s *SSLService) ListCertificates() ([]*CertInfo, error) {
 				logger.Debug().Err(err).Str("domain", domain).Msg("skipping unparseable cert")
 				continue
 			}
-			certs = append(certs, info)
+			allCerts = append(allCerts, info)
 		}
 	}
 
+	// Deduplicate: group by cert fingerprint (DNS names sorted + validity)
+	// Prefer cert-identity folders (containing _wildcard_ or matching first DNS name)
+	seen := make(map[string]*CertInfo)
+	for _, c := range allCerts {
+		key := certDedupeKey(c)
+		existing, exists := seen[key]
+		if !exists {
+			seen[key] = c
+			continue
+		}
+		// Prefer the cert-identity folder (not a site-specific copy)
+		if isCertIdentityFolder(c.Domain) && !isCertIdentityFolder(existing.Domain) {
+			seen[key] = c
+		}
+	}
+
+	certs := make([]*CertInfo, 0, len(seen))
+	for _, c := range seen {
+		certs = append(certs, c)
+	}
+
 	return certs, nil
+}
+
+// certDedupeKey generates a deduplication key from cert content.
+func certDedupeKey(c *CertInfo) string {
+	names := make([]string, len(c.DNSNames))
+	copy(names, c.DNSNames)
+	sort.Strings(names)
+	return strings.Join(names, ",") + "|" + c.ValidFrom + "|" + c.ValidUntil + "|" + c.SSLType
+}
+
+// isCertIdentityFolder checks if a folder name looks like a cert identity
+// (contains _wildcard_ prefix or matches common cert CN patterns) vs a site domain copy.
+func isCertIdentityFolder(domain string) bool {
+	return strings.Contains(domain, "_wildcard_")
 }
 
 // CheckExpiry returns certificates expiring within 30 days.
@@ -557,8 +623,17 @@ func (s *SSLService) parseCertFile(certPath, keyPath, domain, certType string) (
 		issuerOrg = cert.Issuer.Organization[0]
 	}
 
+	// Build a human-readable SSL name from DNS names or CN
+	sslName := domain
+	if len(cert.DNSNames) > 0 {
+		sslName = strings.Join(cert.DNSNames, ", ")
+	} else if cert.Subject.CommonName != "" {
+		sslName = cert.Subject.CommonName
+	}
+
 	return &CertInfo{
 		Domain:     domain,
+		SSLName:    sslName,
 		Issuer:     issuerOrg,
 		IssuerCN:   cert.Issuer.CommonName,
 		ValidFrom:  cert.NotBefore.Format("2006-01-02"),

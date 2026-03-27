@@ -844,6 +844,7 @@ function DirectoryPanel({ site }: { site: Site }) {
 // ---------------------------------------------------------------------------
 interface CertInfo {
   domain: string;
+  ssl_name: string;
   ssl_type: string;
   issuer: string;
   issuer_cn: string;
@@ -1125,22 +1126,31 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
             No certificates found. Issue or upload a certificate first.
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
-            {certs.map((c, i) => (
-              <div key={i} style={{ padding: '12px 14px', borderRadius: 8, border: `1px solid ${p.cardBorder}`, background: isDark ? p.rowAlt : p.headerBg }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: p.text, marginBottom: 4 }}>
-                  {c.dns_names?.length > 0 ? c.dns_names.join(', ') : c.domain}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 10 }}>
+            {certs.map((c, i) => {
+              const displayName = c.ssl_name || (c.dns_names?.length > 0 ? c.dns_names.join(', ') : c.domain);
+              const isWildcard = displayName.includes('*');
+              return (
+                <div key={i} style={{ padding: '12px 14px', borderRadius: 8, border: `1px solid ${p.cardBorder}`, background: isDark ? p.rowAlt : p.headerBg }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: p.text, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {isWildcard && <span style={{
+                      display: 'inline-block', padding: '1px 5px', borderRadius: 4, fontSize: 9, fontWeight: 700,
+                      background: isDark ? 'rgba(124,58,237,0.15)' : '#EDE9FE', color: p.purple,
+                    }}>WILDCARD</span>}
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</span>
+                  </div>
+                  <div style={{ fontSize: 10, color: p.textMuted, marginBottom: 6 }}>{c.issuer_cn || c.issuer}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                    {badge(c.ssl_type === 'letsencrypt' ? "LE" : 'Custom', `${p.accent}15`, p.accent)}
+                    {c.dns_names?.length > 1 && badge(`${c.dns_names.length} SANs`, `${p.green}15`, p.green)}
+                  </div>
+                  <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 8 }}>
+                    Expires: {fmtDate(c.valid_until)}
+                  </div>
+                  <button style={{ ...primaryBtn, padding: '4px 10px', fontSize: 11 }} onClick={() => handleApply(c.domain)} disabled={submitting}>Apply</button>
                 </div>
-                <div style={{ fontSize: 10, color: p.textMuted, marginBottom: 6 }}>{c.issuer_cn || c.issuer}</div>
-                <div style={{ marginBottom: 6 }}>
-                  {badge(c.ssl_type === 'letsencrypt' ? "LE" : 'Custom', `${p.accent}15`, p.accent)}
-                </div>
-                <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 8 }}>
-                  Expires: {fmtDate(c.valid_until)}
-                </div>
-                <button style={{ ...primaryBtn, padding: '4px 10px', fontSize: 11 }} onClick={() => handleApply(c.domain)} disabled={submitting}>Apply</button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )
       )}
