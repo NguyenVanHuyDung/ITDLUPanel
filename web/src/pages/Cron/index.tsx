@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Table, Modal, Form, Input, Select, message, Popconfirm, Tooltip, InputNumber, Spin } from 'antd';
 import {
-  PlusOutlined, DeleteOutlined, ReloadOutlined, EditOutlined, FileTextOutlined,
+  PlusOutlined, DeleteOutlined, ReloadOutlined,
   ThunderboltOutlined, DatabaseOutlined, SearchOutlined,
-  CloudServerOutlined, SafetyCertificateOutlined, ClearOutlined, FolderOutlined,
+  CloudServerOutlined, SafetyCertificateOutlined, FolderOutlined,
   ClockCircleOutlined, CheckCircleOutlined, StopOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -34,6 +34,14 @@ interface CronTemplate {
   backupDir?: string;
   backupPattern?: string;
   defaultMaxKeep?: number;
+  /** Template requires selecting a site from the panel */
+  needsSitePicker?: boolean;
+  /** Template requires selecting a database from the panel */
+  needsDbPicker?: boolean;
+  /** If true, uses CLI --all flag instead of --target */
+  backupAll?: boolean;
+  /** CLI backup type: site, database, panel */
+  cliBackupType?: string;
 }
 
 function cronToHuman(expr: string): string {
@@ -116,53 +124,49 @@ function parseCronToState(expr: string): ScheduleState | null {
   return null;
 }
 
+const PANEL_BIN = '/ITDLUPanel/server/bin/itdlupanel';
+const PANEL_CFG = '-config=/ITDLUPanel/server/config/panel.json';
+
 const CRON_TEMPLATES: CronTemplate[] = [
   {
     name: 'Backup All Databases',
-    description: 'Dump all MySQL/MariaDB databases to /ITDLUPanel/backup/db/',
+    description: 'Backup every MySQL/MariaDB database (registered in panel DB)',
     schedule: '0 2 * * *',
-    command: 'mkdir -p /ITDLUPanel/backup/db && mysqldump --all-databases | gzip > /ITDLUPanel/backup/db/all-db-$(date +\\%Y\\%m\\%d-\\%H\\%M).sql.gz',
+    command: `${PANEL_BIN} backup -type=database -all ${PANEL_CFG}`,
     type: 'shell', icon: <DatabaseOutlined />, color: '#4479A1',
-    backupDir: '/ITDLUPanel/backup/db', backupPattern: 'all-db-*.sql.gz', defaultMaxKeep: 10,
+    cliBackupType: 'database', backupAll: true, defaultMaxKeep: 10,
   },
   {
     name: 'Backup Single Database',
-    description: 'Dump a specific database (edit DB_NAME after adding)',
+    description: 'Backup a specific database — select below',
     schedule: '0 3 * * *',
-    command: 'DB_NAME="mydb"; mkdir -p /ITDLUPanel/backup/db && mysqldump "$DB_NAME" | gzip > /ITDLUPanel/backup/db/${DB_NAME}-$(date +\\%Y\\%m\\%d-\\%H\\%M).sql.gz',
+    command: `${PANEL_BIN} backup -type=database -target=mydb ${PANEL_CFG}`,
     type: 'shell', icon: <DatabaseOutlined />, color: '#2E7D32',
-    backupDir: '/ITDLUPanel/backup/db', backupPattern: '*.sql.gz', defaultMaxKeep: 10,
+    cliBackupType: 'database', needsDbPicker: true, defaultMaxKeep: 10,
   },
   {
     name: 'Backup All Sites',
-    description: 'Archive all websites in /ITDLUPanel/wwwroot/ to backup',
+    description: 'Backup every website registered in panel',
     schedule: '0 3 * * 0',
-    command: 'mkdir -p /ITDLUPanel/backup/sites && tar czf /ITDLUPanel/backup/sites/all-sites-$(date +\\%Y\\%m\\%d).tar.gz -C /ITDLUPanel/wwwroot .',
+    command: `${PANEL_BIN} backup -type=site -all ${PANEL_CFG}`,
     type: 'shell', icon: <CloudServerOutlined />, color: '#1565C0',
-    backupDir: '/ITDLUPanel/backup/sites', backupPattern: 'all-sites-*.tar.gz', defaultMaxKeep: 5,
+    cliBackupType: 'site', backupAll: true, defaultMaxKeep: 5,
   },
   {
     name: 'Backup Single Site',
-    description: 'Archive a specific site (edit SITE after adding)',
+    description: 'Backup a specific website — select below',
     schedule: '0 4 * * *',
-    command: 'SITE="example.com"; mkdir -p /ITDLUPanel/backup/sites && tar czf /ITDLUPanel/backup/sites/${SITE}-$(date +\\%Y\\%m\\%d).tar.gz -C /ITDLUPanel/wwwroot "$SITE"',
+    command: `${PANEL_BIN} backup -type=site -target=example.com ${PANEL_CFG}`,
     type: 'shell', icon: <FolderOutlined />, color: '#FF9800',
-    backupDir: '/ITDLUPanel/backup/sites', backupPattern: '*.tar.gz', defaultMaxKeep: 10,
+    cliBackupType: 'site', needsSitePicker: true, defaultMaxKeep: 10,
   },
   {
-    name: 'Full Backup (DB + Sites)',
-    description: 'Complete backup: all databases + all sites + configs',
+    name: 'Full Panel Backup',
+    description: 'Backup panel config + database (configs, data)',
     schedule: '0 1 * * 0',
-    command: 'BDIR="/ITDLUPanel/backup/full/$(date +\\%Y\\%m\\%d)"; mkdir -p "$BDIR" && mysqldump --all-databases | gzip > "$BDIR/databases.sql.gz" && tar czf "$BDIR/sites.tar.gz" -C /ITDLUPanel/wwwroot . && tar czf "$BDIR/configs.tar.gz" -C /ITDLUPanel/server .',
+    command: `${PANEL_BIN} backup -type=panel ${PANEL_CFG}`,
     type: 'shell', icon: <SafetyCertificateOutlined />, color: '#9C27B0',
-    backupDir: '/ITDLUPanel/backup/full', backupPattern: '*', defaultMaxKeep: 4,
-  },
-  {
-    name: 'Cleanup Old Backups (30 days)',
-    description: 'Remove backup files older than 30 days',
-    schedule: '0 5 * * 0',
-    command: 'find /ITDLUPanel/backup -type f -mtime +30 -delete && find /ITDLUPanel/backup -type d -empty -delete',
-    type: 'shell', icon: <ClearOutlined />, color: '#F44336',
+    cliBackupType: 'panel', defaultMaxKeep: 4,
   },
   {
     name: 'Renew SSL Certificates',
@@ -205,6 +209,9 @@ export default function Cron() {
   });
   const [currentTemplate, setCurrentTemplate] = useState<CronTemplate | null>(null);
   const [maxKeep, setMaxKeep] = useState<number>(10);
+  const [sitesList, setSitesList] = useState<{ id: number; domain: string }[]>([]);
+  const [dbsList, setDbsList] = useState<{ id: number; name: string }[]>([]);
+  const [selectedTarget, setSelectedTarget] = useState<string>('');
 
   const fetchJobs = useCallback(async () => {
     setLoading(true);
@@ -234,16 +241,19 @@ export default function Cron() {
     setSubmitting(true);
     try {
       let command = values.command;
-      // Append backup retention cleanup if template has backupDir
-      if (currentTemplate?.backupDir && maxKeep > 0) {
-        const dir = currentTemplate.backupDir;
-        const pat = currentTemplate.backupPattern || '*';
-        if (currentTemplate.name.includes('Full Backup')) {
-          // Full backup uses directories, keep last N dirs
-          command += ` && cd ${dir} && ls -dt */ 2>/dev/null | tail -n +$((${maxKeep}+1)) | xargs -r rm -rf`;
-        } else {
-          command += ` && cd ${dir} && ls -t ${pat} 2>/dev/null | tail -n +$((${maxKeep}+1)) | xargs -r rm -f`;
+      // For CLI-based backup templates, inject -max-keep and -target flags
+      if (currentTemplate?.cliBackupType) {
+        let cmd = `${PANEL_BIN} backup -type=${currentTemplate.cliBackupType}`;
+        if (currentTemplate.backupAll) {
+          cmd += ' -all';
+        } else if (selectedTarget) {
+          cmd += ` -target=${selectedTarget}`;
         }
+        if (maxKeep > 0) {
+          cmd += ` -max-keep=${maxKeep}`;
+        }
+        cmd += ` ${PANEL_CFG}`;
+        command = cmd;
       }
       const payload = { ...values, schedule, command };
       if (editingJob) await api.put(`/crons/${editingJob.id}`, payload);
@@ -252,6 +262,7 @@ export default function Cron() {
       setModalOpen(false);
       setEditingJob(null);
       setCurrentTemplate(null);
+      setSelectedTarget('');
       form.resetFields();
       fetchJobs();
     } catch { message.error(t('common.error')); }
@@ -351,6 +362,7 @@ export default function Cron() {
     setSchedMode('builder');
     setSchedState({ mode: 'builder', preset: '', custom: '', freq: 'day', minute: 0, hour: 2, dom: 1, dow: 0, interval: 5 });
     setMaxKeep(template?.defaultMaxKeep || 10);
+    setSelectedTarget('');
     if (template) {
       form.setFieldsValue({ name: template.name, command: template.command, type: template.type });
       const parsed = parseCronToState(template.schedule);
@@ -360,6 +372,23 @@ export default function Cron() {
       } else {
         setSchedMode('custom');
         form.setFieldsValue({ schedule: template.schedule });
+      }
+      // Fetch sites/databases for picker templates
+      if (template.needsSitePicker) {
+        api.get<ApiResponse<{ id: number; domain: string }[]>>('/sites?page=1&per_page=999')
+          .then(({ data }) => {
+            const items = Array.isArray(data.data) ? data.data : [];
+            setSitesList(items);
+          })
+          .catch(() => setSitesList([]));
+      }
+      if (template.needsDbPicker) {
+        api.get<ApiResponse<{ id: number; name: string }[]>>('/databases?page=1&per_page=999')
+          .then(({ data }) => {
+            const items = Array.isArray(data.data) ? data.data : [];
+            setDbsList(items);
+          })
+          .catch(() => setDbsList([]));
       }
     }
     setModalOpen(true);
@@ -859,15 +888,50 @@ export default function Cron() {
             }
           </Form.Item>
 
-          {currentTemplate?.backupDir && (
+          {currentTemplate?.cliBackupType && (
             <div style={{
               padding: '12px 16px', borderRadius: 8, marginBottom: 16,
               border: `1px solid ${p.cardBorder}`,
               background: isDark ? p.rowAlt : p.headerBg,
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-                <span style={{ fontWeight: 600, color: p.text, fontSize: 13 }}>Backup Retention</span>
+                <span style={{ fontWeight: 600, color: p.text, fontSize: 13 }}>Backup Settings</span>
               </div>
+
+              {/* Site picker */}
+              {currentTemplate.needsSitePicker && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 12, color: p.text, marginBottom: 6 }}>Select website:</div>
+                  <Select
+                    placeholder="Choose a website"
+                    value={selectedTarget || undefined}
+                    onChange={(v) => setSelectedTarget(v)}
+                    style={{ width: '100%' }}
+                    showSearch
+                    filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+                    options={sitesList.map(s => ({ label: s.domain, value: s.domain }))}
+                    notFoundContent={sitesList.length === 0 ? 'No sites found' : undefined}
+                  />
+                </div>
+              )}
+
+              {/* Database picker */}
+              {currentTemplate.needsDbPicker && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 12, color: p.text, marginBottom: 6 }}>Select database:</div>
+                  <Select
+                    placeholder="Choose a database"
+                    value={selectedTarget || undefined}
+                    onChange={(v) => setSelectedTarget(v)}
+                    style={{ width: '100%' }}
+                    showSearch
+                    filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+                    options={dbsList.map(d => ({ label: d.name, value: d.name }))}
+                    notFoundContent={dbsList.length === 0 ? 'No databases found' : undefined}
+                  />
+                </div>
+              )}
+
               <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 10 }}>
                 Automatically delete old backups when exceeding this limit. Set 0 to keep all.
               </div>
@@ -882,9 +946,17 @@ export default function Cron() {
               </div>
               {maxKeep > 0 && (
                 <div style={{ fontSize: 11, color: p.green, marginTop: 6 }}>
-                  ✓ Will auto-delete oldest files in <code style={{ background: p.codeBg, padding: '1px 4px', borderRadius: 3 }}>{currentTemplate.backupDir}</code> when count exceeds {maxKeep}
+                  ✓ Will auto-delete oldest backups per target when count exceeds {maxKeep}
                 </div>
               )}
+
+              <div style={{
+                fontSize: 11, color: p.textMuted, marginTop: 10,
+                padding: '6px 10px', borderRadius: 6, background: `${p.accent}08`,
+                border: `1px solid ${p.accent}20`,
+              }}>
+                💡 Backups are created via panel CLI and registered in the panel database — they will appear on the Websites/Databases page backup counts.
+              </div>
             </div>
           )}
         </Form>
