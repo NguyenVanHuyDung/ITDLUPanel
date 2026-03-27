@@ -1039,7 +1039,7 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
             </div>
           )}
 
-          {/* Certificate content display — show current cert/key when available */}
+          {/* Certificate content — editable when cert exists */}
           {enabled && sslInfo.cert_path && (
             <div style={{
               padding: '12px 14px', borderRadius: 8,
@@ -1047,39 +1047,56 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
               background: isDark ? p.rowAlt : p.headerBg,
               marginBottom: 16,
             }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: p.text, marginBottom: 10 }}>Current Certificate Content</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: p.text, marginBottom: 10 }}>Current Certificate</div>
               <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4 }}>
                 Private Key — <span style={{ fontFamily: 'monospace', fontSize: 10 }}>{sslInfo.key_path}</span>
               </div>
-              <textarea readOnly style={{ ...textareaStyle, minHeight: 80, cursor: 'text', opacity: 0.8 }}
-                value={sslInfo.key_content || '(Key file not readable)'}
-                onClick={e => (e.target as HTMLTextAreaElement).select()} />
+              <textarea style={{ ...textareaStyle, minHeight: 80 }}
+                value={keyPEM || sslInfo.key_content || ''}
+                onChange={e => setKeyPEM(e.target.value)}
+                onClick={e => { if (!keyPEM) setKeyPEM(sslInfo.key_content || ''); (e.target as HTMLTextAreaElement).select(); }}
+                placeholder="-----BEGIN PRIVATE KEY-----&#10;..." />
               <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4, marginTop: 8 }}>
                 Certificate / CRT / PEM — <span style={{ fontFamily: 'monospace', fontSize: 10 }}>{sslInfo.cert_path}</span>
               </div>
-              <textarea readOnly style={{ ...textareaStyle, minHeight: 80, cursor: 'text', opacity: 0.8 }}
-                value={sslInfo.cert_content || '(Cert file not readable)'}
-                onClick={e => (e.target as HTMLTextAreaElement).select()} />
+              <textarea style={{ ...textareaStyle, minHeight: 80 }}
+                value={certPEM || sslInfo.cert_content || ''}
+                onChange={e => setCertPEM(e.target.value)}
+                onClick={e => { if (!certPEM) setCertPEM(sslInfo.cert_content || ''); (e.target as HTMLTextAreaElement).select(); }}
+                placeholder="-----BEGIN CERTIFICATE-----&#10;..." />
+              {(certPEM || keyPEM) && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  <button style={{ ...primaryBtn }} onClick={handleUploadCustom} disabled={submitting}>
+                    {submitting ? 'Saving…' : 'Update Certificate'}
+                  </button>
+                  <button style={{ ...dangerBtn, borderColor: p.textMuted, color: p.textMuted }}
+                    onClick={() => { setCertPEM(''); setKeyPEM(''); }}>
+                    Cancel
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Upload / Update certificate form */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: p.text }}>
-              {enabled ? 'Update Certificate' : 'Upload Certificate'}
+          {/* Upload form — only when no cert exists */}
+          {!enabled && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: p.text }}>
+                Upload Certificate
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 500, color: p.text, marginBottom: 4, display: 'block' }}>Private Key</label>
+                <textarea style={textareaStyle} placeholder={"-----BEGIN PRIVATE KEY-----\n..."} value={keyPEM} onChange={e => setKeyPEM(e.target.value)} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 500, color: p.text, marginBottom: 4, display: 'block' }}>Certificate / CRT / PEM</label>
+                <textarea style={textareaStyle} placeholder={"-----BEGIN CERTIFICATE-----\n..."} value={certPEM} onChange={e => setCertPEM(e.target.value)} />
+              </div>
+              <button style={{ ...primaryBtn, alignSelf: 'flex-start' }} onClick={handleUploadCustom} disabled={submitting}>
+                {submitting ? 'Saving…' : 'Upload & Enable SSL'}
+              </button>
             </div>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 500, color: p.text, marginBottom: 4, display: 'block' }}>Private Key</label>
-              <textarea style={textareaStyle} placeholder={"-----BEGIN PRIVATE KEY-----\n..."} value={keyPEM} onChange={e => setKeyPEM(e.target.value)} />
-            </div>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 500, color: p.text, marginBottom: 4, display: 'block' }}>Certificate / CRT / PEM</label>
-              <textarea style={textareaStyle} placeholder={"-----BEGIN CERTIFICATE-----\n..."} value={certPEM} onChange={e => setCertPEM(e.target.value)} />
-            </div>
-            <button style={{ ...primaryBtn, alignSelf: 'flex-start' }} onClick={handleUploadCustom} disabled={submitting}>
-              {submitting ? 'Saving…' : (enabled ? 'Save Certificate' : 'Upload & Enable SSL')}
-            </button>
-          </div>
+          )}
         </div>
       )}
 
