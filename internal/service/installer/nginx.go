@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ITDLUPanel/panel/internal/pkg/logger"
@@ -403,8 +404,31 @@ func DetectNginxVersionType() string {
 	return DetectNginxVersion().Branch
 }
 
+// Cache for available versions (avoid repeated slow remote fetches).
+var (
+	nginxVersionCache   *NginxAvailableVersions
+	nginxVersionCacheAt time.Time
+	nginxVersionCacheMu sync.Mutex
+)
+
+const nginxVersionCacheTTL = 1 * time.Hour
+
 // GetAvailableNginxVersions fetches available nginx versions from both repos.
+// Results are cached for 1 hour to avoid slow remote fetches.
 func GetAvailableNginxVersions(ctx context.Context) (*NginxAvailableVersions, error) {
+	nginxVersionCacheMu.Lock()
+	defer nginxVersionCacheMu.Unlock()
+
+	// Return cache if fresh
+	if nginxVersionCache != nil && time.Since(nginxVersionCacheAt) < nginxVersionCacheTTL {
+		// Update current version (cheap local check)
+		cur := DetectNginxVersion()
+		if !cur.IsZero() {
+			nginxVersionCache.Current = &cur
+		}
+		return nginxVersionCache, nil
+	}
+
 	codename := getUbuntuCodename()
 	if codename == "" {
 		return nil, fmt.Errorf("could not detect Ubuntu codename")
@@ -412,16 +436,34 @@ func GetAvailableNginxVersions(ctx context.Context) (*NginxAvailableVersions, er
 
 	result := &NginxAvailableVersions{}
 
-	stableURL := fmt.Sprintf("http://nginx.org/packages/ubuntu/dists/%s/nginx/binary-amd64/Packages", codename)
-	result.Stable = fetchNginxRepoVersions(ctx, stableURL, "stable")
+	// Fetch both repos in parallel
+	var wg sync.WaitGroup
+	var stableVersions, mainlineVersions []NginxVersionInfo
 
-	mainlineURL := fmt.Sprintf("http://nginx.org/packages/mainline/ubuntu/dists/%s/nginx/binary-amd64/Packages", codename)
-	result.Mainline = fetchNginxRepoVersions(ctx, mainlineURL, "mainline")
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		url := fmt.Sprintf("http://nginx.org/packages/ubuntu/dists/%s/nginx/binary-amd64/Packages", codename)
+		stableVersions = fetchNginxRepoVersions(ctx, url, "stable")
+	}()
+	go func() {
+		defer wg.Done()
+		url := fmt.Sprintf("http://nginx.org/packages/mainline/ubuntu/dists/%s/nginx/binary-amd64/Packages", codename)
+		mainlineVersions = fetchNginxRepoVersions(ctx, url, "mainline")
+	}()
+	wg.Wait()
+
+	result.Stable = stableVersions
+	result.Mainline = mainlineVersions
 
 	cur := DetectNginxVersion()
 	if !cur.IsZero() {
 		result.Current = &cur
 	}
+
+	// Cache result
+	nginxVersionCache = result
+	nginxVersionCacheAt = time.Now()
 
 	return result, nil
 }
