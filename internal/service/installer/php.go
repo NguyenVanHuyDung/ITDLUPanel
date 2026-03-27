@@ -4,11 +4,117 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ITDLUPanel/panel/internal/pkg/logger"
 	"github.com/ITDLUPanel/panel/internal/system"
 )
+
+// PHPExtensionInfo describes an available PHP extension.
+type PHPExtensionInfo struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Description string `json:"description"`
+	Installed   bool   `json:"installed"`
+}
+
+var phpExtensionsCatalog = []struct {
+	Name string
+	Type string
+	Desc string
+}{
+	// Core
+	{"cli", "core", "Command-line interface"},
+	{"fpm", "core", "FastCGI Process Manager"},
+	{"common", "core", "Common files for PHP packages"},
+	{"dev", "core", "Development files (headers, phpize)"},
+
+	// Database
+	{"mysql", "database", "MySQL native driver"},
+	{"pgsql", "database", "PostgreSQL driver"},
+	{"sqlite3", "database", "SQLite3 driver"},
+	{"mongodb", "database", "MongoDB driver"},
+	{"redis", "database", "Redis extension"},
+	{"memcached", "database", "Memcached extension"},
+
+	// Web & Networking
+	{"curl", "web", "cURL HTTP client"},
+	{"soap", "web", "SOAP protocol support"},
+	{"xmlrpc", "web", "XML-RPC support"},
+	{"ldap", "web", "LDAP protocol support"},
+	{"imap", "web", "IMAP email protocol"},
+
+	// Text & XML
+	{"xml", "text", "XML parser"},
+	{"mbstring", "text", "Multibyte string support"},
+	{"intl", "text", "Internationalization (ICU)"},
+	{"gettext", "text", "GNU gettext support"},
+	{"dom", "text", "DOM XML manipulation"},
+	{"xsl", "text", "XSL transformations"},
+	{"json", "text", "JSON support"},
+
+	// Math & Encryption
+	{"bcmath", "math", "Arbitrary precision math"},
+	{"gmp", "math", "GNU Multiple Precision"},
+	{"openssl", "security", "OpenSSL encryption"},
+	{"sodium", "security", "Libsodium encryption"},
+
+	// Image
+	{"gd", "image", "GD image library"},
+	{"imagick", "image", "ImageMagick integration"},
+	{"exif", "image", "EXIF metadata reading"},
+
+	// Compression
+	{"zip", "compression", "ZIP archive support"},
+	{"bz2", "compression", "Bzip2 compression"},
+	{"zlib", "compression", "Zlib compression"},
+
+	// Performance
+	{"opcache", "performance", "OPcache bytecode caching"},
+	{"apcu", "performance", "APCu user cache"},
+
+	// Other
+	{"fileinfo", "other", "File type detection"},
+	{"tokenizer", "other", "PHP tokenizer"},
+	{"ctype", "other", "Character type checking"},
+	{"phar", "other", "PHP Archive support"},
+	{"pcntl", "other", "Process control"},
+	{"posix", "other", "POSIX functions"},
+	{"shmop", "other", "Shared memory operations"},
+	{"sysvsem", "other", "System V semaphore"},
+	{"sysvshm", "other", "System V shared memory"},
+	{"ftp", "other", "FTP client"},
+	{"sockets", "other", "Socket programming"},
+	{"calendar", "other", "Calendar functions"},
+	{"readline", "other", "GNU readline support"},
+	{"tidy", "other", "HTML Tidy support"},
+	{"snmp", "other", "SNMP protocol support"},
+	{"pspell", "other", "Spell checking"},
+}
+
+// GetPHPExtensions returns the list of available extensions for a PHP version with install status.
+func (i *PHPInstaller) GetPHPExtensions(version string) ([]PHPExtensionInfo, error) {
+	result := make([]PHPExtensionInfo, 0, len(phpExtensionsCatalog))
+	for _, ext := range phpExtensionsCatalog {
+		result = append(result, PHPExtensionInfo{
+			Name:        ext.Name,
+			Type:        ext.Type,
+			Description: ext.Desc,
+			Installed:   isPhpExtensionInstalled(version, ext.Name),
+		})
+	}
+	return result, nil
+}
+
+func isPhpExtensionInstalled(version, ext string) bool {
+	pkg := fmt.Sprintf("php%s-%s", version, ext)
+	res, err := system.ExecWithTimeout(5*time.Second, "dpkg", "-s", pkg)
+	if err != nil || res.ExitCode != 0 {
+		return false
+	}
+	return strings.Contains(res.Stdout, "Status: install ok installed")
+}
 
 // Common PHP extensions installed alongside the FPM package.
 var defaultPHPExtensions = []string{

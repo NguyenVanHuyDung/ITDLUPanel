@@ -53,6 +53,13 @@ func (h *SoftwareHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gi
 
 		// Nginx version management
 		sw.GET("/nginx/available-versions", h.getNginxAvailableVersions)
+
+		// PHP management
+		sw.GET("/php/:version/extensions", h.getPHPExtensions)
+		sw.POST("/php/:version/extensions/install", h.installPHPExtension)
+		sw.POST("/php/:version/extensions/uninstall", h.uninstallPHPExtension)
+		sw.GET("/php/:version/config", h.getPHPConfig)
+		sw.PUT("/php/:version/config", h.setPHPConfig)
 	}
 }
 
@@ -381,4 +388,145 @@ func (h *SoftwareHandler) getNginxAvailableVersions(c *gin.Context) {
 		return
 	}
 	response.Success(c, versions)
+}
+
+var validPHPVersions = map[string]bool{
+	"7.4": true,
+	"8.1": true,
+	"8.2": true,
+	"8.3": true,
+}
+
+// getPHPExtensions returns available extensions with install status.
+func (h *SoftwareHandler) getPHPExtensions(c *gin.Context) {
+	version := c.Param("version")
+	if !validPHPVersions[version] {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
+		return
+	}
+
+	inst, ok := h.softwareService.GetInstaller("php")
+	if !ok {
+		response.Error(c, apperrors.New(apperrors.ErrNotFound, "PHP installer not found"))
+		return
+	}
+
+	phpInst := inst.(*installer.PHPInstaller)
+	exts, err := phpInst.GetPHPExtensions(version)
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, exts)
+}
+
+// installPHPExtension installs PHP extensions for a version.
+func (h *SoftwareHandler) installPHPExtension(c *gin.Context) {
+	version := c.Param("version")
+	if !validPHPVersions[version] {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
+		return
+	}
+
+	var req struct {
+		Extensions []string `json:"extensions" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "extensions", Message: "extensions array is required"},
+		})
+		return
+	}
+
+	userID, _ := c.Get("user_id")
+	uid, _ := userID.(int64)
+
+	taskID, err := h.softwareService.InstallExtension("php", version, req.Extensions, uid)
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusAccepted, response.Response{
+		Code:    http.StatusAccepted,
+		Message: "extension install task created",
+		Data: gin.H{
+			"task_id": taskID,
+		},
+	})
+}
+
+// uninstallPHPExtension removes PHP extensions for a version.
+func (h *SoftwareHandler) uninstallPHPExtension(c *gin.Context) {
+	version := c.Param("version")
+	if !validPHPVersions[version] {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
+		return
+	}
+
+	var req struct {
+		Extensions []string `json:"extensions" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "extensions", Message: "extensions array is required"},
+		})
+		return
+	}
+
+	userID, _ := c.Get("user_id")
+	uid, _ := userID.(int64)
+
+	taskID, err := h.softwareService.UninstallExtension("php", version, req.Extensions, uid)
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusAccepted, response.Response{
+		Code:    http.StatusAccepted,
+		Message: "extension uninstall task created",
+		Data: gin.H{
+			"task_id": taskID,
+		},
+	})
+}
+
+// getPHPConfig returns PHP config settings for a version.
+func (h *SoftwareHandler) getPHPConfig(c *gin.Context) {
+	version := c.Param("version")
+	if !validPHPVersions[version] {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
+		return
+	}
+
+	cfg, err := h.softwareService.GetPHPConfig(version)
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, cfg)
+}
+
+// setPHPConfig updates PHP config settings for a version.
+func (h *SoftwareHandler) setPHPConfig(c *gin.Context) {
+	version := c.Param("version")
+	if !validPHPVersions[version] {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
+		return
+	}
+
+	var cfg service.PHPConfig
+	if err := c.ShouldBindJSON(&cfg); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid PHP configuration"},
+		})
+		return
+	}
+
+	if err := h.softwareService.SetPHPConfig(version, cfg); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, gin.H{"message": "PHP configuration updated"})
 }

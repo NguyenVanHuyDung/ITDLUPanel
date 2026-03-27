@@ -434,6 +434,121 @@ func (s *SoftwareService) UninstallExtension(software, version string, extension
 	return s.queue.Enqueue("extension_uninstall", taskName, createdBy)
 }
 
+// GetInstaller returns the installer for the given software name.
+func (s *SoftwareService) GetInstaller(name string) (installer.Installer, bool) {
+	return s.registry.Get(name)
+}
+
+// PHPConfig represents configurable PHP settings.
+type PHPConfig struct {
+	UploadMaxFilesize string `json:"upload_max_filesize"`
+	PostMaxSize       string `json:"post_max_size"`
+	MaxExecutionTime  string `json:"max_execution_time"`
+	MaxInputTime      string `json:"max_input_time"`
+	MemoryLimit       string `json:"memory_limit"`
+	MaxInputVars      string `json:"max_input_vars"`
+}
+
+// GetPHPConfig reads PHP config values from php.ini for the given version.
+func (s *SoftwareService) GetPHPConfig(version string) (*PHPConfig, error) {
+	iniPath := fmt.Sprintf("/etc/php/%s/fpm/php.ini", version)
+	if _, err := os.Stat(iniPath); err != nil {
+		return nil, fmt.Errorf("php.ini not found for PHP %s: %w", version, err)
+	}
+
+	cfg := &PHPConfig{
+		UploadMaxFilesize: readPHPIniValue(iniPath, "upload_max_filesize"),
+		PostMaxSize:       readPHPIniValue(iniPath, "post_max_size"),
+		MaxExecutionTime:  readPHPIniValue(iniPath, "max_execution_time"),
+		MaxInputTime:      readPHPIniValue(iniPath, "max_input_time"),
+		MemoryLimit:       readPHPIniValue(iniPath, "memory_limit"),
+		MaxInputVars:      readPHPIniValue(iniPath, "max_input_vars"),
+	}
+	return cfg, nil
+}
+
+// SetPHPConfig updates PHP config values in php.ini and restarts php-fpm.
+func (s *SoftwareService) SetPHPConfig(version string, cfg PHPConfig) error {
+	iniPaths := []string{
+		fmt.Sprintf("/etc/php/%s/fpm/php.ini", version),
+		fmt.Sprintf("/etc/php/%s/cli/php.ini", version),
+	}
+
+	settings := map[string]string{
+		"upload_max_filesize": cfg.UploadMaxFilesize,
+		"post_max_size":       cfg.PostMaxSize,
+		"max_execution_time":  cfg.MaxExecutionTime,
+		"max_input_time":      cfg.MaxInputTime,
+		"memory_limit":        cfg.MemoryLimit,
+		"max_input_vars":      cfg.MaxInputVars,
+	}
+
+	for _, iniPath := range iniPaths {
+		if _, err := os.Stat(iniPath); err != nil {
+			continue
+		}
+		for key, value := range settings {
+			if value == "" {
+				continue
+			}
+			if err := setPHPIniValue(iniPath, key, value); err != nil {
+				return fmt.Errorf("failed to set %s in %s: %w", key, iniPath, err)
+			}
+		}
+	}
+
+	svcName := fmt.Sprintf("php%s-fpm", version)
+	if _, err := system.ExecWithTimeout(30*time.Second, "systemctl", "restart", svcName); err != nil {
+		logger.Warn().Err(err).Str("service", svcName).Msg("failed to restart php-fpm after config change")
+	}
+
+	return nil
+}
+
+func readPHPIniValue(filePath, key string) string {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, ";") || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, key+" ") || strings.HasPrefix(line, key+"=") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				return strings.TrimSpace(parts[1])
+			}
+		}
+	}
+	return ""
+}
+
+func setPHPIniValue(filePath, key, value string) error {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return err
+	}
+
+	lines := strings.Split(string(data), "\n")
+	found := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, key+" ") || strings.HasPrefix(trimmed, key+"=") ||
+			strings.HasPrefix(trimmed, ";"+key+" ") || strings.HasPrefix(trimmed, ";"+key+"=") ||
+			strings.HasPrefix(trimmed, "; "+key+" ") || strings.HasPrefix(trimmed, "; "+key+"=") {
+			lines[i] = key + " = " + value
+			found = true
+			break
+		}
+	}
+	if !found {
+		lines = append(lines, key+" = "+value)
+	}
+	return os.WriteFile(filePath, []byte(strings.Join(lines, "\n")), 0644)
+}
+
 // parseExtensionTaskName parses "php-8.3:fileinfo,mbstring" into ("php", "fileinfo,mbstring").
 func parseExtensionTaskName(name string) (software, extensions string, err error) {
 	parts := strings.SplitN(name, ":", 2)
