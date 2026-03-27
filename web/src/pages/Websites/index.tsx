@@ -43,9 +43,7 @@ const CONFIG_SECTIONS = [
   { key: 'config', label: 'Config', icon: <CodeOutlined /> },
   { key: 'ssl', label: 'SSL', icon: <LockOutlined /> },
   { key: 'php', label: 'PHP Version', icon: <SettingOutlined /> },
-  { key: 'limit', label: 'Limit Access', icon: <LockOutlined /> },
-  { key: 'deny', label: 'Deny Access', icon: <ExclamationCircleOutlined /> },
-  { key: 'traffic', label: 'Traffic Control', icon: <CloudOutlined /> },
+  { key: 'access', label: 'Limit Access', icon: <LockOutlined /> },
   { key: 'redirect', label: 'Redirect', icon: <LinkOutlined /> },
   { key: 'log', label: 'Response Log', icon: <FileTextOutlined /> },
 ] as const;
@@ -1491,6 +1489,54 @@ function TrafficControlPanel({ siteId }: { siteId: number }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Access Control Panel (combines Limit Access, Deny Access, Traffic Control)
+// ---------------------------------------------------------------------------
+const ACCESS_TABS = [
+  { key: 'limit', label: 'Limit Access' },
+  { key: 'deny', label: 'Deny Access' },
+  { key: 'traffic', label: 'Traffic Control' },
+] as const;
+
+function AccessControlPanel({ siteId }: { siteId: number }) {
+  const { p } = usePalette();
+  const [tab, setTab] = useState<string>('limit');
+
+  return (
+    <div>
+      <div style={{
+        display: 'flex', gap: 0, borderBottom: `1px solid ${p.cardBorder}`,
+        marginBottom: 16,
+      }}>
+        {ACCESS_TABS.map(t => {
+          const active = tab === t.key;
+          return (
+            <div
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              style={{
+                padding: '8px 18px',
+                cursor: 'pointer',
+                fontSize: 13,
+                fontWeight: active ? 600 : 400,
+                color: active ? p.accent : p.textMuted,
+                borderBottom: active ? `2px solid ${p.accent}` : '2px solid transparent',
+                transition: 'all 0.15s',
+                marginBottom: -1,
+              }}
+            >
+              {t.label}
+            </div>
+          );
+        })}
+      </div>
+      {tab === 'limit' && <LimitAccessPanel siteId={siteId} />}
+      {tab === 'deny' && <DenyAccessPanel siteId={siteId} />}
+      {tab === 'traffic' && <TrafficControlPanel siteId={siteId} />}
+    </div>
+  );
+}
+
 function PlaceholderPanel({ title }: { title: string }) {
   const { p } = usePalette();
   return (
@@ -1523,12 +1569,8 @@ function SiteConfigModal({ site, open, onClose, phpVersions }: { site: Site | nu
         return <PHPVersionPanel siteId={site.id} currentVersion={site.php_version} phpVersions={phpVersions} />;
       case 'ssl':
         return <SSLPanel siteId={site.id} siteDomain={site.domain} />;
-      case 'limit':
-        return <LimitAccessPanel siteId={site.id} />;
-      case 'deny':
-        return <DenyAccessPanel siteId={site.id} />;
-      case 'traffic':
-        return <TrafficControlPanel siteId={site.id} />;
+      case 'access':
+        return <AccessControlPanel siteId={site.id} />;
       case 'redirect':
         return <PlaceholderPanel title="Redirect Rules" />;
       case 'log':
