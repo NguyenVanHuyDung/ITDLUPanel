@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 
@@ -123,6 +124,32 @@ func New(configPath string) (*App, error) {
 			Msg("=== Default admin credentials (change immediately!) ===")
 	}
 
+	// 6b. Auto-enable HTTPS with self-signed cert on first boot.
+	if !cfg.Server.SSL && cfg.Server.SSLCert == "" {
+		if service.PanelCertExists() {
+			// Cert files already exist (e.g. from previous run), just enable SSL
+			certPath, keyPath := service.PanelCertPaths()
+			cfg.Server.SSL = true
+			cfg.Server.SSLCert = certPath
+			cfg.Server.SSLKey = keyPath
+			_ = cfg.Save()
+			logger.Info().Msg("Panel SSL auto-enabled (existing certificate found)")
+		} else {
+			// Generate a new self-signed cert
+			sslService := service.NewSSLService(db.GetDB())
+			if err := sslService.GenerateSelfSignedCert(); err != nil {
+				logger.Warn().Err(err).Msg("Failed to auto-generate self-signed certificate, panel will run over HTTP")
+			} else {
+				certPath, keyPath := service.PanelCertPaths()
+				cfg.Server.SSL = true
+				cfg.Server.SSLCert = certPath
+				cfg.Server.SSLKey = keyPath
+				_ = cfg.Save()
+				logger.Info().Msg("Panel SSL auto-enabled with self-signed certificate")
+			}
+		}
+	}
+
 	// 7. Setup HTTP router.
 	router := SetupRouter(db.GetDB(), logDir)
 
@@ -139,12 +166,51 @@ func New(configPath string) (*App, error) {
 // Run starts the HTTP(S) server. It blocks until the server exits.
 func (a *App) Run() error {
 	addr := fmt.Sprintf("%s:%d", a.Config.Server.Host, a.Config.Server.Port)
-	logger.Info().Str("address", addr).Msg("Starting ITDLUPanel server")
+	logger.Info().Str("address", addr).Bool("ssl", a.Config.Server.SSL).Msg("Starting ITDLUPanel server")
 
 	if a.Config.Server.SSL {
+		// Start HTTP→HTTPS redirect listener on a separate port
+		go a.startHTTPRedirect()
 		return a.Router.RunTLS(addr, a.Config.Server.SSLCert, a.Config.Server.SSLKey)
 	}
 	return a.Router.Run(addr)
+}
+
+// startHTTPRedirect runs a lightweight HTTP server that redirects all requests
+// to the HTTPS equivalent. It listens on port (panel_port - 1) e.g. 8887.
+func (a *App) startHTTPRedirect() {
+	httpPort := a.Config.Server.Port - 1
+	if httpPort < 1 {
+		httpPort = 80
+	}
+	httpAddr := fmt.Sprintf("%s:%d", a.Config.Server.Host, httpPort)
+
+	redirectHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		target := fmt.Sprintf("https://%s:%d%s", r.Host, a.Config.Server.Port, r.URL.RequestURI())
+		// Strip the HTTP redirect port from Host if present
+		if host := r.Host; host != "" {
+			// Remove port from host, use panel HTTPS port
+			hostOnly := host
+			if idx := len(host) - 1; idx > 0 {
+				for i := idx; i >= 0; i-- {
+					if host[i] == ':' {
+						hostOnly = host[:i]
+						break
+					}
+					if host[i] == ']' {
+						break // IPv6 without port
+					}
+				}
+			}
+			target = fmt.Sprintf("https://%s:%d%s", hostOnly, a.Config.Server.Port, r.URL.RequestURI())
+		}
+		http.Redirect(w, r, target, http.StatusMovedPermanently)
+	})
+
+	logger.Info().Str("address", httpAddr).Msg("HTTP→HTTPS redirect listener started")
+	if err := http.ListenAndServe(httpAddr, redirectHandler); err != nil {
+		logger.Warn().Err(err).Msg("HTTP redirect listener stopped")
+	}
 }
 
 // Shutdown performs a graceful shutdown of all resources.

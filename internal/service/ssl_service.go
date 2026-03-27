@@ -495,6 +495,7 @@ func (s *SSLService) EnablePanelSSL(cert, key []byte) error {
 }
 
 // GenerateSelfSignedCert generates a self-signed certificate for the panel.
+// It includes the system hostname, localhost, and all detected network IPs as SANs.
 func (s *SSLService) GenerateSelfSignedCert() error {
 	if err := os.MkdirAll(panelCertDir, 0700); err != nil {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to create panel SSL directory")
@@ -515,6 +516,32 @@ func (s *SSLService) GenerateSelfSignedCert() error {
 		hostname = "localhost"
 	}
 
+	// Collect all server IPs for SANs so the cert works from remote access
+	ips := []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback}
+	if ifaces, err := net.Interfaces(); err == nil {
+		for _, iface := range ifaces {
+			if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+				continue
+			}
+			addrs, err := iface.Addrs()
+			if err != nil {
+				continue
+			}
+			for _, addr := range addrs {
+				var ip net.IP
+				switch v := addr.(type) {
+				case *net.IPNet:
+					ip = v.IP
+				case *net.IPAddr:
+					ip = v.IP
+				}
+				if ip != nil && !ip.IsLoopback() {
+					ips = append(ips, ip)
+				}
+			}
+		}
+	}
+
 	template := &x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
@@ -527,7 +554,7 @@ func (s *SSLService) GenerateSelfSignedCert() error {
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
 		DNSNames:              []string{hostname, "localhost"},
-		IPAddresses:           []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback},
+		IPAddresses:           ips,
 	}
 
 	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
@@ -554,6 +581,23 @@ func (s *SSLService) GenerateSelfSignedCert() error {
 
 	logger.Info().Msg("self-signed panel certificate generated")
 	return nil
+}
+
+// PanelCertPaths returns the paths to the panel SSL certificate and key.
+func PanelCertPaths() (certPath, keyPath string) {
+	return filepath.Join(panelCertDir, certFileName), filepath.Join(panelCertDir, keyFileName)
+}
+
+// PanelCertExists returns true if the panel SSL certificate files exist.
+func PanelCertExists() bool {
+	certPath, keyPath := PanelCertPaths()
+	if _, err := os.Stat(certPath); err != nil {
+		return false
+	}
+	if _, err := os.Stat(keyPath); err != nil {
+		return false
+	}
+	return true
 }
 
 // GetPanelSSLInfo returns the panel's current SSL certificate info.
