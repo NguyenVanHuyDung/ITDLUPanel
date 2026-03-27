@@ -1501,9 +1501,71 @@ func (s *SiteService) replaceNginxBlock(confPath, startMarker, endMarker string,
 	return os.WriteFile(confPath, []byte(vhostJoin(newLines)), 0644)
 }
 
-// ---------------------------------------------------------------------------
-// Feature 1: Sub Directory Binding
-// ---------------------------------------------------------------------------
+// insertNginxBlockAll inserts block markers after EVERY server-level "root " directive.
+// It tracks brace depth to skip root directives inside location/if blocks.
+func (s *SiteService) insertNginxBlockAll(confPath, startMarker, endMarker string, blockLines []string) error {
+	content, err := os.ReadFile(confPath)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to read vhost config")
+	}
+
+	lines := vhostLines(string(content))
+	var newLines []string
+	depth := 0 // brace nesting: 1 = inside server{}, 2+ = inside location/if{}
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Track brace depth
+		if strings.Contains(trimmed, "{") && !strings.HasPrefix(trimmed, "#") {
+			depth++
+		}
+
+		newLines = append(newLines, line)
+
+		// Only insert after root at server-block level (depth == 1)
+		if depth == 1 && strings.HasPrefix(trimmed, "root ") && !strings.Contains(line, "#") {
+			newLines = append(newLines, "    "+startMarker)
+			for _, bl := range blockLines {
+				newLines = append(newLines, "    "+bl)
+			}
+			newLines = append(newLines, "    "+endMarker)
+		}
+
+		if strings.Contains(trimmed, "}") && !strings.HasPrefix(trimmed, "#") {
+			depth--
+		}
+	}
+
+	return os.WriteFile(confPath, []byte(vhostJoin(newLines)), 0644)
+}
+
+// removeAllNginxBlocks removes ALL occurrences of a marker block from the config file.
+func (s *SiteService) removeAllNginxBlocks(confPath, startMarker, endMarker string) error {
+	content, err := os.ReadFile(confPath)
+	if err != nil {
+		return nil
+	}
+
+	lines := vhostLines(string(content))
+	var newLines []string
+	inBlock := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == startMarker {
+			inBlock = true
+			continue
+		}
+		if trimmed == endMarker {
+			inBlock = false
+			continue
+		}
+		if inBlock {
+			continue
+		}
+		newLines = append(newLines, line)
+	}
+
+	return os.WriteFile(confPath, []byte(vhostJoin(newLines)), 0644)
+}
 
 // SubdirBinding represents a domain-to-subdirectory binding.
 type SubdirBinding struct {
@@ -2906,6 +2968,9 @@ func (s *SiteService) SetMaintenanceConfig(id int64, config MaintenanceConfig) e
 	gen := generatorFor(site.Webserver)
 	confPath := gen.GetConfigPath(site.Domain)
 
+	// First, remove all existing maintenance blocks
+	_ = s.removeAllNginxBlocks(confPath, "#MAINTENANCE_MODE_START", "#MAINTENANCE_MODE_END")
+
 	if config.Enabled {
 		pagePath := filepath.Join(maintenancePageDir(), fmt.Sprintf("%d_maintenance.html", id))
 		var blockLines []string
@@ -2918,11 +2983,8 @@ func (s *SiteService) SetMaintenanceConfig(id int64, config MaintenanceConfig) e
 		blockLines = append(blockLines, "    return 503;")
 		blockLines = append(blockLines, "}")
 
-		if err := s.insertNginxBlock(confPath, "#MAINTENANCE_MODE_START", "#MAINTENANCE_MODE_END", blockLines); err != nil {
-			return err
-		}
-	} else {
-		if err := s.removeNginxBlock(confPath, "#MAINTENANCE_MODE_START", "#MAINTENANCE_MODE_END"); err != nil {
+		// Insert into ALL server blocks (both HTTP and HTTPS)
+		if err := s.insertNginxBlockAll(confPath, "#MAINTENANCE_MODE_START", "#MAINTENANCE_MODE_END", blockLines); err != nil {
 			return err
 		}
 	}
