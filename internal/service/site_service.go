@@ -9,8 +9,10 @@ import (
 	"encoding/pem"
 	"fmt"
 	"html/template"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -19,6 +21,59 @@ import (
 	"github.com/ITDLUPanel/panel/internal/service/vhost"
 	"github.com/ITDLUPanel/panel/internal/system"
 )
+
+// ---------------------------------------------------------------------------
+// Nginx input sanitisation helpers
+// ---------------------------------------------------------------------------
+
+var (
+	validNginxPathRe   = regexp.MustCompile(`^/[a-zA-Z0-9/_\-.]*$`)
+	validDomainRe      = regexp.MustCompile(`^[a-zA-Z0-9*][a-zA-Z0-9.\-]*$`)
+	validSuffixCharRe  = regexp.MustCompile(`[^a-zA-Z0-9|]`)
+	validRefererCharRe = regexp.MustCompile(`[^a-zA-Z0-9.*\-]`)
+)
+
+// sanitizeNginxValue strips characters that could break or inject into nginx
+// config values: newlines, semicolons, backticks, and dollar signs.
+func sanitizeNginxValue(s string) string {
+	r := strings.NewReplacer("\n", "", "\r", "", ";", "", "`", "", "$", "")
+	return r.Replace(s)
+}
+
+// validateNginxPath checks that a path is safe for use in an nginx location
+// directive. It must start with "/" and contain only safe characters.
+func validateNginxPath(p string) bool {
+	return validNginxPathRe.MatchString(p)
+}
+
+// validateURL checks that a URL is well-formed with an http(s) scheme and a
+// non-empty host. Newlines are rejected in any component.
+func validateURL(raw string) bool {
+	if strings.ContainsAny(raw, "\n\r") {
+		return false
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	return u.Host != ""
+}
+
+// sanitizeNginxRegex strips characters that could break nginx config blocks
+// from a regex pattern used in rewrite directives.
+func sanitizeNginxRegex(s string) string {
+	r := strings.NewReplacer("\n", "", "\r", "", ";", "", "{", "", "}", "")
+	return r.Replace(s)
+}
+
+// escapeNginxSingleQuote escapes single quotes for use inside nginx
+// single-quoted strings.
+func escapeNginxSingleQuote(s string) string {
+	return strings.ReplaceAll(s, "'", `'\''`)
+}
 
 // ---------------------------------------------------------------------------
 // Request / Response types
@@ -2318,6 +2373,14 @@ func (s *SiteService) AddReverseProxyRule(id int64, rule ReverseProxyRule) error
 		return apperrors.New(apperrors.ErrValidation, "name, directory, and target_url are required")
 	}
 
+	// Security: validate inputs before writing to nginx config
+	if !validateNginxPath(rule.Directory) {
+		return apperrors.New(apperrors.ErrValidation, "directory contains invalid characters (only /a-zA-Z0-9_-. allowed)")
+	}
+	if !validateURL(rule.TargetURL) {
+		return apperrors.New(apperrors.ErrValidation, "target_url must be a valid http:// or https:// URL")
+	}
+
 	var rules []ReverseProxyRule
 	_ = readJSONFile(reverseProxyPath(id), &rules)
 
@@ -2359,6 +2422,14 @@ func (s *SiteService) UpdateReverseProxyRule(id int64, index int, rule ReversePr
 
 	if index < 0 || index >= len(rules) {
 		return apperrors.New(apperrors.ErrValidation, "invalid rule index")
+	}
+
+	// Security: validate inputs before writing to nginx config
+	if rule.Directory != "" && !validateNginxPath(rule.Directory) {
+		return apperrors.New(apperrors.ErrValidation, "directory contains invalid characters")
+	}
+	if rule.TargetURL != "" && !validateURL(rule.TargetURL) {
+		return apperrors.New(apperrors.ErrValidation, "target_url must be a valid http:// or https:// URL")
 	}
 
 	rules[index] = rule
@@ -2432,16 +2503,27 @@ func (s *SiteService) rebuildReverseProxyNginx(site *Site, rules []ReverseProxyR
 		if dir == "" {
 			dir = "/"
 		}
+		if !validateNginxPath(dir) {
+			logger.Warn().Str("directory", dir).Msg("skipping reverse proxy rule with invalid directory path")
+			continue
+		}
+		if !validateURL(r.TargetURL) {
+			logger.Warn().Str("target_url", r.TargetURL).Msg("skipping reverse proxy rule with invalid target URL")
+			continue
+		}
+
 		blockLines = append(blockLines, fmt.Sprintf("location %s {", dir))
 
 		// URL rewrite rules (before proxy_pass)
 		for _, rw := range r.URLRewrite {
 			if rw.Pattern != "" && rw.Replacement != "" {
-				blockLines = append(blockLines, fmt.Sprintf("    rewrite %s %s break;", rw.Pattern, rw.Replacement))
+				pattern := sanitizeNginxRegex(rw.Pattern)
+				replacement := sanitizeNginxRegex(rw.Replacement)
+				blockLines = append(blockLines, fmt.Sprintf("    rewrite %s %s break;", pattern, replacement))
 			}
 		}
 
-		blockLines = append(blockLines, fmt.Sprintf("    proxy_pass %s;", r.TargetURL))
+		blockLines = append(blockLines, fmt.Sprintf("    proxy_pass %s;", sanitizeNginxValue(r.TargetURL)))
 		blockLines = append(blockLines, "    proxy_set_header X-Real-IP $remote_addr;")
 		blockLines = append(blockLines, "    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;")
 		blockLines = append(blockLines, "    proxy_set_header X-Forwarded-Proto $scheme;")
@@ -2467,7 +2549,9 @@ func (s *SiteService) rebuildReverseProxyNginx(site *Site, rules []ReverseProxyR
 			blockLines = append(blockLines, "    sub_filter_once off;")
 			for _, cr := range r.ContentReplace {
 				if cr.Search != "" {
-					blockLines = append(blockLines, fmt.Sprintf("    sub_filter '%s' '%s';", cr.Search, cr.Replace))
+					search := escapeNginxSingleQuote(cr.Search)
+					replace := escapeNginxSingleQuote(cr.Replace)
+					blockLines = append(blockLines, fmt.Sprintf("    sub_filter '%s' '%s';", search, replace))
 				}
 			}
 		}
@@ -2527,6 +2611,17 @@ func (s *SiteService) AddRedirectRule(id int64, rule RedirectRule) error {
 
 	if rule.Mode != 301 && rule.Mode != 302 {
 		return apperrors.New(apperrors.ErrValidation, "mode must be 301 or 302")
+	}
+
+	// Security: validate inputs before writing to nginx config
+	if !validateURL(rule.TargetURL) {
+		return apperrors.New(apperrors.ErrValidation, "target_url must be a valid http:// or https:// URL")
+	}
+	if rule.Type == "path" && !validateNginxPath(rule.Source) {
+		return apperrors.New(apperrors.ErrValidation, "source path contains invalid characters")
+	}
+	if rule.Type == "domain" && !validDomainRe.MatchString(rule.Source) {
+		return apperrors.New(apperrors.ErrValidation, "source domain contains invalid characters")
 	}
 
 	var rules []RedirectRule
@@ -2651,34 +2746,52 @@ func (s *SiteService) rebuildRedirectNginx(site *Site, rules []RedirectRule) err
 
 	var blockLines []string
 	for _, r := range enabledRules {
+		// Validate redirect mode — only 301 or 302 allowed
+		if r.Mode != 301 && r.Mode != 302 {
+			logger.Warn().Int("mode", r.Mode).Msg("skipping redirect rule with invalid mode")
+			continue
+		}
+		if !validateURL(r.TargetURL) {
+			logger.Warn().Str("target_url", r.TargetURL).Msg("skipping redirect rule with invalid target URL")
+			continue
+		}
+
 		switch r.Type {
 		case "domain":
+			if !validDomainRe.MatchString(r.Source) {
+				logger.Warn().Str("source", r.Source).Msg("skipping redirect rule with invalid domain source")
+				continue
+			}
 			// Domain redirect: if the request host matches, redirect
 			if r.KeepURI {
 				blockLines = append(blockLines,
 					fmt.Sprintf("if ($host = %s) {", r.Source),
-					fmt.Sprintf("    return %d %s$request_uri;", r.Mode, strings.TrimRight(r.TargetURL, "/")),
+					fmt.Sprintf("    return %d %s$request_uri;", r.Mode, strings.TrimRight(sanitizeNginxValue(r.TargetURL), "/")),
 					"}",
 				)
 			} else {
 				blockLines = append(blockLines,
 					fmt.Sprintf("if ($host = %s) {", r.Source),
-					fmt.Sprintf("    return %d %s;", r.Mode, r.TargetURL),
+					fmt.Sprintf("    return %d %s;", r.Mode, sanitizeNginxValue(r.TargetURL)),
 					"}",
 				)
 			}
 		case "path":
+			if !validateNginxPath(r.Source) {
+				logger.Warn().Str("source", r.Source).Msg("skipping redirect rule with invalid path source")
+				continue
+			}
 			// Path redirect
 			if r.KeepURI {
 				blockLines = append(blockLines,
 					fmt.Sprintf("location ^~ %s {", r.Source),
-					fmt.Sprintf("    return %d %s$request_uri;", r.Mode, strings.TrimRight(r.TargetURL, "/")),
+					fmt.Sprintf("    return %d %s$request_uri;", r.Mode, strings.TrimRight(sanitizeNginxValue(r.TargetURL), "/")),
 					"}",
 				)
 			} else {
 				blockLines = append(blockLines,
 					fmt.Sprintf("location ^~ %s {", r.Source),
-					fmt.Sprintf("    return %d %s;", r.Mode, r.TargetURL),
+					fmt.Sprintf("    return %d %s;", r.Mode, sanitizeNginxValue(r.TargetURL)),
 					"}",
 				)
 			}
@@ -2752,6 +2865,7 @@ func (s *SiteService) buildHotlinkNginx(site *Site, config HotlinkConfig) error 
 	if suffix == "" {
 		suffix = "jpg|jpeg|png|gif|bmp|webp|svg"
 	}
+	suffix = validSuffixCharRe.ReplaceAllString(suffix, "")
 
 	var referers []string
 	if config.AllowEmpty {
@@ -2760,6 +2874,7 @@ func (s *SiteService) buildHotlinkNginx(site *Site, config HotlinkConfig) error 
 	seen := make(map[string]bool)
 	addReferer := func(r string) {
 		r = strings.TrimSpace(r)
+		r = validRefererCharRe.ReplaceAllString(r, "")
 		if r != "" && !seen[r] {
 			seen[r] = true
 			referers = append(referers, r)
@@ -2776,13 +2891,18 @@ func (s *SiteService) buildHotlinkNginx(site *Site, config HotlinkConfig) error 
 	blockLines = append(blockLines, fmt.Sprintf("    valid_referers %s;", strings.Join(referers, " ")))
 	blockLines = append(blockLines, "    if ($invalid_referer) {")
 
-	response := strings.TrimSpace(config.Response)
-	if response == "" || response == "403" {
+	resp := strings.TrimSpace(config.Response)
+	if resp == "" || resp == "403" {
 		blockLines = append(blockLines, "        return 403;")
-	} else if response == "404" {
+	} else if resp == "404" {
 		blockLines = append(blockLines, "        return 404;")
 	} else {
-		blockLines = append(blockLines, fmt.Sprintf("        return 301 %s;", response))
+		if !validateURL(resp) {
+			logger.Warn().Str("response", resp).Msg("invalid hotlink response URL, falling back to 403")
+			blockLines = append(blockLines, "        return 403;")
+		} else {
+			blockLines = append(blockLines, fmt.Sprintf("        return 301 %s;", sanitizeNginxValue(resp)))
+		}
 	}
 
 	blockLines = append(blockLines, "    }")

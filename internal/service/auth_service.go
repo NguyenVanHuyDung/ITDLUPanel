@@ -2,6 +2,8 @@ package service
 
 import (
 	"database/sql"
+	"sync"
+	"time"
 
 	"github.com/ITDLUPanel/panel/internal/config"
 	"github.com/ITDLUPanel/panel/internal/database/models"
@@ -9,6 +11,38 @@ import (
 	apperrors "github.com/ITDLUPanel/panel/internal/pkg/errors"
 	"github.com/ITDLUPanel/panel/internal/pkg/logger"
 )
+
+// ---------------------------------------------------------------------------
+// Login brute-force protection
+// ---------------------------------------------------------------------------
+
+var (
+	loginAttempts   = make(map[string]*loginTracker)
+	loginAttemptsMu sync.Mutex
+)
+
+type loginTracker struct {
+	failures    int
+	lockedUntil time.Time
+	lastAttempt time.Time
+}
+
+func init() {
+	// Cleanup goroutine: remove stale entries every 10 minutes.
+	go func() {
+		for {
+			time.Sleep(10 * time.Minute)
+			loginAttemptsMu.Lock()
+			cutoff := time.Now().Add(-30 * time.Minute)
+			for k, v := range loginAttempts {
+				if v.lastAttempt.Before(cutoff) {
+					delete(loginAttempts, k)
+				}
+			}
+			loginAttemptsMu.Unlock()
+		}
+	}()
+}
 
 // AuthService handles authentication operations.
 type AuthService struct {
@@ -32,11 +66,21 @@ func (s *AuthService) GetDB() *sql.DB {
 // Login verifies credentials and returns tokens.
 // Returns: accessToken, refreshToken, user, error.
 func (s *AuthService) Login(username, password string) (string, string, *models.User, error) {
+	// Brute-force lockout check
+	loginAttemptsMu.Lock()
+	tracker := loginAttempts[username]
+	if tracker != nil && time.Now().Before(tracker.lockedUntil) {
+		loginAttemptsMu.Unlock()
+		return "", "", nil, apperrors.New(apperrors.ErrUnauthorized, "account temporarily locked, try again later")
+	}
+	loginAttemptsMu.Unlock()
+
 	user, err := s.userRepo.GetByUsername(username)
 	if err != nil {
 		return "", "", nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to query user")
 	}
 	if user == nil {
+		s.recordLoginFailure(username)
 		return "", "", nil, apperrors.New(apperrors.ErrUnauthorized, "invalid username or password")
 	}
 
@@ -45,8 +89,14 @@ func (s *AuthService) Login(username, password string) (string, string, *models.
 	}
 
 	if !crypto.CheckPassword(password, user.Password) {
+		s.recordLoginFailure(username)
 		return "", "", nil, apperrors.New(apperrors.ErrUnauthorized, "invalid username or password")
 	}
+
+	// Successful login — reset failure counter
+	loginAttemptsMu.Lock()
+	delete(loginAttempts, username)
+	loginAttemptsMu.Unlock()
 
 	accessToken, err := GenerateAccessToken(user)
 	if err != nil {
@@ -59,6 +109,27 @@ func (s *AuthService) Login(username, password string) (string, string, *models.
 	}
 
 	return accessToken, refreshToken, user, nil
+}
+
+func (s *AuthService) recordLoginFailure(username string) {
+	loginAttemptsMu.Lock()
+	defer loginAttemptsMu.Unlock()
+
+	t := loginAttempts[username]
+	if t == nil {
+		t = &loginTracker{}
+		loginAttempts[username] = t
+	}
+	t.failures++
+	t.lastAttempt = time.Now()
+
+	if t.failures >= 10 {
+		t.lockedUntil = time.Now().Add(15 * time.Minute)
+		logger.Warn().Str("username", username).Msg("login locked for 15 minutes after 10 failures")
+	} else if t.failures >= 5 {
+		t.lockedUntil = time.Now().Add(30 * time.Second)
+		logger.Warn().Str("username", username).Msg("login locked for 30 seconds after 5 failures")
+	}
 }
 
 // RefreshToken validates a refresh token and issues a new access token.

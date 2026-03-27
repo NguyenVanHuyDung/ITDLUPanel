@@ -34,6 +34,7 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 	engine.Use(
 		RecoveryMiddleware(),
 		LoggerMiddleware(),
+		SecurityHeadersMiddleware(),
 		CORSMiddleware(),
 		CompressionMiddleware(),
 		LanguageMiddleware(),

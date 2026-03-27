@@ -347,7 +347,9 @@ func (h *AuthHandler) setRefreshTokenCookie(c *gin.Context, token string) {
 	if ttl == 0 {
 		ttl = 604800
 	}
-	c.SetCookie("refresh_token", token, ttl, "/", "", false, true)
+	secure := c.Request.TLS != nil
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie("refresh_token", token, ttl, "/", "", secure, true)
 }
 
 func (h *AuthHandler) updateLastLogin(c *gin.Context, userID int64) error {

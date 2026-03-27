@@ -161,6 +161,21 @@ func (h *FileHandler) upload(c *gin.Context) {
 		return
 	}
 
+	// Security: check for path traversal BEFORE Clean resolves ".."
+	if strings.Contains(destDir, "..") {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "path", Message: "path traversal is not allowed"},
+		})
+		return
+	}
+	destDir = filepath.Clean(destDir)
+	if !filepath.IsAbs(destDir) {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "path", Message: "path must be absolute"},
+		})
+		return
+	}
+
 	form, err := c.MultipartForm()
 	if err != nil {
 		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid multipart form"))

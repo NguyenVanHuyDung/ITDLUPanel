@@ -69,26 +69,40 @@ func LoggerMiddleware() gin.HandlerFunc {
 	}
 }
 
+// SecurityHeadersMiddleware adds common security headers to every response.
+func SecurityHeadersMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("X-Frame-Options", "DENY")
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("X-XSS-Protection", "1; mode=block")
+		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+		if c.Request.TLS != nil {
+			c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
+		c.Next()
+	}
+}
+
 // CORSMiddleware handles Cross-Origin Resource Sharing.
-// In release mode (GIN_MODE=release) only same-origin requests are served;
-// in all other modes every origin is allowed for development convenience.
+// In release mode the request origin is reflected so credentials work;
+// in non-release modes a wildcard origin is used WITHOUT credentials
+// (per the CORS spec, "*" and credentials are incompatible).
 func CORSMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		origin := "*"
 		if gin.Mode() == gin.ReleaseMode {
-			// In production, reflect the request origin so credentials work
-			// while still allowing legitimate cross-origin callers.
 			reqOrigin := c.GetHeader("Origin")
 			if reqOrigin != "" {
-				origin = reqOrigin
+				c.Header("Access-Control-Allow-Origin", reqOrigin)
+				c.Header("Access-Control-Allow-Credentials", "true")
 			}
+		} else {
+			c.Header("Access-Control-Allow-Origin", "*")
+			// Do NOT set Allow-Credentials with wildcard origin (CORS spec violation)
 		}
 
-		c.Header("Access-Control-Allow-Origin", origin)
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-CSRF-Token, Accept-Language")
 		c.Header("Access-Control-Max-Age", "86400")
-		c.Header("Access-Control-Allow-Credentials", "true")
 
 		if c.Request.Method == http.MethodOptions {
 			c.AbortWithStatus(http.StatusNoContent)

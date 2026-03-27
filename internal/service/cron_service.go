@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -372,8 +373,16 @@ func (s *CronService) buildCommand(cronType, command string, id int64) string {
 	var cmd string
 	switch cronType {
 	case "url":
-		cmd = fmt.Sprintf("curl -fsS %s", command)
+		u, err := url.Parse(command)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			logger.Warn().Str("url", command).Msg("invalid URL for cron job, skipping")
+			cmd = "echo 'invalid cron URL'"
+		} else {
+			escaped := strings.ReplaceAll(command, "'", `'\''`)
+			cmd = fmt.Sprintf("curl -fsS '%s'", escaped)
+		}
 	default:
+		logger.Warn().Int64("id", id).Msg("shell-type cron job — ensure the command is trusted")
 		cmd = command
 	}
 
