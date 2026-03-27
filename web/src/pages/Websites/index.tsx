@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Table, Button, Modal, Form, Input, Select, message, Popconfirm, Switch, Tooltip, Spin } from 'antd';
+import { Table, Button, Modal, Form, Input, Select, message, Popconfirm, Switch, Tooltip, Spin, InputNumber } from 'antd';
 import {
   PlusOutlined, SettingOutlined, SafetyCertificateOutlined,
   SearchOutlined, ReloadOutlined, GlobalOutlined, CodeOutlined,
@@ -43,6 +43,9 @@ const CONFIG_SECTIONS = [
   { key: 'config', label: 'Config', icon: <CodeOutlined /> },
   { key: 'ssl', label: 'SSL', icon: <LockOutlined /> },
   { key: 'php', label: 'PHP Version', icon: <SettingOutlined /> },
+  { key: 'limit', label: 'Limit Access', icon: <LockOutlined /> },
+  { key: 'deny', label: 'Deny Access', icon: <ExclamationCircleOutlined /> },
+  { key: 'traffic', label: 'Traffic Control', icon: <CloudOutlined /> },
   { key: 'redirect', label: 'Redirect', icon: <LinkOutlined /> },
   { key: 'log', label: 'Response Log', icon: <FileTextOutlined /> },
 ] as const;
@@ -305,16 +308,21 @@ function DirectoryPanel({ site }: { site: Site }) {
   const [passwordPass, setPasswordPass] = useState('');
   const [savingPassword, setSavingPassword] = useState(false);
   const [existingUser, setExistingUser] = useState('');
+  const [bindings, setBindings] = useState<{ domain: string; subdir: string }[]>([]);
+  const [newBindDomain, setNewBindDomain] = useState('');
+  const [newBindSubdir, setNewBindSubdir] = useState('');
+  const [addingBinding, setAddingBinding] = useState(false);
 
   // Fetch all directory settings on mount
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const [subR, basedirR, logR, passR] = await Promise.allSettled([
+        const [subR, basedirR, logR, passR, bindR] = await Promise.allSettled([
           api.get<ApiResponse<string[]>>(`/sites/${site.id}/subdirs`),
           api.get<ApiResponse<{ enabled: boolean; value: string }>>(`/sites/${site.id}/open-basedir`),
           api.get<ApiResponse<{ enabled: boolean }>>(`/sites/${site.id}/access-log`),
           api.get<ApiResponse<{ enabled: boolean; username: string }>>(`/sites/${site.id}/password-access`),
+          api.get<ApiResponse<{ domain: string; subdir: string }[]>>(`/sites/${site.id}/subdir-bindings`),
         ]);
         if (subR.status === 'fulfilled') setSubdirs(subR.value.data.data ?? []);
         if (basedirR.status === 'fulfilled') setOpenBasedir(basedirR.value.data.data?.enabled ?? false);
@@ -327,6 +335,7 @@ function DirectoryPanel({ site }: { site: Site }) {
             setPasswordUser(d.username);
           }
         }
+        if (bindR.status === 'fulfilled') setBindings(bindR.value.data.data ?? []);
       } catch { /* ignore */ }
     };
     fetchSettings();
@@ -395,6 +404,31 @@ function DirectoryPanel({ site }: { site: Site }) {
       const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
       message.error(msg || 'Failed to update password access');
     } finally { setSavingPassword(false); }
+  };
+
+  const handleAddBinding = async () => {
+    if (!newBindDomain.trim() || !newBindSubdir.trim()) return;
+    setAddingBinding(true);
+    try {
+      await api.post(`/sites/${site.id}/subdir-bindings`, { domain: newBindDomain.trim(), subdir: newBindSubdir.trim() });
+      message.success('Subdirectory binding added');
+      setNewBindDomain('');
+      setNewBindSubdir('');
+      const { data } = await api.get<ApiResponse<{ domain: string; subdir: string }[]>>(`/sites/${site.id}/subdir-bindings`);
+      setBindings(data.data ?? []);
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(msg || 'Failed to add binding');
+    } finally { setAddingBinding(false); }
+  };
+
+  const handleRemoveBinding = async (index: number) => {
+    try {
+      await api.delete(`/sites/${site.id}/subdir-bindings/${index}`);
+      message.success('Binding removed');
+      const { data } = await api.get<ApiResponse<{ domain: string; subdir: string }[]>>(`/sites/${site.id}/subdir-bindings`);
+      setBindings(data.data ?? []);
+    } catch { message.error('Failed to remove binding'); }
   };
 
   const sectionStyle: React.CSSProperties = {
@@ -556,6 +590,65 @@ function DirectoryPanel({ site }: { site: Site }) {
           <button onClick={handleSavePassword} disabled={savingPassword} style={{ ...btnStyle(savingPassword), background: p.red }}>
             {savingPassword ? 'Removing...' : 'Remove Password Protection'}
           </button>
+        )}
+      </div>
+
+      {/* ── 6. Sub Directory Binding ── */}
+      <div style={sectionStyle}>
+        <div style={labelStyle}>
+          <LinkOutlined style={{ color: p.purple || '#8B5CF6' }} />
+          Sub Directory Binding
+        </div>
+        <div style={hintStyle}>
+          Bind a domain name to a subdirectory of this site. The domain will serve content from the subdirectory.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, marginBottom: 12 }}>
+          <Input
+            placeholder="sub.example.com"
+            value={newBindDomain}
+            onChange={e => setNewBindDomain(e.target.value)}
+            style={{ fontSize: 12 }}
+          />
+          <Select
+            placeholder="Select subdirectory"
+            value={newBindSubdir || undefined}
+            onChange={v => setNewBindSubdir(v || '')}
+            style={{ fontSize: 12 }}
+            showSearch
+            options={subdirs.map(d => ({ value: d, label: d }))}
+          />
+          <button onClick={handleAddBinding} disabled={addingBinding} style={btnStyle(addingBinding)}>
+            {addingBinding ? '...' : '+ Add'}
+          </button>
+        </div>
+        {bindings.length > 0 && (
+          <div style={{ border: `1px solid ${p.cardBorder}`, borderRadius: 6, overflow: 'hidden' }}>
+            {bindings.map((b, i) => (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '8px 12px', fontSize: 12,
+                borderBottom: i < bindings.length - 1 ? `1px solid ${p.cardBorder}` : 'none',
+                background: i % 2 === 0 ? 'transparent' : p.rowAlt,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <GlobalOutlined style={{ color: p.accent, fontSize: 11 }} />
+                  <span style={{ color: p.text, fontWeight: 500 }}>{b.domain}</span>
+                  <span style={{ color: p.textMuted }}>→</span>
+                  <code style={{ background: p.codeBg, padding: '1px 6px', borderRadius: 3, fontSize: 11, color: p.textMuted }}>/{b.subdir}</code>
+                </div>
+                <Popconfirm title="Remove this binding?" onConfirm={() => handleRemoveBinding(i)} okButtonProps={{ danger: true }}>
+                  <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: p.red, fontSize: 11, padding: '2px 6px' }}>
+                    <DeleteOutlined /> Remove
+                  </button>
+                </Popconfirm>
+              </div>
+            ))}
+          </div>
+        )}
+        {bindings.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '12px 0', fontSize: 12, color: p.textMuted }}>
+            No subdirectory bindings configured
+          </div>
         )}
       </div>
     </div>
@@ -1030,6 +1123,374 @@ function ResponseLogPanel({ site }: { site: Site }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Limit Access panel
+// ---------------------------------------------------------------------------
+function LimitAccessPanel({ siteId }: { siteId: number }) {
+  const { p } = usePalette();
+  const [rules, setRules] = useState<{ name: string; path: string; username: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [name, setName] = useState('');
+  const [path, setPath] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [adding, setAdding] = useState(false);
+
+  const fetchRules = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get<ApiResponse<{ name: string; path: string; username: string }[]>>(`/sites/${siteId}/limit-access`);
+      setRules(data.data ?? []);
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
+  }, [siteId]);
+
+  useEffect(() => { fetchRules(); }, [fetchRules]);
+
+  const handleAdd = async () => {
+    if (!name.trim() || !path.trim() || !username.trim() || !password.trim()) {
+      message.warning('All fields are required');
+      return;
+    }
+    setAdding(true);
+    try {
+      await api.post(`/sites/${siteId}/limit-access`, { name: name.trim(), path: path.trim(), username: username.trim(), password: password.trim() });
+      message.success('Limit access rule added');
+      setName(''); setPath(''); setUsername(''); setPassword('');
+      fetchRules();
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(msg || 'Failed to add rule');
+    } finally { setAdding(false); }
+  };
+
+  const handleRemove = async (index: number) => {
+    try {
+      await api.delete(`/sites/${siteId}/limit-access/${index}`);
+      message.success('Rule removed');
+      fetchRules();
+    } catch { message.error('Failed to remove rule'); }
+  };
+
+  const sectionStyle: React.CSSProperties = { padding: '14px 16px', borderRadius: 8, border: `1px solid ${p.cardBorder}`, marginBottom: 14, background: p.card };
+  const labelStyle: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: p.text, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 };
+  const hintStyle: React.CSSProperties = { fontSize: 11, color: p.textMuted, marginBottom: 10 };
+  const btnStyle = (l: boolean): React.CSSProperties => ({ padding: '5px 16px', borderRadius: 6, border: 'none', background: p.accent, color: '#fff', fontSize: 12, fontWeight: 600, cursor: l ? 'wait' : 'pointer', opacity: l ? 0.7 : 1, transition: 'all 0.15s' });
+
+  return (
+    <div>
+      <div style={sectionStyle}>
+        <div style={labelStyle}>
+          <LockOutlined style={{ color: p.amber || '#F59E0B' }} />
+          Limit Access Rules
+        </div>
+        <div style={hintStyle}>
+          Protect specific paths with HTTP Basic Authentication. Each rule creates a password-protected location.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+          <Input placeholder="Rule name (e.g. admin_area)" value={name} onChange={e => setName(e.target.value)} style={{ fontSize: 12 }} />
+          <Input placeholder="Path (e.g. /admin)" value={path} onChange={e => setPath(e.target.value)} style={{ fontSize: 12 }} />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, marginBottom: 12 }}>
+          <Input placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} style={{ fontSize: 12 }} />
+          <Input.Password placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} style={{ fontSize: 12 }} />
+          <button onClick={handleAdd} disabled={adding} style={btnStyle(adding)}>
+            {adding ? '...' : '+ Add Rule'}
+          </button>
+        </div>
+      </div>
+
+      {loading ? <Spin size="small" /> : rules.length > 0 ? (
+        <div style={{ border: `1px solid ${p.cardBorder}`, borderRadius: 6, overflow: 'hidden' }}>
+          {rules.map((r, i) => (
+            <div key={i} style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '10px 14px', fontSize: 12,
+              borderBottom: i < rules.length - 1 ? `1px solid ${p.cardBorder}` : 'none',
+              background: i % 2 === 0 ? 'transparent' : p.rowAlt,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <LockOutlined style={{ color: p.amber || '#F59E0B', fontSize: 11 }} />
+                <span style={{ fontWeight: 600, color: p.text }}>{r.name}</span>
+                <code style={{ background: p.codeBg, padding: '1px 6px', borderRadius: 3, fontSize: 11, color: p.textMuted }}>{r.path}</code>
+                <span style={{ color: p.textMuted }}>user: <b>{r.username}</b></span>
+              </div>
+              <Popconfirm title="Remove this rule?" onConfirm={() => handleRemove(i)} okButtonProps={{ danger: true }}>
+                <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: p.red, fontSize: 11 }}>
+                  <DeleteOutlined /> Remove
+                </button>
+              </Popconfirm>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ textAlign: 'center', padding: '20px 0', fontSize: 12, color: p.textMuted }}>
+          No limit access rules configured
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Deny Access panel
+// ---------------------------------------------------------------------------
+function DenyAccessPanel({ siteId }: { siteId: number }) {
+  const { p } = usePalette();
+  const [rules, setRules] = useState<{ name: string; suffix: string; path: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [name, setName] = useState('');
+  const [suffix, setSuffix] = useState('php|jsp');
+  const [path, setPath] = useState('');
+  const [adding, setAdding] = useState(false);
+
+  const fetchRules = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get<ApiResponse<{ name: string; suffix: string; path: string }[]>>(`/sites/${siteId}/deny-access`);
+      setRules(data.data ?? []);
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
+  }, [siteId]);
+
+  useEffect(() => { fetchRules(); }, [fetchRules]);
+
+  const handleAdd = async () => {
+    if (!name.trim() || !suffix.trim() || !path.trim()) {
+      message.warning('All fields are required');
+      return;
+    }
+    setAdding(true);
+    try {
+      await api.post(`/sites/${siteId}/deny-access`, { name: name.trim(), suffix: suffix.trim(), path: path.trim() });
+      message.success('Deny access rule added');
+      setName(''); setSuffix('php|jsp'); setPath('');
+      fetchRules();
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(msg || 'Failed to add rule');
+    } finally { setAdding(false); }
+  };
+
+  const handleRemove = async (index: number) => {
+    try {
+      await api.delete(`/sites/${siteId}/deny-access/${index}`);
+      message.success('Rule removed');
+      fetchRules();
+    } catch { message.error('Failed to remove rule'); }
+  };
+
+  const sectionStyle: React.CSSProperties = { padding: '14px 16px', borderRadius: 8, border: `1px solid ${p.cardBorder}`, marginBottom: 14, background: p.card };
+  const labelStyle: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: p.text, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 };
+  const hintStyle: React.CSSProperties = { fontSize: 11, color: p.textMuted, marginBottom: 10 };
+  const btnStyle = (l: boolean): React.CSSProperties => ({ padding: '5px 16px', borderRadius: 6, border: 'none', background: p.accent, color: '#fff', fontSize: 12, fontWeight: 600, cursor: l ? 'wait' : 'pointer', opacity: l ? 0.7 : 1, transition: 'all 0.15s' });
+
+  return (
+    <div>
+      <div style={sectionStyle}>
+        <div style={labelStyle}>
+          <ExclamationCircleOutlined style={{ color: p.red }} />
+          Deny Access Rules
+        </div>
+        <div style={hintStyle}>
+          Block access to specific file types in specific paths. Prevents execution of dangerous scripts in upload directories.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8, marginBottom: 12 }}>
+          <Input placeholder="Rule name" value={name} onChange={e => setName(e.target.value)} style={{ fontSize: 12 }} />
+          <Input placeholder="Suffix (e.g. php|jsp)" value={suffix} onChange={e => setSuffix(e.target.value)} style={{ fontSize: 12 }} />
+          <Input placeholder="Path (e.g. /uploads)" value={path} onChange={e => setPath(e.target.value)} style={{ fontSize: 12 }} />
+          <button onClick={handleAdd} disabled={adding} style={btnStyle(adding)}>
+            {adding ? '...' : '+ Add'}
+          </button>
+        </div>
+      </div>
+
+      {loading ? <Spin size="small" /> : rules.length > 0 ? (
+        <div style={{ border: `1px solid ${p.cardBorder}`, borderRadius: 6, overflow: 'hidden' }}>
+          {rules.map((r, i) => (
+            <div key={i} style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '10px 14px', fontSize: 12,
+              borderBottom: i < rules.length - 1 ? `1px solid ${p.cardBorder}` : 'none',
+              background: i % 2 === 0 ? 'transparent' : p.rowAlt,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <ExclamationCircleOutlined style={{ color: p.red, fontSize: 11 }} />
+                <span style={{ fontWeight: 600, color: p.text }}>{r.name}</span>
+                <code style={{ background: p.codeBg, padding: '1px 6px', borderRadius: 3, fontSize: 11, color: p.textMuted }}>{r.path}</code>
+                <span style={{
+                  fontSize: 10, padding: '1px 6px', borderRadius: 4,
+                  background: `${p.red}15`, color: p.red, fontWeight: 600,
+                }}>deny: .{r.suffix.replace(/\|/g, ' .')}</span>
+              </div>
+              <Popconfirm title="Remove this rule?" onConfirm={() => handleRemove(i)} okButtonProps={{ danger: true }}>
+                <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: p.red, fontSize: 11 }}>
+                  <DeleteOutlined /> Remove
+                </button>
+              </Popconfirm>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ textAlign: 'center', padding: '20px 0', fontSize: 12, color: p.textMuted }}>
+          No deny access rules configured
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Traffic Control panel
+// ---------------------------------------------------------------------------
+const TRAFFIC_PRESETS: Record<string, { concurrency: number; ip_limit: number; bandwidth: number }> = {
+  BSS: { concurrency: 500, ip_limit: 50, bandwidth: 1024 },
+  Blog: { concurrency: 300, ip_limit: 25, bandwidth: 512 },
+  Custom: { concurrency: 300, ip_limit: 25, bandwidth: 512 },
+};
+
+function TrafficControlPanel({ siteId }: { siteId: number }) {
+  const { p, isDark } = usePalette();
+  const [config, setConfig] = useState<{
+    enabled: boolean; plan: string; concurrency: number; ip_limit: number; bandwidth: number;
+  }>({ enabled: false, plan: 'Blog', concurrency: 300, ip_limit: 25, bandwidth: 512 });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const { data } = await api.get<ApiResponse<typeof config>>(`/sites/${siteId}/traffic-control`);
+        if (data.data) setConfig(data.data);
+      } catch { /* ignore */ }
+      finally { setLoading(false); }
+    })();
+  }, [siteId]);
+
+  const handlePlanChange = (plan: string) => {
+    const preset = TRAFFIC_PRESETS[plan];
+    if (preset) setConfig(prev => ({ ...prev, plan, ...preset }));
+    else setConfig(prev => ({ ...prev, plan }));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/sites/${siteId}/traffic-control`, config);
+      message.success(config.enabled ? 'Traffic control enabled' : 'Traffic control disabled');
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(msg || 'Failed to save traffic control');
+    } finally { setSaving(false); }
+  };
+
+  const sectionStyle: React.CSSProperties = { padding: '14px 16px', borderRadius: 8, border: `1px solid ${p.cardBorder}`, marginBottom: 14, background: p.card };
+  const labelStyle: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: p.text, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 };
+  const hintStyle: React.CSSProperties = { fontSize: 11, color: p.textMuted, marginBottom: 10 };
+  const btnStyle = (l: boolean): React.CSSProperties => ({ padding: '5px 16px', borderRadius: 6, border: 'none', background: p.accent, color: '#fff', fontSize: 12, fontWeight: 600, cursor: l ? 'wait' : 'pointer', opacity: l ? 0.7 : 1, transition: 'all 0.15s' });
+
+  if (loading) return <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>;
+
+  return (
+    <div>
+      {/* Enable/Disable Toggle */}
+      <div style={sectionStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={labelStyle}>
+              <CloudOutlined style={{ color: p.accent }} />
+              Traffic Control
+            </div>
+            <div style={hintStyle}>
+              Enable rate limiting and bandwidth control for this website. Default: off.
+            </div>
+          </div>
+          <Switch checked={config.enabled} onChange={v => setConfig(prev => ({ ...prev, enabled: v }))} />
+        </div>
+      </div>
+
+      {config.enabled && (
+        <>
+          {/* Plan Preset */}
+          <div style={sectionStyle}>
+            <div style={labelStyle}>Limit Plan</div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              {Object.keys(TRAFFIC_PRESETS).map(plan => (
+                <button
+                  key={plan}
+                  onClick={() => handlePlanChange(plan)}
+                  style={{
+                    padding: '6px 18px', borderRadius: 6, fontSize: 12, fontWeight: 500,
+                    border: `1px solid ${config.plan === plan ? p.accent : p.cardBorder}`,
+                    background: config.plan === plan ? `${p.accent}15` : 'transparent',
+                    color: config.plan === plan ? p.accent : p.textMuted,
+                    cursor: 'pointer', transition: 'all 0.15s',
+                  }}
+                >{plan}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Parameters */}
+          <div style={sectionStyle}>
+            <div style={labelStyle}>Parameters</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+              <div>
+                <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 6 }}>Concurrency Limit</div>
+                <InputNumber
+                  min={1} max={10000}
+                  value={config.concurrency}
+                  onChange={v => setConfig(prev => ({ ...prev, concurrency: v ?? 300, plan: 'Custom' }))}
+                  style={{ width: '100%' }}
+                  addonAfter="conn"
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 6 }}>Block Single IP</div>
+                <InputNumber
+                  min={1} max={1000}
+                  value={config.ip_limit}
+                  onChange={v => setConfig(prev => ({ ...prev, ip_limit: v ?? 25, plan: 'Custom' }))}
+                  style={{ width: '100%' }}
+                  addonAfter="req/s"
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 6 }}>Bandwidth Limit</div>
+                <InputNumber
+                  min={0} max={102400}
+                  value={config.bandwidth}
+                  onChange={v => setConfig(prev => ({ ...prev, bandwidth: v ?? 512, plan: 'Custom' }))}
+                  style={{ width: '100%' }}
+                  addonAfter="KB/s"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Summary */}
+          <div style={{
+            padding: '10px 14px', borderRadius: 8, marginBottom: 14,
+            background: isDark ? 'rgba(59,130,246,0.06)' : 'rgba(59,130,246,0.04)',
+            border: `1px solid ${p.accent}30`,
+            fontSize: 11, color: p.textMuted, lineHeight: 1.6,
+          }}>
+            <b style={{ color: p.accent }}>Active Configuration:</b><br />
+            • Max concurrent connections: <b style={{ color: p.text }}>{config.concurrency}</b><br />
+            • Rate limit per IP: <b style={{ color: p.text }}>{config.ip_limit} req/s</b><br />
+            • Bandwidth per connection: <b style={{ color: p.text }}>{config.bandwidth} KB/s</b>
+          </div>
+        </>
+      )}
+
+      <button onClick={handleSave} disabled={saving} style={btnStyle(saving)}>
+        {saving ? 'Saving...' : 'Save Traffic Control'}
+      </button>
+    </div>
+  );
+}
+
 function PlaceholderPanel({ title }: { title: string }) {
   const { p } = usePalette();
   return (
@@ -1062,6 +1523,12 @@ function SiteConfigModal({ site, open, onClose, phpVersions }: { site: Site | nu
         return <PHPVersionPanel siteId={site.id} currentVersion={site.php_version} phpVersions={phpVersions} />;
       case 'ssl':
         return <SSLPanel siteId={site.id} siteDomain={site.domain} />;
+      case 'limit':
+        return <LimitAccessPanel siteId={site.id} />;
+      case 'deny':
+        return <DenyAccessPanel siteId={site.id} />;
+      case 'traffic':
+        return <TrafficControlPanel siteId={site.id} />;
       case 'redirect':
         return <PlaceholderPanel title="Redirect Rules" />;
       case 'log':
