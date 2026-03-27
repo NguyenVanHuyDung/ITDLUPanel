@@ -499,6 +499,12 @@ func fetchNginxRepoVersions(ctx context.Context, url, branch string) []NginxVers
 		}
 
 		v := ParseNginxVersion(verStr)
+		// Filter: only include versions that belong to this branch
+		// Even minor = stable, odd minor = mainline
+		isStable := v.Minor%2 == 0
+		if (branch == "stable" && !isStable) || (branch == "mainline" && isStable) {
+			continue
+		}
 		key := fmt.Sprintf("%d.%d", v.Major, v.Minor)
 		if existing, ok := seen[key]; !ok || v.Patch > existing.patch {
 			seen[key] = verEntry{full: verStr, major: v.Major, minor: v.Minor, patch: v.Patch}
