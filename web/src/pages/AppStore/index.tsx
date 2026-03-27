@@ -11,6 +11,7 @@ import { useTaskStore } from '@/stores/task';
 import api from '@/services/api';
 import type { ApiResponse, Software } from '@/types';
 import NginxManageModal from '@/components/NginxManageModal';
+import PhpMyAdminManageModal from '@/components/PhpMyAdminManageModal';
 import { getSoftwareIcon } from './SoftwareIcons';
 
 const { Text } = Typography;
@@ -53,6 +54,7 @@ export default function AppStore() {
   const [manageModalOpen, setManageModalOpen] = useState(false);
   const [manageSW, setManageSW] = useState<Software | null>(null);
   const [nginxModalOpen, setNginxModalOpen] = useState(false);
+  const [pmaModalOpen, setPmaModalOpen] = useState(false);
   const [swStatus, setSwStatus] = useState<Record<string, string> | null>(null);
   const [swConfig, setSwConfig] = useState('');
   const [configLoading, setConfigLoading] = useState(false);
@@ -258,6 +260,7 @@ export default function AppStore() {
 
   const openManageModal = async (sw: Software) => {
     if (sw.name === 'nginx') { setNginxModalOpen(true); return; }
+    if (sw.name === 'phpmyadmin') { setPmaModalOpen(true); return; }
     setManageSW(sw);
     setManageTab('status');
     setSwStatus(null);
@@ -946,6 +949,7 @@ export default function AppStore() {
       </Modal>
 
       <NginxManageModal open={nginxModalOpen} onClose={() => setNginxModalOpen(false)} />
+      <PhpMyAdminManageModal open={pmaModalOpen} onClose={() => setPmaModalOpen(false)} />
     </div>
   );
 }

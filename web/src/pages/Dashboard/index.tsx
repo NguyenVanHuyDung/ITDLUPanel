@@ -7,6 +7,7 @@ import api from '@/services/api';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import type { SystemInfo, Software } from '@/types';
 import NginxManageModal from '@/components/NginxManageModal';
+import PhpMyAdminManageModal from '@/components/PhpMyAdminManageModal';
 import { getSoftwareIcon } from '../AppStore/SoftwareIcons';
 
 const { Text } = Typography;
@@ -182,6 +183,7 @@ export default function Dashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [installedSoftware, setInstalledSoftware] = useState<Software[]>([]);
   const [nginxModalOpen, setNginxModalOpen] = useState(false);
+  const [pmaModalOpen, setPmaModalOpen] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevNetworkRef = useRef<{ sent: number; recv: number } | null>(null);
 
@@ -546,11 +548,11 @@ export default function Dashboard() {
                       display: 'flex', alignItems: 'center', gap: 10,
                       padding: '10px 12px', borderRadius: 8,
                       border: '1px solid #f0f0f0', background: '#fafafa',
-                      cursor: sw.name === 'nginx' ? 'pointer' : 'default',
+                      cursor: (sw.name === 'nginx' || sw.name === 'phpmyadmin') ? 'pointer' : 'default',
                       transition: 'box-shadow 0.15s',
                     }}
-                    onClick={() => { if (sw.name === 'nginx') setNginxModalOpen(true); }}
-                    onMouseEnter={e => { if (sw.name === 'nginx') e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)'; }}
+                    onClick={() => { if (sw.name === 'nginx') setNginxModalOpen(true); if (sw.name === 'phpmyadmin') setPmaModalOpen(true); }}
+                    onMouseEnter={e => { if (sw.name === 'nginx' || sw.name === 'phpmyadmin') e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)'; }}
                     onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}
                     >
                       <div style={{
@@ -617,6 +619,7 @@ export default function Dashboard() {
       </Row>
 
       <NginxManageModal open={nginxModalOpen} onClose={() => setNginxModalOpen(false)} />
+      <PhpMyAdminManageModal open={pmaModalOpen} onClose={() => setPmaModalOpen(false)} />
     </div>
   );
 }

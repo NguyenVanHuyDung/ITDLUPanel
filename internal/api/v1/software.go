@@ -44,6 +44,11 @@ func (h *SoftwareHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gi
 		sw.GET("/:name/error-log", h.errorLog)
 		sw.GET("/:name/optimization", h.getOptimization)
 		sw.PUT("/:name/optimization", h.updateOptimization)
+
+		// phpMyAdmin Manager
+		sw.GET("/phpmyadmin/manager", h.getPhpMyAdminConfig)
+		sw.PUT("/phpmyadmin/manager", h.setPhpMyAdminConfig)
+		sw.GET("/phpmyadmin/php-versions", h.getAvailablePHPVersions)
 	}
 }
 
@@ -326,4 +331,40 @@ func (h *SoftwareHandler) updateOptimization(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": "nginx optimization updated"})
+}
+
+// getPhpMyAdminConfig returns the current phpMyAdmin manager configuration.
+func (h *SoftwareHandler) getPhpMyAdminConfig(c *gin.Context) {
+	cfg, err := h.softwareService.GetPhpMyAdminConfig()
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, cfg)
+}
+
+// setPhpMyAdminConfig updates the phpMyAdmin manager configuration.
+func (h *SoftwareHandler) setPhpMyAdminConfig(c *gin.Context) {
+	var cfg service.PhpMyAdminConfig
+	if err := c.ShouldBindJSON(&cfg); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid phpMyAdmin configuration"},
+		})
+		return
+	}
+	if err := h.softwareService.SetPhpMyAdminConfig(&cfg); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, gin.H{"message": "phpMyAdmin configuration updated"})
+}
+
+// getAvailablePHPVersions returns installed PHP versions with active FPM.
+func (h *SoftwareHandler) getAvailablePHPVersions(c *gin.Context) {
+	versions, err := h.softwareService.GetAvailablePHPVersions()
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, versions)
 }

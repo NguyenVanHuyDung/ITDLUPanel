@@ -3,14 +3,18 @@ package service
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/ITDLUPanel/panel/internal/pkg/logger"
 	"github.com/ITDLUPanel/panel/internal/service/installer"
@@ -813,4 +817,344 @@ func setDirective(content, directive, value string) string {
 		return re.ReplaceAllString(content, "${1}"+value+"${2}")
 	}
 	return content
+}
+
+// ---------------------------------------------------------------------------
+// phpMyAdmin Manager
+// ---------------------------------------------------------------------------
+
+const (
+	phpmyadminConfigPath = "/ITDLUPanel/server/config/phpmyadmin_config.json"
+	phpmyadminNginxConf  = "/etc/nginx/conf.d/phpmyadmin.conf"
+	phpmyadminRoot       = "/ITDLUPanel/server/phpmyadmin/www"
+	phpmyadminSSLDir     = "/ITDLUPanel/server/phpmyadmin/ssl"
+	phpmyadminHTPasswd   = "/ITDLUPanel/server/phpmyadmin/.htpasswd"
+)
+
+// PhpMyAdminConfig holds the phpMyAdmin manager settings.
+type PhpMyAdminConfig struct {
+	PublicAccess bool   `json:"public_access"`
+	PHPVersion   string `json:"php_version"`
+	AccessPort   int    `json:"access_port"`
+	SSLEnabled   bool   `json:"ssl_enabled"`
+	SSLPort      int    `json:"ssl_port"`
+	AuthEnabled  bool   `json:"auth_enabled"`
+	AuthUser     string `json:"auth_user"`
+	AuthPassword string `json:"auth_password"`
+}
+
+func defaultPhpMyAdminConfig() *PhpMyAdminConfig {
+	return &PhpMyAdminConfig{
+		PublicAccess: true,
+		PHPVersion:   "8.3",
+		AccessPort:   888,
+		SSLEnabled:   false,
+		SSLPort:      887,
+		AuthEnabled:  false,
+	}
+}
+
+// GetPhpMyAdminConfig reads the phpMyAdmin config from disk or returns defaults.
+func (s *SoftwareService) GetPhpMyAdminConfig() (*PhpMyAdminConfig, error) {
+	cfg := defaultPhpMyAdminConfig()
+
+	data, err := os.ReadFile(phpmyadminConfigPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			cfg.PHPVersion = s.detectPHPVersionFromNginx(cfg.PHPVersion)
+			return cfg, nil
+		}
+		return nil, fmt.Errorf("failed to read phpmyadmin config: %w", err)
+	}
+
+	if err := json.Unmarshal(data, cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse phpmyadmin config: %w", err)
+	}
+
+	cfg.PHPVersion = s.detectPHPVersionFromNginx(cfg.PHPVersion)
+	return cfg, nil
+}
+
+// detectPHPVersionFromNginx reads the nginx phpmyadmin config and extracts the
+// php-fpm version from the fastcgi_pass socket path.
+func (s *SoftwareService) detectPHPVersionFromNginx(fallback string) string {
+	data, err := os.ReadFile(phpmyadminNginxConf)
+	if err != nil {
+		return fallback
+	}
+	re := regexp.MustCompile(`fastcgi_pass\s+unix:/var/run/php/php([0-9]+\.[0-9]+)-fpm\.sock`)
+	m := re.FindStringSubmatch(string(data))
+	if len(m) > 1 {
+		return m[1]
+	}
+	return fallback
+}
+
+// SetPhpMyAdminConfig persists the config, regenerates nginx config, manages
+// SSL certs, htpasswd, firewall rules, and reloads nginx.
+func (s *SoftwareService) SetPhpMyAdminConfig(cfg *PhpMyAdminConfig) error {
+	if cfg.AccessPort == 0 {
+		cfg.AccessPort = 888
+	}
+	if cfg.SSLPort == 0 {
+		cfg.SSLPort = 887
+	}
+	if cfg.PHPVersion == "" {
+		cfg.PHPVersion = "8.3"
+	}
+
+	// Persist config JSON
+	if err := s.savePhpMyAdminConfig(cfg); err != nil {
+		return err
+	}
+
+	// Handle basic auth htpasswd
+	if cfg.AuthEnabled {
+		if err := s.ensurePhpMyAdminHTPasswd(cfg.AuthUser, cfg.AuthPassword); err != nil {
+			return fmt.Errorf("failed to create htpasswd: %w", err)
+		}
+	}
+
+	// Handle SSL certs
+	if cfg.SSLEnabled {
+		if err := s.ensurePhpMyAdminSSLCerts(); err != nil {
+			return fmt.Errorf("failed to ensure SSL certs: %w", err)
+		}
+	}
+
+	// Generate nginx config
+	nginxCfg := s.buildPhpMyAdminNginxConfig(cfg)
+	if err := os.WriteFile(phpmyadminNginxConf, []byte(nginxCfg), 0644); err != nil {
+		return fmt.Errorf("failed to write nginx config: %w", err)
+	}
+
+	// Test nginx config
+	ctx := context.Background()
+	result, err := system.ExecWithTimeout(10*time.Second, "nginx", "-t")
+	if err != nil || result.ExitCode != 0 {
+		errMsg := ""
+		if result != nil {
+			errMsg = result.Stderr
+		}
+		return fmt.Errorf("nginx config test failed: %s", errMsg)
+	}
+
+	// Reload nginx
+	if _, err := system.ExecWithTimeout(10*time.Second, "systemctl", "reload", "nginx"); err != nil {
+		logger.Warn().Err(err).Msg("failed to reload nginx after phpmyadmin config update")
+	}
+
+	// Manage firewall rules
+	s.managePhpMyAdminFirewall(ctx, cfg)
+
+	return nil
+}
+
+func (s *SoftwareService) savePhpMyAdminConfig(cfg *PhpMyAdminConfig) error {
+	dir := filepath.Dir(phpmyadminConfigPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create config dir: %w", err)
+	}
+
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal phpmyadmin config: %w", err)
+	}
+	return os.WriteFile(phpmyadminConfigPath, data, 0644)
+}
+
+func (s *SoftwareService) ensurePhpMyAdminHTPasswd(user, password string) error {
+	if user == "" || password == "" {
+		return fmt.Errorf("auth_user and auth_password are required when auth is enabled")
+	}
+
+	dir := filepath.Dir(phpmyadminHTPasswd)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	// Try htpasswd command first
+	result, err := system.ExecWithTimeout(5*time.Second, "htpasswd", "-cb", phpmyadminHTPasswd, user, password)
+	if err == nil && result.ExitCode == 0 {
+		return nil
+	}
+
+	// Fallback: generate bcrypt hash manually
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
+	line := fmt.Sprintf("%s:%s\n", user, string(hash))
+	return os.WriteFile(phpmyadminHTPasswd, []byte(line), 0644)
+}
+
+func (s *SoftwareService) ensurePhpMyAdminSSLCerts() error {
+	certPath := filepath.Join(phpmyadminSSLDir, "phpmyadmin.crt")
+	keyPath := filepath.Join(phpmyadminSSLDir, "phpmyadmin.key")
+
+	// If both files exist, skip generation
+	if _, err := os.Stat(certPath); err == nil {
+		if _, err := os.Stat(keyPath); err == nil {
+			return nil
+		}
+	}
+
+	if err := os.MkdirAll(phpmyadminSSLDir, 0755); err != nil {
+		return fmt.Errorf("failed to create SSL dir: %w", err)
+	}
+
+	result, err := system.ExecWithTimeout(30*time.Second,
+		"openssl", "req", "-x509", "-nodes", "-days", "3650",
+		"-newkey", "rsa:2048",
+		"-keyout", keyPath,
+		"-out", certPath,
+		"-subj", "/CN=phpMyAdmin/O=ITDLUPanel",
+	)
+	if err != nil {
+		return fmt.Errorf("failed to generate self-signed cert: %w", err)
+	}
+	if result.ExitCode != 0 {
+		return fmt.Errorf("openssl failed: %s", result.Stderr)
+	}
+	return nil
+}
+
+func (s *SoftwareService) buildPhpMyAdminNginxConfig(cfg *PhpMyAdminConfig) string {
+	var b strings.Builder
+
+	fpmSock := fmt.Sprintf("/var/run/php/php%s-fpm.sock", cfg.PHPVersion)
+
+	b.WriteString("# phpMyAdmin - managed by ITDLUPanel\n")
+
+	// HTTP server block
+	s.writePhpMyAdminServerBlock(&b, cfg, fpmSock, false)
+
+	// SSL server block
+	if cfg.SSLEnabled {
+		b.WriteString("\n")
+		s.writePhpMyAdminServerBlock(&b, cfg, fpmSock, true)
+	}
+
+	return b.String()
+}
+
+func (s *SoftwareService) writePhpMyAdminServerBlock(b *strings.Builder, cfg *PhpMyAdminConfig, fpmSock string, ssl bool) {
+	port := cfg.AccessPort
+	if ssl {
+		port = cfg.SSLPort
+		fmt.Fprintf(b, "# SSL block\n")
+	}
+
+	b.WriteString("server {\n")
+	if ssl {
+		fmt.Fprintf(b, "    listen %d ssl;\n", port)
+	} else {
+		fmt.Fprintf(b, "    listen %d;\n", port)
+	}
+	b.WriteString("    server_name _;\n")
+	fmt.Fprintf(b, "    root %s;\n", phpmyadminRoot)
+	b.WriteString("    index index.php index.html;\n")
+	b.WriteString("\n")
+
+	if ssl {
+		fmt.Fprintf(b, "    ssl_certificate %s/phpmyadmin.crt;\n", phpmyadminSSLDir)
+		fmt.Fprintf(b, "    ssl_certificate_key %s/phpmyadmin.key;\n", phpmyadminSSLDir)
+		b.WriteString("    ssl_protocols TLSv1.2 TLSv1.3;\n")
+		b.WriteString("\n")
+	}
+
+	if cfg.AuthEnabled {
+		b.WriteString("    auth_basic \"phpMyAdmin Login\";\n")
+		fmt.Fprintf(b, "    auth_basic_user_file %s;\n", phpmyadminHTPasswd)
+		b.WriteString("\n")
+	}
+
+	if !cfg.PublicAccess {
+		b.WriteString("    allow 127.0.0.1;\n")
+		b.WriteString("    deny all;\n")
+		b.WriteString("\n")
+	}
+
+	b.WriteString("    location / {\n")
+	b.WriteString("        try_files $uri $uri/ =404;\n")
+	b.WriteString("    }\n")
+	b.WriteString("\n")
+
+	b.WriteString("    location ~ \\.php$ {\n")
+	fmt.Fprintf(b, "        fastcgi_pass unix:%s;\n", fpmSock)
+	b.WriteString("        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n")
+	b.WriteString("        include fastcgi_params;\n")
+	b.WriteString("    }\n")
+	b.WriteString("\n")
+
+	b.WriteString("    location ~ /tmp/ {\n")
+	b.WriteString("        deny all;\n")
+	b.WriteString("    }\n")
+
+	b.WriteString("}\n")
+}
+
+func (s *SoftwareService) managePhpMyAdminFirewall(_ context.Context, cfg *PhpMyAdminConfig) {
+	if s.firewallService == nil {
+		return
+	}
+
+	httpPort := strconv.Itoa(cfg.AccessPort)
+	sslPort := strconv.Itoa(cfg.SSLPort)
+
+	// Always open the HTTP port
+	s.firewallService.OpenPortsForSoftware("phpmyadmin")
+
+	// If SSL is enabled, ensure the SSL port is open
+	if cfg.SSLEnabled {
+		s.firewallService.OpenPortsForSoftware("phpmyadmin-ssl")
+		// Register a dynamic entry so the port map matches
+		softwarePortMap["phpmyadmin-ssl"] = []struct {
+			Port     string
+			Protocol string
+			Desc     string
+		}{{Port: sslPort, Protocol: "tcp", Desc: "phpMyAdmin SSL"}}
+	} else {
+		s.firewallService.ClosePortsForSoftware("phpmyadmin-ssl")
+		delete(softwarePortMap, "phpmyadmin-ssl")
+	}
+
+	// Update the main port in case it changed from the default
+	softwarePortMap["phpmyadmin"] = []struct {
+		Port     string
+		Protocol string
+		Desc     string
+	}{{Port: httpPort, Protocol: "tcp", Desc: "phpMyAdmin"}}
+}
+
+// GetAvailablePHPVersions scans /etc/php/ for installed PHP versions with
+// an active FPM socket.
+func (s *SoftwareService) GetAvailablePHPVersions() ([]string, error) {
+	entries, err := os.ReadDir("/etc/php")
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []string{}, nil
+		}
+		return nil, fmt.Errorf("failed to read /etc/php: %w", err)
+	}
+
+	var versions []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		ver := e.Name()
+		sockPath := fmt.Sprintf("/run/php/php%s-fpm.sock", ver)
+		if _, err := os.Stat(sockPath); err == nil {
+			versions = append(versions, ver)
+			continue
+		}
+		// Also check /var/run/php which may be a symlink to /run/php
+		altSock := fmt.Sprintf("/var/run/php/php%s-fpm.sock", ver)
+		if _, err := os.Stat(altSock); err == nil {
+			versions = append(versions, ver)
+		}
+	}
+
+	return versions, nil
 }
