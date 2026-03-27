@@ -301,6 +301,16 @@ func (s *CronService) RunNow(id int64) (string, error) {
 		return "", err
 	}
 
+	logFile := fmt.Sprintf("%s/%d.log", cronLogDir, id)
+	_ = os.MkdirAll(cronLogDir, 0755)
+
+	// Write execution header to log
+	startTime := time.Now()
+	header := fmt.Sprintf("\n[%s] === Run: %s ===\n[%s] Command: %s\n",
+		startTime.Format("2006-01-02 15:04:05"), job.Name,
+		startTime.Format("2006-01-02 15:04:05"), job.Command)
+	appendToFile(logFile, header)
+
 	fullCmd := s.buildCommand(job.Type, job.Command, id)
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
@@ -319,29 +329,56 @@ func (s *CronService) RunNow(id int64) (string, error) {
 	if res != nil {
 		output = res.Stdout + res.Stderr
 	}
+
+	// Write execution result to log
+	elapsed := time.Since(startTime).Round(time.Millisecond)
+	var footer string
+	if err != nil {
+		footer = fmt.Sprintf("[%s] Status: FAILED (%s) Duration: %s\n", now.Format("2006-01-02 15:04:05"), err.Error(), elapsed)
+		if output != "" {
+			footer += fmt.Sprintf("[%s] Output: %s\n", now.Format("2006-01-02 15:04:05"), output)
+		}
+	} else {
+		footer = fmt.Sprintf("[%s] Status: OK Duration: %s\n", now.Format("2006-01-02 15:04:05"), elapsed)
+		if output != "" {
+			footer += fmt.Sprintf("[%s] Output: %s\n", now.Format("2006-01-02 15:04:05"), output)
+		}
+	}
+	appendToFile(logFile, footer)
+
 	if err != nil {
 		return output, apperrors.Wrap(err, apperrors.ErrInternal, "command execution failed")
 	}
 	return output, nil
 }
 
+func appendToFile(path, content string) {
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	f.WriteString(content)
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-// buildCommand constructs the full cron command with log redirection.
+// buildCommand constructs the full cron command with log redirection and timestamps.
 func (s *CronService) buildCommand(cronType, command string, id int64) string {
 	logFile := fmt.Sprintf("%s/%d.log", cronLogDir, id)
 
 	var cmd string
 	switch cronType {
 	case "url":
-		cmd = fmt.Sprintf("curl -fsS %s > /dev/null 2>&1", command)
+		cmd = fmt.Sprintf("curl -fsS %s", command)
 	default:
 		cmd = command
 	}
 
-	return fmt.Sprintf("%s >> %s 2>&1", cmd, logFile)
+	// Wrap with timestamp header/footer for crontab runs
+	return fmt.Sprintf(`echo "[$(date '+%%Y-%%m-%%d %%H:%%M:%%S')] === Cron Start ===" >> %s; %s >> %s 2>&1; echo "[$(date '+%%Y-%%m-%%d %%H:%%M:%%S')] === Cron End (exit: $?) ===" >> %s`, logFile, cmd, logFile, logFile)
 }
 
 // syncCrontab adds or updates a crontab entry for the given cron job ID.
