@@ -86,6 +86,33 @@ function buildCronFromState(s: ScheduleState): string {
   }
 }
 
+function parseCronToState(expr: string): ScheduleState | null {
+  const parts = expr.trim().split(/\s+/);
+  if (parts.length !== 5) return null;
+  const [minute, hour, dom, , dow] = parts;
+  const base: ScheduleState = { mode: 'builder', preset: '', custom: '', freq: 'day', minute: 0, hour: 0, dom: 1, dow: 0, interval: 5 };
+
+  // Every minute or */N minutes
+  if (minute === '*' && hour === '*' && dom === '*' && dow === '*')
+    return { ...base, freq: 'minute', interval: 1 };
+  if (minute.startsWith('*/') && hour === '*' && dom === '*' && dow === '*')
+    return { ...base, freq: 'minute', interval: parseInt(minute.slice(2)) || 5 };
+  // Every hour at :MM
+  if (!minute.includes('*') && !minute.includes('/') && hour === '*' && dom === '*' && dow === '*')
+    return { ...base, freq: 'hour', minute: parseInt(minute) || 0 };
+  // Weekly
+  if (!minute.includes('*') && !hour.includes('*') && dom === '*' && dow !== '*' && !dow.includes('/'))
+    return { ...base, freq: 'week', minute: parseInt(minute) || 0, hour: parseInt(hour) || 0, dow: parseInt(dow) || 0 };
+  // Monthly
+  if (!minute.includes('*') && !hour.includes('*') && dom !== '*' && !dom.includes('/') && dow === '*')
+    return { ...base, freq: 'month', minute: parseInt(minute) || 0, hour: parseInt(hour) || 0, dom: parseInt(dom) || 1 };
+  // Daily (catch-all for H:M * * *)
+  if (!minute.includes('*') && !hour.includes('*') && dom === '*' && dow === '*')
+    return { ...base, freq: 'day', minute: parseInt(minute) || 0, hour: parseInt(hour) || 0 };
+
+  return null;
+}
+
 const CRON_TEMPLATES: CronTemplate[] = [
   {
     name: 'Backup All Databases',
@@ -282,8 +309,14 @@ export default function Cron() {
   const openEdit = (record: CronJob) => {
     setEditingJob(record);
     form.setFieldsValue(record);
-    setSchedMode('custom');
-    form.setFieldsValue({ schedule: record.schedule });
+    const parsed = parseCronToState(record.schedule);
+    if (parsed) {
+      setSchedMode('builder');
+      setSchedState(parsed);
+    } else {
+      setSchedMode('custom');
+      form.setFieldsValue({ schedule: record.schedule });
+    }
     setModalOpen(true);
   };
 
@@ -294,8 +327,14 @@ export default function Cron() {
     setSchedState({ mode: 'builder', preset: '', custom: '', freq: 'day', minute: 0, hour: 2, dom: 1, dow: 0, interval: 5 });
     if (template) {
       form.setFieldsValue({ name: template.name, command: template.command, type: template.type });
-      setSchedMode('custom');
-      form.setFieldsValue({ schedule: template.schedule });
+      const parsed = parseCronToState(template.schedule);
+      if (parsed) {
+        setSchedMode('builder');
+        setSchedState(parsed);
+      } else {
+        setSchedMode('custom');
+        form.setFieldsValue({ schedule: template.schedule });
+      }
     }
     setModalOpen(true);
   };
