@@ -2101,3 +2101,315 @@ func vhostUncomment(line string) string {
 	}
 	return line[:idx] + line[idx+1:]
 }
+
+// ---------------------------------------------------------------------------
+// Feature 5: Default Document
+// ---------------------------------------------------------------------------
+
+// DefaultDocConfig holds the default index files for a site.
+type DefaultDocConfig struct {
+	Index string `json:"index"` // e.g. "index.php index.html index.htm default.php"
+}
+
+func defaultDocPath(siteID int64) string {
+	return filepath.Join(siteConfigDir(), fmt.Sprintf("%d_default_doc.json", siteID))
+}
+
+// GetDefaultDoc returns the current default document config for a site.
+func (s *SiteService) GetDefaultDoc(id int64) (*DefaultDocConfig, error) {
+	_, err := s.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	var config DefaultDocConfig
+	if err := readJSONFile(defaultDocPath(id), &config); err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read default document config")
+	}
+	if config.Index == "" {
+		config.Index = "index.php index.html index.htm"
+	}
+	return &config, nil
+}
+
+// SetDefaultDoc updates the default document settings for a site.
+func (s *SiteService) SetDefaultDoc(id int64, config DefaultDocConfig) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	if config.Index == "" {
+		config.Index = "index.php index.html index.htm"
+	}
+
+	if err := writeJSONFile(defaultDocPath(id), config); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to save default document config")
+	}
+
+	gen := generatorFor(site.Webserver)
+	confPath := gen.GetConfigPath(site.Domain)
+	content, err := os.ReadFile(confPath)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to read vhost config")
+	}
+
+	lines := vhostLines(string(content))
+	var newLines []string
+	replaced := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "index ") && !strings.Contains(line, "#") {
+			// Get the indentation
+			indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+			newLines = append(newLines, fmt.Sprintf("%sindex %s;", indent, config.Index))
+			replaced = true
+		} else {
+			newLines = append(newLines, line)
+		}
+	}
+
+	if !replaced {
+		// Insert after root directive
+		var finalLines []string
+		for _, line := range newLines {
+			finalLines = append(finalLines, line)
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "root ") && !strings.Contains(line, "#") {
+				indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+				finalLines = append(finalLines, fmt.Sprintf("%sindex %s;", indent, config.Index))
+			}
+		}
+		newLines = finalLines
+	}
+
+	if err := os.WriteFile(confPath, []byte(vhostJoin(newLines)), 0644); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to write vhost config")
+	}
+
+	if err := gen.ReloadServer(); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to reload webserver")
+	}
+
+	logger.Info().Int64("id", id).Str("index", config.Index).Msg("default document updated")
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Feature 6: Reverse Proxy
+// ---------------------------------------------------------------------------
+
+// ReverseProxyRule represents a single reverse proxy configuration.
+type ReverseProxyRule struct {
+	Name           string               `json:"name"`
+	Directory      string               `json:"directory"`       // e.g. "/api"
+	TargetURL      string               `json:"target_url"`      // e.g. "http://127.0.0.1:3000"
+	SendDomain     bool                 `json:"send_domain"`     // pass $host header
+	EnableCache    bool                 `json:"enable_cache"`    // proxy caching
+	URLRewrite     []URLRewriteRule     `json:"url_rewrite"`     // URL rewrite rules
+	ContentReplace []ContentReplaceRule `json:"content_replace"` // content replacement rules
+}
+
+// URLRewriteRule represents a URL rewrite rule for reverse proxy.
+type URLRewriteRule struct {
+	Pattern     string `json:"pattern"`     // regex pattern
+	Replacement string `json:"replacement"` // replacement string
+}
+
+// ContentReplaceRule represents a content replacement rule for reverse proxy.
+type ContentReplaceRule struct {
+	Search  string `json:"search"`  // string to find
+	Replace string `json:"replace"` // replacement string
+}
+
+func reverseProxyPath(siteID int64) string {
+	return filepath.Join(siteConfigDir(), fmt.Sprintf("%d_reverse_proxy.json", siteID))
+}
+
+// GetReverseProxyRules returns all reverse proxy rules for a site.
+func (s *SiteService) GetReverseProxyRules(id int64) ([]ReverseProxyRule, error) {
+	_, err := s.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	var rules []ReverseProxyRule
+	if err := readJSONFile(reverseProxyPath(id), &rules); err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read reverse proxy rules")
+	}
+	if rules == nil {
+		rules = []ReverseProxyRule{}
+	}
+	return rules, nil
+}
+
+// AddReverseProxyRule adds a reverse proxy rule for a site.
+func (s *SiteService) AddReverseProxyRule(id int64, rule ReverseProxyRule) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	if rule.Name == "" || rule.Directory == "" || rule.TargetURL == "" {
+		return apperrors.New(apperrors.ErrValidation, "name, directory, and target_url are required")
+	}
+
+	var rules []ReverseProxyRule
+	_ = readJSONFile(reverseProxyPath(id), &rules)
+
+	// Check for duplicate name
+	for _, r := range rules {
+		if r.Name == rule.Name {
+			return apperrors.New(apperrors.ErrValidation, "rule with this name already exists")
+		}
+	}
+
+	rules = append(rules, rule)
+
+	if err := writeJSONFile(reverseProxyPath(id), rules); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to save reverse proxy rules")
+	}
+
+	if err := s.rebuildReverseProxyNginx(site, rules); err != nil {
+		return err
+	}
+
+	gen := generatorFor(site.Webserver)
+	if err := gen.ReloadServer(); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to reload webserver")
+	}
+
+	logger.Info().Int64("id", id).Str("name", rule.Name).Str("directory", rule.Directory).Msg("reverse proxy rule added")
+	return nil
+}
+
+// UpdateReverseProxyRule updates a reverse proxy rule at the given index.
+func (s *SiteService) UpdateReverseProxyRule(id int64, index int, rule ReverseProxyRule) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	var rules []ReverseProxyRule
+	_ = readJSONFile(reverseProxyPath(id), &rules)
+
+	if index < 0 || index >= len(rules) {
+		return apperrors.New(apperrors.ErrValidation, "invalid rule index")
+	}
+
+	rules[index] = rule
+
+	if err := writeJSONFile(reverseProxyPath(id), rules); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to save reverse proxy rules")
+	}
+
+	if err := s.rebuildReverseProxyNginx(site, rules); err != nil {
+		return err
+	}
+
+	gen := generatorFor(site.Webserver)
+	if err := gen.ReloadServer(); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to reload webserver")
+	}
+
+	logger.Info().Int64("id", id).Int("index", index).Msg("reverse proxy rule updated")
+	return nil
+}
+
+// RemoveReverseProxyRule removes a reverse proxy rule by index.
+func (s *SiteService) RemoveReverseProxyRule(id int64, index int) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	var rules []ReverseProxyRule
+	_ = readJSONFile(reverseProxyPath(id), &rules)
+
+	if index < 0 || index >= len(rules) {
+		return apperrors.New(apperrors.ErrValidation, "invalid rule index")
+	}
+
+	removed := rules[index]
+	rules = append(rules[:index], rules[index+1:]...)
+
+	if err := writeJSONFile(reverseProxyPath(id), rules); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to save reverse proxy rules")
+	}
+
+	gen := generatorFor(site.Webserver)
+	confPath := gen.GetConfigPath(site.Domain)
+
+	if len(rules) == 0 {
+		if err := s.removeNginxBlock(confPath, "#REVERSE_PROXY_START", "#REVERSE_PROXY_END"); err != nil {
+			return err
+		}
+	} else {
+		if err := s.rebuildReverseProxyNginx(site, rules); err != nil {
+			return err
+		}
+	}
+
+	if err := gen.ReloadServer(); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to reload webserver")
+	}
+
+	logger.Info().Int64("id", id).Str("name", removed.Name).Msg("reverse proxy rule removed")
+	return nil
+}
+
+func (s *SiteService) rebuildReverseProxyNginx(site *Site, rules []ReverseProxyRule) error {
+	gen := generatorFor(site.Webserver)
+	confPath := gen.GetConfigPath(site.Domain)
+
+	var blockLines []string
+	for _, r := range rules {
+		dir := r.Directory
+		if dir == "" {
+			dir = "/"
+		}
+		blockLines = append(blockLines, fmt.Sprintf("location %s {", dir))
+
+		// URL rewrite rules (before proxy_pass)
+		for _, rw := range r.URLRewrite {
+			if rw.Pattern != "" && rw.Replacement != "" {
+				blockLines = append(blockLines, fmt.Sprintf("    rewrite %s %s break;", rw.Pattern, rw.Replacement))
+			}
+		}
+
+		blockLines = append(blockLines, fmt.Sprintf("    proxy_pass %s;", r.TargetURL))
+		blockLines = append(blockLines, "    proxy_set_header X-Real-IP $remote_addr;")
+		blockLines = append(blockLines, "    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;")
+		blockLines = append(blockLines, "    proxy_set_header X-Forwarded-Proto $scheme;")
+
+		if r.SendDomain {
+			blockLines = append(blockLines, "    proxy_set_header Host $host;")
+		} else {
+			blockLines = append(blockLines, "    proxy_set_header Host $proxy_host;")
+		}
+
+		blockLines = append(blockLines, "    proxy_http_version 1.1;")
+		blockLines = append(blockLines, "    proxy_set_header Upgrade $http_upgrade;")
+		blockLines = append(blockLines, `    proxy_set_header Connection "upgrade";`)
+
+		if r.EnableCache {
+			blockLines = append(blockLines, "    proxy_cache_valid 200 302 10m;")
+			blockLines = append(blockLines, "    proxy_cache_valid 404 1m;")
+			blockLines = append(blockLines, "    proxy_buffering on;")
+		}
+
+		// Content replacement using sub_filter
+		if len(r.ContentReplace) > 0 {
+			blockLines = append(blockLines, "    sub_filter_once off;")
+			for _, cr := range r.ContentReplace {
+				if cr.Search != "" {
+					blockLines = append(blockLines, fmt.Sprintf("    sub_filter '%s' '%s';", cr.Search, cr.Replace))
+				}
+			}
+		}
+
+		blockLines = append(blockLines, "}")
+	}
+
+	return s.insertNginxBlock(confPath, "#REVERSE_PROXY_START", "#REVERSE_PROXY_END", blockLines)
+}

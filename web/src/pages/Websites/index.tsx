@@ -7,6 +7,7 @@ import {
   FileTextOutlined, LinkOutlined, LockOutlined, CloudOutlined,
   MoreOutlined, DeleteOutlined, ExclamationCircleOutlined,
   CloudUploadOutlined, DownloadOutlined, UndoOutlined,
+  ApiOutlined, EditOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import Editor from '@monaco-editor/react';
@@ -44,6 +45,7 @@ const CONFIG_SECTIONS = [
   { key: 'ssl', label: 'SSL', icon: <LockOutlined /> },
   { key: 'php', label: 'PHP Version', icon: <SettingOutlined /> },
   { key: 'access', label: 'Limit Access', icon: <LockOutlined /> },
+  { key: 'proxy', label: 'Reverse Proxy', icon: <ApiOutlined /> },
   { key: 'redirect', label: 'Redirect', icon: <LinkOutlined /> },
   { key: 'log', label: 'Response Log', icon: <FileTextOutlined /> },
 ] as const;
@@ -170,7 +172,7 @@ function DomainManagerPanel({ siteId, siteDomain }: { siteId: number; siteDomain
 // ---------------------------------------------------------------------------
 // Config editor sub-component
 // ---------------------------------------------------------------------------
-function ConfigEditorPanel({ siteId, webserver }: { siteId: number; webserver: string }) {
+function ConfigEditorContent({ siteId, webserver }: { siteId: number; webserver: string }) {
   const { p, isDark } = usePalette();
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(true);
@@ -238,6 +240,150 @@ function ConfigEditorPanel({ siteId, webserver }: { siteId: number; webserver: s
           />
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Default Document panel
+// ---------------------------------------------------------------------------
+function DefaultDocPanel({ siteId }: { siteId: number }) {
+  const { p } = usePalette();
+  const [indexStr, setIndexStr] = useState('index.php index.html index.htm');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const { data } = await api.get<ApiResponse<{ index: string }>>(`/sites/${siteId}/default-doc`);
+        if (data.data?.index) setIndexStr(data.data.index);
+      } catch { /* use default */ }
+      finally { setLoading(false); }
+    })();
+  }, [siteId]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/sites/${siteId}/default-doc`, { index: indexStr.trim() });
+      message.success('Default document updated');
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(msg || 'Failed to update default document');
+    } finally { setSaving(false); }
+  };
+
+  const presets = ['index.php', 'index.html', 'index.htm', 'default.php', 'default.html', 'index.jsp', 'index.aspx'];
+  const currentDocs = indexStr.split(/\s+/).filter(Boolean);
+
+  const toggleDoc = (doc: string) => {
+    if (currentDocs.includes(doc)) {
+      setIndexStr(currentDocs.filter(d => d !== doc).join(' '));
+    } else {
+      setIndexStr([...currentDocs, doc].join(' '));
+    }
+  };
+
+  const sectionStyle: React.CSSProperties = {
+    padding: '14px 16px', borderRadius: 8,
+    border: `1px solid ${p.cardBorder}`, background: p.card,
+  };
+
+  const btnStyle = (isLoading: boolean): React.CSSProperties => ({
+    padding: '5px 16px', borderRadius: 6, border: 'none',
+    background: p.accent, color: '#fff', fontSize: 12, fontWeight: 600,
+    cursor: isLoading ? 'wait' : 'pointer', opacity: isLoading ? 0.7 : 1,
+  });
+
+  if (loading) return <Spin />;
+
+  return (
+    <div>
+      <div style={sectionStyle}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: p.text, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <FileTextOutlined style={{ color: p.accent }} />
+          Default Index Files
+        </div>
+        <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 12 }}>
+          Configure the default files nginx will look for when a directory is requested. Click to toggle common files or edit the field directly.
+        </div>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+          {presets.map(doc => {
+            const active = currentDocs.includes(doc);
+            return (
+              <div
+                key={doc}
+                onClick={() => toggleDoc(doc)}
+                style={{
+                  padding: '4px 10px', borderRadius: 4, fontSize: 11, fontWeight: 500,
+                  cursor: 'pointer', transition: 'all 0.15s',
+                  background: active ? `${p.accent}20` : p.codeBg,
+                  color: active ? p.accent : p.textMuted,
+                  border: `1px solid ${active ? p.accent : p.cardBorder}`,
+                }}
+              >
+                {doc}
+              </div>
+            );
+          })}
+        </div>
+
+        <Input
+          value={indexStr}
+          onChange={e => setIndexStr(e.target.value)}
+          placeholder="index.php index.html index.htm"
+          style={{ fontSize: 12, marginBottom: 12, fontFamily: 'monospace' }}
+        />
+
+        <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 12, padding: '6px 10px', background: p.codeBg, borderRadius: 4, fontFamily: 'monospace' }}>
+          nginx directive: <span style={{ color: p.accent }}>index {indexStr};</span>
+        </div>
+
+        <button onClick={handleSave} disabled={saving} style={btnStyle(saving)}>
+          {saving ? 'Saving...' : 'Save Default Document'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Config panel (combines Config Editor + Default Document)
+// ---------------------------------------------------------------------------
+function ConfigEditorPanel({ siteId, webserver }: { siteId: number; webserver: string }) {
+  const { p } = usePalette();
+  const [tab, setTab] = useState<'editor' | 'defaultdoc'>('editor');
+
+  const tabs = [
+    { key: 'editor' as const, label: 'Config Editor' },
+    { key: 'defaultdoc' as const, label: 'Default Document' },
+  ];
+
+  return (
+    <div>
+      <div style={{
+        display: 'flex', gap: 0, borderBottom: `1px solid ${p.cardBorder}`, marginBottom: 16,
+      }}>
+        {tabs.map(t => {
+          const active = tab === t.key;
+          return (
+            <div key={t.key} onClick={() => setTab(t.key)} style={{
+              padding: '8px 18px', cursor: 'pointer', fontSize: 13,
+              fontWeight: active ? 600 : 400,
+              color: active ? p.accent : p.textMuted,
+              borderBottom: active ? `2px solid ${p.accent}` : '2px solid transparent',
+              transition: 'all 0.15s', marginBottom: -1,
+            }}>
+              {t.label}
+            </div>
+          );
+        })}
+      </div>
+      {tab === 'editor' && <ConfigEditorContent siteId={siteId} webserver={webserver} />}
+      {tab === 'defaultdoc' && <DefaultDocPanel siteId={siteId} />}
     </div>
   );
 }
@@ -1575,6 +1721,283 @@ function AccessControlPanel({ siteId }: { siteId: number }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Reverse Proxy Panel
+// ---------------------------------------------------------------------------
+interface URLRewriteRule { pattern: string; replacement: string; }
+interface ContentReplaceRule { search: string; replace: string; }
+interface ReverseProxyRule {
+  name: string;
+  directory: string;
+  target_url: string;
+  send_domain: boolean;
+  enable_cache: boolean;
+  url_rewrite: URLRewriteRule[];
+  content_replace: ContentReplaceRule[];
+}
+
+function ReverseProxyPanel({ siteId }: { siteId: number }) {
+  const { p } = usePalette();
+  const [rules, setRules] = useState<ReverseProxyRule[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [editIndex, setEditIndex] = useState<number | null>(null);
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+
+  // Form state
+  const [name, setName] = useState('');
+  const [directory, setDirectory] = useState('/');
+  const [targetUrl, setTargetUrl] = useState('');
+  const [sendDomain, setSendDomain] = useState(true);
+  const [enableCache, setEnableCache] = useState(false);
+  const [urlRewrites, setUrlRewrites] = useState<URLRewriteRule[]>([]);
+  const [contentReplaces, setContentReplaces] = useState<ContentReplaceRule[]>([]);
+
+  const fetchRules = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get<ApiResponse<ReverseProxyRule[]>>(`/sites/${siteId}/reverse-proxy`);
+      setRules(data.data ?? []);
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
+  }, [siteId]);
+
+  useEffect(() => { fetchRules(); }, [fetchRules]);
+
+  const resetForm = () => {
+    setName(''); setDirectory('/'); setTargetUrl('');
+    setSendDomain(true); setEnableCache(false);
+    setUrlRewrites([]); setContentReplaces([]);
+    setEditIndex(null); setShowForm(false);
+  };
+
+  const loadRuleToForm = (rule: ReverseProxyRule, idx: number) => {
+    setName(rule.name); setDirectory(rule.directory); setTargetUrl(rule.target_url);
+    setSendDomain(rule.send_domain); setEnableCache(rule.enable_cache);
+    setUrlRewrites(rule.url_rewrite || []); setContentReplaces(rule.content_replace || []);
+    setEditIndex(idx); setShowForm(true);
+  };
+
+  const handleSubmit = async () => {
+    if (!name.trim() || !directory.trim() || !targetUrl.trim()) {
+      message.error('Name, directory, and target URL are required');
+      return;
+    }
+    setAdding(true);
+    const payload: ReverseProxyRule = {
+      name: name.trim(), directory: directory.trim(), target_url: targetUrl.trim(),
+      send_domain: sendDomain, enable_cache: enableCache,
+      url_rewrite: urlRewrites.filter(r => r.pattern && r.replacement),
+      content_replace: contentReplaces.filter(r => r.search),
+    };
+    try {
+      if (editIndex !== null) {
+        await api.put(`/sites/${siteId}/reverse-proxy/${editIndex}`, payload);
+        message.success('Proxy rule updated');
+      } else {
+        await api.post(`/sites/${siteId}/reverse-proxy`, payload);
+        message.success('Proxy rule added');
+      }
+      resetForm();
+      fetchRules();
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(msg || 'Failed to save proxy rule');
+    } finally { setAdding(false); }
+  };
+
+  const handleRemove = async (index: number) => {
+    try {
+      await api.delete(`/sites/${siteId}/reverse-proxy/${index}`);
+      message.success('Proxy rule removed');
+      fetchRules();
+    } catch { message.error('Failed to remove proxy rule'); }
+  };
+
+  const sectionStyle: React.CSSProperties = {
+    padding: '14px 16px', borderRadius: 8,
+    border: `1px solid ${p.cardBorder}`, marginBottom: 14, background: p.card,
+  };
+
+  const labelStyle: React.CSSProperties = {
+    fontSize: 13, fontWeight: 600, color: p.text, marginBottom: 8,
+    display: 'flex', alignItems: 'center', gap: 8,
+  };
+
+  const btnStyle = (isLoading: boolean): React.CSSProperties => ({
+    padding: '5px 16px', borderRadius: 6, border: 'none',
+    background: p.accent, color: '#fff', fontSize: 12, fontWeight: 600,
+    cursor: isLoading ? 'wait' : 'pointer', opacity: isLoading ? 0.7 : 1,
+  });
+
+  if (loading) return <Spin />;
+
+  return (
+    <div>
+      {/* Add / Edit form */}
+      {!showForm ? (
+        <div style={{ marginBottom: 14 }}>
+          <button onClick={() => setShowForm(true)} style={btnStyle(false)}>
+            <PlusOutlined /> Add Proxy Rule
+          </button>
+        </div>
+      ) : (
+        <div style={sectionStyle}>
+          <div style={labelStyle}>
+            <ApiOutlined style={{ color: p.accent }} />
+            {editIndex !== null ? 'Edit Proxy Rule' : 'New Proxy Rule'}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+            <Input placeholder="Proxy Name" value={name} onChange={e => setName(e.target.value)} style={{ fontSize: 12 }} />
+            <Input placeholder="Directory (e.g. /api)" value={directory} onChange={e => setDirectory(e.target.value)} style={{ fontSize: 12 }} />
+          </div>
+          <Input placeholder="Target URL (e.g. http://127.0.0.1:3000)" value={targetUrl} onChange={e => setTargetUrl(e.target.value)}
+            style={{ fontSize: 12, marginBottom: 10 }} />
+
+          <div style={{ display: 'flex', gap: 20, marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: p.text }}>
+              <Switch size="small" checked={sendDomain} onChange={setSendDomain} />
+              Send Domain ($host)
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: p.text }}>
+              <Switch size="small" checked={enableCache} onChange={setEnableCache} />
+              Enable Cache
+            </div>
+          </div>
+
+          {/* URL Rewrite */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: p.text, marginBottom: 6 }}>URL Rewrite Rules</div>
+            {urlRewrites.map((rw, i) => (
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 6, marginBottom: 4 }}>
+                <Input size="small" placeholder="Pattern (regex)" value={rw.pattern}
+                  onChange={e => { const n = [...urlRewrites]; n[i] = { ...n[i], pattern: e.target.value }; setUrlRewrites(n); }} style={{ fontSize: 11 }} />
+                <Input size="small" placeholder="Replacement" value={rw.replacement}
+                  onChange={e => { const n = [...urlRewrites]; n[i] = { ...n[i], replacement: e.target.value }; setUrlRewrites(n); }} style={{ fontSize: 11 }} />
+                <button onClick={() => setUrlRewrites(urlRewrites.filter((_, j) => j !== i))}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: p.red, fontSize: 11 }}>
+                  <DeleteOutlined />
+                </button>
+              </div>
+            ))}
+            <button onClick={() => setUrlRewrites([...urlRewrites, { pattern: '', replacement: '' }])}
+              style={{ background: 'none', border: `1px dashed ${p.cardBorder}`, borderRadius: 4, padding: '3px 10px',
+                cursor: 'pointer', fontSize: 11, color: p.textMuted }}>
+              + Add Rewrite
+            </button>
+          </div>
+
+          {/* Content Replace */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: p.text, marginBottom: 6 }}>Content Replace Rules</div>
+            {contentReplaces.map((cr, i) => (
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 6, marginBottom: 4 }}>
+                <Input size="small" placeholder="Search" value={cr.search}
+                  onChange={e => { const n = [...contentReplaces]; n[i] = { ...n[i], search: e.target.value }; setContentReplaces(n); }} style={{ fontSize: 11 }} />
+                <Input size="small" placeholder="Replace with" value={cr.replace}
+                  onChange={e => { const n = [...contentReplaces]; n[i] = { ...n[i], replace: e.target.value }; setContentReplaces(n); }} style={{ fontSize: 11 }} />
+                <button onClick={() => setContentReplaces(contentReplaces.filter((_, j) => j !== i))}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: p.red, fontSize: 11 }}>
+                  <DeleteOutlined />
+                </button>
+              </div>
+            ))}
+            <button onClick={() => setContentReplaces([...contentReplaces, { search: '', replace: '' }])}
+              style={{ background: 'none', border: `1px dashed ${p.cardBorder}`, borderRadius: 4, padding: '3px 10px',
+                cursor: 'pointer', fontSize: 11, color: p.textMuted }}>
+              + Add Replace
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={handleSubmit} disabled={adding} style={btnStyle(adding)}>
+              {adding ? 'Saving...' : editIndex !== null ? 'Update Rule' : 'Add Rule'}
+            </button>
+            <button onClick={resetForm} style={{ ...btnStyle(false), background: p.codeBg, color: p.textMuted }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Rules list */}
+      {rules.length === 0 && !showForm && (
+        <div style={{ textAlign: 'center', padding: '30px 0', color: p.textMuted, fontSize: 12 }}>
+          <ApiOutlined style={{ fontSize: 28, opacity: 0.3, marginBottom: 8, display: 'block' }} />
+          No reverse proxy rules configured
+        </div>
+      )}
+      {rules.map((rule, i) => (
+        <div key={i} style={{
+          ...sectionStyle,
+          cursor: 'pointer',
+          border: expandedIndex === i ? `1px solid ${p.accent}40` : `1px solid ${p.cardBorder}`,
+        }}>
+          <div onClick={() => setExpandedIndex(expandedIndex === i ? null : i)}
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <ApiOutlined style={{ color: p.accent, fontSize: 14 }} />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: p.text }}>{rule.name}</div>
+                <div style={{ fontSize: 11, color: p.textMuted }}>
+                  <code style={{ background: p.codeBg, padding: '1px 4px', borderRadius: 3 }}>{rule.directory}</code>
+                  <span style={{ margin: '0 6px' }}>→</span>
+                  <code style={{ background: p.codeBg, padding: '1px 4px', borderRadius: 3 }}>{rule.target_url}</code>
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 6, fontSize: 11 }}>
+              {rule.send_domain && <span style={{ padding: '2px 6px', borderRadius: 3, background: `${p.green}20`, color: p.green }}>$host</span>}
+              {rule.enable_cache && <span style={{ padding: '2px 6px', borderRadius: 3, background: `${p.accent}20`, color: p.accent }}>cached</span>}
+              {(rule.url_rewrite?.length || 0) > 0 && <span style={{ padding: '2px 6px', borderRadius: 3, background: `${(p.amber || '#F59E0B')}20`, color: p.amber || '#F59E0B' }}>rewrite</span>}
+              {(rule.content_replace?.length || 0) > 0 && <span style={{ padding: '2px 6px', borderRadius: 3, background: `${(p.purple || '#8B5CF6')}20`, color: p.purple || '#8B5CF6' }}>replace</span>}
+            </div>
+          </div>
+
+          {expandedIndex === i && (
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${p.cardBorder}` }}>
+              {(rule.url_rewrite?.length || 0) > 0 && (
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: p.textMuted, marginBottom: 4 }}>URL Rewrites:</div>
+                  {rule.url_rewrite.map((rw, j) => (
+                    <div key={j} style={{ fontSize: 11, color: p.text, fontFamily: 'monospace', padding: '2px 0' }}>
+                      <span style={{ color: p.amber || '#F59E0B' }}>{rw.pattern}</span> → <span style={{ color: p.green }}>{rw.replacement}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {(rule.content_replace?.length || 0) > 0 && (
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: p.textMuted, marginBottom: 4 }}>Content Replace:</div>
+                  {rule.content_replace.map((cr, j) => (
+                    <div key={j} style={{ fontSize: 11, color: p.text, fontFamily: 'monospace', padding: '2px 0' }}>
+                      <span style={{ color: p.red }}>{cr.search}</span> → <span style={{ color: p.green }}>{cr.replace}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button onClick={(e) => { e.stopPropagation(); loadRuleToForm(rule, i); }}
+                  style={{ ...btnStyle(false), padding: '4px 12px', background: p.accent }}>
+                  <EditOutlined /> Edit
+                </button>
+                <Popconfirm title="Remove this proxy rule?" onConfirm={() => handleRemove(i)} okButtonProps={{ danger: true }}>
+                  <button onClick={(e) => e.stopPropagation()}
+                    style={{ ...btnStyle(false), padding: '4px 12px', background: p.red }}>
+                    <DeleteOutlined /> Remove
+                  </button>
+                </Popconfirm>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PlaceholderPanel({ title }: { title: string }) {
   const { p } = usePalette();
   return (
@@ -1609,6 +2032,8 @@ function SiteConfigModal({ site, open, onClose, phpVersions }: { site: Site | nu
         return <SSLPanel siteId={site.id} siteDomain={site.domain} />;
       case 'access':
         return <AccessControlPanel siteId={site.id} />;
+      case 'proxy':
+        return <ReverseProxyPanel siteId={site.id} />;
       case 'redirect':
         return <PlaceholderPanel title="Redirect Rules" />;
       case 'log':

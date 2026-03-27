@@ -87,6 +87,16 @@ func (h *SiteHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, sitesMW gin.Ha
 		// Traffic Control
 		sites.GET("/:id/traffic-control", h.GetTrafficControl)
 		sites.PUT("/:id/traffic-control", h.SetTrafficControl)
+
+		// Default Document
+		sites.GET("/:id/default-doc", h.GetDefaultDoc)
+		sites.PUT("/:id/default-doc", h.SetDefaultDoc)
+
+		// Reverse Proxy
+		sites.GET("/:id/reverse-proxy", h.GetReverseProxyRules)
+		sites.POST("/:id/reverse-proxy", h.AddReverseProxyRule)
+		sites.PUT("/:id/reverse-proxy/:index", h.UpdateReverseProxyRule)
+		sites.DELETE("/:id/reverse-proxy/:index", h.RemoveReverseProxyRule)
 	}
 }
 
@@ -953,6 +963,111 @@ func (h *SiteHandler) SetTrafficControl(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": "traffic control updated successfully"})
+}
+
+// ---------------------------------------------------------------------------
+// Default Document handlers
+// ---------------------------------------------------------------------------
+
+func (h *SiteHandler) GetDefaultDoc(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	config, err := h.siteService.GetDefaultDoc(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, config)
+}
+
+func (h *SiteHandler) SetDefaultDoc(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	var req service.DefaultDocConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "body", Message: "invalid request body"}})
+		return
+	}
+	if err := h.siteService.SetDefaultDoc(id, req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "default document updated successfully"})
+}
+
+// ---------------------------------------------------------------------------
+// Reverse Proxy handlers
+// ---------------------------------------------------------------------------
+
+func (h *SiteHandler) GetReverseProxyRules(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	rules, err := h.siteService.GetReverseProxyRules(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, rules)
+}
+
+func (h *SiteHandler) AddReverseProxyRule(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	var req service.ReverseProxyRule
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "body", Message: "name, directory, and target_url are required"}})
+		return
+	}
+	if err := h.siteService.AddReverseProxyRule(id, req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Created(c, gin.H{"message": "reverse proxy rule added successfully"})
+}
+
+func (h *SiteHandler) UpdateReverseProxyRule(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	index, err := parseID(c, "index")
+	if err != nil {
+		return
+	}
+	var req service.ReverseProxyRule
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "body", Message: "invalid request body"}})
+		return
+	}
+	if err := h.siteService.UpdateReverseProxyRule(id, int(index), req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "reverse proxy rule updated successfully"})
+}
+
+func (h *SiteHandler) RemoveReverseProxyRule(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	index, err := parseID(c, "index")
+	if err != nil {
+		return
+	}
+	if err := h.siteService.RemoveReverseProxyRule(id, int(index)); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "reverse proxy rule removed successfully"})
 }
 
 // ---------------------------------------------------------------------------
