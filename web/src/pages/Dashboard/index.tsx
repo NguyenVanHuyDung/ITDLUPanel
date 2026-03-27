@@ -233,8 +233,6 @@ export default function Dashboard() {
   const [sshPort, setSSHPort] = useState<number | null>(null);
   const [securityLoaded, setSecurityLoaded] = useState(false);
   const [processes, setProcesses] = useState<ProcessInfo[]>([]);
-  const [uptimeOffset, setUptimeOffset] = useState(0);
-  const uptimeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const processIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchSoftware = useCallback(async () => {
@@ -299,7 +297,6 @@ export default function Dashboard() {
       const { data: resp } = await api.get<{ code: number; data: SystemInfo }>('/dashboard');
       const d = resp.data;
       setInfo(d);
-      setUptimeOffset(0);
 
       const now = new Date();
       const timeStr = [now.getHours(), now.getMinutes(), now.getSeconds()]
@@ -331,13 +328,6 @@ export default function Dashboard() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [fetchData, refreshInterval]);
 
-  // Auto-update uptime every 60s
-  useEffect(() => {
-    if (uptimeTimerRef.current) clearInterval(uptimeTimerRef.current);
-    uptimeTimerRef.current = setInterval(() => setUptimeOffset(prev => prev + 60), 60000);
-    return () => { if (uptimeTimerRef.current) clearInterval(uptimeTimerRef.current); };
-  }, []);
-
   // Refresh processes every 30s
   useEffect(() => {
     if (processIntervalRef.current) clearInterval(processIntervalRef.current);
@@ -360,8 +350,6 @@ export default function Dashboard() {
   const swapUsed = info.swap?.used ?? 0;
   const swapPct = Math.round(info.swap?.usage_percent ?? 0);
   const hasSwap = swapTotal > 0;
-
-  const liveUptime = (info.system?.uptime ?? 0) + uptimeOffset;
 
   const expiringCerts = sslCerts.filter(c => c.days_remaining <= 30);
   const allCertsHealthy = sslLoaded && sslCerts.length > 0 && expiringCerts.length === 0;
@@ -477,29 +465,6 @@ export default function Dashboard() {
 
   return (
     <div>
-      {/* ── System Info Banner ── */}
-      {info.system && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 20,
-          flexWrap: 'wrap', padding: isMobile ? '10px 12px' : '10px 20px',
-          marginBottom: 12, borderRadius: 8,
-          background: isDark ? `${p.headerBg}` : '#F0F7FF',
-          border: `1px solid ${isDark ? p.cardBorder : '#D6E4F0'}`,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <DashIcon.Server color={p.accent} size={20} />
-            <span style={{ fontWeight: 700, fontSize: 15, color: p.text }}>{info.system.hostname}</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 18, flexWrap: 'wrap', flex: 1 }}>
-            <span style={{ fontSize: 12, color: p.textMuted }}>{info.system.os} · {info.system.kernel}</span>
-            <span style={{ fontSize: 12, color: p.textMuted }}>
-              <DashIcon.Clock color={p.textMuted} size={12} /> {formatUptime(liveUptime)}
-            </span>
-          </div>
-          <Tag color={isDark ? 'blue' : 'processing'} style={{ margin: 0, fontSize: 11 }}>v{info.system.panel_version}</Tag>
-        </div>
-      )}
-
       {/* ── Refresh bar ── */}
       <div style={{
         display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 16, gap: 8,
