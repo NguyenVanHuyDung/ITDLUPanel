@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Card, Col, Progress, Row, Typography, Spin, Button, Select, Space, Popover } from 'antd';
+import { Card, Col, Progress, Row, Typography, Spin, Button, Select, Space, Popover, Tag } from 'antd';
 import { ReloadOutlined, SyncOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import api from '@/services/api';
 import { useIsMobile } from '@/hooks/useIsMobile';
-import type { SystemInfo, Software } from '@/types';
+import { usePalette } from '@/hooks/usePalette';
+import type { SystemInfo, Software, ApiResponse } from '@/types';
 import NginxManageModal from '@/components/NginxManageModal';
 import PhpMyAdminManageModal from '@/components/PhpMyAdminManageModal';
 import { getSoftwareIcon } from '../AppStore/SoftwareIcons';
@@ -138,6 +139,28 @@ const DashIcon = {
       <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
     </svg>
   ),
+  Lock: ({ color, size = 18 }: { color: string; size?: number }) => (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+      <rect x="3" y="11" width="18" height="11" rx="2" fill={`${color}12`} />
+      <rect x="3" y="11" width="18" height="11" rx="2" />
+      <path d="M7 11V7a5 5 0 0110 0v4" />
+      <circle cx="12" cy="16.5" r="1.5" fill={color} stroke="none" />
+    </svg>
+  ),
+  AlertTriangle: ({ color, size = 18 }: { color: string; size?: number }) => (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+      <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" fill={`${color}12`} />
+      <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  ),
+  Zap: ({ color, size = 18 }: { color: string; size?: number }) => (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+      <polygon points="13,2 3,14 12,14 11,22 21,10 12,10 13,2" fill={`${color}12`} />
+      <polygon points="13,2 3,14 12,14 11,22 21,10 12,10 13,2" />
+    </svg>
+  ),
 };
 
 const formatMB = (bytes: number) => Math.round(bytes / 1024 / 1024);
@@ -173,9 +196,23 @@ interface NetworkChartPoint {
   downstream: number;
 }
 
+interface SSLCertificate {
+  ssl_name: string;
+  expiry_date: string;
+  days_remaining: number;
+}
+
+interface ProcessInfo {
+  pid: number;
+  name: string;
+  cpu_percent: number;
+  memory_percent: number;
+}
+
 export default function Dashboard() {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
+  const { p, isDark } = usePalette();
   const [loading, setLoading] = useState(true);
   const [info, setInfo] = useState<SystemInfo | null>(null);
   const [chartData, setChartData] = useState<NetworkChartPoint[]>([]);
@@ -187,10 +224,72 @@ export default function Dashboard() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevNetworkRef = useRef<{ sent: number; recv: number } | null>(null);
 
+  // New state for additional sections
+  const [sslCerts, setSSLCerts] = useState<SSLCertificate[]>([]);
+  const [sslLoaded, setSSLLoaded] = useState(false);
+  const [firewallEnabled, setFirewallEnabled] = useState<boolean | null>(null);
+  const [blockedIPsCount, setBlockedIPsCount] = useState<number | null>(null);
+  const [firewallRulesCount, setFirewallRulesCount] = useState<number | null>(null);
+  const [sshPort, setSSHPort] = useState<number | null>(null);
+  const [securityLoaded, setSecurityLoaded] = useState(false);
+  const [processes, setProcesses] = useState<ProcessInfo[]>([]);
+  const [uptimeOffset, setUptimeOffset] = useState(0);
+  const uptimeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const processIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const fetchSoftware = useCallback(async () => {
     try {
       const { data: resp } = await api.get('/software');
       if (resp.data?.installed) setInstalledSoftware(resp.data.installed);
+    } catch { /* ignore */ }
+  }, []);
+
+  const fetchSSLCerts = useCallback(async () => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: resp } = await api.get<ApiResponse<any[]>>('/ssl/certificates');
+      if (Array.isArray(resp.data)) {
+        const now = Date.now();
+        setSSLCerts(resp.data.map(c => {
+          const expiry = c.valid_until || '';
+          const expiryMs = new Date(expiry).getTime();
+          const daysRemaining = Math.max(0, Math.ceil((expiryMs - now) / 86400000));
+          return { ssl_name: c.ssl_name || c.domain || '—', expiry_date: expiry, days_remaining: daysRemaining };
+        }));
+      }
+    } catch { /* ignore */ } finally {
+      setSSLLoaded(true);
+    }
+  }, []);
+
+  const fetchSecurityData = useCallback(async () => {
+    try {
+      const [fwSettings, blockedIPs, fwRules, sshData] = await Promise.allSettled([
+        api.get<ApiResponse<{ enabled: boolean }>>('/firewall/settings'),
+        api.get<ApiResponse<unknown[]>>('/firewall/blocked-ips'),
+        api.get<ApiResponse<unknown[]>>('/firewall/rules'),
+        api.get<ApiResponse<{ port: number }>>('/security/ssh'),
+      ]);
+      if (fwSettings.status === 'fulfilled') setFirewallEnabled(fwSettings.value.data.data?.enabled ?? null);
+      if (blockedIPs.status === 'fulfilled') setBlockedIPsCount(Array.isArray(blockedIPs.value.data.data) ? blockedIPs.value.data.data.length : 0);
+      if (fwRules.status === 'fulfilled') setFirewallRulesCount(Array.isArray(fwRules.value.data.data) ? fwRules.value.data.data.length : 0);
+      if (sshData.status === 'fulfilled') setSSHPort(sshData.value.data.data?.port ?? null);
+    } catch { /* ignore */ } finally {
+      setSecurityLoaded(true);
+    }
+  }, []);
+
+  const fetchProcesses = useCallback(async () => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: resp } = await api.get<ApiResponse<any[]>>('/monitor/processes');
+      if (Array.isArray(resp.data)) {
+        const sorted = [...resp.data]
+          .sort((a, b) => (b.cpu ?? 0) - (a.cpu ?? 0))
+          .slice(0, 5)
+          .map(p => ({ pid: p.pid, name: p.name, cpu_percent: p.cpu ?? 0, memory_percent: p.memory ?? 0 }));
+        setProcesses(sorted);
+      }
     } catch { /* ignore */ }
   }, []);
 
@@ -200,6 +299,7 @@ export default function Dashboard() {
       const { data: resp } = await api.get<{ code: number; data: SystemInfo }>('/dashboard');
       const d = resp.data;
       setInfo(d);
+      setUptimeOffset(0);
 
       const now = new Date();
       const timeStr = [now.getHours(), now.getMinutes(), now.getSeconds()]
@@ -223,13 +323,27 @@ export default function Dashboard() {
     }
   }, []);
 
-  useEffect(() => { fetchData(true); fetchSoftware(); }, [fetchData, fetchSoftware]);
+  useEffect(() => { fetchData(true); fetchSoftware(); fetchSSLCerts(); fetchSecurityData(); fetchProcesses(); }, [fetchData, fetchSoftware, fetchSSLCerts, fetchSecurityData, fetchProcesses]);
 
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
     intervalRef.current = setInterval(() => fetchData(), refreshInterval * 1000);
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [fetchData, refreshInterval]);
+
+  // Auto-update uptime every 60s
+  useEffect(() => {
+    if (uptimeTimerRef.current) clearInterval(uptimeTimerRef.current);
+    uptimeTimerRef.current = setInterval(() => setUptimeOffset(prev => prev + 60), 60000);
+    return () => { if (uptimeTimerRef.current) clearInterval(uptimeTimerRef.current); };
+  }, []);
+
+  // Refresh processes every 30s
+  useEffect(() => {
+    if (processIntervalRef.current) clearInterval(processIntervalRef.current);
+    processIntervalRef.current = setInterval(() => fetchProcesses(), 30000);
+    return () => { if (processIntervalRef.current) clearInterval(processIntervalRef.current); };
+  }, [fetchProcesses]);
 
   if (loading) return <div style={{ textAlign: 'center', padding: 100 }}><Spin size="large" /></div>;
   if (!info) return <div style={{ textAlign: 'center', padding: 100 }}><Text type="secondary">Failed to load dashboard</Text></div>;
@@ -241,6 +355,17 @@ export default function Dashboard() {
   const coreCount = info.cpu.physical_cores ?? info.cpu.cores ?? 1;
   const load1 = info.cpu.load_average?.[0] ?? 0;
   const loadPct = Math.min(Math.round((load1 / coreCount) * 100), 100);
+
+  const swapTotal = info.swap?.total ?? 0;
+  const swapUsed = info.swap?.used ?? 0;
+  const swapPct = Math.round(info.swap?.usage_percent ?? 0);
+  const hasSwap = swapTotal > 0;
+
+  const liveUptime = (info.system?.uptime ?? 0) + uptimeOffset;
+
+  const expiringCerts = sslCerts.filter(c => c.days_remaining <= 30);
+  const allCertsHealthy = sslLoaded && sslCerts.length > 0 && expiringCerts.length === 0;
+  const noCerts = sslLoaded && sslCerts.length === 0;
 
   // Popover style helpers
   const popLabel: React.CSSProperties = { fontSize: 13, color: '#555' };
@@ -352,6 +477,29 @@ export default function Dashboard() {
 
   return (
     <div>
+      {/* ── System Info Banner ── */}
+      {info.system && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 20,
+          flexWrap: 'wrap', padding: isMobile ? '10px 12px' : '10px 20px',
+          marginBottom: 12, borderRadius: 8,
+          background: isDark ? `${p.headerBg}` : '#F0F7FF',
+          border: `1px solid ${isDark ? p.cardBorder : '#D6E4F0'}`,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <DashIcon.Server color={p.accent} size={20} />
+            <span style={{ fontWeight: 700, fontSize: 15, color: p.text }}>{info.system.hostname}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 18, flexWrap: 'wrap', flex: 1 }}>
+            <span style={{ fontSize: 12, color: p.textMuted }}>{info.system.os} · {info.system.kernel}</span>
+            <span style={{ fontSize: 12, color: p.textMuted }}>
+              <DashIcon.Clock color={p.textMuted} size={12} /> {formatUptime(liveUptime)}
+            </span>
+          </div>
+          <Tag color={isDark ? 'blue' : 'processing'} style={{ margin: 0, fontSize: 11 }}>v{info.system.panel_version}</Tag>
+        </div>
+      )}
+
       {/* ── Refresh bar ── */}
       <div style={{
         display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 16, gap: 8,
@@ -421,10 +569,20 @@ export default function Dashboard() {
                 </Popover>
               </Col>
             </Row>
+            {/* Swap usage indicator */}
+            {hasSwap && (
+              <div style={{ marginTop: 12, padding: '8px 12px', borderTop: '1px solid #f0f0f0', borderRadius: 4 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <Text type="secondary" style={{ fontSize: 11 }}>Swap</Text>
+                  <Text type="secondary" style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>
+                    {formatMB(swapUsed)} / {formatMB(swapTotal)} MB ({swapPct}%)
+                  </Text>
+                </div>
+                <Progress percent={swapPct} strokeColor={swapPct > 80 ? '#ff4d4f' : '#8E24AA'} showInfo={false} size="small" />
+              </div>
+            )}
           </Card>
         </Col>
-
-        {/* — Disk — */}
         <Col xs={24} lg={9}>
           <Card title={<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><DashIcon.Disk color="#1565C0" /> Disk</div>} size="small"
             style={{ height: '100%' }}
@@ -528,6 +686,139 @@ export default function Dashboard() {
           </Col>
         </Row>
       </Card>
+
+      {/* ══════ NEW ROW: SSL Alerts + Security Summary + Top Processes ══════ */}
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        {/* — SSL Certificate Alerts — */}
+        <Col xs={24} lg={8} style={{ marginBottom: isMobile ? 16 : 0 }}>
+          <Card
+            title={<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><DashIcon.Lock color={p.accent} size={18} /> SSL Certificates</div>}
+            size="small"
+            style={{ height: '100%', background: isDark ? p.card : undefined, borderColor: isDark ? p.cardBorder : undefined }}
+            styles={{ body: { padding: 16 }, header: { fontWeight: 600, color: isDark ? p.text : undefined, background: isDark ? p.headerBg : undefined, borderColor: isDark ? p.cardBorder : undefined } }}
+          >
+            {!sslLoaded ? (
+              <Text style={{ fontSize: 12, color: p.textMuted }}>—</Text>
+            ) : noCerts ? (
+              <Text style={{ fontSize: 12, color: p.textMuted }}>No SSL certificates found</Text>
+            ) : allCertsHealthy ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0' }}>
+                <DashIcon.Shield color={p.green} size={20} />
+                <Text style={{ fontSize: 13, color: p.green, fontWeight: 600 }}>All certificates valid</Text>
+                <Tag color="success" style={{ marginLeft: 'auto', fontSize: 11 }}>{sslCerts.length} cert{sslCerts.length > 1 ? 's' : ''}</Tag>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {expiringCerts.map((cert, i) => {
+                  const isUrgent = cert.days_remaining < 7;
+                  const certColor = isUrgent ? p.red : p.amber;
+                  return (
+                    <div key={i} style={{
+                      display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
+                      borderRadius: 6, border: `1px solid ${certColor}30`, background: `${certColor}08`,
+                    }}>
+                      <DashIcon.AlertTriangle color={certColor} size={16} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: p.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {cert.ssl_name}
+                        </div>
+                        <div style={{ fontSize: 11, color: p.textMuted }}>
+                          Expires: {cert.expiry_date}
+                        </div>
+                      </div>
+                      <Tag color={isUrgent ? 'error' : 'warning'} style={{ fontSize: 11, margin: 0 }}>
+                        {cert.days_remaining}d
+                      </Tag>
+                    </div>
+                  );
+                })}
+                {sslCerts.length > expiringCerts.length && (
+                  <Text style={{ fontSize: 11, color: p.green }}>+ {sslCerts.length - expiringCerts.length} healthy cert{sslCerts.length - expiringCerts.length > 1 ? 's' : ''}</Text>
+                )}
+              </div>
+            )}
+          </Card>
+        </Col>
+
+        {/* — Security Summary — */}
+        <Col xs={24} lg={8} style={{ marginBottom: isMobile ? 16 : 0 }}>
+          <Card
+            title={<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><DashIcon.Shield color={p.accent} size={18} /> Security</div>}
+            size="small"
+            style={{ height: '100%', background: isDark ? p.card : undefined, borderColor: isDark ? p.cardBorder : undefined }}
+            styles={{ body: { padding: 16 }, header: { fontWeight: 600, color: isDark ? p.text : undefined, background: isDark ? p.headerBg : undefined, borderColor: isDark ? p.cardBorder : undefined } }}
+          >
+            {!securityLoaded ? (
+              <Text style={{ fontSize: 12, color: p.textMuted }}>—</Text>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div style={{ padding: '10px 12px', borderRadius: 6, background: isDark ? p.codeBg : '#F8FAFC', border: `1px solid ${isDark ? p.cardBorder : '#E2E8F0'}` }}>
+                  <Text style={{ fontSize: 11, color: p.textMuted, display: 'block' }}>Firewall</Text>
+                  <Tag color={firewallEnabled ? 'success' : 'default'} style={{ marginTop: 4, fontSize: 12 }}>
+                    {firewallEnabled ? 'ON' : firewallEnabled === false ? 'OFF' : '—'}
+                  </Tag>
+                </div>
+                <div style={{ padding: '10px 12px', borderRadius: 6, background: isDark ? p.codeBg : '#F8FAFC', border: `1px solid ${isDark ? p.cardBorder : '#E2E8F0'}` }}>
+                  <Text style={{ fontSize: 11, color: p.textMuted, display: 'block' }}>SSH Port</Text>
+                  <Text style={{ fontSize: 16, fontWeight: 700, color: p.text, fontFamily: "'JetBrains Mono', monospace" }}>
+                    {sshPort ?? '—'}
+                  </Text>
+                </div>
+                <div style={{ padding: '10px 12px', borderRadius: 6, background: isDark ? p.codeBg : '#F8FAFC', border: `1px solid ${isDark ? p.cardBorder : '#E2E8F0'}` }}>
+                  <Text style={{ fontSize: 11, color: p.textMuted, display: 'block' }}>Blocked IPs</Text>
+                  <Text style={{ fontSize: 16, fontWeight: 700, color: (blockedIPsCount ?? 0) > 0 ? p.red : p.text, fontFamily: "'JetBrains Mono', monospace" }}>
+                    {blockedIPsCount ?? '—'}
+                  </Text>
+                </div>
+                <div style={{ padding: '10px 12px', borderRadius: 6, background: isDark ? p.codeBg : '#F8FAFC', border: `1px solid ${isDark ? p.cardBorder : '#E2E8F0'}` }}>
+                  <Text style={{ fontSize: 11, color: p.textMuted, display: 'block' }}>FW Rules</Text>
+                  <Text style={{ fontSize: 16, fontWeight: 700, color: p.text, fontFamily: "'JetBrains Mono', monospace" }}>
+                    {firewallRulesCount ?? '—'}
+                  </Text>
+                </div>
+              </div>
+            )}
+          </Card>
+        </Col>
+
+        {/* — Top Processes — */}
+        <Col xs={24} lg={8}>
+          <Card
+            title={<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><DashIcon.Zap color={p.accent} size={18} /> Top Processes</div>}
+            size="small"
+            style={{ height: '100%', background: isDark ? p.card : undefined, borderColor: isDark ? p.cardBorder : undefined }}
+            styles={{ body: { padding: '8px 0' }, header: { fontWeight: 600, color: isDark ? p.text : undefined, background: isDark ? p.headerBg : undefined, borderColor: isDark ? p.cardBorder : undefined } }}
+          >
+            {processes.length === 0 ? (
+              <div style={{ padding: '8px 16px' }}><Text style={{ fontSize: 12, color: p.textMuted }}>—</Text></div>
+            ) : (
+              <div>
+                <div style={{ display: 'flex', padding: '4px 16px 6px', borderBottom: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}` }}>
+                  <span style={{ fontSize: 10, color: p.textMuted, fontWeight: 600, width: 52 }}>PID</span>
+                  <span style={{ fontSize: 10, color: p.textMuted, fontWeight: 600, flex: 1 }}>NAME</span>
+                  <span style={{ fontSize: 10, color: p.textMuted, fontWeight: 600, width: 50, textAlign: 'right' }}>CPU%</span>
+                  <span style={{ fontSize: 10, color: p.textMuted, fontWeight: 600, width: 50, textAlign: 'right' }}>MEM%</span>
+                </div>
+                {processes.map((proc, i) => (
+                  <div key={proc.pid} style={{
+                    display: 'flex', padding: '5px 16px', alignItems: 'center',
+                    background: i % 2 === 1 ? (isDark ? p.rowAlt : '#FAFAFA') : 'transparent',
+                  }}>
+                    <span style={{ fontSize: 12, color: p.textMuted, fontFamily: "'JetBrains Mono', monospace", width: 52 }}>{proc.pid}</span>
+                    <span style={{ fontSize: 12, color: p.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{proc.name}</span>
+                    <span style={{ fontSize: 12, fontFamily: "'JetBrains Mono', monospace", width: 50, textAlign: 'right', color: proc.cpu_percent > 50 ? p.red : p.text }}>
+                      {proc.cpu_percent.toFixed(1)}
+                    </span>
+                    <span style={{ fontSize: 12, fontFamily: "'JetBrains Mono', monospace", width: 50, textAlign: 'right', color: proc.memory_percent > 50 ? p.amber : p.text }}>
+                      {proc.memory_percent.toFixed(1)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </Col>
+      </Row>
 
       {/* ══════ BOTTOM ROW: Software + Traffic ══════ */}
       <Row gutter={16}>

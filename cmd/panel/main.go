@@ -95,6 +95,13 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Failed to initialise: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Set panel version from build info if config doesn't have one
+	cfg := config.Get()
+	if cfg.Panel.Version == "" && version != "" {
+		cfg.Panel.Version = version
+	}
+
 	defer application.Shutdown()
 
 	// Graceful shutdown on SIGINT / SIGTERM.

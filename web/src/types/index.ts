@@ -60,6 +60,7 @@ export interface SystemInfo {
     total_processes: number; active_processes: number;
   };
   memory: { total: number; used: number; available: number; usage_percent: number; buffers: number; cached: number };
+  swap?: { total: number; used: number; free: number; usage_percent: number };
   disk: {
     total: number; used: number; available: number; usage_percent: number;
     fs_type?: string; mount_point?: string; device?: string;
