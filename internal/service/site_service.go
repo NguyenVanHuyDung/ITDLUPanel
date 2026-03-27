@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/x509"
 	"database/sql"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"os"
@@ -1365,6 +1366,715 @@ func (s *SiteService) setConfigExtraField(id int64, site *Site, field, value str
 	_, err := s.db.Exec("UPDATE sites SET config_extra = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", extra, id)
 	if err != nil {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to update config_extra")
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// JSON config file helpers
+// ---------------------------------------------------------------------------
+
+func siteConfigDir() string {
+	return "/ITDLUPanel/server/config/sites"
+}
+
+func readJSONFile(path string, v interface{}) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	return json.Unmarshal(data, v)
+}
+
+func writeJSONFile(path string, v interface{}) error {
+	_ = os.MkdirAll(filepath.Dir(path), 0755)
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
+}
+
+// ---------------------------------------------------------------------------
+// Nginx block manipulation helpers
+// ---------------------------------------------------------------------------
+
+// insertNginxBlock inserts lines between start/end markers after the "root" directive.
+// If the block already exists it is replaced.
+func (s *SiteService) insertNginxBlock(confPath, startMarker, endMarker string, blockLines []string) error {
+	content, err := os.ReadFile(confPath)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to read vhost config")
+	}
+
+	text := string(content)
+
+	// If markers already exist, replace
+	if strings.Contains(text, startMarker) {
+		return s.replaceNginxBlock(confPath, startMarker, endMarker, blockLines)
+	}
+
+	// Insert after first uncommented "root " directive
+	lines := vhostLines(text)
+	var newLines []string
+	inserted := false
+	for _, line := range lines {
+		newLines = append(newLines, line)
+		if !inserted && strings.Contains(line, "root ") && !strings.Contains(line, "#") {
+			newLines = append(newLines, "    "+startMarker)
+			for _, bl := range blockLines {
+				newLines = append(newLines, "    "+bl)
+			}
+			newLines = append(newLines, "    "+endMarker)
+			inserted = true
+		}
+	}
+
+	return os.WriteFile(confPath, []byte(vhostJoin(newLines)), 0644)
+}
+
+// removeNginxBlock removes everything between (and including) the start/end markers.
+func (s *SiteService) removeNginxBlock(confPath, startMarker, endMarker string) error {
+	content, err := os.ReadFile(confPath)
+	if err != nil {
+		return nil
+	}
+
+	lines := vhostLines(string(content))
+	var newLines []string
+	inBlock := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == startMarker {
+			inBlock = true
+			continue
+		}
+		if trimmed == endMarker {
+			inBlock = false
+			continue
+		}
+		if inBlock {
+			continue
+		}
+		newLines = append(newLines, line)
+	}
+
+	return os.WriteFile(confPath, []byte(vhostJoin(newLines)), 0644)
+}
+
+// replaceNginxBlock replaces the content between start/end markers with new lines.
+func (s *SiteService) replaceNginxBlock(confPath, startMarker, endMarker string, blockLines []string) error {
+	content, err := os.ReadFile(confPath)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to read vhost config")
+	}
+
+	lines := vhostLines(string(content))
+	var newLines []string
+	inBlock := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == startMarker {
+			inBlock = true
+			newLines = append(newLines, line)
+			for _, bl := range blockLines {
+				newLines = append(newLines, "    "+bl)
+			}
+			continue
+		}
+		if trimmed == endMarker {
+			inBlock = false
+			newLines = append(newLines, line)
+			continue
+		}
+		if inBlock {
+			continue
+		}
+		newLines = append(newLines, line)
+	}
+
+	return os.WriteFile(confPath, []byte(vhostJoin(newLines)), 0644)
+}
+
+// ---------------------------------------------------------------------------
+// Feature 1: Sub Directory Binding
+// ---------------------------------------------------------------------------
+
+// SubdirBinding represents a domain-to-subdirectory binding.
+type SubdirBinding struct {
+	Domain string `json:"domain"`
+	Subdir string `json:"subdir"`
+}
+
+func subdirBindingsPath(id int64) string {
+	return filepath.Join(siteConfigDir(), fmt.Sprintf("%d_subdir.json", id))
+}
+
+func subdirNginxConfPath(bindingDomain string) string {
+	return filepath.Join("/etc/nginx/sites-available", bindingDomain+"_subdir.conf")
+}
+
+func subdirNginxEnabledPath(bindingDomain string) string {
+	return filepath.Join("/etc/nginx/sites-enabled", bindingDomain+"_subdir.conf")
+}
+
+// GetSubdirBindings returns all subdirectory bindings for a site.
+func (s *SiteService) GetSubdirBindings(id int64) ([]SubdirBinding, error) {
+	_, err := s.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	var bindings []SubdirBinding
+	if err := readJSONFile(subdirBindingsPath(id), &bindings); err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read subdir bindings")
+	}
+	if bindings == nil {
+		bindings = []SubdirBinding{}
+	}
+	return bindings, nil
+}
+
+// AddSubdirBinding adds a subdirectory binding and creates the nginx config.
+func (s *SiteService) AddSubdirBinding(id int64, domain, subdir string) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	if domain == "" || subdir == "" {
+		return apperrors.New(apperrors.ErrValidation, "domain and subdir are required")
+	}
+
+	// Clean subdir: strip leading/trailing slashes
+	subdir = strings.Trim(subdir, "/")
+	if subdir == "" {
+		return apperrors.New(apperrors.ErrValidation, "subdir cannot be empty")
+	}
+
+	var bindings []SubdirBinding
+	_ = readJSONFile(subdirBindingsPath(id), &bindings)
+
+	// Check for duplicate domain
+	for _, b := range bindings {
+		if b.Domain == domain {
+			return apperrors.New(apperrors.ErrValidation, "domain binding already exists")
+		}
+	}
+
+	bindings = append(bindings, SubdirBinding{Domain: domain, Subdir: subdir})
+
+	if err := writeJSONFile(subdirBindingsPath(id), bindings); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to save subdir bindings")
+	}
+
+	// Create nginx config for the subdomain
+	docRoot := filepath.Join(wwwrootBase, site.Domain, subdir)
+	nginxConf := s.generateSubdirNginxConf(domain, docRoot, site)
+	confPath := subdirNginxConfPath(domain)
+	if err := os.WriteFile(confPath, []byte(nginxConf), 0644); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to write subdir nginx config")
+	}
+
+	// Symlink to sites-enabled
+	enabledPath := subdirNginxEnabledPath(domain)
+	_ = os.Remove(enabledPath)
+	if err := os.Symlink(confPath, enabledPath); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to enable subdir site")
+	}
+
+	gen := generatorFor(site.Webserver)
+	if err := gen.ReloadServer(); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to reload webserver")
+	}
+
+	logger.Info().Int64("id", id).Str("domain", domain).Str("subdir", subdir).Msg("subdir binding added")
+	return nil
+}
+
+// RemoveSubdirBinding removes a subdirectory binding by index.
+func (s *SiteService) RemoveSubdirBinding(id int64, index int) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	var bindings []SubdirBinding
+	_ = readJSONFile(subdirBindingsPath(id), &bindings)
+
+	if index < 0 || index >= len(bindings) {
+		return apperrors.New(apperrors.ErrValidation, "invalid binding index")
+	}
+
+	removed := bindings[index]
+	bindings = append(bindings[:index], bindings[index+1:]...)
+
+	if err := writeJSONFile(subdirBindingsPath(id), bindings); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to save subdir bindings")
+	}
+
+	// Remove nginx config files
+	_ = os.Remove(subdirNginxEnabledPath(removed.Domain))
+	_ = os.Remove(subdirNginxConfPath(removed.Domain))
+
+	gen := generatorFor(site.Webserver)
+	if err := gen.ReloadServer(); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to reload webserver")
+	}
+
+	logger.Info().Int64("id", id).Str("domain", removed.Domain).Msg("subdir binding removed")
+	return nil
+}
+
+func (s *SiteService) generateSubdirNginxConf(bindingDomain, docRoot string, site *Site) string {
+	phpVersion := ""
+	if site.PHPVersion != nil {
+		phpVersion = *site.PHPVersion
+	}
+
+	var b strings.Builder
+	b.WriteString("server {\n")
+	b.WriteString("    listen 80;\n")
+	b.WriteString(fmt.Sprintf("    server_name %s;\n", bindingDomain))
+	b.WriteString(fmt.Sprintf("    root %s;\n", docRoot))
+	b.WriteString("    index index.php index.html index.htm;\n")
+	b.WriteString("\n")
+	b.WriteString("    location / {\n")
+	b.WriteString("        try_files $uri $uri/ /index.php?$query_string;\n")
+	b.WriteString("    }\n")
+
+	if phpVersion != "" {
+		b.WriteString("\n")
+		b.WriteString("    location ~ \\.php$ {\n")
+		b.WriteString("        fastcgi_pass unix:/run/php/php" + phpVersion + "-fpm.sock;\n")
+		b.WriteString("        fastcgi_index index.php;\n")
+		b.WriteString("        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n")
+		b.WriteString("        include fastcgi_params;\n")
+		b.WriteString("    }\n")
+	}
+
+	b.WriteString("\n")
+	b.WriteString(fmt.Sprintf("    access_log /ITDLUPanel/logs/%s.access.log;\n", bindingDomain))
+	b.WriteString(fmt.Sprintf("    error_log /ITDLUPanel/logs/%s.error.log;\n", bindingDomain))
+	b.WriteString("}\n")
+
+	return b.String()
+}
+
+// ---------------------------------------------------------------------------
+// Feature 2: Limit Access (HTTP Basic Auth per path)
+// ---------------------------------------------------------------------------
+
+// LimitAccessRule represents an HTTP Basic Auth rule for a specific path.
+type LimitAccessRule struct {
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	Username string `json:"username"`
+	Password string `json:"password,omitempty"`
+}
+
+func limitAccessPath(id int64) string {
+	return filepath.Join(siteConfigDir(), fmt.Sprintf("%d_limit_access.json", id))
+}
+
+// GetLimitAccessRules returns all limit access rules for a site.
+func (s *SiteService) GetLimitAccessRules(id int64) ([]LimitAccessRule, error) {
+	_, err := s.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	var rules []LimitAccessRule
+	if err := readJSONFile(limitAccessPath(id), &rules); err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read limit access rules")
+	}
+	if rules == nil {
+		rules = []LimitAccessRule{}
+	}
+	// Strip passwords from response
+	for i := range rules {
+		rules[i].Password = ""
+	}
+	return rules, nil
+}
+
+// AddLimitAccessRule adds a basic auth rule for a specific path.
+func (s *SiteService) AddLimitAccessRule(id int64, rule LimitAccessRule) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	if rule.Name == "" || rule.Path == "" || rule.Username == "" || rule.Password == "" {
+		return apperrors.New(apperrors.ErrValidation, "name, path, username, and password are required")
+	}
+
+	var rules []LimitAccessRule
+	_ = readJSONFile(limitAccessPath(id), &rules)
+
+	// Check for duplicate name
+	for _, r := range rules {
+		if r.Name == rule.Name {
+			return apperrors.New(apperrors.ErrValidation, "rule with this name already exists")
+		}
+	}
+
+	// Create htpasswd file
+	htpasswdDir := "/ITDLUPanel/server/nginx/htpasswd"
+	_ = os.MkdirAll(htpasswdDir, 0755)
+	htpasswdFile := filepath.Join(htpasswdDir, fmt.Sprintf("%s_%s", site.Domain, rule.Name))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := os.Stat("/usr/bin/htpasswd"); err == nil {
+		_, err = system.Exec(ctx, "htpasswd", "-cb", htpasswdFile, rule.Username, rule.Password)
+		if err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to create htpasswd file")
+		}
+	} else {
+		out, err := system.Exec(ctx, "openssl", "passwd", "-apr1", rule.Password)
+		if err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to generate password hash")
+		}
+		hash := strings.TrimSpace(out.Stdout)
+		if err := os.WriteFile(htpasswdFile, []byte(fmt.Sprintf("%s:%s\n", rule.Username, hash)), 0644); err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to write htpasswd file")
+		}
+	}
+
+	rules = append(rules, rule)
+
+	if err := writeJSONFile(limitAccessPath(id), rules); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to save limit access rules")
+	}
+
+	// Rebuild nginx block
+	if err := s.rebuildLimitAccessNginx(site, rules); err != nil {
+		return err
+	}
+
+	gen := generatorFor(site.Webserver)
+	if err := gen.ReloadServer(); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to reload webserver")
+	}
+
+	logger.Info().Int64("id", id).Str("name", rule.Name).Str("path", rule.Path).Msg("limit access rule added")
+	return nil
+}
+
+// RemoveLimitAccessRule removes a limit access rule by index.
+func (s *SiteService) RemoveLimitAccessRule(id int64, index int) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	var rules []LimitAccessRule
+	_ = readJSONFile(limitAccessPath(id), &rules)
+
+	if index < 0 || index >= len(rules) {
+		return apperrors.New(apperrors.ErrValidation, "invalid rule index")
+	}
+
+	removed := rules[index]
+	rules = append(rules[:index], rules[index+1:]...)
+
+	// Remove htpasswd file
+	htpasswdFile := filepath.Join("/ITDLUPanel/server/nginx/htpasswd", fmt.Sprintf("%s_%s", site.Domain, removed.Name))
+	_ = os.Remove(htpasswdFile)
+
+	if err := writeJSONFile(limitAccessPath(id), rules); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to save limit access rules")
+	}
+
+	gen := generatorFor(site.Webserver)
+	confPath := gen.GetConfigPath(site.Domain)
+
+	if len(rules) == 0 {
+		if err := s.removeNginxBlock(confPath, "#LIMIT_ACCESS_START", "#LIMIT_ACCESS_END"); err != nil {
+			return err
+		}
+	} else {
+		if err := s.rebuildLimitAccessNginx(site, rules); err != nil {
+			return err
+		}
+	}
+
+	if err := gen.ReloadServer(); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to reload webserver")
+	}
+
+	logger.Info().Int64("id", id).Str("name", removed.Name).Msg("limit access rule removed")
+	return nil
+}
+
+func (s *SiteService) rebuildLimitAccessNginx(site *Site, rules []LimitAccessRule) error {
+	gen := generatorFor(site.Webserver)
+	confPath := gen.GetConfigPath(site.Domain)
+
+	var blockLines []string
+	for _, r := range rules {
+		htpasswdFile := filepath.Join("/ITDLUPanel/server/nginx/htpasswd", fmt.Sprintf("%s_%s", site.Domain, r.Name))
+		blockLines = append(blockLines,
+			fmt.Sprintf("location ^~ %s {", r.Path),
+			"    auth_basic \"Restricted Area\";",
+			fmt.Sprintf("    auth_basic_user_file %s;", htpasswdFile),
+			"    try_files $uri $uri/ /index.php?$query_string;",
+			"}",
+		)
+	}
+
+	return s.insertNginxBlock(confPath, "#LIMIT_ACCESS_START", "#LIMIT_ACCESS_END", blockLines)
+}
+
+// ---------------------------------------------------------------------------
+// Feature 3: Deny Access (block file types in paths)
+// ---------------------------------------------------------------------------
+
+// DenyAccessRule represents a rule to deny access to certain file types in a path.
+type DenyAccessRule struct {
+	Name   string `json:"name"`
+	Suffix string `json:"suffix"`
+	Path   string `json:"path"`
+}
+
+func denyAccessPath(id int64) string {
+	return filepath.Join(siteConfigDir(), fmt.Sprintf("%d_deny_access.json", id))
+}
+
+// GetDenyAccessRules returns all deny access rules for a site.
+func (s *SiteService) GetDenyAccessRules(id int64) ([]DenyAccessRule, error) {
+	_, err := s.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	var rules []DenyAccessRule
+	if err := readJSONFile(denyAccessPath(id), &rules); err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read deny access rules")
+	}
+	if rules == nil {
+		rules = []DenyAccessRule{}
+	}
+	return rules, nil
+}
+
+// AddDenyAccessRule adds a deny access rule for file types in a path.
+func (s *SiteService) AddDenyAccessRule(id int64, rule DenyAccessRule) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	if rule.Name == "" || rule.Suffix == "" || rule.Path == "" {
+		return apperrors.New(apperrors.ErrValidation, "name, suffix, and path are required")
+	}
+
+	var rules []DenyAccessRule
+	_ = readJSONFile(denyAccessPath(id), &rules)
+
+	for _, r := range rules {
+		if r.Name == rule.Name {
+			return apperrors.New(apperrors.ErrValidation, "rule with this name already exists")
+		}
+	}
+
+	rules = append(rules, rule)
+
+	if err := writeJSONFile(denyAccessPath(id), rules); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to save deny access rules")
+	}
+
+	if err := s.rebuildDenyAccessNginx(site, rules); err != nil {
+		return err
+	}
+
+	gen := generatorFor(site.Webserver)
+	if err := gen.ReloadServer(); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to reload webserver")
+	}
+
+	logger.Info().Int64("id", id).Str("name", rule.Name).Msg("deny access rule added")
+	return nil
+}
+
+// RemoveDenyAccessRule removes a deny access rule by index.
+func (s *SiteService) RemoveDenyAccessRule(id int64, index int) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	var rules []DenyAccessRule
+	_ = readJSONFile(denyAccessPath(id), &rules)
+
+	if index < 0 || index >= len(rules) {
+		return apperrors.New(apperrors.ErrValidation, "invalid rule index")
+	}
+
+	removed := rules[index]
+	rules = append(rules[:index], rules[index+1:]...)
+
+	if err := writeJSONFile(denyAccessPath(id), rules); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to save deny access rules")
+	}
+
+	gen := generatorFor(site.Webserver)
+	confPath := gen.GetConfigPath(site.Domain)
+
+	if len(rules) == 0 {
+		if err := s.removeNginxBlock(confPath, "#DENY_ACCESS_START", "#DENY_ACCESS_END"); err != nil {
+			return err
+		}
+	} else {
+		if err := s.rebuildDenyAccessNginx(site, rules); err != nil {
+			return err
+		}
+	}
+
+	if err := gen.ReloadServer(); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to reload webserver")
+	}
+
+	logger.Info().Int64("id", id).Str("name", removed.Name).Msg("deny access rule removed")
+	return nil
+}
+
+func (s *SiteService) rebuildDenyAccessNginx(site *Site, rules []DenyAccessRule) error {
+	gen := generatorFor(site.Webserver)
+	confPath := gen.GetConfigPath(site.Domain)
+
+	var blockLines []string
+	for _, r := range rules {
+		path := strings.TrimRight(r.Path, "/")
+		blockLines = append(blockLines,
+			fmt.Sprintf("location ~ ^%s/.*\\.(%s)$ {", path, r.Suffix),
+			"    deny all;",
+			"}",
+		)
+	}
+
+	return s.insertNginxBlock(confPath, "#DENY_ACCESS_START", "#DENY_ACCESS_END", blockLines)
+}
+
+// ---------------------------------------------------------------------------
+// Feature 4: Traffic Control (rate limiting)
+// ---------------------------------------------------------------------------
+
+// TrafficConfig represents traffic control settings for a site.
+type TrafficConfig struct {
+	Enabled     bool   `json:"enabled"`
+	Plan        string `json:"plan"`
+	Concurrency int    `json:"concurrency"`
+	IPLimit     int    `json:"ip_limit"`
+	Bandwidth   int    `json:"bandwidth"`
+}
+
+func trafficConfigPath(id int64) string {
+	return filepath.Join(siteConfigDir(), fmt.Sprintf("%d_traffic.json", id))
+}
+
+// GetTrafficControl returns the current traffic control settings for a site.
+func (s *SiteService) GetTrafficControl(id int64) (*TrafficConfig, error) {
+	_, err := s.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	var config TrafficConfig
+	if err := readJSONFile(trafficConfigPath(id), &config); err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read traffic config")
+	}
+	return &config, nil
+}
+
+// SetTrafficControl updates traffic control settings for a site.
+func (s *SiteService) SetTrafficControl(id int64, config TrafficConfig) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	// Apply preset plans
+	switch strings.ToUpper(config.Plan) {
+	case "BSS":
+		if config.Concurrency == 0 {
+			config.Concurrency = 500
+		}
+		if config.IPLimit == 0 {
+			config.IPLimit = 50
+		}
+		if config.Bandwidth == 0 {
+			config.Bandwidth = 1024
+		}
+	case "BLOG":
+		if config.Concurrency == 0 {
+			config.Concurrency = 300
+		}
+		if config.IPLimit == 0 {
+			config.IPLimit = 25
+		}
+		if config.Bandwidth == 0 {
+			config.Bandwidth = 512
+		}
+	}
+
+	if err := writeJSONFile(trafficConfigPath(id), config); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to save traffic config")
+	}
+
+	gen := generatorFor(site.Webserver)
+	confPath := gen.GetConfigPath(site.Domain)
+
+	if config.Enabled {
+		// Ensure global rate limit zones exist
+		if err := s.ensureRateLimitZones(); err != nil {
+			return err
+		}
+
+		var blockLines []string
+		if config.Concurrency > 0 {
+			blockLines = append(blockLines, fmt.Sprintf("limit_conn addr %d;", config.Concurrency))
+		}
+		if config.IPLimit > 0 {
+			blockLines = append(blockLines, fmt.Sprintf("limit_req zone=one burst=%d nodelay;", config.IPLimit))
+		}
+		if config.Bandwidth > 0 {
+			blockLines = append(blockLines, fmt.Sprintf("limit_rate %dk;", config.Bandwidth))
+		}
+
+		if err := s.insertNginxBlock(confPath, "#TRAFFIC_CONTROL_START", "#TRAFFIC_CONTROL_END", blockLines); err != nil {
+			return err
+		}
+	} else {
+		if err := s.removeNginxBlock(confPath, "#TRAFFIC_CONTROL_START", "#TRAFFIC_CONTROL_END"); err != nil {
+			return err
+		}
+	}
+
+	if err := gen.ReloadServer(); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to reload webserver")
+	}
+
+	logger.Info().Int64("id", id).Bool("enabled", config.Enabled).Msg("traffic control updated")
+	return nil
+}
+
+// ensureRateLimitZones creates the global nginx rate limit zone config if missing.
+func (s *SiteService) ensureRateLimitZones() error {
+	confPath := "/etc/nginx/conf.d/rate_limit.conf"
+	if _, err := os.Stat(confPath); err == nil {
+		return nil
+	}
+
+	content := "limit_conn_zone $binary_remote_addr zone=addr:10m;\nlimit_req_zone $binary_remote_addr zone=one:10m rate=25r/s;\n"
+	_ = os.MkdirAll("/etc/nginx/conf.d", 0755)
+	if err := os.WriteFile(confPath, []byte(content), 0644); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to create rate limit zones config")
 	}
 	return nil
 }

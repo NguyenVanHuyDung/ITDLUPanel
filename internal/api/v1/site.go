@@ -68,6 +68,25 @@ func (h *SiteHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, sitesMW gin.Ha
 		sites.PUT("/:id/access-log", h.SetAccessLog)
 		sites.GET("/:id/password-access", h.GetPasswordAccess)
 		sites.PUT("/:id/password-access", h.SetPasswordAccess)
+
+		// Sub Directory Binding
+		sites.GET("/:id/subdir-bindings", h.GetSubdirBindings)
+		sites.POST("/:id/subdir-bindings", h.AddSubdirBinding)
+		sites.DELETE("/:id/subdir-bindings/:index", h.RemoveSubdirBinding)
+
+		// Limit Access
+		sites.GET("/:id/limit-access", h.GetLimitAccessRules)
+		sites.POST("/:id/limit-access", h.AddLimitAccessRule)
+		sites.DELETE("/:id/limit-access/:index", h.RemoveLimitAccessRule)
+
+		// Deny Access
+		sites.GET("/:id/deny-access", h.GetDenyAccessRules)
+		sites.POST("/:id/deny-access", h.AddDenyAccessRule)
+		sites.DELETE("/:id/deny-access/:index", h.RemoveDenyAccessRule)
+
+		// Traffic Control
+		sites.GET("/:id/traffic-control", h.GetTrafficControl)
+		sites.PUT("/:id/traffic-control", h.SetTrafficControl)
 	}
 }
 
@@ -747,6 +766,193 @@ func (h *SiteHandler) SetPasswordAccess(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": "password access updated"})
+}
+
+// ---------------------------------------------------------------------------
+// Sub Directory Binding handlers
+// ---------------------------------------------------------------------------
+
+func (h *SiteHandler) GetSubdirBindings(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	bindings, err := h.siteService.GetSubdirBindings(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, bindings)
+}
+
+func (h *SiteHandler) AddSubdirBinding(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	var req struct {
+		Domain string `json:"domain" binding:"required"`
+		Subdir string `json:"subdir" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "body", Message: "domain and subdir are required"}})
+		return
+	}
+	if err := h.siteService.AddSubdirBinding(id, req.Domain, req.Subdir); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Created(c, gin.H{"message": "subdir binding added successfully"})
+}
+
+func (h *SiteHandler) RemoveSubdirBinding(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	index, err := parseID(c, "index")
+	if err != nil {
+		return
+	}
+	if err := h.siteService.RemoveSubdirBinding(id, int(index)); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "subdir binding removed successfully"})
+}
+
+// ---------------------------------------------------------------------------
+// Limit Access handlers
+// ---------------------------------------------------------------------------
+
+func (h *SiteHandler) GetLimitAccessRules(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	rules, err := h.siteService.GetLimitAccessRules(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, rules)
+}
+
+func (h *SiteHandler) AddLimitAccessRule(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	var req service.LimitAccessRule
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "body", Message: "name, path, username, and password are required"}})
+		return
+	}
+	if err := h.siteService.AddLimitAccessRule(id, req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Created(c, gin.H{"message": "limit access rule added successfully"})
+}
+
+func (h *SiteHandler) RemoveLimitAccessRule(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	index, err := parseID(c, "index")
+	if err != nil {
+		return
+	}
+	if err := h.siteService.RemoveLimitAccessRule(id, int(index)); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "limit access rule removed successfully"})
+}
+
+// ---------------------------------------------------------------------------
+// Deny Access handlers
+// ---------------------------------------------------------------------------
+
+func (h *SiteHandler) GetDenyAccessRules(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	rules, err := h.siteService.GetDenyAccessRules(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, rules)
+}
+
+func (h *SiteHandler) AddDenyAccessRule(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	var req service.DenyAccessRule
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "body", Message: "name, suffix, and path are required"}})
+		return
+	}
+	if err := h.siteService.AddDenyAccessRule(id, req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Created(c, gin.H{"message": "deny access rule added successfully"})
+}
+
+func (h *SiteHandler) RemoveDenyAccessRule(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	index, err := parseID(c, "index")
+	if err != nil {
+		return
+	}
+	if err := h.siteService.RemoveDenyAccessRule(id, int(index)); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "deny access rule removed successfully"})
+}
+
+// ---------------------------------------------------------------------------
+// Traffic Control handlers
+// ---------------------------------------------------------------------------
+
+func (h *SiteHandler) GetTrafficControl(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	config, err := h.siteService.GetTrafficControl(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, config)
+}
+
+func (h *SiteHandler) SetTrafficControl(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	var req service.TrafficConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "body", Message: "invalid request body"}})
+		return
+	}
+	if err := h.siteService.SetTrafficControl(id, req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "traffic control updated successfully"})
 }
 
 // ---------------------------------------------------------------------------
