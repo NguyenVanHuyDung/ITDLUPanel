@@ -292,6 +292,7 @@ function PHPVersionPanel({ siteId, currentVersion, phpVersions }: { siteId: numb
 
 function DirectoryPanel({ site }: { site: Site }) {
   const { p } = usePalette();
+  const [dirTab, setDirTab] = useState<'site' | 'subdir'>('site');
   const [siteDir, setSiteDir] = useState(site.path || `/ITDLUPanel/wwwroot/${site.domain}`);
   const [savingDir, setSavingDir] = useState(false);
   const [subdirs, setSubdirs] = useState<string[]>([]);
@@ -453,8 +454,42 @@ function DirectoryPanel({ site }: { site: Site }) {
     transition: 'all 0.15s',
   });
 
+  const DIR_TABS = [
+    { key: 'site' as const, label: 'Site Directory' },
+    { key: 'subdir' as const, label: 'Sub Directory Binding' },
+  ];
+
   return (
     <div>
+      {/* ── Tab bar ── */}
+      <div style={{
+        display: 'flex', gap: 0, borderBottom: `1px solid ${p.cardBorder}`,
+        marginBottom: 16,
+      }}>
+        {DIR_TABS.map(t => {
+          const active = dirTab === t.key;
+          return (
+            <div
+              key={t.key}
+              onClick={() => setDirTab(t.key)}
+              style={{
+                padding: '8px 18px',
+                cursor: 'pointer',
+                fontSize: 13,
+                fontWeight: active ? 600 : 400,
+                color: active ? p.accent : p.textMuted,
+                borderBottom: active ? `2px solid ${p.accent}` : '2px solid transparent',
+                transition: 'all 0.15s',
+                marginBottom: -1,
+              }}
+            >
+              {t.label}
+            </div>
+          );
+        })}
+      </div>
+
+      {dirTab === 'site' && <>
       {/* ── 1. Site Directory ── */}
       <div style={sectionStyle}>
         <div style={labelStyle}>
@@ -590,7 +625,9 @@ function DirectoryPanel({ site }: { site: Site }) {
           </button>
         )}
       </div>
+      </>}
 
+      {dirTab === 'subdir' && <>
       {/* ── 6. Sub Directory Binding ── */}
       <div style={sectionStyle}>
         <div style={labelStyle}>
@@ -649,6 +686,7 @@ function DirectoryPanel({ site }: { site: Site }) {
           </div>
         )}
       </div>
+      </>}
     </div>
   );
 }
