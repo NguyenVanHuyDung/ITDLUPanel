@@ -1,12 +1,14 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"database/sql"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"html/template"
 	"os"
 	"path/filepath"
 	"strings"
@@ -2622,4 +2624,350 @@ func (s *SiteService) rebuildRedirectNginx(site *Site, rules []RedirectRule) err
 	}
 
 	return s.insertNginxBlock(confPath, "#REDIRECT_RULES_START", "#REDIRECT_RULES_END", blockLines)
+}
+
+// ---------------------------------------------------------------------------
+// Hotlink Protection
+// ---------------------------------------------------------------------------
+
+func hotlinkConfigPath(siteID int64) string {
+	return filepath.Join(siteConfigDir(), fmt.Sprintf("%d_hotlink.json", siteID))
+}
+
+type HotlinkConfig struct {
+	Enabled        bool     `json:"enabled"`
+	AllowEmpty     bool     `json:"allow_empty"`
+	URLSuffix      string   `json:"url_suffix"`
+	AllowedDomains []string `json:"allowed_domains"`
+	Response       string   `json:"response"`
+}
+
+func (s *SiteService) GetHotlinkConfig(id int64) (*HotlinkConfig, error) {
+	var config HotlinkConfig
+	if err := readJSONFile(hotlinkConfigPath(id), &config); err != nil {
+		if os.IsNotExist(err) {
+			return &HotlinkConfig{
+				Enabled:        false,
+				AllowEmpty:     true,
+				URLSuffix:      "jpg|jpeg|png|gif|bmp|webp|svg",
+				AllowedDomains: []string{},
+				Response:       "403",
+			}, nil
+		}
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read hotlink config")
+	}
+	return &config, nil
+}
+
+func (s *SiteService) SetHotlinkConfig(id int64, config HotlinkConfig) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	if err := writeJSONFile(hotlinkConfigPath(id), config); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to save hotlink config")
+	}
+
+	if err := s.buildHotlinkNginx(site, config); err != nil {
+		return err
+	}
+
+	logger.Info().Int64("id", id).Bool("enabled", config.Enabled).Msg("hotlink protection updated")
+	return nil
+}
+
+func (s *SiteService) buildHotlinkNginx(site *Site, config HotlinkConfig) error {
+	gen := generatorFor(site.Webserver)
+	confPath := gen.GetConfigPath(site.Domain)
+
+	if !config.Enabled {
+		_ = s.removeNginxBlock(confPath, "#HOTLINK_PROTECTION_START", "#HOTLINK_PROTECTION_END")
+		return gen.ReloadServer()
+	}
+
+	suffix := config.URLSuffix
+	if suffix == "" {
+		suffix = "jpg|jpeg|png|gif|bmp|webp|svg"
+	}
+
+	var referers []string
+	if config.AllowEmpty {
+		referers = append(referers, "none", "blocked")
+	}
+	referers = append(referers, site.Domain, "*."+site.Domain)
+	for _, d := range config.AllowedDomains {
+		d = strings.TrimSpace(d)
+		if d != "" {
+			referers = append(referers, d)
+		}
+	}
+
+	var blockLines []string
+	blockLines = append(blockLines, fmt.Sprintf("location ~* \\.(%s)$ {", suffix))
+	blockLines = append(blockLines, fmt.Sprintf("    valid_referers %s;", strings.Join(referers, " ")))
+	blockLines = append(blockLines, "    if ($invalid_referer) {")
+
+	response := strings.TrimSpace(config.Response)
+	if response == "" || response == "403" {
+		blockLines = append(blockLines, "        return 403;")
+	} else if response == "404" {
+		blockLines = append(blockLines, "        return 404;")
+	} else {
+		blockLines = append(blockLines, fmt.Sprintf("        return 301 %s;", response))
+	}
+
+	blockLines = append(blockLines, "    }")
+	blockLines = append(blockLines, "}")
+
+	if err := s.insertNginxBlock(confPath, "#HOTLINK_PROTECTION_START", "#HOTLINK_PROTECTION_END", blockLines); err != nil {
+		return err
+	}
+
+	return gen.ReloadServer()
+}
+
+// ---------------------------------------------------------------------------
+// Maintenance Mode
+// ---------------------------------------------------------------------------
+
+func maintenanceConfigPath(siteID int64) string {
+	return filepath.Join(siteConfigDir(), fmt.Sprintf("%d_maintenance.json", siteID))
+}
+
+func maintenancePageDir() string {
+	return "/ITDLUPanel/server/config/maintenance"
+}
+
+type MaintenanceConfig struct {
+	Enabled    bool   `json:"enabled"`
+	Template   string `json:"template"`
+	CustomHTML string `json:"custom_html,omitempty"`
+}
+
+var maintenanceTemplates = map[string]string{
+	"default": `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Maintenance - {{.Domain}}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0f172a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#e2e8f0}
+.container{text-align:center;padding:40px;max-width:500px}
+.icon{font-size:64px;margin-bottom:24px}
+h1{font-size:28px;margin-bottom:12px;color:#f8fafc}
+p{font-size:16px;line-height:1.6;color:#94a3b8;margin-bottom:8px}
+.domain{color:#38bdf8;font-weight:600}
+</style>
+</head>
+<body>
+<div class="container">
+<div class="icon">🔧</div>
+<h1>Under Maintenance</h1>
+<p>We're currently performing scheduled maintenance on <span class="domain">{{.Domain}}</span>.</p>
+<p>We'll be back shortly. Thank you for your patience.</p>
+</div>
+</body>
+</html>`,
+
+	"minimal": `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Maintenance</title>
+<style>
+body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#fff;font-family:Georgia,serif;color:#111}
+.c{text-align:center;padding:40px}
+h1{font-size:22px;font-weight:400;letter-spacing:2px;text-transform:uppercase;margin-bottom:16px}
+hr{width:40px;border:none;border-top:2px solid #111;margin:0 auto 16px}
+p{font-size:14px;color:#666;line-height:1.8}
+</style>
+</head>
+<body>
+<div class="c">
+<h1>Maintenance</h1>
+<hr>
+<p>{{.Domain}} is currently undergoing maintenance.<br>Please check back soon.</p>
+</div>
+</body>
+</html>`,
+
+	"colorful": `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>We'll Be Right Back!</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+.card{background:rgba(255,255,255,0.95);border-radius:20px;padding:48px;max-width:480px;text-align:center;box-shadow:0 25px 50px rgba(0,0,0,0.15)}
+.emoji{font-size:56px;margin-bottom:20px}
+h1{font-size:24px;color:#1a1a2e;margin-bottom:12px}
+p{color:#666;font-size:15px;line-height:1.7;margin-bottom:8px}
+.badge{display:inline-block;padding:6px 16px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border-radius:20px;font-size:12px;font-weight:600;margin-top:16px}
+</style>
+</head>
+<body>
+<div class="card">
+<div class="emoji">🚀</div>
+<h1>We'll Be Right Back!</h1>
+<p>{{.Domain}} is getting some upgrades.</p>
+<p>We're working hard to improve your experience.</p>
+<div class="badge">Maintenance in Progress</div>
+</div>
+</body>
+</html>`,
+
+	"construction": `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Under Construction</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#1a1a2e;font-family:'Courier New',monospace;color:#eee}
+.wrap{text-align:center;padding:40px;max-width:520px}
+.bars{font-size:48px;letter-spacing:4px;margin-bottom:24px}
+h1{font-size:20px;text-transform:uppercase;letter-spacing:6px;margin-bottom:16px;color:#e94560}
+p{font-size:14px;color:#888;line-height:1.8;margin-bottom:8px}
+.progress{width:200px;height:4px;background:#333;border-radius:2px;margin:20px auto;overflow:hidden}
+.progress-bar{height:100%;width:60%;background:linear-gradient(90deg,#e94560,#0f3460);border-radius:2px;animation:loading 2s ease-in-out infinite}
+@keyframes loading{0%{width:20%}50%{width:80%}100%{width:20%}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="bars">⚠ 🏗 ⚠</div>
+<h1>Under Construction</h1>
+<p>{{.Domain}} is being rebuilt.</p>
+<p>Exciting changes are coming soon!</p>
+<div class="progress"><div class="progress-bar"></div></div>
+</div>
+</body>
+</html>`,
+
+	"countdown": `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Maintenance Mode</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#fff}
+.c{text-align:center;padding:40px;max-width:480px}
+.icon{width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#f093fb,#f5576c);display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto 24px}
+h1{font-size:26px;margin-bottom:12px}
+p{color:#888;font-size:14px;line-height:1.7;margin-bottom:20px}
+.status{display:inline-flex;align-items:center;gap:8px;padding:8px 20px;border:1px solid #333;border-radius:24px;font-size:13px;color:#aaa}
+.dot{width:8px;height:8px;border-radius:50%;background:#f5576c;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+</style>
+</head>
+<body>
+<div class="c">
+<div class="icon">⏱</div>
+<h1>Scheduled Maintenance</h1>
+<p>{{.Domain}} is currently offline for scheduled maintenance. We expect to be back online shortly.</p>
+<div class="status"><span class="dot"></span> Maintenance in progress</div>
+</div>
+</body>
+</html>`,
+}
+
+func (s *SiteService) GetMaintenanceConfig(id int64) (*MaintenanceConfig, error) {
+	var config MaintenanceConfig
+	if err := readJSONFile(maintenanceConfigPath(id), &config); err != nil {
+		if os.IsNotExist(err) {
+			return &MaintenanceConfig{
+				Enabled:  false,
+				Template: "default",
+			}, nil
+		}
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read maintenance config")
+	}
+	return &config, nil
+}
+
+func (s *SiteService) SetMaintenanceConfig(id int64, config MaintenanceConfig) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	if err := writeJSONFile(maintenanceConfigPath(id), config); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to save maintenance config")
+	}
+
+	if err := s.generateMaintenancePage(id, config, site.Domain); err != nil {
+		return err
+	}
+
+	gen := generatorFor(site.Webserver)
+	confPath := gen.GetConfigPath(site.Domain)
+
+	if config.Enabled {
+		pagePath := filepath.Join(maintenancePageDir(), fmt.Sprintf("%d_maintenance.html", id))
+		var blockLines []string
+		blockLines = append(blockLines, fmt.Sprintf("error_page 503 /maintenance_%d.html;", id))
+		blockLines = append(blockLines, fmt.Sprintf("location = /maintenance_%d.html {", id))
+		blockLines = append(blockLines, fmt.Sprintf("    alias %s;", pagePath))
+		blockLines = append(blockLines, "    internal;")
+		blockLines = append(blockLines, "}")
+		blockLines = append(blockLines, "if ($uri !~ ^/maintenance_) {")
+		blockLines = append(blockLines, "    return 503;")
+		blockLines = append(blockLines, "}")
+
+		if err := s.insertNginxBlock(confPath, "#MAINTENANCE_MODE_START", "#MAINTENANCE_MODE_END", blockLines); err != nil {
+			return err
+		}
+	} else {
+		if err := s.removeNginxBlock(confPath, "#MAINTENANCE_MODE_START", "#MAINTENANCE_MODE_END"); err != nil {
+			return err
+		}
+	}
+
+	if err := gen.ReloadServer(); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to reload webserver")
+	}
+
+	logger.Info().Int64("id", id).Bool("enabled", config.Enabled).Str("template", config.Template).Msg("maintenance mode updated")
+	return nil
+}
+
+func (s *SiteService) GetMaintenanceTemplates() []string {
+	templates := make([]string, 0, len(maintenanceTemplates))
+	for k := range maintenanceTemplates {
+		templates = append(templates, k)
+	}
+	templates = append(templates, "custom")
+	return templates
+}
+
+func (s *SiteService) generateMaintenancePage(siteID int64, config MaintenanceConfig, domain string) error {
+	dir := maintenancePageDir()
+	_ = os.MkdirAll(dir, 0755)
+
+	pagePath := filepath.Join(dir, fmt.Sprintf("%d_maintenance.html", siteID))
+
+	if config.Template == "custom" && config.CustomHTML != "" {
+		return os.WriteFile(pagePath, []byte(config.CustomHTML), 0644)
+	}
+
+	tmplStr, ok := maintenanceTemplates[config.Template]
+	if !ok {
+		tmplStr = maintenanceTemplates["default"]
+	}
+
+	tmpl, err := template.New("maintenance").Parse(tmplStr)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to parse maintenance template")
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, map[string]string{"Domain": domain}); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to execute maintenance template")
+	}
+
+	return os.WriteFile(pagePath, buf.Bytes(), 0644)
 }

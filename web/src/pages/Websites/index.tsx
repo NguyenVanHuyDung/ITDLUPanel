@@ -7,7 +7,7 @@ import {
   FileTextOutlined, LinkOutlined, LockOutlined, CloudOutlined,
   MoreOutlined, DeleteOutlined, ExclamationCircleOutlined,
   CloudUploadOutlined, DownloadOutlined, UndoOutlined,
-  ApiOutlined, EditOutlined,
+  ApiOutlined, EditOutlined, SafetyOutlined, ToolOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import Editor from '@monaco-editor/react';
@@ -45,8 +45,10 @@ const CONFIG_SECTIONS = [
   { key: 'ssl', label: 'SSL', icon: <LockOutlined /> },
   { key: 'php', label: 'PHP Version', icon: <SettingOutlined /> },
   { key: 'access', label: 'Limit Access', icon: <LockOutlined /> },
+  { key: 'hotlink', label: 'Hotlink Protection', icon: <SafetyOutlined /> },
   { key: 'proxy', label: 'Reverse Proxy', icon: <ApiOutlined /> },
   { key: 'redirect', label: 'Redirect', icon: <LinkOutlined /> },
+  { key: 'maintenance', label: 'Maintenance', icon: <ToolOutlined /> },
   { key: 'log', label: 'Response Log', icon: <FileTextOutlined /> },
 ] as const;
 
@@ -2278,6 +2280,356 @@ function RedirectPanel({ siteId }: { siteId: number }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Hotlink Protection Panel
+// ---------------------------------------------------------------------------
+function HotlinkPanel({ siteId }: { siteId: number }) {
+  const { p } = usePalette();
+  const [enabled, setEnabled] = useState(false);
+  const [allowEmpty, setAllowEmpty] = useState(true);
+  const [urlSuffix, setUrlSuffix] = useState('jpg|jpeg|png|gif|bmp|webp|svg');
+  const [allowedDomains, setAllowedDomains] = useState<string[]>([]);
+  const [newDomain, setNewDomain] = useState('');
+  const [response_, setResponse_] = useState('403');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const { data } = await api.get<ApiResponse<{
+          enabled: boolean; allow_empty: boolean; url_suffix: string;
+          allowed_domains: string[]; response: string;
+        }>>(`/sites/${siteId}/hotlink`);
+        const c = data.data;
+        if (c) {
+          setEnabled(c.enabled);
+          setAllowEmpty(c.allow_empty);
+          if (c.url_suffix) setUrlSuffix(c.url_suffix);
+          setAllowedDomains(c.allowed_domains || []);
+          if (c.response) setResponse_(c.response);
+        }
+      } catch { /* use defaults */ }
+      finally { setLoading(false); }
+    })();
+  }, [siteId]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/sites/${siteId}/hotlink`, {
+        enabled, allow_empty: allowEmpty, url_suffix: urlSuffix,
+        allowed_domains: allowedDomains, response: response_,
+      });
+      message.success('Hotlink protection updated');
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(msg || 'Failed to update hotlink protection');
+    } finally { setSaving(false); }
+  };
+
+  const addDomain = () => {
+    const d = newDomain.trim();
+    if (d && !allowedDomains.includes(d)) {
+      setAllowedDomains([...allowedDomains, d]);
+      setNewDomain('');
+    }
+  };
+
+  const removeDomain = (index: number) => {
+    setAllowedDomains(allowedDomains.filter((_, i) => i !== index));
+  };
+
+  const commonSuffixes = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'mp4', 'mp3', 'zip', 'rar', 'pdf', 'css', 'js'];
+  const currentSuffixes = urlSuffix.split('|').filter(Boolean);
+
+  const toggleSuffix = (s: string) => {
+    if (currentSuffixes.includes(s)) {
+      setUrlSuffix(currentSuffixes.filter(x => x !== s).join('|'));
+    } else {
+      setUrlSuffix([...currentSuffixes, s].join('|'));
+    }
+  };
+
+  const sectionStyle: React.CSSProperties = {
+    padding: '14px 16px', borderRadius: 8,
+    border: `1px solid ${p.cardBorder}`, marginBottom: 14, background: p.card,
+  };
+
+  const btnStyle = (isLoading: boolean): React.CSSProperties => ({
+    padding: '5px 16px', borderRadius: 6, border: 'none',
+    background: p.accent, color: '#fff', fontSize: 12, fontWeight: 600,
+    cursor: isLoading ? 'wait' : 'pointer', opacity: isLoading ? 0.7 : 1,
+  });
+
+  if (loading) return <Spin />;
+
+  return (
+    <div>
+      {/* Enable toggle */}
+      <div style={sectionStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: p.text, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <SafetyOutlined style={{ color: p.accent }} />
+              Hotlink Protection
+            </div>
+            <div style={{ fontSize: 11, color: p.textMuted, marginTop: 4 }}>
+              Prevent other websites from directly linking to your files (images, videos, etc.)
+            </div>
+          </div>
+          <Switch checked={enabled} onChange={setEnabled} />
+        </div>
+      </div>
+
+      {enabled && (
+        <>
+          {/* Allow empty referer */}
+          <div style={sectionStyle}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: p.text }}>Allow Empty HTTP_REFERER</div>
+                <div style={{ fontSize: 11, color: p.textMuted, marginTop: 2 }}>
+                  Allow direct access (no referer header). Disable to block direct URL access too.
+                </div>
+              </div>
+              <Switch size="small" checked={allowEmpty} onChange={setAllowEmpty} />
+            </div>
+          </div>
+
+          {/* Protected file types */}
+          <div style={sectionStyle}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: p.text, marginBottom: 8 }}>Protected File Types</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+              {commonSuffixes.map(s => {
+                const active = currentSuffixes.includes(s);
+                return (
+                  <div key={s} onClick={() => toggleSuffix(s)} style={{
+                    padding: '3px 8px', borderRadius: 4, fontSize: 11, cursor: 'pointer',
+                    background: active ? `${p.accent}20` : p.codeBg,
+                    color: active ? p.accent : p.textMuted,
+                    border: `1px solid ${active ? p.accent : p.cardBorder}`,
+                    fontWeight: active ? 600 : 400, transition: 'all 0.15s',
+                  }}>
+                    .{s}
+                  </div>
+                );
+              })}
+            </div>
+            <Input value={urlSuffix} onChange={e => setUrlSuffix(e.target.value)}
+              placeholder="jpg|jpeg|png|gif" style={{ fontSize: 12, fontFamily: 'monospace' }} />
+          </div>
+
+          {/* Allowed domains */}
+          <div style={sectionStyle}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: p.text, marginBottom: 8 }}>Allowed Referrer Domains</div>
+            <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 8 }}>
+              Your site's own domain is always allowed. Add other domains that may embed your resources.
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              <Input placeholder="example.com" value={newDomain} onChange={e => setNewDomain(e.target.value)}
+                onPressEnter={addDomain} style={{ flex: 1, fontSize: 12 }} />
+              <button onClick={addDomain} style={btnStyle(false)}>Add</button>
+            </div>
+            {allowedDomains.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {allowedDomains.map((d, i) => (
+                  <div key={i} style={{
+                    display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px',
+                    borderRadius: 4, background: `${p.green}15`, border: `1px solid ${p.green}30`,
+                    fontSize: 11, color: p.green,
+                  }}>
+                    {d}
+                    <span onClick={() => removeDomain(i)} style={{ cursor: 'pointer', color: p.red, marginLeft: 4 }}>×</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Response */}
+          <div style={sectionStyle}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: p.text, marginBottom: 8 }}>Response for Blocked Requests</div>
+            <Select value={response_} onChange={setResponse_} style={{ width: '100%', fontSize: 12 }}
+              options={[
+                { value: '403', label: '403 Forbidden — Block the request' },
+                { value: '404', label: '404 Not Found — Pretend file doesn\'t exist' },
+              ]}
+            />
+            <div style={{ fontSize: 11, color: p.textMuted, marginTop: 6 }}>
+              Or enter a URL to redirect hotlinkers to a custom image/page
+            </div>
+            {response_ !== '403' && response_ !== '404' && (
+              <Input value={response_} onChange={e => setResponse_(e.target.value)}
+                placeholder="https://example.com/hotlink-blocked.png"
+                style={{ fontSize: 12, marginTop: 6 }} />
+            )}
+          </div>
+        </>
+      )}
+
+      <button onClick={handleSave} disabled={saving} style={btnStyle(saving)}>
+        {saving ? 'Saving...' : 'Save Hotlink Protection'}
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Maintenance Mode Panel
+// ---------------------------------------------------------------------------
+const MAINTENANCE_TEMPLATES: { key: string; label: string; desc: string; emoji: string }[] = [
+  { key: 'default', label: 'Default', desc: 'Dark theme with wrench icon', emoji: '🔧' },
+  { key: 'minimal', label: 'Minimal', desc: 'Clean white, serif typography', emoji: '📝' },
+  { key: 'colorful', label: 'Colorful', desc: 'Purple gradient with card', emoji: '🚀' },
+  { key: 'construction', label: 'Construction', desc: 'Dark with animated progress bar', emoji: '🏗' },
+  { key: 'countdown', label: 'Countdown', desc: 'Dark with pulsing status indicator', emoji: '⏱' },
+  { key: 'custom', label: 'Custom HTML', desc: 'Write your own maintenance page', emoji: '✏️' },
+];
+
+function MaintenancePanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }) {
+  const { p } = usePalette();
+  const [enabled, setEnabled] = useState(false);
+  const [template, setTemplate] = useState('default');
+  const [customHtml, setCustomHtml] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const { data } = await api.get<ApiResponse<{
+          enabled: boolean; template: string; custom_html?: string;
+        }>>(`/sites/${siteId}/maintenance`);
+        const c = data.data;
+        if (c) {
+          setEnabled(c.enabled);
+          if (c.template) setTemplate(c.template);
+          if (c.custom_html) setCustomHtml(c.custom_html);
+        }
+      } catch { /* use defaults */ }
+      finally { setLoading(false); }
+    })();
+  }, [siteId]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/sites/${siteId}/maintenance`, {
+        enabled, template,
+        custom_html: template === 'custom' ? customHtml : '',
+      });
+      message.success(enabled ? 'Maintenance mode enabled' : 'Maintenance mode disabled');
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(msg || 'Failed to update maintenance mode');
+    } finally { setSaving(false); }
+  };
+
+  const sectionStyle: React.CSSProperties = {
+    padding: '14px 16px', borderRadius: 8,
+    border: `1px solid ${p.cardBorder}`, marginBottom: 14, background: p.card,
+  };
+
+  const btnStyle = (isLoading: boolean): React.CSSProperties => ({
+    padding: '5px 16px', borderRadius: 6, border: 'none',
+    background: p.accent, color: '#fff', fontSize: 12, fontWeight: 600,
+    cursor: isLoading ? 'wait' : 'pointer', opacity: isLoading ? 0.7 : 1,
+  });
+
+  if (loading) return <Spin />;
+
+  return (
+    <div>
+      {/* Enable toggle */}
+      <div style={{
+        ...sectionStyle,
+        border: enabled ? `1px solid ${p.amber || '#F59E0B'}50` : `1px solid ${p.cardBorder}`,
+        background: enabled ? `${(p.amber || '#F59E0B')}08` : p.card,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: enabled ? (p.amber || '#F59E0B') : p.text, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <ToolOutlined />
+              Maintenance Mode
+              {enabled && (
+                <span style={{
+                  padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700,
+                  background: `${(p.amber || '#F59E0B')}25`, color: p.amber || '#F59E0B',
+                  textTransform: 'uppercase', letterSpacing: 1,
+                }}>
+                  ACTIVE
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 11, color: p.textMuted, marginTop: 4 }}>
+              {enabled
+                ? `All visitors to ${siteDomain} will see the maintenance page (HTTP 503)`
+                : 'Enable to show a maintenance page to all visitors'}
+            </div>
+          </div>
+          <Switch checked={enabled} onChange={setEnabled} />
+        </div>
+      </div>
+
+      {/* Template selection */}
+      <div style={sectionStyle}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: p.text, marginBottom: 10 }}>Select Template</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8 }}>
+          {MAINTENANCE_TEMPLATES.map(t => {
+            const active = template === t.key;
+            return (
+              <div key={t.key} onClick={() => setTemplate(t.key)} style={{
+                padding: '12px', borderRadius: 8, cursor: 'pointer', textAlign: 'center',
+                border: `2px solid ${active ? p.accent : p.cardBorder}`,
+                background: active ? `${p.accent}10` : 'transparent',
+                transition: 'all 0.15s',
+              }}>
+                <div style={{ fontSize: 24, marginBottom: 4 }}>{t.emoji}</div>
+                <div style={{ fontSize: 12, fontWeight: active ? 700 : 500, color: active ? p.accent : p.text }}>{t.label}</div>
+                <div style={{ fontSize: 10, color: p.textMuted, marginTop: 2 }}>{t.desc}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Custom HTML editor */}
+      {template === 'custom' && (
+        <div style={sectionStyle}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: p.text, marginBottom: 8 }}>Custom HTML</div>
+          <Input.TextArea
+            value={customHtml}
+            onChange={e => setCustomHtml(e.target.value)}
+            placeholder="<!DOCTYPE html>\n<html>\n<head><title>Maintenance</title></head>\n<body>\n  <h1>Under Maintenance</h1>\n</body>\n</html>"
+            rows={12}
+            style={{ fontSize: 12, fontFamily: 'monospace' }}
+          />
+        </div>
+      )}
+
+      {/* Preview hint */}
+      {template !== 'custom' && (
+        <div style={{
+          padding: '10px 14px', borderRadius: 6, marginBottom: 14,
+          background: p.codeBg, fontSize: 11, color: p.textMuted,
+        }}>
+          💡 The <strong>{MAINTENANCE_TEMPLATES.find(t => t.key === template)?.label}</strong> template will display a styled maintenance page with your domain name <code style={{ background: p.cardBorder, padding: '1px 4px', borderRadius: 3 }}>{siteDomain}</code>. Visitors receive HTTP 503 status.
+        </div>
+      )}
+
+      <button onClick={handleSave} disabled={saving} style={{
+        ...btnStyle(saving),
+        background: enabled ? (p.amber || '#F59E0B') : p.accent,
+      }}>
+        {saving ? 'Saving...' : enabled ? 'Enable Maintenance Mode' : 'Save Settings'}
+      </button>
+    </div>
+  );
+}
+
 function PlaceholderPanel({ title }: { title: string }) {
   const { p } = usePalette();
   return (
@@ -2312,10 +2664,14 @@ function SiteConfigModal({ site, open, onClose, phpVersions }: { site: Site | nu
         return <SSLPanel siteId={site.id} siteDomain={site.domain} />;
       case 'access':
         return <AccessControlPanel siteId={site.id} />;
+      case 'hotlink':
+        return <HotlinkPanel siteId={site.id} />;
       case 'proxy':
         return <ReverseProxyPanel siteId={site.id} />;
       case 'redirect':
         return <RedirectPanel siteId={site.id} />;
+      case 'maintenance':
+        return <MaintenancePanel siteId={site.id} siteDomain={site.domain} />;
       case 'log':
         return <ResponseLogPanel site={site} />;
       default:

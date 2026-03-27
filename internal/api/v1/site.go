@@ -103,6 +103,15 @@ func (h *SiteHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, sitesMW gin.Ha
 		sites.POST("/:id/redirect-rules", h.AddRedirectRule)
 		sites.PUT("/:id/redirect-rules/:index", h.UpdateRedirectRule)
 		sites.DELETE("/:id/redirect-rules/:index", h.RemoveRedirectRule)
+
+		// Hotlink Protection
+		sites.GET("/:id/hotlink", h.GetHotlinkConfig)
+		sites.PUT("/:id/hotlink", h.SetHotlinkConfig)
+
+		// Maintenance Mode
+		sites.GET("/:id/maintenance", h.GetMaintenanceConfig)
+		sites.PUT("/:id/maintenance", h.SetMaintenanceConfig)
+		sites.GET("/:id/maintenance/templates", h.GetMaintenanceTemplates)
 	}
 }
 
@@ -1145,6 +1154,79 @@ func (h *SiteHandler) RemoveRedirectRule(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": "redirect rule removed successfully"})
+}
+
+// ---------------------------------------------------------------------------
+// Hotlink Protection
+// ---------------------------------------------------------------------------
+
+func (h *SiteHandler) GetHotlinkConfig(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	config, err := h.siteService.GetHotlinkConfig(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, config)
+}
+
+func (h *SiteHandler) SetHotlinkConfig(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	var req service.HotlinkConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "body", Message: "invalid request body"}})
+		return
+	}
+	if err := h.siteService.SetHotlinkConfig(id, req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "hotlink protection updated successfully"})
+}
+
+// ---------------------------------------------------------------------------
+// Maintenance Mode
+// ---------------------------------------------------------------------------
+
+func (h *SiteHandler) GetMaintenanceConfig(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	config, err := h.siteService.GetMaintenanceConfig(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, config)
+}
+
+func (h *SiteHandler) SetMaintenanceConfig(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	var req service.MaintenanceConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "body", Message: "invalid request body"}})
+		return
+	}
+	if err := h.siteService.SetMaintenanceConfig(id, req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "maintenance mode updated successfully"})
+}
+
+func (h *SiteHandler) GetMaintenanceTemplates(c *gin.Context) {
+	templates := h.siteService.GetMaintenanceTemplates()
+	response.Success(c, templates)
 }
 
 // ---------------------------------------------------------------------------
