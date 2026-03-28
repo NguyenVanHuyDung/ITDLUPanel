@@ -402,41 +402,81 @@ function ServiceTab({ version, versions }: { version: string; versions: string[]
             Use the version selector in the header to switch between installed PHP versions.
           </div>
 
-          {/* FPM Load */}
+          {/* FPM Load & System Status */}
           {fpmStatus && (
             <div style={{
               marginTop: 24,
-              padding: 16,
-              borderRadius: 8,
+              padding: 20,
+              borderRadius: 10,
               background: isDark ? p.codeBg : '#F8FAFC',
               border: `1px solid ${isDark ? p.cardBorder : '#E2E8F0'}`,
             }}>
-              <Text style={{ fontSize: 14, fontWeight: 600, color: p.text, display: 'block', marginBottom: 14 }}>
-                FPM Load
+              <Text style={{ fontSize: 14, fontWeight: 600, color: p.text, display: 'block', marginBottom: 16 }}>
+                FPM Load & System
               </Text>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginBottom: 14 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Badge count={fpmStatus.workers ?? 0} showZero style={{ backgroundColor: ACCENT }} />
-                  <Text style={{ fontSize: 12, color: p.textMuted }}>Workers</Text>
+
+              {/* Metric cards row */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 16 }}>
+                {/* Workers */}
+                <div style={{
+                  padding: '12px 14px', borderRadius: 8,
+                  background: isDark ? 'rgba(99,102,241,0.08)' : '#EEF2FF',
+                  border: `1px solid ${isDark ? 'rgba(99,102,241,0.15)' : '#C7D2FE'}`,
+                }}>
+                  <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4 }}>Workers</div>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: ACCENT }}>{fpmStatus.workers ?? 0}</div>
                 </div>
-                <div style={{ fontSize: 12, color: p.textMuted }}>
-                  Memory: <span style={{ color: p.text, fontWeight: 600 }}>{fpmStatus.total_memory_mb ?? 0} MB</span>
+                {/* Memory */}
+                <div style={{
+                  padding: '12px 14px', borderRadius: 8,
+                  background: isDark ? 'rgba(52,211,153,0.08)' : '#ECFDF5',
+                  border: `1px solid ${isDark ? 'rgba(52,211,153,0.15)' : '#A7F3D0'}`,
+                }}>
+                  <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4 }}>Memory</div>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: p.green }}>{fpmStatus.total_memory_mb ?? 0}<span style={{ fontSize: 12, fontWeight: 400 }}> MB</span></div>
                 </div>
-                <div style={{ fontSize: 12, color: p.textMuted }}>
-                  CPU Avg: <span style={{ color: p.text, fontWeight: 600 }}>{fpmStatus.avg_cpu ?? 0}%</span>
+                {/* CPU */}
+                <div style={{
+                  padding: '12px 14px', borderRadius: 8,
+                  background: isDark ? 'rgba(251,191,36,0.08)' : '#FFFBEB',
+                  border: `1px solid ${isDark ? 'rgba(251,191,36,0.15)' : '#FDE68A'}`,
+                }}>
+                  <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4 }}>CPU Avg</div>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: p.amber }}>{fpmStatus.avg_cpu ?? 0}<span style={{ fontSize: 12, fontWeight: 400 }}>%</span></div>
                 </div>
-                {fpmStatus.uptime && (
-                  <div style={{ fontSize: 12, color: p.textMuted }}>
-                    Up since: <span style={{ color: p.text, fontWeight: 600 }}>{fpmStatus.uptime}</span>
+                {/* Load Average */}
+                {fpmStatus.load_average && (
+                  <div style={{
+                    padding: '12px 14px', borderRadius: 8,
+                    background: isDark ? 'rgba(139,92,246,0.08)' : '#F5F3FF',
+                    border: `1px solid ${isDark ? 'rgba(139,92,246,0.15)' : '#DDD6FE'}`,
+                  }}>
+                    <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4 }}>Load Average</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: p.purple, fontFamily: "'JetBrains Mono', monospace" }}>
+                      {fpmStatus.load_average.load1} <span style={{ color: p.textMuted, fontWeight: 400 }}>/ </span>
+                      {fpmStatus.load_average.load5} <span style={{ color: p.textMuted, fontWeight: 400 }}>/ </span>
+                      {fpmStatus.load_average.load15}
+                    </div>
+                    <div style={{ fontSize: 10, color: p.textMuted, marginTop: 2 }}>1m / 5m / 15m</div>
                   </div>
                 )}
               </div>
+
+              {/* Uptime */}
+              {fpmStatus.uptime && (
+                <div style={{ fontSize: 12, color: p.textMuted, marginBottom: 14 }}>
+                  <ClockCircleOutlined style={{ marginRight: 4 }} />
+                  Up since: <span style={{ color: p.text, fontWeight: 500 }}>{fpmStatus.uptime}</span>
+                </div>
+              )}
+
+              {/* Process table */}
               {fpmStatus.processes?.length > 0 && (
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ borderBottom: `1px solid ${isDark ? p.cardBorder : '#E2E8F0'}` }}>
-                        {['PID', 'CPU %', 'Memory', 'Time', 'Role'].map(h => (
+                        {['PID', 'CPU %', 'Memory', 'Uptime', 'Role'].map(h => (
                           <th key={h} style={{ padding: '6px 10px', textAlign: 'left', color: p.textMuted, fontWeight: 500 }}>{h}</th>
                         ))}
                       </tr>
@@ -444,7 +484,7 @@ function ServiceTab({ version, versions }: { version: string; versions: string[]
                     <tbody>
                       {fpmStatus.processes.map((proc: any, i: number) => (
                         <tr key={proc.pid} style={{ background: i % 2 === 0 ? 'transparent' : (isDark ? p.rowAlt : '#F1F5F9') }}>
-                          <td style={{ padding: '5px 10px', color: p.text }}>{proc.pid}</td>
+                          <td style={{ padding: '5px 10px', color: p.text, fontFamily: "'JetBrains Mono', monospace" }}>{proc.pid}</td>
                           <td style={{ padding: '5px 10px', color: p.text }}>{proc.cpu}</td>
                           <td style={{ padding: '5px 10px', color: p.text }}>{proc.memory_mb} MB</td>
                           <td style={{ padding: '5px 10px', color: p.text, fontFamily: "'JetBrains Mono', monospace" }}>{proc.time}</td>
@@ -1628,100 +1668,294 @@ function SlowLogTab({ version }: { version: string }) {
 }
 
 // ============================================================================
-// PHP Info Tab
+// PHP Info Tab — structured, readable display
 // ============================================================================
+
+interface PHPSection {
+  title: string;
+  entries: { key: string; value: string }[];
+}
+
+function parsePHPInfo(raw: string): { quickInfo: Record<string, string>; sections: PHPSection[] } {
+  const quickInfo: Record<string, string> = {};
+  const sections: PHPSection[] = [];
+  const lines = raw.split('\n');
+
+  const quickKeys = [
+    'PHP Version', 'System', 'Build Date', 'Server API', 'Configuration File (php.ini) Path',
+    'Loaded Configuration File', 'PHP API', 'Zend Engine', 'Thread Safety',
+    'memory_limit', 'max_execution_time', 'upload_max_filesize', 'post_max_size',
+    'default_timezone', 'display_errors', 'error_reporting', 'disable_functions',
+  ];
+
+  let currentSection: PHPSection | null = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    // Key => Value pair
+    if (line.includes(' => ')) {
+      const idx = line.indexOf(' => ');
+      const key = line.substring(0, idx).trim();
+      const value = line.substring(idx + 4).trim();
+      // Check for "Local Value => Master Value" pattern
+      if (value.includes(' => ')) {
+        const vIdx = value.indexOf(' => ');
+        const localVal = value.substring(0, vIdx).trim();
+        if (currentSection) {
+          currentSection.entries.push({ key, value: localVal });
+        }
+      } else {
+        if (currentSection) {
+          currentSection.entries.push({ key, value });
+        }
+      }
+      // Collect quick info
+      for (const qk of quickKeys) {
+        if (key === qk || key.toLowerCase() === qk.toLowerCase()) {
+          quickInfo[qk] = value.includes(' => ') ? value.substring(0, value.indexOf(' => ')).trim() : value;
+        }
+      }
+    } else if (line === 'phpinfo()' || line.startsWith('PHP License') || line.startsWith('This program')) {
+      continue;
+    } else if (!line.includes('=>') && line.length < 80 && i + 1 < lines.length) {
+      // Possible section header
+      if (currentSection && currentSection.entries.length > 0) {
+        sections.push(currentSection);
+      }
+      currentSection = { title: line, entries: [] };
+    }
+  }
+  if (currentSection && currentSection.entries.length > 0) {
+    sections.push(currentSection);
+  }
+
+  // Extract version from first line if not found
+  if (!quickInfo['PHP Version']) {
+    const vLine = lines.find(l => l.startsWith('PHP Version'));
+    if (vLine && vLine.includes('=>')) {
+      quickInfo['PHP Version'] = vLine.split('=>')[1].trim();
+    }
+  }
+
+  return { quickInfo, sections };
+}
+
 function PHPInfoTab({ version }: { version: string }) {
   const { p, isDark } = usePalette();
-  const [info, setInfo] = useState('');
+  const [rawInfo, setRawInfo] = useState('');
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  const ACCENT = isDark ? '#818CF8' : '#4F46E5';
 
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
         const { data: resp } = await api.get(`/software/php/${version}/phpinfo`);
-        setInfo(resp.data?.info || '');
+        setRawInfo(resp.data?.info || '');
       } catch {
-        setInfo('Failed to load PHP info');
+        setRawInfo('');
       } finally {
         setLoading(false);
       }
     })();
   }, [version]);
 
-  const filteredLines = useMemo(() => {
-    if (!info) return '';
-    if (!filter.trim()) return info;
-    const lower = filter.toLowerCase();
-    return info
-      .split('\n')
-      .filter(line => line.toLowerCase().includes(lower))
-      .join('\n');
-  }, [info, filter]);
+  const { quickInfo, sections } = useMemo(() => parsePHPInfo(rawInfo), [rawInfo]);
 
-  const highlightMatch = (text: string) => {
-    if (!filter.trim()) return text;
-    const parts = text.split(new RegExp(`(${filter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
-    return parts.map((part, i) =>
-      part.toLowerCase() === filter.toLowerCase()
-        ? `\x1b[43m${part}\x1b[0m`
-        : part
-    ).join('');
+  const filteredSections = useMemo(() => {
+    if (!filter.trim()) return sections;
+    const lower = filter.toLowerCase();
+    return sections
+      .map(s => ({
+        ...s,
+        entries: s.entries.filter(e =>
+          e.key.toLowerCase().includes(lower) || e.value.toLowerCase().includes(lower)
+        ),
+      }))
+      .filter(s => s.entries.length > 0 || s.title.toLowerCase().includes(lower));
+  }, [sections, filter]);
+
+  const toggleSection = (title: string) => {
+    setCollapsed(prev => ({ ...prev, [title]: !prev[title] }));
   };
+
+  const quickInfoItems = [
+    { label: 'PHP Version', key: 'PHP Version', icon: <ThunderboltOutlined />, color: ACCENT },
+    { label: 'System', key: 'System', icon: <GlobalOutlined />, color: p.cyan },
+    { label: 'Server API', key: 'Server API', icon: <CloudServerOutlined />, color: p.green },
+    { label: 'Config Path', key: 'Loaded Configuration File', icon: <FileTextOutlined />, color: p.amber },
+    { label: 'Zend Engine', key: 'Zend Engine', icon: <ToolOutlined />, color: p.purple },
+    { label: 'Build Date', key: 'Build Date', icon: <ClockCircleOutlined />, color: p.textMuted },
+  ];
+
+  const quickLimits = [
+    { label: 'Memory Limit', key: 'memory_limit' },
+    { label: 'Max Execution', key: 'max_execution_time' },
+    { label: 'Upload Max', key: 'upload_max_filesize' },
+    { label: 'Post Max', key: 'post_max_size' },
+  ];
+
+  if (loading) return <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>;
+  if (!rawInfo) return <div style={{ textAlign: 'center', padding: 40, color: p.textMuted }}>Failed to load PHP info</div>;
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
         <Text style={{ fontSize: 16, fontWeight: 600, color: p.text }}>
-          PHP {version} Info
+          PHP {quickInfo['PHP Version'] || version}
         </Text>
         <Input
           size="small"
           prefix={<SearchOutlined style={{ color: p.textMuted }} />}
-          placeholder="Filter..."
+          placeholder="Search directives..."
           value={filter}
           onChange={e => setFilter(e.target.value)}
           allowClear
-          style={{ width: 220, borderRadius: 6, background: isDark ? p.inputBg : '#fff' }}
+          style={{ width: 240, borderRadius: 6, background: isDark ? p.inputBg : '#fff' }}
         />
       </div>
 
-      {loading ? <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div> : (
-        <pre style={{
-          background: isDark ? '#0D1117' : '#1E293B',
-          color: '#E2E8F0',
-          padding: 16,
-          borderRadius: 8,
-          fontSize: 12,
-          fontFamily: "'JetBrains Mono', monospace",
-          lineHeight: 1.6,
-          maxHeight: 520,
-          overflow: 'auto',
-          whiteSpace: 'pre-wrap',
-          wordBreak: 'break-all',
-          border: `1px solid ${isDark ? p.cardBorder : '#334155'}`,
-        }}>
-          {filter.trim() ? (
-            filteredLines.split('\n').map((line, i) => {
-              const regex = new RegExp(`(${filter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-              const parts = line.split(regex);
+      {/* Quick Info Cards */}
+      {!filter && (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10, marginBottom: 16 }}>
+            {quickInfoItems.map(item => {
+              const val = quickInfo[item.key];
+              if (!val) return null;
               return (
-                <span key={i}>
-                  {parts.map((part, j) =>
-                    regex.test(part)
-                      ? <span key={j} style={{ background: '#F59E0B', color: '#000', borderRadius: 2, padding: '0 2px' }}>{part}</span>
-                      : part
-                  )}
-                  {'\n'}
-                </span>
+                <div key={item.key} style={{
+                  padding: '10px 14px', borderRadius: 8,
+                  background: isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
+                  border: `1px solid ${isDark ? p.cardBorder : '#E2E8F0'}`,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <span style={{ color: item.color, fontSize: 13 }}>{item.icon}</span>
+                    <span style={{ fontSize: 11, color: p.textMuted, fontWeight: 500 }}>{item.label}</span>
+                  </div>
+                  <div style={{
+                    fontSize: 13, fontWeight: 600, color: p.text,
+                    fontFamily: item.key === 'System' ? 'inherit' : "'JetBrains Mono', monospace",
+                    wordBreak: 'break-all',
+                    ...(item.key === 'System' ? { fontSize: 11, fontWeight: 400 } : {}),
+                  }}>
+                    {val}
+                  </div>
+                </div>
               );
-            })
-          ) : (
-            info || 'No PHP info available.'
+            })}
+          </div>
+
+          {/* Quick Limits Row */}
+          {quickLimits.some(l => quickInfo[l.key]) && (
+            <div style={{
+              display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16,
+              padding: '10px 14px', borderRadius: 8,
+              background: isDark ? 'rgba(251,191,36,0.06)' : '#FFFBEB',
+              border: `1px solid ${isDark ? 'rgba(251,191,36,0.12)' : '#FDE68A'}`,
+            }}>
+              <span style={{ fontSize: 11, color: p.amber, fontWeight: 600, marginRight: 4 }}>Limits:</span>
+              {quickLimits.map(l => {
+                const val = quickInfo[l.key];
+                if (!val) return null;
+                return (
+                  <Tag key={l.key} style={{
+                    borderRadius: 4, fontSize: 11, margin: 0,
+                    background: isDark ? 'rgba(251,191,36,0.1)' : '#FEF3C7',
+                    border: 'none', color: isDark ? '#FBBF24' : '#92400E',
+                  }}>
+                    {l.label}: <strong>{val}</strong>
+                  </Tag>
+                );
+              })}
+            </div>
           )}
-        </pre>
+        </>
       )}
+
+      {/* Sections */}
+      <div style={{ maxHeight: 420, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {filteredSections.map(section => {
+          const isCollapsed = collapsed[section.title] && !filter;
+          return (
+            <div key={section.title} style={{
+              borderRadius: 8,
+              border: `1px solid ${isDark ? p.cardBorder : '#E2E8F0'}`,
+              overflow: 'hidden',
+            }}>
+              {/* Section header */}
+              <div
+                onClick={() => toggleSection(section.title)}
+                style={{
+                  padding: '8px 14px',
+                  background: isDark ? 'rgba(255,255,255,0.03)' : '#F1F5F9',
+                  cursor: 'pointer',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  userSelect: 'none',
+                }}
+              >
+                <Text style={{ fontSize: 13, fontWeight: 600, color: p.text }}>
+                  {section.title}
+                </Text>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Tag style={{ fontSize: 10, borderRadius: 4, margin: 0 }}>{section.entries.length}</Tag>
+                  <span style={{ color: p.textMuted, fontSize: 11, transition: 'transform 0.2s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
+                </div>
+              </div>
+              {/* Section entries */}
+              {!isCollapsed && (
+                <div style={{ maxHeight: 280, overflow: 'auto' }}>
+                  <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                    <tbody>
+                      {section.entries.map((entry, i) => (
+                        <tr key={`${entry.key}-${i}`} style={{
+                          background: i % 2 === 0 ? 'transparent' : (isDark ? p.rowAlt : '#F8FAFC'),
+                          borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.04)' : '#F1F5F9'}`,
+                        }}>
+                          <td style={{
+                            padding: '5px 14px', color: p.textMuted, fontWeight: 500,
+                            width: '40%', verticalAlign: 'top', whiteSpace: 'nowrap',
+                          }}>
+                            {filter ? highlightText(entry.key, filter, p) : entry.key}
+                          </td>
+                          <td style={{
+                            padding: '5px 14px', color: p.text,
+                            fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
+                            wordBreak: 'break-all',
+                          }}>
+                            {filter ? highlightText(entry.value, filter, p) : entry.value}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {filteredSections.length === 0 && (
+          <div style={{ textAlign: 'center', padding: 30, color: p.textMuted }}>
+            No results for "{filter}"
+          </div>
+        )}
+      </div>
     </div>
+  );
+}
+
+function highlightText(text: string, filter: string, p: any) {
+  if (!filter.trim()) return text;
+  const regex = new RegExp(`(${filter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+  const parts = text.split(regex);
+  return parts.map((part, i) =>
+    regex.test(part)
+      ? <span key={i} style={{ background: '#F59E0B', color: '#000', borderRadius: 2, padding: '0 2px' }}>{part}</span>
+      : part
   );
 }

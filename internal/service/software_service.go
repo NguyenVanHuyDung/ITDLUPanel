@@ -1629,12 +1629,25 @@ func (s *SoftwareService) GetPHPFPMStatus(version string) (map[string]interface{
 		}
 	}
 
+	// Get system load average from /proc/loadavg
+	loadAvg := map[string]interface{}{"load1": 0.0, "load5": 0.0, "load15": 0.0}
+	if loadData, err := os.ReadFile("/proc/loadavg"); err == nil {
+		loadFields := strings.Fields(string(loadData))
+		if len(loadFields) >= 3 {
+			l1, _ := strconv.ParseFloat(loadFields[0], 64)
+			l5, _ := strconv.ParseFloat(loadFields[1], 64)
+			l15, _ := strconv.ParseFloat(loadFields[2], 64)
+			loadAvg = map[string]interface{}{"load1": l1, "load5": l5, "load15": l15}
+		}
+	}
+
 	return map[string]interface{}{
 		"workers":         workers,
 		"total_memory_mb": math.Round(totalRSSKB/1024*100) / 100,
 		"avg_cpu":         avgCPU,
 		"uptime":          uptime,
 		"processes":       processes,
+		"load_average":    loadAvg,
 	}, nil
 }
 
