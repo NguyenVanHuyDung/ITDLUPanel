@@ -66,6 +66,8 @@ func (h *SoftwareHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gi
 		sw.GET("/php/:version/error-log", h.getPHPErrorLog)
 		sw.GET("/php/:version/fpm-config", h.getPHPFPMConfig)
 		sw.PUT("/php/:version/fpm-config", h.setPHPFPMConfig)
+		sw.GET("/php/:version/disable-functions", h.getPHPDisableFunctions)
+		sw.PUT("/php/:version/disable-functions", h.setPHPDisableFunctions)
 	}
 }
 
@@ -626,4 +628,40 @@ func (h *SoftwareHandler) setPHPFPMConfig(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": "FPM configuration updated"})
+}
+
+// getPHPDisableFunctions returns the disable_functions list for a PHP version.
+func (h *SoftwareHandler) getPHPDisableFunctions(c *gin.Context) {
+	version := c.Param("version")
+	if !validPHPVersions[version] {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
+		return
+	}
+	functions, err := h.softwareService.GetPHPDisableFunctions(version)
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, gin.H{"functions": functions})
+}
+
+// setPHPDisableFunctions updates the disable_functions list for a PHP version.
+func (h *SoftwareHandler) setPHPDisableFunctions(c *gin.Context) {
+	version := c.Param("version")
+	if !validPHPVersions[version] {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
+		return
+	}
+	var req struct {
+		Functions []string `json:"functions"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "functions", Message: "functions array is required"}})
+		return
+	}
+	if err := h.softwareService.SetPHPDisableFunctions(version, req.Functions); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, gin.H{"message": "disable_functions updated"})
 }

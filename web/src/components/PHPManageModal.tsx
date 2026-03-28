@@ -25,6 +25,7 @@ const SECTIONS = [
   { key: 'extensions', label: 'Extensions',  icon: <AppstoreOutlined /> },
   { key: 'fpmprofile', label: 'FPM Profile', icon: <CloudServerOutlined /> },
   { key: 'config',     label: 'Limits',      icon: <SettingOutlined /> },
+  { key: 'disablefn',  label: 'Disable Func', icon: <SafetyCertificateOutlined /> },
   { key: 'configfile', label: 'Config File', icon: <CodeOutlined /> },
   { key: 'errorlog',   label: 'Error Log',   icon: <FileTextOutlined /> },
 ] as const;
@@ -113,6 +114,7 @@ export default function PHPManageModal({ open, onClose }: Props) {
       case 'extensions': return <ExtensionsTab version={phpVersion} />;
       case 'fpmprofile': return <FPMProfileTab version={phpVersion} />;
       case 'config':     return <ConfigTab version={phpVersion} />;
+      case 'disablefn':  return <DisableFunctionsTab version={phpVersion} />;
       case 'configfile': return <ConfigFileTab version={phpVersion} />;
       case 'errorlog':   return <ErrorLogTab version={phpVersion} />;
       default:           return null;
@@ -982,6 +984,237 @@ function ConfigTab({ version }: { version: string }) {
       }}>
         ⚠️ Saving will update both FPM and CLI php.ini files and restart PHP-FPM service.
       </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Disable Functions Tab
+// ============================================================================
+const COMMON_DANGEROUS_FUNCTIONS = [
+  'exec', 'passthru', 'shell_exec', 'system', 'proc_open', 'popen',
+  'curl_exec', 'curl_multi_exec', 'parse_ini_file', 'show_source',
+  'proc_close', 'proc_get_status', 'proc_nice', 'proc_terminate',
+  'dl', 'putenv', 'getenv', 'phpinfo', 'pcntl_exec', 'pcntl_fork',
+  'pcntl_signal', 'pcntl_waitpid', 'pcntl_wexitstatus', 'pcntl_setpriority',
+  'chroot', 'chgrp', 'chown', 'link', 'symlink', 'ini_set', 'ini_alter',
+  'ini_restore', 'apache_child_terminate', 'define_syslog_variables',
+  'syslog', 'openlog', 'escapeshellcmd', 'escapeshellarg',
+];
+
+function DisableFunctionsTab({ version }: { version: string }) {
+  const { p, isDark } = usePalette();
+  const [functions, setFunctions] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [newFunc, setNewFunc] = useState('');
+  const [search, setSearch] = useState('');
+
+  const ACCENT = isDark ? '#818CF8' : '#4F46E5';
+
+  const fetchFunctions = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data: resp } = await api.get(`/software/php/${version}/disable-functions`);
+      setFunctions(resp.data?.functions || []);
+    } catch {
+      message.error('Failed to load disable_functions');
+    } finally {
+      setLoading(false);
+    }
+  }, [version]);
+
+  useEffect(() => { fetchFunctions(); }, [fetchFunctions]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/software/php/${version}/disable-functions`, { functions });
+      message.success('disable_functions saved & FPM restarted');
+    } catch (e: any) {
+      message.error(e.response?.data?.message || 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addFunction = (fn: string) => {
+    const trimmed = fn.trim().toLowerCase();
+    if (!trimmed || functions.includes(trimmed)) return;
+    setFunctions(prev => [...prev, trimmed].sort());
+    setNewFunc('');
+  };
+
+  const removeFunction = (fn: string) => {
+    setFunctions(prev => prev.filter(f => f !== fn));
+  };
+
+  const suggestionsNotAdded = COMMON_DANGEROUS_FUNCTIONS.filter(
+    f => !functions.includes(f) && (!search || f.toLowerCase().includes(search.toLowerCase()))
+  );
+
+  const filteredFunctions = functions.filter(
+    f => !search || f.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+        <div>
+          <Text style={{ fontSize: 16, fontWeight: 600, color: p.text }}>Disable Functions</Text>
+          <Text style={{ fontSize: 12, color: p.textMuted, marginLeft: 8 }}>PHP {version}</Text>
+        </div>
+        <Space>
+          <Badge count={functions.length} style={{ backgroundColor: p.red }} showZero>
+            <Tag style={{ borderRadius: 6, margin: 0 }}>Disabled</Tag>
+          </Badge>
+          <Button
+            type="primary"
+            onClick={handleSave}
+            loading={saving}
+            style={{ background: ACCENT, borderColor: ACCENT, borderRadius: 6 }}
+          >
+            Save & Restart FPM
+          </Button>
+        </Space>
+      </div>
+
+      {loading ? <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div> : (
+        <>
+          {/* Add new function */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            <Input
+              placeholder="Add function name (e.g., exec, system)"
+              value={newFunc}
+              onChange={e => setNewFunc(e.target.value)}
+              onPressEnter={() => addFunction(newFunc)}
+              style={{
+                flex: 1,
+                borderRadius: 8,
+                background: isDark ? p.inputBg : '#F8FAFC',
+                borderColor: isDark ? p.cardBorder : '#E2E8F0',
+              }}
+            />
+            <Button
+              type="primary"
+              onClick={() => addFunction(newFunc)}
+              disabled={!newFunc.trim()}
+              style={{ borderRadius: 8, background: ACCENT, borderColor: ACCENT }}
+            >
+              Add
+            </Button>
+          </div>
+
+          {/* Search */}
+          <Input
+            prefix={<SearchOutlined style={{ color: p.textMuted }} />}
+            placeholder="Search functions..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            allowClear
+            style={{
+              marginBottom: 16,
+              borderRadius: 8,
+              background: isDark ? p.inputBg : '#F8FAFC',
+              borderColor: isDark ? p.cardBorder : '#E2E8F0',
+            }}
+          />
+
+          {/* Current disabled functions */}
+          <div style={{
+            padding: 16,
+            borderRadius: 10,
+            background: isDark ? p.codeBg : '#F8FAFC',
+            border: `1px solid ${isDark ? p.cardBorder : '#E2E8F0'}`,
+            marginBottom: 16,
+          }}>
+            <Text style={{ fontSize: 13, fontWeight: 600, color: p.text, display: 'block', marginBottom: 10 }}>
+              <SafetyCertificateOutlined style={{ marginRight: 6, color: p.red }} />
+              Disabled Functions ({filteredFunctions.length})
+            </Text>
+            {filteredFunctions.length === 0 ? (
+              <Text style={{ fontSize: 12, color: p.textMuted }}>
+                {search ? 'No matching functions.' : 'No functions disabled. PHP functions are unrestricted.'}
+              </Text>
+            ) : (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {filteredFunctions.map(fn => (
+                  <Tag
+                    key={fn}
+                    closable
+                    onClose={() => removeFunction(fn)}
+                    style={{
+                      borderRadius: 6,
+                      padding: '3px 8px',
+                      fontSize: 12,
+                      fontFamily: "'JetBrains Mono', monospace",
+                      background: isDark ? 'rgba(248,113,113,0.1)' : '#FEF2F2',
+                      border: `1px solid ${isDark ? 'rgba(248,113,113,0.25)' : '#FECACA'}`,
+                      color: p.red,
+                    }}
+                  >
+                    {fn}
+                  </Tag>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Quick-add common dangerous functions */}
+          <div style={{
+            padding: 16,
+            borderRadius: 10,
+            background: isDark ? p.codeBg : '#FFFBEB',
+            border: `1px solid ${isDark ? p.cardBorder : '#FDE68A'}`,
+          }}>
+            <Text style={{ fontSize: 13, fontWeight: 600, color: p.text, display: 'block', marginBottom: 10 }}>
+              <ToolOutlined style={{ marginRight: 6, color: isDark ? p.amber : '#D97706' }} />
+              Common Dangerous Functions — click to disable
+            </Text>
+            {suggestionsNotAdded.length === 0 ? (
+              <Text style={{ fontSize: 12, color: p.textMuted }}>All common dangerous functions are already disabled.</Text>
+            ) : (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {suggestionsNotAdded.map(fn => (
+                  <Tag
+                    key={fn}
+                    onClick={() => addFunction(fn)}
+                    style={{
+                      cursor: 'pointer',
+                      borderRadius: 6,
+                      padding: '3px 8px',
+                      fontSize: 12,
+                      fontFamily: "'JetBrains Mono', monospace",
+                      background: isDark ? 'rgba(251,191,36,0.08)' : '#FEF9C3',
+                      border: `1px solid ${isDark ? 'rgba(251,191,36,0.2)' : '#FDE68A'}`,
+                      color: isDark ? p.amber : '#92400E',
+                      transition: 'all 0.15s',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = isDark ? 'rgba(251,191,36,0.15)' : '#FEF08A'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = isDark ? 'rgba(251,191,36,0.08)' : '#FEF9C3'; }}
+                  >
+                    + {fn}
+                  </Tag>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Info */}
+          <div style={{
+            marginTop: 16,
+            padding: '10px 14px',
+            borderRadius: 8,
+            background: isDark ? 'rgba(99,102,241,0.06)' : '#EEF2FF',
+            border: `1px solid ${isDark ? 'rgba(99,102,241,0.15)' : '#C7D2FE'}`,
+            fontSize: 12,
+            color: p.textMuted,
+          }}>
+            <InfoCircleOutlined style={{ marginRight: 6, color: ACCENT }} />
+            Disabling dangerous functions improves security by preventing PHP scripts from executing system commands, modifying the environment, or accessing sensitive server resources.
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -559,6 +559,51 @@ func parseExtensionTaskName(name string) (software, extensions string, err error
 }
 
 // ---------------------------------------------------------------------------
+// PHP disable_functions management
+// ---------------------------------------------------------------------------
+
+// GetPHPDisableFunctions reads the disable_functions list from php.ini.
+func (s *SoftwareService) GetPHPDisableFunctions(version string) ([]string, error) {
+	iniPath := fmt.Sprintf("/etc/php/%s/fpm/php.ini", version)
+	raw := readPHPIniValue(iniPath, "disable_functions")
+	if raw == "" {
+		return []string{}, nil
+	}
+	var functions []string
+	for _, f := range strings.Split(raw, ",") {
+		f = strings.TrimSpace(f)
+		if f != "" {
+			functions = append(functions, f)
+		}
+	}
+	return functions, nil
+}
+
+// SetPHPDisableFunctions writes the disable_functions list to php.ini and restarts FPM.
+func (s *SoftwareService) SetPHPDisableFunctions(version string, functions []string) error {
+	value := strings.Join(functions, ",")
+
+	iniPaths := []string{
+		fmt.Sprintf("/etc/php/%s/fpm/php.ini", version),
+		fmt.Sprintf("/etc/php/%s/cli/php.ini", version),
+	}
+	for _, iniPath := range iniPaths {
+		if _, err := os.Stat(iniPath); err != nil {
+			continue
+		}
+		if err := setPHPIniValue(iniPath, "disable_functions", value); err != nil {
+			return fmt.Errorf("failed to set disable_functions in %s: %w", iniPath, err)
+		}
+	}
+
+	svcName := fmt.Sprintf("php%s-fpm", version)
+	if _, err := system.ExecWithTimeout(30*time.Second, "systemctl", "restart", svcName); err != nil {
+		logger.Warn().Err(err).Str("service", svcName).Msg("failed to restart php-fpm after disable_functions change")
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
 // PHP config file (raw php.ini)
 // ---------------------------------------------------------------------------
 
