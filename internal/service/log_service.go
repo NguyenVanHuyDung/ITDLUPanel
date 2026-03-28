@@ -67,7 +67,7 @@ func (s *LogService) GetPanelLog(lines int) ([]string, error) {
 }
 
 // websiteLogDir is the base directory for website logs.
-const websiteLogDir = "/ITDLU/logs"
+const websiteLogDir = "/ITDLUPanel/logs"
 
 // GetWebsiteAccessLog reads the last N lines of a website's access log.
 // If date is provided (YYYY-MM-DD), reads the rotated log for that date.
@@ -139,7 +139,7 @@ func (s *LogService) ListSitesMinimal() ([]map[string]interface{}, error) {
 }
 
 // ListWebsiteLogDates returns available log dates for a website.
-// Scans /ITDLU/logs/ for rotated files matching {domain}.access.log.YYYY-MM-DD
+// Scans /ITDLUPanel/logs/ for rotated files matching {domain}.access.log.YYYY-MM-DD
 func (s *LogService) ListWebsiteLogDates(siteID int64) ([]string, error) {
 	domain, err := s.getSiteDomain(siteID)
 	if err != nil {
@@ -184,7 +184,7 @@ func (s *LogService) websiteLogPath(domain, logType, date string) string {
 	return base + "." + date
 }
 
-// EnsureLogDir creates /ITDLU/logs if it doesn't exist.
+// EnsureLogDir creates /ITDLUPanel/logs if it doesn't exist.
 func (s *LogService) EnsureLogDir() error {
 	return os.MkdirAll(websiteLogDir, 0755)
 }
@@ -192,7 +192,7 @@ func (s *LogService) EnsureLogDir() error {
 // SetupLogRotation creates a logrotate config for website logs
 // that rotates daily and names files with date suffix.
 func (s *LogService) SetupLogRotation() error {
-	config := `/ITDLU/logs/*.access.log /ITDLU/logs/*.error.log {
+	config := `/ITDLUPanel/logs/*.access.log /ITDLUPanel/logs/*.error.log {
     daily
     missingok
     notifempty

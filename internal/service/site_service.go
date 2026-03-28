@@ -1265,7 +1265,7 @@ func (s *SiteService) SetAccessLog(id int64, enabled bool) error {
 		if enabled {
 			// Uncomment access_log lines
 			if trimmed == "#access_log off;" {
-				newLines = append(newLines, strings.Replace(line, "#access_log off;", fmt.Sprintf("access_log /ITDLU/logs/%s.access.log;", site.Domain), 1))
+				newLines = append(newLines, strings.Replace(line, "#access_log off;", fmt.Sprintf("access_log /ITDLUPanel/logs/%s.access.log;", site.Domain), 1))
 			} else if isCommentedAccessLog(trimmed) {
 				newLines = append(newLines, vhostUncomment(line))
 			} else {
