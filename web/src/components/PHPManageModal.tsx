@@ -8,7 +8,7 @@ import {
   DownloadOutlined, DeleteOutlined, DatabaseOutlined,
   SafetyCertificateOutlined, PictureOutlined, FileZipOutlined,
   ThunderboltOutlined, GlobalOutlined, FontSizeOutlined,
-  ToolOutlined, CalculatorOutlined,
+  ToolOutlined, CalculatorOutlined, ClockCircleOutlined,
 } from '@ant-design/icons';
 import api from '@/services/api';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -28,6 +28,8 @@ const SECTIONS = [
   { key: 'disablefn',  label: 'Disable Func', icon: <SafetyCertificateOutlined /> },
   { key: 'configfile', label: 'Config File', icon: <CodeOutlined /> },
   { key: 'errorlog',   label: 'Error Log',   icon: <FileTextOutlined /> },
+  { key: 'slowlog',    label: 'Slow Log',    icon: <ClockCircleOutlined /> },
+  { key: 'phpinfo',    label: 'PHP Info',    icon: <InfoCircleOutlined /> },
 ] as const;
 
 type SectionKey = (typeof SECTIONS)[number]['key'];
@@ -117,6 +119,8 @@ export default function PHPManageModal({ open, onClose }: Props) {
       case 'disablefn':  return <DisableFunctionsTab version={phpVersion} />;
       case 'configfile': return <ConfigFileTab version={phpVersion} />;
       case 'errorlog':   return <ErrorLogTab version={phpVersion} />;
+      case 'slowlog':    return <SlowLogTab version={phpVersion} />;
+      case 'phpinfo':    return <PHPInfoTab version={phpVersion} />;
       default:           return null;
     }
   };
@@ -199,6 +203,7 @@ function ServiceTab({ version, versions }: { version: string; versions: string[]
   const [statuses, setStatuses] = useState<Record<string, { running: boolean; version: string }>>({});
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [fpmStatus, setFpmStatus] = useState<any>(null);
 
   const ACCENT = isDark ? '#818CF8' : '#4F46E5';
 
@@ -250,6 +255,20 @@ function ServiceTab({ version, versions }: { version: string; versions: string[]
     };
     checkAll();
   }, [version, versions]);
+
+  // Auto-refresh FPM status every 5 seconds
+  useEffect(() => {
+    if (!version) return;
+    const fetchFpmStatus = async () => {
+      try {
+        const { data: resp } = await api.get(`/software/php/${version}/fpm-status`);
+        setFpmStatus(resp.data);
+      } catch { setFpmStatus(null); }
+    };
+    fetchFpmStatus();
+    const interval = setInterval(fetchFpmStatus, 5000);
+    return () => clearInterval(interval);
+  }, [version]);
 
   const handleAction = async (action: 'start' | 'stop' | 'restart', ver: string) => {
     const key = `${action}-${ver}`;
@@ -382,6 +401,66 @@ function ServiceTab({ version, versions }: { version: string; versions: string[]
             <InfoCircleOutlined style={{ marginRight: 6, color: ACCENT }} />
             Use the version selector in the header to switch between installed PHP versions.
           </div>
+
+          {/* FPM Load */}
+          {fpmStatus && (
+            <div style={{
+              marginTop: 24,
+              padding: 16,
+              borderRadius: 8,
+              background: isDark ? p.codeBg : '#F8FAFC',
+              border: `1px solid ${isDark ? p.cardBorder : '#E2E8F0'}`,
+            }}>
+              <Text style={{ fontSize: 14, fontWeight: 600, color: p.text, display: 'block', marginBottom: 14 }}>
+                FPM Load
+              </Text>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginBottom: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Badge count={fpmStatus.workers ?? 0} showZero style={{ backgroundColor: ACCENT }} />
+                  <Text style={{ fontSize: 12, color: p.textMuted }}>Workers</Text>
+                </div>
+                <div style={{ fontSize: 12, color: p.textMuted }}>
+                  Memory: <span style={{ color: p.text, fontWeight: 600 }}>{fpmStatus.total_memory_mb ?? 0} MB</span>
+                </div>
+                <div style={{ fontSize: 12, color: p.textMuted }}>
+                  CPU Avg: <span style={{ color: p.text, fontWeight: 600 }}>{fpmStatus.avg_cpu ?? 0}%</span>
+                </div>
+                {fpmStatus.uptime && (
+                  <div style={{ fontSize: 12, color: p.textMuted }}>
+                    Up since: <span style={{ color: p.text, fontWeight: 600 }}>{fpmStatus.uptime}</span>
+                  </div>
+                )}
+              </div>
+              {fpmStatus.processes?.length > 0 && (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: `1px solid ${isDark ? p.cardBorder : '#E2E8F0'}` }}>
+                        {['PID', 'CPU %', 'Memory', 'Time', 'Role'].map(h => (
+                          <th key={h} style={{ padding: '6px 10px', textAlign: 'left', color: p.textMuted, fontWeight: 500 }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {fpmStatus.processes.map((proc: any, i: number) => (
+                        <tr key={proc.pid} style={{ background: i % 2 === 0 ? 'transparent' : (isDark ? p.rowAlt : '#F1F5F9') }}>
+                          <td style={{ padding: '5px 10px', color: p.text }}>{proc.pid}</td>
+                          <td style={{ padding: '5px 10px', color: p.text }}>{proc.cpu}</td>
+                          <td style={{ padding: '5px 10px', color: p.text }}>{proc.memory_mb} MB</td>
+                          <td style={{ padding: '5px 10px', color: p.text, fontFamily: "'JetBrains Mono', monospace" }}>{proc.time}</td>
+                          <td style={{ padding: '5px 10px' }}>
+                            <Tag color={proc.role === 'master' ? 'purple' : 'blue'} style={{ fontSize: 11, borderRadius: 4 }}>
+                              {proc.role}
+                            </Tag>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
         </>
       )}
     </div>
@@ -1394,6 +1473,253 @@ function ErrorLogTab({ version }: { version: string }) {
           border: `1px solid ${isDark ? p.cardBorder : '#334155'}`,
         }}>
           {logContent || 'No log entries found.'}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// Slow Log Tab
+// ============================================================================
+function SlowLogTab({ version }: { version: string }) {
+  const { p, isDark } = usePalette();
+  const [logContent, setLogContent] = useState('');
+  const [logPath, setLogPath] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [lines, setLines] = useState(100);
+  const [enabled, setEnabled] = useState(false);
+  const [timeout, setTimeout_] = useState('5s');
+  const [saving, setSaving] = useState(false);
+
+  const ACCENT = isDark ? '#818CF8' : '#4F46E5';
+
+  const fetchLog = useCallback(async (n: number) => {
+    setLoading(true);
+    try {
+      const { data: resp } = await api.get(`/software/php/${version}/slow-log?lines=${n}`);
+      const d = resp.data;
+      setLogContent(d?.content || '');
+      setLogPath(d?.log_path || '');
+      setEnabled(d?.enabled || false);
+      if (d?.timeout && d.timeout !== '0') setTimeout_(d.timeout);
+    } catch {
+      setLogContent('Failed to load slow log');
+    } finally {
+      setLoading(false);
+    }
+  }, [version]);
+
+  useEffect(() => { fetchLog(lines); }, [fetchLog, lines]);
+
+  const handleSaveConfig = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/software/php/${version}/slow-log-config`, { enabled, timeout: timeout });
+      message.success('Slow log configuration updated');
+      fetchLog(lines);
+    } catch (e: any) {
+      message.error(e.response?.data?.message || 'Failed to update slow log config');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <Text style={{ fontSize: 16, fontWeight: 600, color: p.text, display: 'block', marginBottom: 4 }}>
+        PHP-FPM Slow Log
+      </Text>
+      {logPath && (
+        <Text style={{ fontSize: 11, color: p.textMuted, display: 'block', marginBottom: 16 }}>
+          {logPath}
+        </Text>
+      )}
+
+      {/* Config section */}
+      <div style={{
+        padding: 14,
+        borderRadius: 8,
+        background: isDark ? p.codeBg : '#F8FAFC',
+        border: `1px solid ${isDark ? p.cardBorder : '#E2E8F0'}`,
+        marginBottom: 16,
+        display: 'flex',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: 12,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Text style={{ fontSize: 13, color: p.text }}>Slow Log:</Text>
+          <Button
+            size="small"
+            type={enabled ? 'primary' : 'default'}
+            onClick={() => setEnabled(!enabled)}
+            style={enabled ? { background: p.green, borderColor: p.green, borderRadius: 4, fontSize: 12 } : { borderRadius: 4, fontSize: 12 }}
+          >
+            {enabled ? 'Enabled' : 'Disabled'}
+          </Button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Text style={{ fontSize: 12, color: p.textMuted }}>Timeout:</Text>
+          <Input
+            size="small"
+            value={timeout}
+            onChange={e => setTimeout_(e.target.value)}
+            style={{ width: 70, borderRadius: 4, background: isDark ? p.inputBg : '#fff' }}
+            disabled={!enabled}
+          />
+        </div>
+        <Button
+          size="small"
+          type="primary"
+          onClick={handleSaveConfig}
+          loading={saving}
+          style={{ background: ACCENT, borderColor: ACCENT, borderRadius: 4, fontSize: 12 }}
+        >
+          Save
+        </Button>
+      </div>
+
+      {/* Line selector + refresh */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+        <Space>
+          <Text style={{ fontSize: 12, color: p.textMuted }}>Last</Text>
+          {[50, 100, 500].map(n => (
+            <Button
+              key={n}
+              size="small"
+              type={lines === n ? 'primary' : 'default'}
+              onClick={() => setLines(n)}
+              style={lines === n ? { background: ACCENT, borderColor: ACCENT, borderRadius: 4 } : { borderRadius: 4 }}
+            >
+              {n}
+            </Button>
+          ))}
+          <Text style={{ fontSize: 12, color: p.textMuted }}>lines</Text>
+          <Button
+            size="small"
+            icon={<ReloadOutlined />}
+            onClick={() => fetchLog(lines)}
+            style={{ borderRadius: 4 }}
+          />
+        </Space>
+      </div>
+
+      {loading ? <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div> : (
+        <pre style={{
+          background: isDark ? '#0D1117' : '#1E293B',
+          color: '#E2E8F0',
+          padding: 16,
+          borderRadius: 8,
+          fontSize: 12,
+          fontFamily: "'JetBrains Mono', monospace",
+          lineHeight: 1.6,
+          maxHeight: 400,
+          overflow: 'auto',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-all',
+          border: `1px solid ${isDark ? p.cardBorder : '#334155'}`,
+        }}>
+          {logContent || 'No slow log entries found.'}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// PHP Info Tab
+// ============================================================================
+function PHPInfoTab({ version }: { version: string }) {
+  const { p, isDark } = usePalette();
+  const [info, setInfo] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const { data: resp } = await api.get(`/software/php/${version}/phpinfo`);
+        setInfo(resp.data?.info || '');
+      } catch {
+        setInfo('Failed to load PHP info');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [version]);
+
+  const filteredLines = useMemo(() => {
+    if (!info) return '';
+    if (!filter.trim()) return info;
+    const lower = filter.toLowerCase();
+    return info
+      .split('\n')
+      .filter(line => line.toLowerCase().includes(lower))
+      .join('\n');
+  }, [info, filter]);
+
+  const highlightMatch = (text: string) => {
+    if (!filter.trim()) return text;
+    const parts = text.split(new RegExp(`(${filter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
+    return parts.map((part, i) =>
+      part.toLowerCase() === filter.toLowerCase()
+        ? `\x1b[43m${part}\x1b[0m`
+        : part
+    ).join('');
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+        <Text style={{ fontSize: 16, fontWeight: 600, color: p.text }}>
+          PHP {version} Info
+        </Text>
+        <Input
+          size="small"
+          prefix={<SearchOutlined style={{ color: p.textMuted }} />}
+          placeholder="Filter..."
+          value={filter}
+          onChange={e => setFilter(e.target.value)}
+          allowClear
+          style={{ width: 220, borderRadius: 6, background: isDark ? p.inputBg : '#fff' }}
+        />
+      </div>
+
+      {loading ? <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div> : (
+        <pre style={{
+          background: isDark ? '#0D1117' : '#1E293B',
+          color: '#E2E8F0',
+          padding: 16,
+          borderRadius: 8,
+          fontSize: 12,
+          fontFamily: "'JetBrains Mono', monospace",
+          lineHeight: 1.6,
+          maxHeight: 520,
+          overflow: 'auto',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-all',
+          border: `1px solid ${isDark ? p.cardBorder : '#334155'}`,
+        }}>
+          {filter.trim() ? (
+            filteredLines.split('\n').map((line, i) => {
+              const regex = new RegExp(`(${filter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+              const parts = line.split(regex);
+              return (
+                <span key={i}>
+                  {parts.map((part, j) =>
+                    regex.test(part)
+                      ? <span key={j} style={{ background: '#F59E0B', color: '#000', borderRadius: 2, padding: '0 2px' }}>{part}</span>
+                      : part
+                  )}
+                  {'\n'}
+                </span>
+              );
+            })
+          ) : (
+            info || 'No PHP info available.'
+          )}
         </pre>
       )}
     </div>

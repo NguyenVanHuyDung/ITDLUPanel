@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -1537,4 +1538,189 @@ func (s *SoftwareService) GetAvailablePHPVersions() ([]string, error) {
 	}
 
 	return versions, nil
+}
+
+// ---------------------------------------------------------------------------
+// PHP-FPM Status (process stats)
+// ---------------------------------------------------------------------------
+
+// GetPHPFPMStatus returns FPM process statistics gathered from ps and systemctl.
+func (s *SoftwareService) GetPHPFPMStatus(version string) (map[string]interface{}, error) {
+	emptyResult := map[string]interface{}{
+		"workers":         0,
+		"total_memory_mb": 0.0,
+		"avg_cpu":         0.0,
+		"uptime":          "",
+		"processes":       []interface{}{},
+	}
+
+	// Get master PID from systemctl for accurate process tree detection
+	svcName := fmt.Sprintf("php%s-fpm", version)
+	pidRes, err := system.ExecWithTimeout(5*time.Second, "systemctl", "show", svcName, "--property=MainPID")
+	if err != nil {
+		return emptyResult, nil
+	}
+	parts := strings.SplitN(strings.TrimSpace(pidRes.Stdout), "=", 2)
+	if len(parts) != 2 || parts[1] == "0" || parts[1] == "" {
+		return emptyResult, nil
+	}
+	masterPID := parts[1]
+
+	// Get master + all child processes using ps
+	res, err := system.ExecWithTimeout(10*time.Second, "bash", "-c",
+		fmt.Sprintf("ps -o pid,%%cpu,rss,etime,args -p %s --ppid %s --no-headers", masterPID, masterPID))
+	if err != nil {
+		return emptyResult, nil
+	}
+
+	lines := strings.Split(strings.TrimSpace(res.Stdout), "\n")
+	var processes []map[string]interface{}
+	var totalRSSKB float64
+	var totalCPU float64
+	workers := 0
+
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		// ps -o pid,%cpu,rss,etime,args => at least 5 fields
+		if len(fields) < 5 {
+			continue
+		}
+
+		pid, _ := strconv.Atoi(fields[0])
+		cpu, _ := strconv.ParseFloat(fields[1], 64)
+		rssKB, _ := strconv.ParseFloat(fields[2], 64)
+		timeStr := fields[3]
+		cmdPart := strings.Join(fields[4:], " ")
+
+		role := "worker"
+		if strings.Contains(cmdPart, "master") {
+			role = "master"
+		} else {
+			workers++
+		}
+
+		totalRSSKB += rssKB
+		totalCPU += cpu
+
+		processes = append(processes, map[string]interface{}{
+			"pid":       pid,
+			"cpu":       cpu,
+			"memory_mb": math.Round(rssKB/1024*100) / 100,
+			"time":      timeStr,
+			"role":      role,
+		})
+	}
+
+	avgCPU := 0.0
+	if len(processes) > 0 {
+		avgCPU = math.Round(totalCPU/float64(len(processes))*100) / 100
+	}
+
+	// Get uptime from systemctl
+	uptime := ""
+	uptimeRes, err := system.ExecWithTimeout(5*time.Second, "systemctl", "show", svcName, "--property=ActiveEnterTimestamp")
+	if err == nil {
+		parts := strings.SplitN(strings.TrimSpace(uptimeRes.Stdout), "=", 2)
+		if len(parts) == 2 {
+			uptime = strings.TrimSpace(parts[1])
+		}
+	}
+
+	return map[string]interface{}{
+		"workers":         workers,
+		"total_memory_mb": math.Round(totalRSSKB/1024*100) / 100,
+		"avg_cpu":         avgCPU,
+		"uptime":          uptime,
+		"processes":       processes,
+	}, nil
+}
+
+// ---------------------------------------------------------------------------
+// PHP-FPM Slow Log
+// ---------------------------------------------------------------------------
+
+// GetPHPSlowLog reads the PHP-FPM slow log and returns content, log path, and error.
+func (s *SoftwareService) GetPHPSlowLog(version string, lines int) (string, string, error) {
+	if lines <= 0 {
+		lines = 100
+	}
+	if lines > 1000 {
+		lines = 1000
+	}
+
+	poolPath := phpFPMPoolPath(version)
+	data, err := os.ReadFile(poolPath)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to read FPM pool config: %w", err)
+	}
+	content := string(data)
+
+	slowlogPath := readFPMValue(content, "slowlog")
+	if slowlogPath == "" {
+		slowlogPath = fmt.Sprintf("/var/log/php%s-fpm.log.slow", version)
+	}
+
+	timeout := readFPMValue(content, "request_slowlog_timeout")
+
+	if _, statErr := os.Stat(slowlogPath); statErr != nil {
+		// File doesn't exist – return empty with config info
+		return "", slowlogPath, nil
+	}
+
+	res, err := system.ExecWithTimeout(10*time.Second, "tail", "-n", fmt.Sprintf("%d", lines), slowlogPath)
+	if err != nil {
+		return "", slowlogPath, fmt.Errorf("failed to read slow log: %w", err)
+	}
+
+	_ = timeout // included in config response below; not returned here
+	return res.Stdout, slowlogPath, nil
+}
+
+// SetPHPSlowLogConfig enables or disables the PHP-FPM slow log and sets the timeout.
+func (s *SoftwareService) SetPHPSlowLogConfig(version string, enabled bool, timeout string) error {
+	poolPath := phpFPMPoolPath(version)
+	data, err := os.ReadFile(poolPath)
+	if err != nil {
+		return fmt.Errorf("failed to read FPM pool config: %w", err)
+	}
+
+	content := string(data)
+	slowlogPath := fmt.Sprintf("/var/log/php%s-fpm.log.slow", version)
+
+	if enabled {
+		if timeout == "" {
+			timeout = "5s"
+		}
+		content = setFPMValue(content, "request_slowlog_timeout", timeout)
+		content = setFPMValue(content, "slowlog", slowlogPath)
+	} else {
+		content = setFPMValue(content, "request_slowlog_timeout", "0")
+	}
+
+	if err := os.WriteFile(poolPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write FPM pool config: %w", err)
+	}
+
+	svcName := fmt.Sprintf("php%s-fpm", version)
+	if _, err := system.ExecWithTimeout(30*time.Second, "systemctl", "restart", svcName); err != nil {
+		logger.Warn().Err(err).Str("service", svcName).Msg("failed to restart php-fpm after slow log config change")
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// PHP Info
+// ---------------------------------------------------------------------------
+
+// GetPHPInfo returns the output of php -i for the given version.
+func (s *SoftwareService) GetPHPInfo(version string) (string, error) {
+	bin := fmt.Sprintf("php%s", version)
+	res, err := system.ExecWithTimeout(15*time.Second, bin, "-i")
+	if err != nil {
+		return "", fmt.Errorf("failed to run %s -i: %w", bin, err)
+	}
+	return res.Stdout, nil
 }

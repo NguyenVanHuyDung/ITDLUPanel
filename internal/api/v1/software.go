@@ -68,6 +68,10 @@ func (h *SoftwareHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gi
 		sw.PUT("/php/:version/fpm-config", h.setPHPFPMConfig)
 		sw.GET("/php/:version/disable-functions", h.getPHPDisableFunctions)
 		sw.PUT("/php/:version/disable-functions", h.setPHPDisableFunctions)
+		sw.GET("/php/:version/fpm-status", h.getPHPFPMStatus)
+		sw.GET("/php/:version/slow-log", h.getPHPSlowLog)
+		sw.PUT("/php/:version/slow-log-config", h.setPHPSlowLogConfig)
+		sw.GET("/php/:version/phpinfo", h.getPHPInfo)
 	}
 }
 
@@ -664,4 +668,93 @@ func (h *SoftwareHandler) setPHPDisableFunctions(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": "disable_functions updated"})
+}
+
+// getPHPFPMStatus returns FPM process statistics for a PHP version.
+func (h *SoftwareHandler) getPHPFPMStatus(c *gin.Context) {
+	version := c.Param("version")
+	if !validPHPVersions[version] {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
+		return
+	}
+	status, err := h.softwareService.GetPHPFPMStatus(version)
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, status)
+}
+
+// getPHPSlowLog returns the PHP-FPM slow log content.
+func (h *SoftwareHandler) getPHPSlowLog(c *gin.Context) {
+	version := c.Param("version")
+	if !validPHPVersions[version] {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
+		return
+	}
+	lines := 100
+	if l := c.Query("lines"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 && n <= 1000 {
+			lines = n
+		}
+	}
+	content, logPath, err := h.softwareService.GetPHPSlowLog(version, lines)
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+
+	// Also read current config
+	fpmCfg, _ := h.softwareService.GetPHPFPMConfig(version)
+	timeout := ""
+	enabled := false
+	if fpmCfg != nil {
+		timeout = fpmCfg.RequestSlowlogTimeout
+		enabled = timeout != "" && timeout != "0"
+	}
+
+	response.Success(c, gin.H{
+		"content":  content,
+		"log_path": logPath,
+		"lines":    lines,
+		"enabled":  enabled,
+		"timeout":  timeout,
+	})
+}
+
+// setPHPSlowLogConfig enables/disables the slow log and sets timeout.
+func (h *SoftwareHandler) setPHPSlowLogConfig(c *gin.Context) {
+	version := c.Param("version")
+	if !validPHPVersions[version] {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
+		return
+	}
+	var req struct {
+		Enabled bool   `json:"enabled"`
+		Timeout string `json:"timeout"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "body", Message: "invalid request body"}})
+		return
+	}
+	if err := h.softwareService.SetPHPSlowLogConfig(version, req.Enabled, req.Timeout); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, gin.H{"message": "slow log configuration updated"})
+}
+
+// getPHPInfo returns phpinfo output for a PHP version.
+func (h *SoftwareHandler) getPHPInfo(c *gin.Context) {
+	version := c.Param("version")
+	if !validPHPVersions[version] {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
+		return
+	}
+	info, err := h.softwareService.GetPHPInfo(version)
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, gin.H{"info": info, "version": version})
 }
