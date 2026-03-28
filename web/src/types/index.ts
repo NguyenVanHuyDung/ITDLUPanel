@@ -75,13 +75,14 @@ export interface Site {
   id: number; name: string; domain: string; path: string;
   webserver: string; php_version?: string; ssl_enabled: boolean;
   ssl_type?: string; ssl_expiry?: string; status: number;
+  disk_quota?: number; disk_usage?: number;
   created_at: string;
 }
 
 export interface Database {
   id: number; name: string; db_type: string; username: string;
   password?: string; charset: string; collation?: string;
-  remote_access?: string; size: number; created_at: string;
+  remote_access?: string; size: number; disk_quota?: number; created_at: string;
 }
 
 export interface FTPAccount {

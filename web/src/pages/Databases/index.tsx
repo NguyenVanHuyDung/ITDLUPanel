@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Table, Modal, Form, Input, Select, message, Popconfirm, Tooltip, Spin, Popover } from 'antd';
+import { Table, Modal, Form, Input, Select, message, Popconfirm, Tooltip, Spin, Popover, InputNumber } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, KeyOutlined, CloudDownloadOutlined,
   ReloadOutlined, DatabaseOutlined, CopyOutlined, LinkOutlined,
@@ -73,6 +73,10 @@ function DatabasesContent() {
   const [accessChangingId, setAccessChangingId] = useState<number | null>(null);
   const [customIpDb, setCustomIpDb] = useState<Database | null>(null);
   const [customIpValue, setCustomIpValue] = useState('');
+  const [quotaDb, setQuotaDb] = useState<Database | null>(null);
+  const [quotaInput, setQuotaInput] = useState(0);
+  const [quotaUnit, setQuotaUnit] = useState<'MB' | 'GB'>('MB');
+  const [quotaSaving, setQuotaSaving] = useState(false);
 
   const togglePasswordVisibility = (id: number) => {
     setVisiblePasswords(prev => {
@@ -369,6 +373,34 @@ function DatabasesContent() {
     }
   };
 
+  const openQuotaPopover = (db: Database) => {
+    setQuotaDb(db);
+    const q = db.disk_quota || 0;
+    if (q >= 1024 ** 3 && q % (1024 ** 3) === 0) {
+      setQuotaUnit('GB');
+      setQuotaInput(q / (1024 ** 3));
+    } else {
+      setQuotaUnit('MB');
+      setQuotaInput(Math.round(q / (1024 ** 2)));
+    }
+  };
+
+  const handleSaveQuota = async () => {
+    if (!quotaDb) return;
+    setQuotaSaving(true);
+    const bytes = quotaInput * (quotaUnit === 'GB' ? 1024 ** 3 : 1024 ** 2);
+    try {
+      await api.put(`/databases/${quotaDb.id}/quota`, { disk_quota: Math.round(bytes) });
+      message.success('Quota updated');
+      setQuotaDb(null);
+      fetchData();
+    } catch {
+      message.error('Failed to update quota');
+    } finally {
+      setQuotaSaving(false);
+    }
+  };
+
   const handleChangePassword = async () => {
     try {
       const values = await pwForm.validateFields();
@@ -474,12 +506,45 @@ function DatabasesContent() {
       },
     },
     {
-      title: t('common.size'),
+      title: t('common.size') + ' / Quota',
       key: 'size',
-      width: 80,
-      render: (_: unknown, r: Database) => (
-        <span style={{ fontSize: 12, color: p.textMuted }}>{formatSize(r.size)}</span>
-      ),
+      width: 120,
+      render: (_: unknown, r: Database) => {
+        const q = r.disk_quota || 0;
+        const pct = q > 0 ? Math.min(100, (r.size / q) * 100) : 0;
+        const overQuota = q > 0 && r.size > q;
+        return (
+          <Tooltip title="Click to set quota">
+            <button
+              onClick={() => openQuotaPopover(r)}
+              style={{
+                padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+                background: overQuota ? `${p.red}08` : 'transparent',
+                cursor: 'pointer', fontSize: 11, color: p.text,
+                display: 'flex', flexDirection: 'column', gap: 2,
+                textAlign: 'left', transition: 'all 0.15s',
+              }}
+            >
+              <span style={{ fontWeight: 500 }}>
+                {formatSize(r.size)}
+                {q > 0 && <span style={{ color: p.textMuted, fontWeight: 400 }}> / {formatSize(q)}</span>}
+              </span>
+              {q > 0 && (
+                <div style={{
+                  height: 3, width: '100%', borderRadius: 2,
+                  background: p.cardBorder, overflow: 'hidden',
+                }}>
+                  <div style={{
+                    height: '100%', borderRadius: 2,
+                    width: `${pct}%`,
+                    background: pct > 90 ? (p.red || '#ef4444') : pct > 70 ? (p.amber || '#f59e0b') : (p.green || '#22c55e'),
+                  }} />
+                </div>
+              )}
+            </button>
+          </Tooltip>
+        );
+      },
     },
     {
       title: 'Backup',
@@ -1035,6 +1100,106 @@ function DatabasesContent() {
             E.g. <code style={{ background: p.codeBg, padding: '1px 4px', borderRadius: 3 }}>192.168.1.%</code> for entire subnet.
           </div>
         </div>
+      </Modal>
+
+      {/* Quota Modal */}
+      <Modal
+        title={
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <DatabaseOutlined style={{ color: p.accent }} />
+            Disk Quota — {quotaDb?.name}
+          </span>
+        }
+        open={!!quotaDb}
+        onCancel={() => setQuotaDb(null)}
+        onOk={handleSaveQuota}
+        okText="Save"
+        cancelText="Cancel"
+        confirmLoading={quotaSaving}
+        destroyOnHidden
+        width={420}
+      >
+        {quotaDb && (
+          <div style={{ marginTop: 16 }}>
+            {/* Current usage */}
+            <div style={{
+              padding: 12, borderRadius: 8, marginBottom: 14,
+              background: p.codeBg, border: `1px solid ${p.cardBorder}`,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                <span style={{ color: p.textMuted }}>Current Size</span>
+                <span style={{ fontWeight: 600, color: p.text }}>{formatSize(quotaDb.size)}</span>
+              </div>
+              {(quotaDb.disk_quota || 0) > 0 && (() => {
+                const pct = Math.min(100, (quotaDb.size / quotaDb.disk_quota!) * 100);
+                return (
+                  <div style={{ marginTop: 6 }}>
+                    <div style={{
+                      height: 6, borderRadius: 3, background: p.cardBorder, overflow: 'hidden',
+                    }}>
+                      <div style={{
+                        height: '100%', borderRadius: 3,
+                        width: `${pct}%`,
+                        background: pct > 90 ? (p.red || '#ef4444') : pct > 70 ? (p.amber || '#f59e0b') : (p.green || '#22c55e'),
+                      }} />
+                    </div>
+                    <div style={{ fontSize: 10, color: p.textMuted, marginTop: 3 }}>{pct.toFixed(1)}% of quota used</div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Set quota */}
+            <div style={{ fontSize: 12, fontWeight: 600, color: p.text, marginBottom: 8 }}>Set Quota Limit</div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+              <InputNumber
+                min={0}
+                value={quotaInput}
+                onChange={v => setQuotaInput(v || 0)}
+                style={{ width: 120 }}
+                placeholder="0 = unlimited"
+              />
+              <Select value={quotaUnit} onChange={setQuotaUnit} style={{ width: 80 }} options={[
+                { value: 'MB', label: 'MB' },
+                { value: 'GB', label: 'GB' },
+              ]} />
+            </div>
+
+            {/* Presets */}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+              {[
+                { label: 'Unlimited', mb: 0 },
+                { label: '256 MB', mb: 256 },
+                { label: '512 MB', mb: 512 },
+                { label: '1 GB', mb: 1024 },
+                { label: '2 GB', mb: 2048 },
+                { label: '5 GB', mb: 5120 },
+              ].map(preset => {
+                const bytes = preset.mb * 1024 * 1024;
+                const isActive = (quotaDb.disk_quota || 0) === bytes;
+                return (
+                  <button
+                    key={preset.label}
+                    onClick={() => { setQuotaInput(preset.mb >= 1024 ? preset.mb / 1024 : preset.mb); setQuotaUnit(preset.mb >= 1024 ? 'GB' : 'MB'); }}
+                    style={{
+                      padding: '3px 10px', borderRadius: 5, fontSize: 10, fontWeight: 500,
+                      border: `1px solid ${isActive ? `${p.accent}60` : p.cardBorder}`,
+                      background: isActive ? `${p.accent}12` : 'transparent',
+                      color: isActive ? p.accent : p.textMuted,
+                      cursor: 'pointer', transition: 'all 0.15s',
+                    }}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ fontSize: 11, color: p.textMuted }}>
+              Set to <strong>0</strong> for unlimited. Quota is advisory — a warning displays when usage exceeds the limit.
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* ======================== Backup Management Modal ======================== */}

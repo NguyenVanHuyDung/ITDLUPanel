@@ -40,6 +40,7 @@ func (h *DatabaseHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, permMW gin
 		db.POST("/:id/import", h.Import)
 		db.PUT("/:id/access", h.SetAccess)
 		db.GET("/:id/size", h.GetSize)
+		db.PUT("/:id/quota", h.SetQuota)
 	}
 }
 
@@ -332,4 +333,33 @@ func (h *DatabaseHandler) Import(c *gin.Context) {
 	// Clean up the uploaded file after import
 	os.Remove(destPath)
 	response.Success(c, gin.H{"message": "SQL file imported successfully"})
+}
+
+// ---------------------------------------------------------------------------
+// Disk Quota
+// ---------------------------------------------------------------------------
+
+type setDBQuotaRequest struct {
+	DiskQuota int64 `json:"disk_quota" validate:"min=0"`
+}
+
+// SetQuota sets the disk quota for a database.
+func (h *DatabaseHandler) SetQuota(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+
+	var req setDBQuotaRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "body", Message: "invalid request body"}})
+		return
+	}
+
+	if err := h.dbService.SetDiskQuota(id, req.DiskQuota); err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"message": "disk quota updated"})
 }

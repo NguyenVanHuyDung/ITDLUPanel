@@ -112,6 +112,10 @@ func (h *SiteHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, sitesMW gin.Ha
 		sites.GET("/:id/maintenance", h.GetMaintenanceConfig)
 		sites.PUT("/:id/maintenance", h.SetMaintenanceConfig)
 		sites.GET("/:id/maintenance/templates", h.GetMaintenanceTemplates)
+
+		// Disk Quota
+		sites.PUT("/:id/quota", h.SetQuota)
+		sites.GET("/:id/disk-usage", h.GetDiskUsage)
 	}
 }
 
@@ -1245,4 +1249,49 @@ func parseID(c *gin.Context, param string) (int64, error) {
 		return 0, err
 	}
 	return id, nil
+}
+
+// ---------------------------------------------------------------------------
+// Disk Quota
+// ---------------------------------------------------------------------------
+
+type setQuotaRequest struct {
+	DiskQuota int64 `json:"disk_quota" validate:"min=0"`
+}
+
+// SetQuota sets the disk quota for a site.
+func (h *SiteHandler) SetQuota(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+
+	var req setQuotaRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "body", Message: "invalid request body"}})
+		return
+	}
+
+	if err := h.siteService.SetDiskQuota(id, req.DiskQuota); err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"message": "disk quota updated"})
+}
+
+// GetDiskUsage returns the current disk usage for a site.
+func (h *SiteHandler) GetDiskUsage(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+
+	usage, err := h.siteService.GetDiskUsage(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"disk_usage": usage})
 }

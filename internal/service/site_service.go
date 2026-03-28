@@ -114,6 +114,8 @@ type Site struct {
 	CreatedBy   *int64  `json:"created_by"`
 	CreatedAt   string  `json:"created_at"`
 	UpdatedAt   string  `json:"updated_at"`
+	DiskQuota   int64   `json:"disk_quota"`
+	DiskUsage   int64   `json:"disk_usage"`
 }
 
 // Domain represents a domain alias bound to a site.
@@ -250,7 +252,8 @@ func (s *SiteService) List(page, pageSize int) ([]*Site, int, error) {
 	offset := (page - 1) * pageSize
 	rows, err := s.db.Query(
 		`SELECT id, name, domain, path, webserver, php_version, ssl_enabled,
-		        ssl_type, ssl_expiry, status, config_extra, created_by, created_at, updated_at
+		        ssl_type, ssl_expiry, status, config_extra, created_by, created_at, updated_at,
+		        disk_quota, disk_usage
 		 FROM sites ORDER BY id DESC LIMIT ? OFFSET ?`, pageSize, offset,
 	)
 	if err != nil {
@@ -266,6 +269,7 @@ func (s *SiteService) List(page, pageSize int) ([]*Site, int, error) {
 			&site.PHPVersion, &site.SSLEnabled, &site.SSLType, &site.SSLExpiry,
 			&site.Status, &site.ConfigExtra, &site.CreatedBy,
 			&site.CreatedAt, &site.UpdatedAt,
+			&site.DiskQuota, &site.DiskUsage,
 		); err != nil {
 			return nil, 0, apperrors.Wrap(err, apperrors.ErrInternal, "failed to scan site row")
 		}
@@ -280,13 +284,15 @@ func (s *SiteService) GetByID(id int64) (*Site, error) {
 	site := &Site{}
 	err := s.db.QueryRow(
 		`SELECT id, name, domain, path, webserver, php_version, ssl_enabled,
-		        ssl_type, ssl_expiry, status, config_extra, created_by, created_at, updated_at
+		        ssl_type, ssl_expiry, status, config_extra, created_by, created_at, updated_at,
+		        disk_quota, disk_usage
 		 FROM sites WHERE id = ?`, id,
 	).Scan(
 		&site.ID, &site.Name, &site.Domain, &site.Path, &site.Webserver,
 		&site.PHPVersion, &site.SSLEnabled, &site.SSLType, &site.SSLExpiry,
 		&site.Status, &site.ConfigExtra, &site.CreatedBy,
 		&site.CreatedAt, &site.UpdatedAt,
+		&site.DiskQuota, &site.DiskUsage,
 	)
 	if err == sql.ErrNoRows {
 		return nil, apperrors.New(apperrors.ErrNotFound, "site not found")
@@ -735,7 +741,8 @@ func (s *SiteService) domainAliases(siteID int64, primaryDomain string) ([]strin
 func (s *SiteService) RegenerateAllVhosts() error {
 	rows, err := s.db.Query(
 		`SELECT id, name, domain, path, webserver, php_version, ssl_enabled,
-		        ssl_type, ssl_expiry, status, config_extra, created_by, created_at, updated_at
+		        ssl_type, ssl_expiry, status, config_extra, created_by, created_at, updated_at,
+		        disk_quota, disk_usage
 		 FROM sites WHERE webserver = 'nginx'`,
 	)
 	if err != nil {
@@ -751,6 +758,7 @@ func (s *SiteService) RegenerateAllVhosts() error {
 			&site.PHPVersion, &site.SSLEnabled, &site.SSLType, &site.SSLExpiry,
 			&site.Status, &site.ConfigExtra, &site.CreatedBy,
 			&site.CreatedAt, &site.UpdatedAt,
+			&site.DiskQuota, &site.DiskUsage,
 		); err != nil {
 			errs = append(errs, fmt.Sprintf("scan site: %v", err))
 			continue
@@ -3242,4 +3250,34 @@ func (s *SiteService) generateMaintenancePage(siteID int64, config MaintenanceCo
 	}
 
 	return os.WriteFile(pagePath, buf.Bytes(), 0644)
+}
+
+// SetDiskQuota sets the disk quota for a site (0 = unlimited).
+func (s *SiteService) SetDiskQuota(id int64, quotaBytes int64) error {
+	_, err := s.db.Exec("UPDATE sites SET disk_quota = ? WHERE id = ?", quotaBytes, id)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to set disk quota")
+	}
+	return nil
+}
+
+// GetDiskUsage calculates the actual disk usage of a site and caches it.
+func (s *SiteService) GetDiskUsage(id int64) (int64, error) {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return 0, err
+	}
+
+	ctx := context.Background()
+	result, err := system.Exec(ctx, "du", "-sb", site.Path)
+	if err != nil {
+		return 0, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get disk usage")
+	}
+
+	var size int64
+	fmt.Sscanf(strings.TrimSpace(result.Stdout), "%d", &size)
+
+	_, _ = s.db.Exec("UPDATE sites SET disk_usage = ? WHERE id = ?", size, id)
+
+	return size, nil
 }

@@ -8,6 +8,7 @@ import {
   MoreOutlined, DeleteOutlined, ExclamationCircleOutlined,
   CloudUploadOutlined, DownloadOutlined, UndoOutlined,
   ApiOutlined, EditOutlined, SafetyOutlined, ToolOutlined,
+  DatabaseOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import Editor from '@monaco-editor/react';
@@ -49,6 +50,7 @@ const CONFIG_SECTIONS = [
   { key: 'proxy', label: 'Reverse Proxy', icon: <ApiOutlined /> },
   { key: 'redirect', label: 'Redirect', icon: <LinkOutlined /> },
   { key: 'maintenance', label: 'Maintenance', icon: <ToolOutlined /> },
+  { key: 'quota', label: 'Disk Quota', icon: <DatabaseOutlined /> },
   { key: 'log', label: 'Response Log', icon: <FileTextOutlined /> },
 ] as const;
 
@@ -2657,6 +2659,170 @@ function MaintenancePanel({ siteId, siteDomain }: { siteId: number; siteDomain: 
   );
 }
 
+// ---------------------------------------------------------------------------
+// Disk Quota Panel
+// ---------------------------------------------------------------------------
+function DiskQuotaPanel({ siteId }: { siteId: number }) {
+  const { p } = usePalette();
+  const [quota, setQuota] = useState(0);
+  const [usage, setUsage] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [inputValue, setInputValue] = useState(0);
+  const [unit, setUnit] = useState<'MB' | 'GB'>('MB');
+
+  const formatSize = (bytes: number) => {
+    if (bytes <= 0) return '0 B';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 ** 2) return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1024 ** 3) return (bytes / 1024 ** 2).toFixed(1) + ' MB';
+    return (bytes / 1024 ** 3).toFixed(2) + ' GB';
+  };
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [siteResp, usageResp] = await Promise.all([
+        api.get(`/sites/${siteId}`),
+        api.get(`/sites/${siteId}/disk-usage`).catch(() => ({ data: { data: { disk_usage: 0 } } })),
+      ]);
+      const site = siteResp.data?.data;
+      const q = site?.disk_quota || 0;
+      setQuota(q);
+      setUsage(usageResp.data?.data?.disk_usage || 0);
+      if (q >= 1024 ** 3 && q % (1024 ** 3) === 0) {
+        setUnit('GB');
+        setInputValue(q / (1024 ** 3));
+      } else {
+        setUnit('MB');
+        setInputValue(Math.round(q / (1024 ** 2)));
+      }
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
+  }, [siteId]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    const bytes = inputValue * (unit === 'GB' ? 1024 ** 3 : 1024 ** 2);
+    try {
+      await api.put(`/sites/${siteId}/quota`, { disk_quota: Math.round(bytes) });
+      message.success('Disk quota updated');
+      setQuota(Math.round(bytes));
+    } catch {
+      message.error('Failed to update quota');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const pct = quota > 0 ? Math.min(100, (usage / quota) * 100) : 0;
+  const barColor = pct > 90 ? (p.red || '#ef4444') : pct > 70 ? (p.amber || '#f59e0b') : (p.green || '#22c55e');
+
+  if (loading) return <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>;
+
+  return (
+    <div>
+      <div style={{ fontSize: 14, fontWeight: 600, color: p.text, marginBottom: 16 }}>Disk Quota</div>
+
+      {/* Usage display */}
+      <div style={{
+        padding: 16, borderRadius: 8,
+        border: `1px solid ${p.cardBorder}`, background: p.codeBg,
+        marginBottom: 16,
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+          <span style={{ fontSize: 12, color: p.textMuted }}>Disk Usage</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: p.text }}>
+            {formatSize(usage)}{quota > 0 ? ` / ${formatSize(quota)}` : ' (Unlimited)'}
+          </span>
+        </div>
+        <div style={{
+          height: 8, borderRadius: 4,
+          background: p.cardBorder, overflow: 'hidden',
+        }}>
+          <div style={{
+            height: '100%', borderRadius: 4,
+            width: quota > 0 ? `${pct}%` : '0%',
+            background: barColor,
+            transition: 'width 0.3s ease',
+          }} />
+        </div>
+        {quota > 0 && (
+          <div style={{ fontSize: 10, color: pct > 90 ? p.red : p.textMuted, marginTop: 4 }}>
+            {pct.toFixed(1)}% used
+          </div>
+        )}
+      </div>
+
+      {/* Quota setting */}
+      <div style={{
+        padding: 16, borderRadius: 8,
+        border: `1px solid ${p.cardBorder}`,
+        marginBottom: 16,
+      }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: p.text, marginBottom: 10 }}>Set Quota Limit</div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <InputNumber
+            min={0}
+            value={inputValue}
+            onChange={v => setInputValue(v || 0)}
+            style={{ width: 120 }}
+            placeholder="0 = unlimited"
+          />
+          <Select value={unit} onChange={setUnit} style={{ width: 80 }} options={[
+            { value: 'MB', label: 'MB' },
+            { value: 'GB', label: 'GB' },
+          ]} />
+          <button onClick={handleSave} disabled={saving} style={{
+            padding: '5px 16px', borderRadius: 6, border: 'none',
+            background: p.accent, color: '#fff',
+            fontSize: 12, fontWeight: 600,
+            cursor: saving ? 'wait' : 'pointer',
+            opacity: saving ? 0.7 : 1,
+          }}>
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+        <div style={{ fontSize: 11, color: p.textMuted, marginTop: 8 }}>
+          Set to <strong>0</strong> for unlimited. Quota is advisory — a warning will display when usage exceeds the limit.
+        </div>
+      </div>
+
+      {/* Quick presets */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {[
+          { label: 'Unlimited', mb: 0 },
+          { label: '500 MB', mb: 500 },
+          { label: '1 GB', mb: 1024 },
+          { label: '2 GB', mb: 2048 },
+          { label: '5 GB', mb: 5120 },
+          { label: '10 GB', mb: 10240 },
+        ].map(preset => {
+          const bytes = preset.mb * 1024 * 1024;
+          const isActive = quota === bytes;
+          return (
+            <button
+              key={preset.label}
+              onClick={() => { setInputValue(preset.mb >= 1024 ? preset.mb / 1024 : preset.mb); setUnit(preset.mb >= 1024 ? 'GB' : 'MB'); }}
+              style={{
+                padding: '4px 12px', borderRadius: 6, fontSize: 11, fontWeight: 500,
+                border: `1px solid ${isActive ? `${p.accent}60` : p.cardBorder}`,
+                background: isActive ? `${p.accent}12` : 'transparent',
+                color: isActive ? p.accent : p.textMuted,
+                cursor: 'pointer', transition: 'all 0.15s',
+              }}
+            >
+              {preset.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function PlaceholderPanel({ title }: { title: string }) {
   const { p } = usePalette();
   return (
@@ -2699,6 +2865,8 @@ function SiteConfigModal({ site, open, onClose, phpVersions }: { site: Site | nu
         return <RedirectPanel siteId={site.id} />;
       case 'maintenance':
         return <MaintenancePanel siteId={site.id} siteDomain={site.domain} />;
+      case 'quota':
+        return <DiskQuotaPanel siteId={site.id} />;
       case 'log':
         return <ResponseLogPanel site={site} />;
       default:
