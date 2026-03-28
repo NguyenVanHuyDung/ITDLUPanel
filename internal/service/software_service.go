@@ -562,12 +562,29 @@ func parseExtensionTaskName(name string) (software, extensions string, err error
 // PHP disable_functions management
 // ---------------------------------------------------------------------------
 
+// defaultDisableFunctions is the recommended set of dangerous PHP functions to disable.
+var defaultDisableFunctions = []string{
+	"exec", "passthru", "shell_exec", "system", "proc_open", "popen",
+	"curl_exec", "curl_multi_exec", "parse_ini_file", "show_source",
+	"proc_close", "proc_get_status", "proc_nice", "proc_terminate",
+	"dl", "putenv", "phpinfo", "pcntl_exec", "pcntl_fork",
+	"pcntl_signal", "pcntl_waitpid", "pcntl_wexitstatus", "pcntl_setpriority",
+	"pcntl_sigprocmask", "pcntl_alarm", "chown", "chgrp", "apache_child_terminate",
+	"posix_kill", "posix_mkfifo", "posix_setpgid", "posix_setsid", "posix_setuid",
+	"escapeshellcmd", "escapeshellarg",
+}
+
 // GetPHPDisableFunctions reads the disable_functions list from php.ini.
+// If no functions are disabled, it auto-applies the default dangerous functions list.
 func (s *SoftwareService) GetPHPDisableFunctions(version string) ([]string, error) {
 	iniPath := fmt.Sprintf("/etc/php/%s/fpm/php.ini", version)
 	raw := readPHPIniValue(iniPath, "disable_functions")
 	if raw == "" {
-		return []string{}, nil
+		// Auto-apply default dangerous functions
+		if err := s.SetPHPDisableFunctions(version, defaultDisableFunctions); err != nil {
+			return nil, fmt.Errorf("failed to apply default disable_functions: %w", err)
+		}
+		return defaultDisableFunctions, nil
 	}
 	var functions []string
 	for _, f := range strings.Split(raw, ",") {
