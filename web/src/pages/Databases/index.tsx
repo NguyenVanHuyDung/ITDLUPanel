@@ -402,10 +402,19 @@ function DatabasesContent() {
       title: t('databases.db_name'),
       dataIndex: 'name',
       key: 'name',
-      render: (name: string) => (
-        <span style={{ fontWeight: 500, color: p.text }}>
-          <DatabaseOutlined style={{ marginRight: 6, color: p.accent }} />{name}
-        </span>
+      render: (name: string, r: Database) => (
+        <div>
+          <span style={{ fontWeight: 500, color: p.text }}>
+            <DatabaseOutlined style={{ marginRight: 6, color: p.accent }} />{name}
+          </span>
+          {dbVersion && (
+            <div style={{
+              fontSize: 10, color: p.textMuted, marginTop: 2, marginLeft: 20,
+            }}>
+              {r.db_type === 'mariadb' ? 'MariaDB' : 'MySQL'} {dbVersion.replace(/^(MariaDB|MySQL)\s*/i, '')}
+            </div>
+          )}
+        </div>
       ),
     },
     {
@@ -525,7 +534,7 @@ function DatabasesContent() {
     {
       title: 'Permission',
       key: 'location',
-      width: 120,
+      width: 140,
       render: (_: unknown, r: Database) => {
         const host = r.remote_access || 'localhost';
         const isChanging = accessChangingId === r.id;
@@ -582,6 +591,7 @@ function DatabasesContent() {
               fontSize: 11, fontWeight: 500,
               cursor: isChanging ? 'wait' : 'pointer',
               transition: 'all 0.15s',
+              whiteSpace: 'nowrap',
             }}>
               {isChanging ? <LoadingOutlined style={{ fontSize: 11 }} /> : <span style={{ fontSize: 12 }}>{icon}</span>}
               {label}
