@@ -21,11 +21,12 @@ const { Text } = Typography;
 // Sidebar sections
 // ---------------------------------------------------------------------------
 const SECTIONS = [
-  { key: 'service',    label: 'Service',    icon: <PlayCircleOutlined /> },
-  { key: 'extensions', label: 'Extensions', icon: <AppstoreOutlined /> },
-  { key: 'config',     label: 'Limits',     icon: <SettingOutlined /> },
+  { key: 'service',    label: 'Service',     icon: <PlayCircleOutlined /> },
+  { key: 'extensions', label: 'Extensions',  icon: <AppstoreOutlined /> },
+  { key: 'fpmprofile', label: 'FPM Profile', icon: <CloudServerOutlined /> },
+  { key: 'config',     label: 'Limits',      icon: <SettingOutlined /> },
   { key: 'configfile', label: 'Config File', icon: <CodeOutlined /> },
-  { key: 'errorlog',   label: 'Error Log',  icon: <FileTextOutlined /> },
+  { key: 'errorlog',   label: 'Error Log',   icon: <FileTextOutlined /> },
 ] as const;
 
 type SectionKey = (typeof SECTIONS)[number]['key'];
@@ -110,6 +111,7 @@ export default function PHPManageModal({ open, onClose }: Props) {
     switch (section) {
       case 'service':    return <ServiceTab version={phpVersion} versions={availableVersions} />;
       case 'extensions': return <ExtensionsTab version={phpVersion} />;
+      case 'fpmprofile': return <FPMProfileTab version={phpVersion} />;
       case 'config':     return <ConfigTab version={phpVersion} />;
       case 'configfile': return <ConfigFileTab version={phpVersion} />;
       case 'errorlog':   return <ErrorLogTab version={phpVersion} />;
@@ -620,6 +622,242 @@ function ExtensionsTab({ version }: { version: string }) {
 }
 
 // ============================================================================
+// FPM Profile Tab
+// ============================================================================
+interface FPMConfig {
+  pm: string;
+  max_children: string;
+  start_servers: string;
+  min_spare_servers: string;
+  max_spare_servers: string;
+  max_requests: string;
+  request_terminate_timeout: string;
+  request_slowlog_timeout: string;
+  slowlog: string;
+  listen: string;
+  user: string;
+  group: string;
+}
+
+function FPMProfileTab({ version }: { version: string }) {
+  const { p, isDark } = usePalette();
+  const [config, setConfig] = useState<FPMConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const ACCENT = isDark ? '#818CF8' : '#4F46E5';
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const { data: resp } = await api.get(`/software/php/${version}/fpm-config`);
+        setConfig(resp.data);
+      } catch {
+        message.error('Failed to load FPM config');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [version]);
+
+  const handleSave = async () => {
+    if (!config) return;
+    setSaving(true);
+    try {
+      await api.put(`/software/php/${version}/fpm-config`, config);
+      message.success('FPM pool config saved & FPM restarted');
+    } catch (e: any) {
+      message.error(e.response?.data?.message || 'Failed to save FPM config');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateField = (key: keyof FPMConfig, value: string) => {
+    setConfig(prev => prev ? { ...prev, [key]: value } : prev);
+  };
+
+  const PM_OPTIONS = [
+    { value: 'dynamic', label: 'Dynamic', desc: 'Children created on demand, kept within min/max spare range' },
+    { value: 'static', label: 'Static', desc: 'Fixed number of children (max_children always alive)' },
+    { value: 'ondemand', label: 'On Demand', desc: 'No children at startup, spawned only when needed' },
+  ];
+
+  type FieldDef = { key: keyof FPMConfig; label: string; hint: string; icon: React.ReactNode; showFor?: string[] };
+
+  const FIELDS: FieldDef[] = [
+    { key: 'max_children', label: 'Max Children', hint: 'Maximum number of child processes (all PM modes)', icon: <CloudServerOutlined /> },
+    { key: 'start_servers', label: 'Start Servers', hint: 'Number of children created at startup', icon: <PlayCircleOutlined />, showFor: ['dynamic'] },
+    { key: 'min_spare_servers', label: 'Min Spare Servers', hint: 'Minimum number of idle children', icon: <PlayCircleOutlined />, showFor: ['dynamic'] },
+    { key: 'max_spare_servers', label: 'Max Spare Servers', hint: 'Maximum number of idle children', icon: <PlayCircleOutlined />, showFor: ['dynamic'] },
+    { key: 'max_requests', label: 'Max Requests', hint: 'Requests before worker respawns (0 = unlimited)', icon: <ThunderboltOutlined /> },
+    { key: 'request_terminate_timeout', label: 'Request Terminate Timeout', hint: 'Max time per request in seconds (0 = unlimited)', icon: <ThunderboltOutlined /> },
+    { key: 'request_slowlog_timeout', label: 'Slowlog Timeout', hint: 'Threshold for slow request logging in seconds', icon: <FileTextOutlined /> },
+    { key: 'slowlog', label: 'Slowlog Path', hint: 'Path to the slow request log file', icon: <FileTextOutlined /> },
+  ];
+
+  const SOCKET_FIELDS: FieldDef[] = [
+    { key: 'listen', label: 'Listen Address', hint: 'Socket path or ip:port (e.g., /run/php/phpX.X-fpm.sock or 127.0.0.1:9000)', icon: <GlobalOutlined /> },
+    { key: 'user', label: 'User', hint: 'Unix user for worker processes', icon: <ToolOutlined /> },
+    { key: 'group', label: 'Group', hint: 'Unix group for worker processes', icon: <ToolOutlined /> },
+  ];
+
+  if (loading) return <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>;
+  if (!config) return <div style={{ textAlign: 'center', padding: 40, color: p.textMuted }}>Failed to load FPM config</div>;
+
+  const visibleFields = FIELDS.filter(f => !f.showFor || f.showFor.includes(config.pm));
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <div>
+          <Text style={{ fontSize: 16, fontWeight: 600, color: p.text }}>FPM Pool Profile</Text>
+          <Text style={{ fontSize: 12, color: p.textMuted, marginLeft: 8 }}>PHP {version}</Text>
+        </div>
+        <Button
+          type="primary"
+          onClick={handleSave}
+          loading={saving}
+          style={{ background: ACCENT, borderColor: ACCENT, borderRadius: 6 }}
+        >
+          Save & Restart FPM
+        </Button>
+      </div>
+
+      {/* Process Manager Mode */}
+      <div style={{
+        padding: 16,
+        borderRadius: 10,
+        background: isDark ? p.codeBg : '#F8FAFC',
+        border: `1px solid ${isDark ? p.cardBorder : '#E2E8F0'}`,
+        marginBottom: 16,
+      }}>
+        <Text style={{ fontSize: 13, fontWeight: 600, color: p.text, display: 'block', marginBottom: 12 }}>
+          <CloudServerOutlined style={{ marginRight: 6, color: ACCENT }} />
+          Process Manager Mode
+        </Text>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {PM_OPTIONS.map(opt => (
+            <div
+              key={opt.value}
+              onClick={() => updateField('pm', opt.value)}
+              style={{
+                flex: '1 1 auto',
+                minWidth: 140,
+                padding: '10px 14px',
+                borderRadius: 8,
+                cursor: 'pointer',
+                border: `2px solid ${config.pm === opt.value ? ACCENT : (isDark ? p.cardBorder : '#E2E8F0')}`,
+                background: config.pm === opt.value ? (isDark ? 'rgba(99,102,241,0.1)' : '#EEF2FF') : 'transparent',
+                transition: 'all 0.15s',
+              }}
+            >
+              <Text style={{ fontSize: 13, fontWeight: 600, color: config.pm === opt.value ? ACCENT : p.text, display: 'block' }}>
+                {opt.label}
+              </Text>
+              <Text style={{ fontSize: 11, color: p.textMuted }}>{opt.desc}</Text>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Worker Settings */}
+      <Text style={{ fontSize: 13, fontWeight: 600, color: p.text, display: 'block', marginBottom: 12 }}>
+        Worker Settings
+      </Text>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
+        {visibleFields.map(f => (
+          <div
+            key={f.key}
+            style={{
+              padding: '12px 16px',
+              borderRadius: 8,
+              background: isDark ? p.codeBg : '#F8FAFC',
+              border: `1px solid ${isDark ? p.cardBorder : '#E2E8F0'}`,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              flexWrap: 'wrap',
+            }}
+          >
+            <span style={{ color: ACCENT, fontSize: 14, flexShrink: 0 }}>{f.icon}</span>
+            <div style={{ flex: '1 1 160px', minWidth: 120 }}>
+              <Text style={{ fontSize: 13, fontWeight: 500, color: p.text, display: 'block' }}>{f.label}</Text>
+              <Text style={{ fontSize: 11, color: p.textMuted }}>{f.hint}</Text>
+            </div>
+            <Input
+              value={config[f.key]}
+              onChange={e => updateField(f.key, e.target.value)}
+              style={{
+                width: 180,
+                borderRadius: 6,
+                background: isDark ? p.inputBg : '#fff',
+                borderColor: isDark ? p.cardBorder : '#D1D5DB',
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: 13,
+              }}
+            />
+          </div>
+        ))}
+      </div>
+
+      {/* Socket & Identity */}
+      <Text style={{ fontSize: 13, fontWeight: 600, color: p.text, display: 'block', marginBottom: 12 }}>
+        Socket & Identity
+      </Text>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
+        {SOCKET_FIELDS.map(f => (
+          <div
+            key={f.key}
+            style={{
+              padding: '12px 16px',
+              borderRadius: 8,
+              background: isDark ? p.codeBg : '#F8FAFC',
+              border: `1px solid ${isDark ? p.cardBorder : '#E2E8F0'}`,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              flexWrap: 'wrap',
+            }}
+          >
+            <span style={{ color: ACCENT, fontSize: 14, flexShrink: 0 }}>{f.icon}</span>
+            <div style={{ flex: '1 1 160px', minWidth: 120 }}>
+              <Text style={{ fontSize: 13, fontWeight: 500, color: p.text, display: 'block' }}>{f.label}</Text>
+              <Text style={{ fontSize: 11, color: p.textMuted }}>{f.hint}</Text>
+            </div>
+            <Input
+              value={config[f.key]}
+              onChange={e => updateField(f.key, e.target.value)}
+              style={{
+                width: 280,
+                borderRadius: 6,
+                background: isDark ? p.inputBg : '#fff',
+                borderColor: isDark ? p.cardBorder : '#D1D5DB',
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: 13,
+              }}
+            />
+          </div>
+        ))}
+      </div>
+
+      {/* Warning */}
+      <div style={{
+        padding: '10px 14px',
+        borderRadius: 8,
+        background: isDark ? 'rgba(245,158,11,0.06)' : '#FFFBEB',
+        border: `1px solid ${isDark ? 'rgba(245,158,11,0.15)' : '#FDE68A'}`,
+        fontSize: 12,
+        color: isDark ? p.amber : '#92400E',
+      }}>
+        ⚠️ Incorrect FPM settings may cause PHP to stop serving requests. Changes will restart PHP-FPM immediately.
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // Config (Limits) Tab
 // ============================================================================
 interface PHPConfig {
@@ -763,7 +1001,7 @@ function ConfigFileTab({ version }: { version: string }) {
     (async () => {
       setLoading(true);
       try {
-        const { data: resp } = await api.get('/software/php/config');
+        const { data: resp } = await api.get(`/software/php/${version}/config-file`);
         const cfg = resp.data;
         setContent(typeof cfg === 'string' ? cfg : cfg?.content ?? '');
       } catch {
@@ -777,8 +1015,8 @@ function ConfigFileTab({ version }: { version: string }) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await api.put('/software/php/config', { content });
-      message.success('Configuration saved');
+      await api.put(`/software/php/${version}/config-file`, { content });
+      message.success('Configuration saved & FPM restarted');
     } catch {
       message.error('Failed to save configuration');
     } finally {
@@ -858,41 +1096,53 @@ function ConfigFileTab({ version }: { version: string }) {
 function ErrorLogTab({ version }: { version: string }) {
   const { p, isDark } = usePalette();
   const [logContent, setLogContent] = useState('');
+  const [logPath, setLogPath] = useState('');
   const [loading, setLoading] = useState(true);
+  const [lines, setLines] = useState(100);
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const { data: resp } = await api.get('/software/php/error-log');
-        const log = resp.data;
-        setLogContent(typeof log === 'string' ? log : log?.content ?? 'No log content available');
-      } catch {
-        setLogContent('Failed to load error log');
-      } finally {
-        setLoading(false);
-      }
-    })();
+  const ACCENT = isDark ? '#818CF8' : '#4F46E5';
+
+  const fetchLog = useCallback(async (n: number) => {
+    setLoading(true);
+    try {
+      const { data: resp } = await api.get(`/software/php/${version}/error-log?lines=${n}`);
+      setLogContent(resp.data?.content || '(empty)');
+      setLogPath(resp.data?.log_path || '');
+    } catch {
+      setLogContent('Failed to load error log');
+    } finally {
+      setLoading(false);
+    }
   }, [version]);
+
+  useEffect(() => { fetchLog(lines); }, [fetchLog, lines]);
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <Text style={{ fontSize: 16, fontWeight: 600, color: p.text }}>PHP-FPM Error Log</Text>
-        <Button
-          size="small"
-          icon={<ReloadOutlined />}
-          onClick={() => {
-            setLoading(true);
-            api.get('/software/php/error-log').then(({ data: resp }) => {
-              const log = resp.data;
-              setLogContent(typeof log === 'string' ? log : log?.content ?? '');
-            }).catch(() => setLogContent('Failed to load')).finally(() => setLoading(false));
-          }}
-          style={{ borderRadius: 6 }}
-        >
-          Refresh
-        </Button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+        <div>
+          <Text style={{ fontSize: 16, fontWeight: 600, color: p.text }}>PHP-FPM Error Log</Text>
+          {logPath && (
+            <Text style={{ fontSize: 11, color: p.textMuted, display: 'block' }}>
+              {logPath}
+            </Text>
+          )}
+        </div>
+        <Space>
+          <Text style={{ fontSize: 12, color: p.textMuted }}>Last</Text>
+          {[50, 100, 500].map(n => (
+            <Button
+              key={n}
+              size="small"
+              type={lines === n ? 'primary' : 'default'}
+              onClick={() => setLines(n)}
+              style={lines === n ? { background: ACCENT, borderColor: ACCENT, borderRadius: 4 } : { borderRadius: 4 }}
+            >
+              {n}
+            </Button>
+          ))}
+          <Text style={{ fontSize: 12, color: p.textMuted }}>lines</Text>
+        </Space>
       </div>
 
       {loading ? <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div> : (

@@ -558,6 +558,197 @@ func parseExtensionTaskName(name string) (software, extensions string, err error
 	return parts[0], parts[1], nil
 }
 
+// ---------------------------------------------------------------------------
+// PHP config file (raw php.ini)
+// ---------------------------------------------------------------------------
+
+// GetPHPConfigFile returns the raw content of php.ini for a PHP version.
+func (s *SoftwareService) GetPHPConfigFile(version string) (string, error) {
+	iniPath := fmt.Sprintf("/etc/php/%s/fpm/php.ini", version)
+	data, err := os.ReadFile(iniPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read php.ini for PHP %s: %w", version, err)
+	}
+	return string(data), nil
+}
+
+// SetPHPConfigFile writes raw content to php.ini and restarts FPM.
+func (s *SoftwareService) SetPHPConfigFile(version, content string) error {
+	iniPath := fmt.Sprintf("/etc/php/%s/fpm/php.ini", version)
+	if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write php.ini: %w", err)
+	}
+	svcName := fmt.Sprintf("php%s-fpm", version)
+	if _, err := system.ExecWithTimeout(30*time.Second, "systemctl", "restart", svcName); err != nil {
+		logger.Warn().Err(err).Str("service", svcName).Msg("failed to restart php-fpm after config file change")
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// PHP version-specific error log
+// ---------------------------------------------------------------------------
+
+// GetPHPErrorLog returns the last N lines of the PHP-FPM error log.
+func (s *SoftwareService) GetPHPErrorLog(version string, lines int) (string, string, error) {
+	if lines <= 0 {
+		lines = 100
+	}
+	if lines > 1000 {
+		lines = 1000
+	}
+
+	// Try common log paths
+	candidates := []string{
+		fmt.Sprintf("/var/log/php%s-fpm.log", version),
+		fmt.Sprintf("/var/log/php-fpm/php%s-fpm.log", version),
+		"/var/log/syslog",
+	}
+
+	for _, logPath := range candidates {
+		if _, err := os.Stat(logPath); err == nil {
+			res, err := system.ExecWithTimeout(10*time.Second, "tail", "-n", fmt.Sprintf("%d", lines), logPath)
+			if err != nil {
+				return "", logPath, fmt.Errorf("failed to read log: %w", err)
+			}
+			return res.Stdout, logPath, nil
+		}
+	}
+	return "", "", fmt.Errorf("no PHP-FPM error log found for version %s", version)
+}
+
+// ---------------------------------------------------------------------------
+// PHP-FPM pool configuration
+// ---------------------------------------------------------------------------
+
+// PHPFPMConfig represents configurable FPM pool settings.
+type PHPFPMConfig struct {
+	PM                   string `json:"pm"`
+	MaxChildren          string `json:"max_children"`
+	StartServers         string `json:"start_servers"`
+	MinSpareServers      string `json:"min_spare_servers"`
+	MaxSpareServers      string `json:"max_spare_servers"`
+	MaxRequests          string `json:"max_requests"`
+	RequestTermTimeout   string `json:"request_terminate_timeout"`
+	RequestSlowlogTimeout string `json:"request_slowlog_timeout"`
+	SlowlogPath          string `json:"slowlog"`
+	ListenAddress        string `json:"listen"`
+	User                 string `json:"user"`
+	Group                string `json:"group"`
+}
+
+func phpFPMPoolPath(version string) string {
+	return fmt.Sprintf("/etc/php/%s/fpm/pool.d/www.conf", version)
+}
+
+// GetPHPFPMConfig reads FPM pool settings from www.conf.
+func (s *SoftwareService) GetPHPFPMConfig(version string) (*PHPFPMConfig, error) {
+	poolPath := phpFPMPoolPath(version)
+	data, err := os.ReadFile(poolPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read FPM pool config: %w", err)
+	}
+	content := string(data)
+
+	cfg := &PHPFPMConfig{
+		PM:                    readFPMValue(content, "pm"),
+		MaxChildren:           readFPMValue(content, "pm.max_children"),
+		StartServers:          readFPMValue(content, "pm.start_servers"),
+		MinSpareServers:       readFPMValue(content, "pm.min_spare_servers"),
+		MaxSpareServers:       readFPMValue(content, "pm.max_spare_servers"),
+		MaxRequests:           readFPMValue(content, "pm.max_requests"),
+		RequestTermTimeout:    readFPMValue(content, "request_terminate_timeout"),
+		RequestSlowlogTimeout: readFPMValue(content, "request_slowlog_timeout"),
+		SlowlogPath:           readFPMValue(content, "slowlog"),
+		ListenAddress:         readFPMValue(content, "listen"),
+		User:                  readFPMValue(content, "user"),
+		Group:                 readFPMValue(content, "group"),
+	}
+	return cfg, nil
+}
+
+// SetPHPFPMConfig writes FPM pool settings and restarts FPM.
+func (s *SoftwareService) SetPHPFPMConfig(version string, cfg PHPFPMConfig) error {
+	poolPath := phpFPMPoolPath(version)
+	data, err := os.ReadFile(poolPath)
+	if err != nil {
+		return fmt.Errorf("failed to read FPM pool config: %w", err)
+	}
+
+	content := string(data)
+	settings := map[string]string{
+		"pm":                        cfg.PM,
+		"pm.max_children":           cfg.MaxChildren,
+		"pm.start_servers":          cfg.StartServers,
+		"pm.min_spare_servers":      cfg.MinSpareServers,
+		"pm.max_spare_servers":      cfg.MaxSpareServers,
+		"pm.max_requests":           cfg.MaxRequests,
+		"request_terminate_timeout":  cfg.RequestTermTimeout,
+		"request_slowlog_timeout":    cfg.RequestSlowlogTimeout,
+		"slowlog":                    cfg.SlowlogPath,
+		"listen":                     cfg.ListenAddress,
+		"user":                       cfg.User,
+		"group":                      cfg.Group,
+	}
+
+	for key, value := range settings {
+		if value == "" {
+			continue
+		}
+		content = setFPMValue(content, key, value)
+	}
+
+	if err := os.WriteFile(poolPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write FPM pool config: %w", err)
+	}
+
+	svcName := fmt.Sprintf("php%s-fpm", version)
+	if _, err := system.ExecWithTimeout(30*time.Second, "systemctl", "restart", svcName); err != nil {
+		logger.Warn().Err(err).Str("service", svcName).Msg("failed to restart php-fpm after pool config change")
+	}
+	return nil
+}
+
+// readFPMValue reads an uncommented value from FPM pool config.
+func readFPMValue(content, key string) string {
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, ";") || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// Match "key = value" with possible spaces
+		if strings.HasPrefix(line, key+" ") || strings.HasPrefix(line, key+"=") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				return strings.TrimSpace(parts[1])
+			}
+		}
+	}
+	return ""
+}
+
+// setFPMValue sets a value in FPM pool config content, uncommenting if needed.
+func setFPMValue(content, key, value string) string {
+	lines := strings.Split(content, "\n")
+	found := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Match active or commented-out directives
+		if strings.HasPrefix(trimmed, key+" ") || strings.HasPrefix(trimmed, key+"=") ||
+			strings.HasPrefix(trimmed, ";"+key+" ") || strings.HasPrefix(trimmed, ";"+key+"=") ||
+			strings.HasPrefix(trimmed, "; "+key+" ") || strings.HasPrefix(trimmed, "; "+key+"=") {
+			lines[i] = key + " = " + value
+			found = true
+			break
+		}
+	}
+	if !found {
+		// Insert before closing section or at end
+		lines = append(lines, key+" = "+value)
+	}
+	return strings.Join(lines, "\n")
+}
+
 // StartService starts a systemd service.
 func (s *SoftwareService) StartService(name string) error {
 	svcName, err := s.resolveServiceName(name)
@@ -843,7 +1034,7 @@ func (s *SoftwareService) GetErrorLog(name string, lines int) (string, string, e
 	logPaths := map[string]string{
 		"nginx":  "/var/log/nginx/error.log",
 		"mysql":  "/var/log/mysql/error.log",
-		"php":    "/var/log/php8.2-fpm.log",
+		"php":    "/var/log/php8.3-fpm.log",
 		"redis":  "/var/log/redis/redis-server.log",
 		"apache": "/var/log/apache2/error.log",
 	}

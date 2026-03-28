@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -60,6 +61,11 @@ func (h *SoftwareHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gi
 		sw.POST("/php/:version/extensions/uninstall", h.uninstallPHPExtension)
 		sw.GET("/php/:version/config", h.getPHPConfig)
 		sw.PUT("/php/:version/config", h.setPHPConfig)
+		sw.GET("/php/:version/config-file", h.getPHPConfigFile)
+		sw.PUT("/php/:version/config-file", h.setPHPConfigFile)
+		sw.GET("/php/:version/error-log", h.getPHPErrorLog)
+		sw.GET("/php/:version/fpm-config", h.getPHPFPMConfig)
+		sw.PUT("/php/:version/fpm-config", h.setPHPFPMConfig)
 	}
 }
 
@@ -529,4 +535,95 @@ func (h *SoftwareHandler) setPHPConfig(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": "PHP configuration updated"})
+}
+
+// getPHPConfigFile returns the raw php.ini content for a PHP version.
+func (h *SoftwareHandler) getPHPConfigFile(c *gin.Context) {
+	version := c.Param("version")
+	if !validPHPVersions[version] {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
+		return
+	}
+	content, err := h.softwareService.GetPHPConfigFile(version)
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, gin.H{"content": content, "path": fmt.Sprintf("/etc/php/%s/fpm/php.ini", version)})
+}
+
+// setPHPConfigFile saves raw php.ini content for a PHP version.
+func (h *SoftwareHandler) setPHPConfigFile(c *gin.Context) {
+	version := c.Param("version")
+	if !validPHPVersions[version] {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
+		return
+	}
+	var req struct {
+		Content string `json:"content" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "content", Message: "content is required"}})
+		return
+	}
+	if err := h.softwareService.SetPHPConfigFile(version, req.Content); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, gin.H{"message": "php.ini saved"})
+}
+
+// getPHPErrorLog returns the last N lines of PHP-FPM error log for a version.
+func (h *SoftwareHandler) getPHPErrorLog(c *gin.Context) {
+	version := c.Param("version")
+	if !validPHPVersions[version] {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
+		return
+	}
+	lines := 100
+	if l := c.Query("lines"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 && n <= 1000 {
+			lines = n
+		}
+	}
+	content, logPath, err := h.softwareService.GetPHPErrorLog(version, lines)
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, gin.H{"content": content, "log_path": logPath, "lines": lines})
+}
+
+// getPHPFPMConfig returns FPM pool configuration for a PHP version.
+func (h *SoftwareHandler) getPHPFPMConfig(c *gin.Context) {
+	version := c.Param("version")
+	if !validPHPVersions[version] {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
+		return
+	}
+	cfg, err := h.softwareService.GetPHPFPMConfig(version)
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, cfg)
+}
+
+// setPHPFPMConfig updates FPM pool configuration for a PHP version.
+func (h *SoftwareHandler) setPHPFPMConfig(c *gin.Context) {
+	version := c.Param("version")
+	if !validPHPVersions[version] {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
+		return
+	}
+	var cfg service.PHPFPMConfig
+	if err := c.ShouldBindJSON(&cfg); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "body", Message: "invalid FPM configuration"}})
+		return
+	}
+	if err := h.softwareService.SetPHPFPMConfig(version, cfg); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, gin.H{"message": "FPM configuration updated"})
 }
