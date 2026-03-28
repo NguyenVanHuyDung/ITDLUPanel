@@ -51,8 +51,31 @@ function DatabasesContent() {
   };
 
   const copyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    message.success(`${label} copied`);
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(() => {
+        message.success(`${label} copied`);
+      }).catch(() => {
+        fallbackCopy(text, label);
+      });
+    } else {
+      fallbackCopy(text, label);
+    }
+  };
+
+  const fallbackCopy = (text: string, label: string) => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      message.success(`${label} copied`);
+    } catch {
+      message.error(`Failed to copy ${label}`);
+    }
+    document.body.removeChild(ta);
   };
 
   const checkPma = useCallback(async () => {
@@ -524,7 +547,7 @@ function DatabasesContent() {
                   <Tooltip title="Copy password">
                     <CopyOutlined onClick={() => {
                       const pw = form.getFieldValue('password');
-                      if (pw) { navigator.clipboard.writeText(pw); message.success(t('common.copied')); }
+                      if (pw) copyToClipboard(pw, 'Password');
                     }} style={{ cursor: 'pointer' }} />
                   </Tooltip>
                 </span>
@@ -574,14 +597,13 @@ function DatabasesContent() {
                     <ReloadOutlined onClick={() => {
                       const pw = generatePassword();
                       pwForm.setFieldsValue({ password: pw });
-                      navigator.clipboard.writeText(pw);
-                      message.success('Generated & copied');
+                      copyToClipboard(pw, 'Generated password');
                     }} style={{ cursor: 'pointer' }} />
                   </Tooltip>
                   <Tooltip title="Copy">
                     <CopyOutlined onClick={() => {
                       const pw = pwForm.getFieldValue('password');
-                      if (pw) { navigator.clipboard.writeText(pw); message.success(t('common.copied')); }
+                      if (pw) copyToClipboard(pw, 'Password');
                     }} style={{ cursor: 'pointer' }} />
                   </Tooltip>
                 </span>

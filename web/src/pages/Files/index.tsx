@@ -158,8 +158,31 @@ export default function Files() {
   }, [fm, sel]);
 
   const copyPath = useCallback((path: string) => {
-    navigator.clipboard.writeText(path);
-    message.success('Path copied');
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(path).then(() => {
+        message.success('Path copied');
+      }).catch(() => {
+        const ta = document.createElement('textarea');
+        ta.value = path;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); message.success('Path copied'); }
+        catch { message.error('Failed to copy path'); }
+        document.body.removeChild(ta);
+      });
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = path;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); message.success('Path copied'); }
+      catch { message.error('Failed to copy path'); }
+      document.body.removeChild(ta);
+    }
   }, []);
 
   /* ── Context menu / action dispatcher ── */
