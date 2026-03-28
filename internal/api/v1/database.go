@@ -38,6 +38,7 @@ func (h *DatabaseHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, permMW gin
 		db.POST("/:id/backup", h.Backup)
 		db.POST("/:id/restore", h.Restore)
 		db.POST("/:id/import", h.Import)
+		db.PUT("/:id/access", h.SetAccess)
 		db.GET("/:id/size", h.GetSize)
 	}
 }
@@ -237,6 +238,38 @@ func (h *DatabaseHandler) GetSize(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"size": size})
+}
+
+type setAccessRequest struct {
+	Host string `json:"host" validate:"required"`
+}
+
+// SetAccess changes the remote access permission for a database user.
+func (h *DatabaseHandler) SetAccess(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+
+	var req setAccessRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid request body"},
+		})
+		return
+	}
+
+	if errs := validator.Validate(req); errs != nil {
+		response.ValidationError(c, errs)
+		return
+	}
+
+	if err := h.dbService.SetRemoteAccess(id, req.Host); err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"message": "access permission updated"})
 }
 
 // Import uploads a SQL file and imports it into the database.

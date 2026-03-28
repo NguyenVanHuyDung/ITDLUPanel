@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Table, Modal, Form, Input, Select, message, Popconfirm, Tooltip, Spin } from 'antd';
+import { Table, Modal, Form, Input, Select, message, Popconfirm, Tooltip, Spin, Popover } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, KeyOutlined, CloudDownloadOutlined,
   ReloadOutlined, DatabaseOutlined, CopyOutlined, LinkOutlined,
   EyeOutlined, EyeInvisibleOutlined, SearchOutlined, ImportOutlined,
   SafetyCertificateOutlined, GlobalOutlined, CloudUploadOutlined,
-  UndoOutlined, DownloadOutlined, CloudOutlined,
+  UndoOutlined, DownloadOutlined, CloudOutlined, LaptopOutlined,
+  TeamOutlined, AimOutlined, CheckOutlined, LoadingOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
@@ -69,6 +70,9 @@ function DatabasesContent() {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [batchAction, setBatchAction] = useState<'backup' | 'delete' | null>(null);
   const [importingDbId, setImportingDbId] = useState<number | null>(null);
+  const [accessChangingId, setAccessChangingId] = useState<number | null>(null);
+  const [customIpDb, setCustomIpDb] = useState<Database | null>(null);
+  const [customIpValue, setCustomIpValue] = useState('');
 
   const togglePasswordVisibility = (id: number) => {
     setVisiblePasswords(prev => {
@@ -329,6 +333,42 @@ function DatabasesContent() {
     input.click();
   };
 
+  const handleChangeAccess = async (db: Database, host: string) => {
+    if (host === 'custom') {
+      setCustomIpDb(db);
+      setCustomIpValue('');
+      return;
+    }
+    setAccessChangingId(db.id);
+    try {
+      await api.put(`/databases/${db.id}/access`, { host });
+      message.success(`Access updated to ${host === '%' ? 'Everyone' : host === 'localhost' ? 'Local Server' : host}`);
+      fetchData();
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(detail || 'Failed to update access');
+    } finally {
+      setAccessChangingId(null);
+    }
+  };
+
+  const handleCustomIpSubmit = async () => {
+    if (!customIpDb || !customIpValue.trim()) return;
+    setAccessChangingId(customIpDb.id);
+    try {
+      await api.put(`/databases/${customIpDb.id}/access`, { host: customIpValue.trim() });
+      message.success(`Access updated to ${customIpValue.trim()}`);
+      setCustomIpDb(null);
+      setCustomIpValue('');
+      fetchData();
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(detail || 'Failed to update access');
+    } finally {
+      setAccessChangingId(null);
+    }
+  };
+
   const handleChangePassword = async () => {
     try {
       const values = await pwForm.validateFields();
@@ -483,15 +523,72 @@ function DatabasesContent() {
       },
     },
     {
-      title: 'Location',
+      title: 'Permission',
       key: 'location',
-      width: 90,
-      render: (_: unknown, r: Database) => (
-        <span style={{ fontSize: 12, color: p.textMuted }}>
-          <GlobalOutlined style={{ marginRight: 4, fontSize: 11 }} />
-          {r.remote_access || 'localhost'}
-        </span>
-      ),
+      width: 120,
+      render: (_: unknown, r: Database) => {
+        const host = r.remote_access || 'localhost';
+        const isChanging = accessChangingId === r.id;
+        const label = host === '%' ? 'Everyone' : host === 'localhost' ? 'Local Server' : host;
+        const icon = host === '%' ? <TeamOutlined /> : host === 'localhost' ? <LaptopOutlined /> : <AimOutlined />;
+        const color = host === '%' ? p.amber : host === 'localhost' ? p.green : p.accent;
+
+        const options = [
+          { key: 'localhost', label: 'Local Server', desc: 'Only localhost', icon: <LaptopOutlined />, color: p.green },
+          { key: '%', label: 'Everyone', desc: 'Allow all remote', icon: <TeamOutlined />, color: p.amber },
+          { key: 'custom', label: 'Specific IP', desc: 'Enter IP address', icon: <AimOutlined />, color: p.accent },
+        ];
+
+        const content = (
+          <div style={{ minWidth: 180 }}>
+            {options.map(opt => {
+              const isActive = opt.key === host || (opt.key === 'custom' && host !== 'localhost' && host !== '%');
+              return (
+                <button
+                  key={opt.key}
+                  onClick={() => handleChangeAccess(r, opt.key)}
+                  disabled={isChanging}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '8px 12px', border: 'none', borderRadius: 6,
+                    background: isActive ? `${opt.color}12` : 'transparent',
+                    color: isActive ? opt.color : p.text,
+                    cursor: isChanging ? 'wait' : 'pointer',
+                    fontSize: 12, textAlign: 'left',
+                    transition: 'all 0.15s',
+                    marginBottom: 2,
+                  }}
+                >
+                  <span style={{ fontSize: 14, width: 20, textAlign: 'center' }}>{opt.icon}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 500 }}>{opt.label}</div>
+                    <div style={{ fontSize: 10, color: p.textMuted, marginTop: 1 }}>{opt.desc}</div>
+                  </div>
+                  {isActive && <CheckOutlined style={{ fontSize: 11, color: opt.color }} />}
+                </button>
+              );
+            })}
+          </div>
+        );
+
+        return (
+          <Popover content={content} trigger="click" placement="bottomLeft" arrow={false}>
+            <button style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '3px 10px', borderRadius: 6,
+              border: `1px solid ${color}40`,
+              background: `${color}08`,
+              color,
+              fontSize: 11, fontWeight: 500,
+              cursor: isChanging ? 'wait' : 'pointer',
+              transition: 'all 0.15s',
+            }}>
+              {isChanging ? <LoadingOutlined style={{ fontSize: 11 }} /> : <span style={{ fontSize: 12 }}>{icon}</span>}
+              {label}
+            </button>
+          </Popover>
+        );
+      },
     },
     {
       title: t('common.actions'),
@@ -893,6 +990,41 @@ function DatabasesContent() {
             />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* Custom IP Modal */}
+      <Modal
+        title={
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <AimOutlined style={{ color: p.accent }} />
+            Specific IP — {customIpDb?.name}
+          </span>
+        }
+        open={!!customIpDb}
+        onCancel={() => { setCustomIpDb(null); setCustomIpValue(''); }}
+        onOk={handleCustomIpSubmit}
+        okText="Apply"
+        cancelText={t('common.cancel')}
+        confirmLoading={accessChangingId !== null}
+        destroyOnHidden
+        width={400}
+      >
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 12, color: p.textMuted, marginBottom: 10 }}>
+            Enter an IP address or CIDR range to allow remote access from that host only.
+          </div>
+          <Input
+            placeholder="e.g. 192.168.1.100 or 10.0.0.%"
+            value={customIpValue}
+            onChange={e => setCustomIpValue(e.target.value)}
+            onPressEnter={handleCustomIpSubmit}
+            autoFocus
+          />
+          <div style={{ fontSize: 11, color: p.textMuted, marginTop: 8 }}>
+            Use <code style={{ background: p.codeBg, padding: '1px 4px', borderRadius: 3 }}>%</code> as wildcard.
+            E.g. <code style={{ background: p.codeBg, padding: '1px 4px', borderRadius: 3 }}>192.168.1.%</code> for entire subnet.
+          </div>
+        </div>
       </Modal>
 
       {/* ======================== Backup Management Modal ======================== */}
