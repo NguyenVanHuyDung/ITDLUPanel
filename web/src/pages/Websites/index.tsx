@@ -221,7 +221,7 @@ function ConfigEditorContent({ siteId, webserver }: { siteId: number; webserver:
         <div style={{ border: `1px solid ${p.cardBorder}`, borderRadius: 6, overflow: 'hidden', flex: 1 }}>
           <Editor
             height="420px"
-            theme={isDark ? 'vs-dark' : 'light'}
+            theme="vs-dark"
             language="ini"
             value={content}
             onChange={(v) => setContent(v ?? '')}

@@ -1060,7 +1060,7 @@ function ConfigFileTab({ version }: { version: string }) {
             defaultLanguage="ini"
             value={content}
             onChange={v => setContent(v || '')}
-            theme={isDark ? 'vs-dark' : 'light'}
+            theme="vs-dark"
             options={{
               minimap: { enabled: false },
               fontSize: 13,
