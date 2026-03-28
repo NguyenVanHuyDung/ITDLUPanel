@@ -1668,78 +1668,77 @@ function SlowLogTab({ version }: { version: string }) {
 }
 
 // ============================================================================
-// PHP Info Tab — structured, readable display
+// PHP Info Tab — clean structured dashboard
 // ============================================================================
 
-interface PHPSection {
-  title: string;
-  entries: { key: string; value: string }[];
+interface PHPInfoSection {
+  name: string;
+  directives: { key: string; value: string }[];
 }
 
-function parsePHPInfo(raw: string): { quickInfo: Record<string, string>; sections: PHPSection[] } {
-  const quickInfo: Record<string, string> = {};
-  const sections: PHPSection[] = [];
+function parsePHPInfoOutput(raw: string): {
+  overview: Record<string, string>;
+  modules: PHPInfoSection[];
+  extensions: string[];
+} {
+  const overview: Record<string, string> = {};
+  const modules: PHPInfoSection[] = [];
+  const extensions: string[] = [];
   const lines = raw.split('\n');
 
-  const quickKeys = [
-    'PHP Version', 'System', 'Build Date', 'Server API', 'Configuration File (php.ini) Path',
-    'Loaded Configuration File', 'PHP API', 'Zend Engine', 'Thread Safety',
-    'memory_limit', 'max_execution_time', 'upload_max_filesize', 'post_max_size',
-    'default_timezone', 'display_errors', 'error_reporting', 'disable_functions',
-  ];
-
-  let currentSection: PHPSection | null = null;
+  // First pass: extract overview from top section (before first module)
+  let currentModule: PHPInfoSection | null = null;
+  let inOverview = true;
+  const separator = '_______________________________________________________________________';
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
+    const line = lines[i];
+    const trimmed = line.trim();
 
-    // Key => Value pair
-    if (line.includes(' => ')) {
-      const idx = line.indexOf(' => ');
-      const key = line.substring(0, idx).trim();
-      const value = line.substring(idx + 4).trim();
-      // Check for "Local Value => Master Value" pattern
-      if (value.includes(' => ')) {
-        const vIdx = value.indexOf(' => ');
-        const localVal = value.substring(0, vIdx).trim();
-        if (currentSection) {
-          currentSection.entries.push({ key, value: localVal });
-        }
-      } else {
-        if (currentSection) {
-          currentSection.entries.push({ key, value });
-        }
-      }
-      // Collect quick info
-      for (const qk of quickKeys) {
-        if (key === qk || key.toLowerCase() === qk.toLowerCase()) {
-          quickInfo[qk] = value.includes(' => ') ? value.substring(0, value.indexOf(' => ')).trim() : value;
-        }
-      }
-    } else if (line === 'phpinfo()' || line.startsWith('PHP License') || line.startsWith('This program')) {
+    if (!trimmed || trimmed === 'phpinfo()' || trimmed.startsWith('This program') ||
+        trimmed.startsWith('PHP License') || trimmed.startsWith('Zend Engine') ||
+        trimmed.startsWith('with Zend') || trimmed.includes(separator)) {
       continue;
-    } else if (!line.includes('=>') && line.length < 80 && i + 1 < lines.length) {
-      // Possible section header
-      if (currentSection && currentSection.entries.length > 0) {
-        sections.push(currentSection);
+    }
+
+    // "Configuration" marks the transition to modules
+    if (trimmed === 'Configuration') {
+      inOverview = false;
+      continue;
+    }
+
+    if (trimmed.includes(' => ')) {
+      const idx = trimmed.indexOf(' => ');
+      const key = trimmed.substring(0, idx).trim();
+      let value = trimmed.substring(idx + 4).trim();
+      // Handle "local => master" pattern: take local value
+      if (value.includes(' => ')) {
+        value = value.substring(0, value.indexOf(' => ')).trim();
       }
-      currentSection = { title: line, entries: [] };
+
+      if (inOverview) {
+        overview[key] = value;
+      } else if (currentModule) {
+        currentModule.directives.push({ key, value });
+      }
+    } else if (!inOverview && !trimmed.includes('=>') && trimmed.length < 60) {
+      // Module header - a standalone line that's a section name
+      const nextNonEmpty = lines.slice(i + 1).find(l => l.trim() !== '');
+      // Verify it's a section header by checking the next line is a directive or empty
+      if (nextNonEmpty && (nextNonEmpty.includes('=>') || nextNonEmpty.trim() === '' || nextNonEmpty.trim().length < 60)) {
+        if (currentModule && currentModule.directives.length > 0) {
+          modules.push(currentModule);
+        }
+        currentModule = { name: trimmed, directives: [] };
+        extensions.push(trimmed);
+      }
     }
   }
-  if (currentSection && currentSection.entries.length > 0) {
-    sections.push(currentSection);
+  if (currentModule && currentModule.directives.length > 0) {
+    modules.push(currentModule);
   }
 
-  // Extract version from first line if not found
-  if (!quickInfo['PHP Version']) {
-    const vLine = lines.find(l => l.startsWith('PHP Version'));
-    if (vLine && vLine.includes('=>')) {
-      quickInfo['PHP Version'] = vLine.split('=>')[1].trim();
-    }
-  }
-
-  return { quickInfo, sections };
+  return { overview, modules, extensions };
 }
 
 function PHPInfoTab({ version }: { version: string }) {
@@ -1747,9 +1746,11 @@ function PHPInfoTab({ version }: { version: string }) {
   const [rawInfo, setRawInfo] = useState('');
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
 
   const ACCENT = isDark ? '#818CF8' : '#4F46E5';
+  const cardBg = isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC';
+  const borderColor = isDark ? p.cardBorder : '#E2E8F0';
 
   useEffect(() => {
     (async () => {
@@ -1765,50 +1766,50 @@ function PHPInfoTab({ version }: { version: string }) {
     })();
   }, [version]);
 
-  const { quickInfo, sections } = useMemo(() => parsePHPInfo(rawInfo), [rawInfo]);
+  const { overview, modules, extensions } = useMemo(() => parsePHPInfoOutput(rawInfo), [rawInfo]);
 
-  const filteredSections = useMemo(() => {
-    if (!filter.trim()) return sections;
-    const lower = filter.toLowerCase();
-    return sections
-      .map(s => ({
-        ...s,
-        entries: s.entries.filter(e =>
-          e.key.toLowerCase().includes(lower) || e.value.toLowerCase().includes(lower)
+  const filteredModules = useMemo(() => {
+    if (!filter.trim()) return modules;
+    const q = filter.toLowerCase();
+    return modules
+      .map(m => ({
+        ...m,
+        directives: m.directives.filter(d =>
+          d.key.toLowerCase().includes(q) || d.value.toLowerCase().includes(q) || m.name.toLowerCase().includes(q)
         ),
       }))
-      .filter(s => s.entries.length > 0 || s.title.toLowerCase().includes(lower));
-  }, [sections, filter]);
+      .filter(m => m.directives.length > 0);
+  }, [modules, filter]);
 
-  const toggleSection = (title: string) => {
-    setCollapsed(prev => ({ ...prev, [title]: !prev[title] }));
+  const toggleModule = (name: string) =>
+    setExpandedModules(prev => ({ ...prev, [name]: !prev[name] }));
+
+  const expandAll = () => {
+    const all: Record<string, boolean> = {};
+    modules.forEach(m => { all[m.name] = true; });
+    setExpandedModules(all);
   };
-
-  const quickInfoItems = [
-    { label: 'PHP Version', key: 'PHP Version', icon: <ThunderboltOutlined />, color: ACCENT },
-    { label: 'System', key: 'System', icon: <GlobalOutlined />, color: p.cyan },
-    { label: 'Server API', key: 'Server API', icon: <CloudServerOutlined />, color: p.green },
-    { label: 'Config Path', key: 'Loaded Configuration File', icon: <FileTextOutlined />, color: p.amber },
-    { label: 'Zend Engine', key: 'Zend Engine', icon: <ToolOutlined />, color: p.purple },
-    { label: 'Build Date', key: 'Build Date', icon: <ClockCircleOutlined />, color: p.textMuted },
-  ];
-
-  const quickLimits = [
-    { label: 'Memory Limit', key: 'memory_limit' },
-    { label: 'Max Execution', key: 'max_execution_time' },
-    { label: 'Upload Max', key: 'upload_max_filesize' },
-    { label: 'Post Max', key: 'post_max_size' },
-  ];
+  const collapseAll = () => setExpandedModules({});
 
   if (loading) return <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>;
   if (!rawInfo) return <div style={{ textAlign: 'center', padding: 40, color: p.textMuted }}>Failed to load PHP info</div>;
 
+  // Key overview items to show as cards
+  const infoCards: { label: string; key: string; color: string }[] = [
+    { label: 'PHP Version', key: 'PHP Version', color: ACCENT },
+    { label: 'Server API', key: 'Server API', color: p.green },
+    { label: 'Zend Engine', key: 'Zend Extension', color: p.purple },
+    { label: 'Thread Safety', key: 'Thread Safety', color: p.amber },
+    { label: 'Config Path', key: 'Loaded Configuration File', color: p.cyan },
+    { label: 'Build Date', key: 'Build Date', color: p.textMuted },
+  ];
+
   return (
     <div>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
         <Text style={{ fontSize: 16, fontWeight: 600, color: p.text }}>
-          PHP {quickInfo['PHP Version'] || version}
+          PHP {overview['PHP Version'] || version}
         </Text>
         <Input
           size="small"
@@ -1817,133 +1818,145 @@ function PHPInfoTab({ version }: { version: string }) {
           value={filter}
           onChange={e => setFilter(e.target.value)}
           allowClear
-          style={{ width: 240, borderRadius: 6, background: isDark ? p.inputBg : '#fff' }}
+          style={{ width: 220, borderRadius: 6, background: isDark ? p.inputBg : '#fff' }}
         />
       </div>
 
-      {/* Quick Info Cards */}
-      {!filter && (
-        <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10, marginBottom: 16 }}>
-            {quickInfoItems.map(item => {
-              const val = quickInfo[item.key];
-              if (!val) return null;
-              return (
-                <div key={item.key} style={{
-                  padding: '10px 14px', borderRadius: 8,
-                  background: isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
-                  border: `1px solid ${isDark ? p.cardBorder : '#E2E8F0'}`,
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                    <span style={{ color: item.color, fontSize: 13 }}>{item.icon}</span>
-                    <span style={{ fontSize: 11, color: p.textMuted, fontWeight: 500 }}>{item.label}</span>
-                  </div>
-                  <div style={{
-                    fontSize: 13, fontWeight: 600, color: p.text,
-                    fontFamily: item.key === 'System' ? 'inherit' : "'JetBrains Mono', monospace",
-                    wordBreak: 'break-all',
-                    ...(item.key === 'System' ? { fontSize: 11, fontWeight: 400 } : {}),
-                  }}>
-                    {val}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Quick Limits Row */}
-          {quickLimits.some(l => quickInfo[l.key]) && (
+      <div style={{ maxHeight: 530, overflow: 'auto' }}>
+        {/* Overview cards */}
+        {!filter && (
+          <>
             <div style={{
-              display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16,
-              padding: '10px 14px', borderRadius: 8,
-              background: isDark ? 'rgba(251,191,36,0.06)' : '#FFFBEB',
-              border: `1px solid ${isDark ? 'rgba(251,191,36,0.12)' : '#FDE68A'}`,
+              display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+              gap: 8, marginBottom: 12,
             }}>
-              <span style={{ fontSize: 11, color: p.amber, fontWeight: 600, marginRight: 4 }}>Limits:</span>
-              {quickLimits.map(l => {
-                const val = quickInfo[l.key];
+              {infoCards.map(c => {
+                const val = overview[c.key];
                 if (!val) return null;
                 return (
-                  <Tag key={l.key} style={{
-                    borderRadius: 4, fontSize: 11, margin: 0,
-                    background: isDark ? 'rgba(251,191,36,0.1)' : '#FEF3C7',
-                    border: 'none', color: isDark ? '#FBBF24' : '#92400E',
+                  <div key={c.key} style={{
+                    padding: '8px 12px', borderRadius: 8,
+                    background: cardBg, border: `1px solid ${borderColor}`,
                   }}>
-                    {l.label}: <strong>{val}</strong>
-                  </Tag>
+                    <div style={{ fontSize: 10, color: p.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>{c.label}</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: c.color, fontFamily: "'JetBrains Mono', monospace", wordBreak: 'break-all' }}>{val}</div>
+                  </div>
                 );
               })}
             </div>
-          )}
-        </>
-      )}
 
-      {/* Sections */}
-      <div style={{ maxHeight: 420, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {filteredSections.map(section => {
-          const isCollapsed = collapsed[section.title] && !filter;
-          return (
-            <div key={section.title} style={{
-              borderRadius: 8,
-              border: `1px solid ${isDark ? p.cardBorder : '#E2E8F0'}`,
-              overflow: 'hidden',
-            }}>
-              {/* Section header */}
-              <div
-                onClick={() => toggleSection(section.title)}
-                style={{
-                  padding: '8px 14px',
-                  background: isDark ? 'rgba(255,255,255,0.03)' : '#F1F5F9',
-                  cursor: 'pointer',
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  userSelect: 'none',
-                }}
-              >
-                <Text style={{ fontSize: 13, fontWeight: 600, color: p.text }}>
-                  {section.title}
-                </Text>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Tag style={{ fontSize: 10, borderRadius: 4, margin: 0 }}>{section.entries.length}</Tag>
-                  <span style={{ color: p.textMuted, fontSize: 11, transition: 'transform 0.2s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
-                </div>
+            {/* System info */}
+            {overview['System'] && (
+              <div style={{
+                padding: '8px 12px', borderRadius: 8, marginBottom: 12,
+                background: cardBg, border: `1px solid ${borderColor}`,
+                fontSize: 11, color: p.textMuted,
+              }}>
+                <strong style={{ color: p.text }}>System:</strong> {overview['System']}
               </div>
-              {/* Section entries */}
-              {!isCollapsed && (
-                <div style={{ maxHeight: 280, overflow: 'auto' }}>
-                  <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+            )}
+
+            {/* Loaded extensions count */}
+            <div style={{
+              padding: '8px 12px', borderRadius: 8, marginBottom: 12,
+              background: isDark ? 'rgba(99,102,241,0.06)' : '#EEF2FF',
+              border: `1px solid ${isDark ? 'rgba(99,102,241,0.12)' : '#C7D2FE'}`,
+              display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+            }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: ACCENT }}>
+                {extensions.length} Modules Loaded
+              </span>
+              <span style={{ fontSize: 11, color: p.textMuted }}>|</span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                {extensions.slice(0, 20).map(ext => (
+                  <Tag key={ext} style={{ fontSize: 10, borderRadius: 3, margin: 0, padding: '0 6px', lineHeight: '18px' }}>{ext}</Tag>
+                ))}
+                {extensions.length > 20 && (
+                  <Tag style={{ fontSize: 10, borderRadius: 3, margin: 0, padding: '0 6px', lineHeight: '18px' }}>+{extensions.length - 20} more</Tag>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Controls */}
+        {!filter && (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+            <Button size="small" type="link" onClick={expandAll} style={{ fontSize: 11, padding: 0, color: ACCENT }}>Expand All</Button>
+            <Button size="small" type="link" onClick={collapseAll} style={{ fontSize: 11, padding: 0, color: p.textMuted }}>Collapse All</Button>
+          </div>
+        )}
+
+        {/* Modules */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {filteredModules.map(mod => {
+            const isOpen = filter ? true : expandedModules[mod.name];
+            return (
+              <div key={mod.name} style={{
+                borderRadius: 6,
+                border: `1px solid ${borderColor}`,
+                overflow: 'hidden',
+              }}>
+                <div
+                  onClick={() => toggleModule(mod.name)}
+                  style={{
+                    padding: '6px 12px',
+                    background: isDark ? 'rgba(255,255,255,0.02)' : '#F1F5F9',
+                    cursor: 'pointer', userSelect: 'none',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  }}
+                >
+                  <span style={{ fontSize: 12, fontWeight: 600, color: p.text }}>{mod.name}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 10, color: p.textMuted }}>{mod.directives.length}</span>
+                    <span style={{
+                      color: p.textMuted, fontSize: 10,
+                      transition: 'transform 0.15s',
+                      transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)',
+                      display: 'inline-block',
+                    }}>▼</span>
+                  </div>
+                </div>
+                {isOpen && (
+                  <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
                     <tbody>
-                      {section.entries.map((entry, i) => (
-                        <tr key={`${entry.key}-${i}`} style={{
-                          background: i % 2 === 0 ? 'transparent' : (isDark ? p.rowAlt : '#F8FAFC'),
-                          borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.04)' : '#F1F5F9'}`,
+                      {mod.directives.map((d, i) => (
+                        <tr key={`${d.key}-${i}`} style={{
+                          background: i % 2 === 0 ? 'transparent' : (isDark ? p.rowAlt : '#FAFAFA'),
                         }}>
                           <td style={{
-                            padding: '5px 14px', color: p.textMuted, fontWeight: 500,
-                            width: '40%', verticalAlign: 'top', whiteSpace: 'nowrap',
+                            padding: '3px 12px', color: p.textMuted, fontWeight: 500,
+                            width: '38%', verticalAlign: 'top',
                           }}>
-                            {filter ? highlightText(entry.key, filter, p) : entry.key}
+                            {filter ? highlightText(d.key, filter, p) : d.key}
                           </td>
                           <td style={{
-                            padding: '5px 14px', color: p.text,
-                            fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
+                            padding: '3px 12px', color: p.text,
+                            fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5,
                             wordBreak: 'break-all',
                           }}>
-                            {filter ? highlightText(entry.value, filter, p) : entry.value}
+                            {filter ? highlightText(d.value, filter, p) : (
+                              d.value === 'no value' || d.value === 'Off' || d.value === 'disabled'
+                                ? <span style={{ color: p.textDim }}>{d.value}</span>
+                                : d.value === 'On' || d.value === 'enabled' || d.value === 'yes'
+                                  ? <span style={{ color: p.green }}>{d.value}</span>
+                                  : d.value
+                            )}
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                </div>
-              )}
+                )}
+              </div>
+            );
+          })}
+          {filteredModules.length === 0 && filter && (
+            <div style={{ textAlign: 'center', padding: 24, color: p.textMuted, fontSize: 13 }}>
+              No results for "<strong>{filter}</strong>"
             </div>
-          );
-        })}
-        {filteredSections.length === 0 && (
-          <div style={{ textAlign: 'center', padding: 30, color: p.textMuted }}>
-            No results for "{filter}"
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

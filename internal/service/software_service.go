@@ -440,6 +440,25 @@ func (s *SoftwareService) GetInstaller(name string) (installer.Installer, bool) 
 	return s.registry.Get(name)
 }
 
+// phpConfBase is the base directory for PHP configuration files managed by the panel.
+// It symlinks to /etc/php so both paths resolve identically.
+const phpConfBase = "/ITDLUPanel/server/php/conf"
+
+// phpFPMIni returns the path to the FPM php.ini for the given version.
+func phpFPMIni(version string) string {
+	return fmt.Sprintf("%s/%s/fpm/php.ini", phpConfBase, version)
+}
+
+// phpCLIIni returns the path to the CLI php.ini for the given version.
+func phpCLIIni(version string) string {
+	return fmt.Sprintf("%s/%s/cli/php.ini", phpConfBase, version)
+}
+
+// phpFPMPoolConf returns the path to the FPM www.conf pool config.
+func phpFPMPoolConf(version string) string {
+	return fmt.Sprintf("%s/%s/fpm/pool.d/www.conf", phpConfBase, version)
+}
+
 // PHPConfig represents configurable PHP settings.
 type PHPConfig struct {
 	UploadMaxFilesize string `json:"upload_max_filesize"`
@@ -452,7 +471,7 @@ type PHPConfig struct {
 
 // GetPHPConfig reads PHP config values from php.ini for the given version.
 func (s *SoftwareService) GetPHPConfig(version string) (*PHPConfig, error) {
-	iniPath := fmt.Sprintf("/etc/php/%s/fpm/php.ini", version)
+	iniPath := phpFPMIni(version)
 	if _, err := os.Stat(iniPath); err != nil {
 		return nil, fmt.Errorf("php.ini not found for PHP %s: %w", version, err)
 	}
@@ -471,8 +490,8 @@ func (s *SoftwareService) GetPHPConfig(version string) (*PHPConfig, error) {
 // SetPHPConfig updates PHP config values in php.ini and restarts php-fpm.
 func (s *SoftwareService) SetPHPConfig(version string, cfg PHPConfig) error {
 	iniPaths := []string{
-		fmt.Sprintf("/etc/php/%s/fpm/php.ini", version),
-		fmt.Sprintf("/etc/php/%s/cli/php.ini", version),
+		phpFPMIni(version),
+		phpCLIIni(version),
 	}
 
 	settings := map[string]string{
@@ -578,7 +597,7 @@ var defaultDisableFunctions = []string{
 // GetPHPDisableFunctions reads the disable_functions list from php.ini.
 // If no functions are disabled, it auto-applies the default dangerous functions list.
 func (s *SoftwareService) GetPHPDisableFunctions(version string) ([]string, error) {
-	iniPath := fmt.Sprintf("/etc/php/%s/fpm/php.ini", version)
+	iniPath := phpFPMIni(version)
 	raw := readPHPIniValue(iniPath, "disable_functions")
 	if raw == "" {
 		// Auto-apply default dangerous functions
@@ -602,8 +621,8 @@ func (s *SoftwareService) SetPHPDisableFunctions(version string, functions []str
 	value := strings.Join(functions, ",")
 
 	iniPaths := []string{
-		fmt.Sprintf("/etc/php/%s/fpm/php.ini", version),
-		fmt.Sprintf("/etc/php/%s/cli/php.ini", version),
+		phpFPMIni(version),
+		phpCLIIni(version),
 	}
 	for _, iniPath := range iniPaths {
 		if _, err := os.Stat(iniPath); err != nil {
@@ -627,7 +646,7 @@ func (s *SoftwareService) SetPHPDisableFunctions(version string, functions []str
 
 // GetPHPConfigFile returns the raw content of php.ini for a PHP version.
 func (s *SoftwareService) GetPHPConfigFile(version string) (string, error) {
-	iniPath := fmt.Sprintf("/etc/php/%s/fpm/php.ini", version)
+	iniPath := phpFPMIni(version)
 	data, err := os.ReadFile(iniPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read php.ini for PHP %s: %w", version, err)
@@ -637,7 +656,7 @@ func (s *SoftwareService) GetPHPConfigFile(version string) (string, error) {
 
 // SetPHPConfigFile writes raw content to php.ini and restarts FPM.
 func (s *SoftwareService) SetPHPConfigFile(version, content string) error {
-	iniPath := fmt.Sprintf("/etc/php/%s/fpm/php.ini", version)
+	iniPath := phpFPMIni(version)
 	if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to write php.ini: %w", err)
 	}
@@ -701,7 +720,7 @@ type PHPFPMConfig struct {
 }
 
 func phpFPMPoolPath(version string) string {
-	return fmt.Sprintf("/etc/php/%s/fpm/pool.d/www.conf", version)
+	return phpFPMPoolConf(version)
 }
 
 // GetPHPFPMConfig reads FPM pool settings from www.conf.
@@ -1508,15 +1527,15 @@ func (s *SoftwareService) managePhpMyAdminFirewall(_ context.Context, cfg *PhpMy
 	}{{Port: httpPort, Protocol: "tcp", Desc: "phpMyAdmin"}}
 }
 
-// GetAvailablePHPVersions scans /etc/php/ for installed PHP versions with
-// an active FPM socket.
+// GetAvailablePHPVersions scans the panel PHP config directory for installed
+// PHP versions with an active FPM socket.
 func (s *SoftwareService) GetAvailablePHPVersions() ([]string, error) {
-	entries, err := os.ReadDir("/etc/php")
+	entries, err := os.ReadDir(phpConfBase)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []string{}, nil
 		}
-		return nil, fmt.Errorf("failed to read /etc/php: %w", err)
+		return nil, fmt.Errorf("failed to read %s: %w", phpConfBase, err)
 	}
 
 	var versions []string
