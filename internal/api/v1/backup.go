@@ -27,6 +27,7 @@ func (h *BackupHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, permMW gin.H
 		backups.GET("", h.List)
 		backups.POST("", h.Create)
 		backups.GET("/site-counts", h.SiteBackupCounts)
+		backups.GET("/database-counts", h.DatabaseBackupCounts)
 		backups.GET("/:id", h.Get)
 		backups.DELETE("/:id", h.Delete)
 		backups.POST("/:id/restore", h.Restore)
@@ -191,6 +192,16 @@ func (h *BackupHandler) Download(c *gin.Context) {
 // SiteBackupCounts returns a map of site_id → backup count.
 func (h *BackupHandler) SiteBackupCounts(c *gin.Context) {
 	counts, err := h.backupService.SiteBackupCounts()
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, counts)
+}
+
+// DatabaseBackupCounts returns a map of database_id → backup count.
+func (h *BackupHandler) DatabaseBackupCounts(c *gin.Context) {
+	counts, err := h.backupService.DatabaseBackupCounts()
 	if err != nil {
 		response.Error(c, err)
 		return
