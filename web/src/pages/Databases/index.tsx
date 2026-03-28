@@ -68,6 +68,7 @@ function DatabasesContent() {
   const [backupActionId, setBackupActionId] = useState<number | null>(null);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [batchAction, setBatchAction] = useState<'backup' | 'delete' | null>(null);
+  const [importingDbId, setImportingDbId] = useState<number | null>(null);
 
   const togglePasswordVisibility = (id: number) => {
     setVisiblePasswords(prev => {
@@ -294,6 +295,40 @@ function DatabasesContent() {
     fetchBackupCounts();
   };
 
+  const handleImportSQL = (dbId: number) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.sql,.sql.gz,.gz';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const name = file.name.toLowerCase();
+      if (!name.endsWith('.sql') && !name.endsWith('.sql.gz')) {
+        message.error('Only .sql and .sql.gz files are supported');
+        return;
+      }
+      setImportingDbId(dbId);
+      const hide = message.loading(`Importing ${file.name}…`, 0);
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        await api.post(`/databases/${dbId}/import`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          timeout: 300000,
+        });
+        message.success('SQL file imported successfully');
+        fetchData();
+      } catch (err: unknown) {
+        const detail = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+        message.error(detail || 'Import failed');
+      } finally {
+        hide();
+        setImportingDbId(null);
+      }
+    };
+    input.click();
+  };
+
   const handleChangePassword = async () => {
     try {
       const values = await pwForm.validateFields();
@@ -400,28 +435,50 @@ function DatabasesContent() {
     {
       title: 'Backup',
       key: 'backup',
-      width: 90,
+      width: 130,
       render: (_: unknown, r: Database) => {
         const count = backupCounts[r.id] || 0;
+        const isImporting = importingDbId === r.id;
         return (
-          <Tooltip title={`${count} backup(s) — click to manage`}>
-            <button
-              onClick={() => openBackupModal(r)}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 5,
-                padding: '3px 10px', borderRadius: 6,
-                border: `1px solid ${count > 0 ? `${p.green}40` : p.cardBorder}`,
-                background: count > 0 ? `${p.green}08` : 'transparent',
-                color: count > 0 ? p.green : p.textMuted,
-                fontSize: 11, fontWeight: 500,
-                cursor: 'pointer',
-                transition: 'all 0.15s',
-              }}
-            >
-              <CloudUploadOutlined style={{ fontSize: 13 }} />
-              {count > 0 ? count : '—'}
-            </button>
-          </Tooltip>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <Tooltip title={`${count} backup(s) — click to manage`}>
+              <button
+                onClick={() => openBackupModal(r)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  padding: '3px 10px', borderRadius: 6,
+                  border: `1px solid ${count > 0 ? `${p.green}40` : p.cardBorder}`,
+                  background: count > 0 ? `${p.green}08` : 'transparent',
+                  color: count > 0 ? p.green : p.textMuted,
+                  fontSize: 11, fontWeight: 500,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                }}
+              >
+                <CloudUploadOutlined style={{ fontSize: 13 }} />
+                {count > 0 ? count : '—'}
+              </button>
+            </Tooltip>
+            <Tooltip title="Import SQL file">
+              <button
+                onClick={() => handleImportSQL(r.id)}
+                disabled={isImporting}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '3px 8px', borderRadius: 6,
+                  border: `1px solid ${p.cardBorder}`,
+                  background: 'transparent',
+                  color: isImporting ? p.accent : p.textMuted,
+                  fontSize: 11, fontWeight: 500,
+                  cursor: isImporting ? 'wait' : 'pointer',
+                  opacity: isImporting ? 0.6 : 1,
+                  transition: 'all 0.15s',
+                }}
+              >
+                {isImporting ? <Spin size="small" /> : <ImportOutlined style={{ fontSize: 12 }} />}
+              </button>
+            </Tooltip>
+          </div>
         );
       },
     },

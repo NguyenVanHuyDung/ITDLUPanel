@@ -342,6 +342,38 @@ func (s *DatabaseService) Restore(id int64, filePath string) error {
 	return nil
 }
 
+// ImportSQL imports a SQL file (plain .sql or gzipped .sql.gz) into the database.
+func (s *DatabaseService) ImportSQL(id int64, filePath string) error {
+	d, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return apperrors.New(apperrors.ErrNotFound, "SQL file not found")
+	}
+
+	ctx := context.Background()
+
+	// If gzipped, decompress first
+	importFile := filePath
+	if strings.HasSuffix(filePath, ".gz") {
+		importFile = strings.TrimSuffix(filePath, ".gz")
+		if _, err := system.Exec(ctx, "gunzip", "-k", "-f", filePath); err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to decompress SQL file")
+		}
+		defer os.Remove(importFile)
+	}
+
+	cmd := fmt.Sprintf("mysql -u root %s < %s", d.Name, importFile)
+	if _, err := system.ExecShell(ctx, cmd); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to import SQL file")
+	}
+
+	logger.Info().Str("name", d.Name).Str("file", filePath).Msg("database imported")
+	return nil
+}
+
 // GetSize queries the actual database size from MySQL information_schema.
 func (s *DatabaseService) GetSize(id int64) (int64, error) {
 	d, err := s.GetByID(id)
