@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Table, Modal, Form, Input, Select, message, Popconfirm, Tooltip, Spin } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, KeyOutlined, CloudDownloadOutlined,
@@ -66,6 +66,8 @@ function DatabasesContent() {
   const [backupListLoading, setBackupListLoading] = useState(false);
   const [backupCreating, setBackupCreating] = useState(false);
   const [backupActionId, setBackupActionId] = useState<number | null>(null);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [batchAction, setBatchAction] = useState<'backup' | 'delete' | null>(null);
 
   const togglePasswordVisibility = (id: number) => {
     setVisiblePasswords(prev => {
@@ -251,6 +253,45 @@ function DatabasesContent() {
     } catch {
       message.error('Backup failed');
     }
+  };
+
+  const handleBatchBackup = async () => {
+    if (selectedRowKeys.length === 0) return;
+    setBatchAction('backup');
+    const hide = message.loading(`Backing up ${selectedRowKeys.length} database(s)…`, 0);
+    let ok = 0, fail = 0;
+    for (const key of selectedRowKeys) {
+      try {
+        await api.post('/backups', { type: 'database', target_id: Number(key) });
+        ok++;
+      } catch { fail++; }
+    }
+    hide();
+    if (ok > 0) message.success(`${ok} backup(s) created`);
+    if (fail > 0) message.error(`${fail} backup(s) failed`);
+    setSelectedRowKeys([]);
+    setBatchAction(null);
+    fetchBackupCounts();
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedRowKeys.length === 0) return;
+    setBatchAction('delete');
+    const hide = message.loading(`Deleting ${selectedRowKeys.length} database(s)…`, 0);
+    let ok = 0, fail = 0;
+    for (const key of selectedRowKeys) {
+      try {
+        await api.delete(`/databases/${Number(key)}`);
+        ok++;
+      } catch { fail++; }
+    }
+    hide();
+    if (ok > 0) message.success(`${ok} database(s) deleted`);
+    if (fail > 0) message.error(`${fail} deletion(s) failed`);
+    setSelectedRowKeys([]);
+    setBatchAction(null);
+    fetchData();
+    fetchBackupCounts();
   };
 
   const handleChangePassword = async () => {
@@ -581,12 +622,84 @@ function DatabasesContent() {
           </Tooltip>
         </div>
 
+        {/* Batch action bar */}
+        {selectedRowKeys.length > 0 && (
+          <div style={{
+            padding: '8px 20px',
+            borderBottom: `1px solid ${p.cardBorder}`,
+            background: `${p.accent}08`,
+            display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+          }}>
+            <span style={{ fontSize: 12, fontWeight: 500, color: p.accent }}>
+              {selectedRowKeys.length} selected
+            </span>
+            <Popconfirm
+              title={`Backup ${selectedRowKeys.length} database(s)?`}
+              description="This will create a backup for each selected database."
+              onConfirm={handleBatchBackup}
+              okText="Backup All"
+            >
+              <button
+                disabled={batchAction !== null}
+                style={{
+                  padding: '4px 12px', borderRadius: 6, border: `1px solid ${p.green}60`,
+                  background: `${p.green}12`, color: p.green,
+                  fontSize: 11, fontWeight: 600, cursor: batchAction ? 'wait' : 'pointer',
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  opacity: batchAction ? 0.6 : 1,
+                  transition: 'all 0.15s',
+                }}
+              >
+                <CloudUploadOutlined style={{ fontSize: 12 }} />
+                Backup Selected
+              </button>
+            </Popconfirm>
+            <Popconfirm
+              title={`Delete ${selectedRowKeys.length} database(s)?`}
+              description="This action cannot be undone. All selected databases and their users will be permanently removed."
+              onConfirm={handleBatchDelete}
+              okText="Delete All"
+              okButtonProps={{ danger: true }}
+            >
+              <button
+                disabled={batchAction !== null}
+                style={{
+                  padding: '4px 12px', borderRadius: 6, border: `1px solid ${p.red}60`,
+                  background: `${p.red}12`, color: p.red,
+                  fontSize: 11, fontWeight: 600, cursor: batchAction ? 'wait' : 'pointer',
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  opacity: batchAction ? 0.6 : 1,
+                  transition: 'all 0.15s',
+                }}
+              >
+                <DeleteOutlined style={{ fontSize: 12 }} />
+                Delete Selected
+              </button>
+            </Popconfirm>
+            <button
+              onClick={() => setSelectedRowKeys([])}
+              style={{
+                padding: '4px 12px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+                background: 'transparent', color: p.textMuted,
+                fontSize: 11, fontWeight: 500, cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}
+            >
+              Clear
+            </button>
+          </div>
+        )}
+
         {/* Table */}
         <div style={{ padding: 0 }}>
           <Table
             columns={columns}
             dataSource={filteredDatabases}
             rowKey="id"
+            rowSelection={{
+              selectedRowKeys,
+              onChange: (keys) => setSelectedRowKeys(keys),
+            }}
             loading={{ spinning: loading, indicator: <Spin /> }}
             size="middle"
             scroll={{ x: 800 }}
