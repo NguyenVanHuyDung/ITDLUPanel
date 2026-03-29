@@ -1,12 +1,256 @@
 # ITDLUPanel
 
-**Linux Server Management Panel** — A modern, all-in-one web panel for managing Linux servers. Built for **Đại học Đà Lạt** (Dalat University) with Go backend and React frontend in a single binary.
-
 ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
 ![Ant Design](https://img.shields.io/badge/Ant%20Design-6-0170FE?logo=antdesign&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-003B57?logo=sqlite&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
+
+[🇻🇳 Tiếng Việt](#tiếng-việt) | [🇺🇸 English](#english)
+
+---
+
+# Tiếng Việt
+
+**Bảng điều khiển quản lý máy chủ Linux** — Một web panel hiện đại, tất-cả-trong-một để quản lý máy chủ Linux. Được xây dựng cho **Đại học Đà Lạt** với backend Go và frontend React trong một file binary duy nhất.
+
+---
+
+## ✨ Tính năng
+
+| Module | Mô tả |
+|--------|-------|
+| 🖥️ **Dashboard** | Theo dõi CPU, RAM, ổ đĩa, mạng theo thời gian thực với biểu đồ tương tác và popover chi tiết |
+| 🌐 **Website** | Tạo/quản lý website, domain alias, chuyển đổi phiên bản PHP, chỉnh sửa cấu hình Nginx |
+| 🗄️ **Cơ sở dữ liệu** | Quản lý MySQL/MariaDB — tạo mới, sao lưu, khôi phục, quản lý người dùng |
+| 📁 **Quản lý tệp** | Trình duyệt file đầy đủ tính năng với trình soạn thảo Monaco, bookmark, nén/giải nén, phân quyền |
+| 🔑 **Terminal** | Terminal xterm.js qua WebSocket với đa tab, toàn màn hình, và terminal inline trong Quản lý tệp |
+| 🔒 **Bảo mật** | Quản lý firewall, giám sát cổng, chặn IP, cấu hình SSH, quản lý Fail2ban |
+| 📊 **Giám sát** | Giám sát hệ thống thời gian thực với biểu đồ mở rộng (CPU, bộ nhớ, disk I/O, mạng) |
+| 🐳 **Docker** | Quản lý container & image — tạo, start/stop, logs, stats, networks, volumes |
+| ⏰ **Cron Jobs** | Trình tạo lịch trình, mẫu có sẵn, lịch sử thực thi, chạy ngay, bật/tắt |
+| 📋 **Nhật ký** | Nhật ký panel, SSH, truy cập/lỗi website, audit log với tìm kiếm và lọc |
+| 📦 **Kho ứng dụng** | Cài đặt/quản lý Nginx, Apache, PHP, MySQL, Redis, phpMyAdmin với theo dõi tiến trình |
+| 🔐 **SSL** | Tự động cấp Let's Encrypt, tải lên chứng chỉ tùy chỉnh, tự động gia hạn, chứng chỉ tự ký |
+| 👤 **Người dùng** | Phân quyền RBAC với vai trò Admin/Operator/Viewer, hỗ trợ 2FA (TOTP) |
+| 📡 **FTP** | Quản lý tài khoản FTP với đường dẫn và trạng thái |
+| ⚙️ **Cài đặt** | Cổng panel, SSL, đường dẫn admin, ngôn ngữ, cấu hình sao lưu |
+| 🌓 **Giao diện** | Chuyển đổi chế độ sáng/tối với lưu tùy chọn |
+
+---
+
+## 🏗️ Kiến trúc
+
+```
+┌─────────────────────────────────────────────┐
+│            Browser (React 19 SPA)           │
+│       Ant Design 6 · xterm.js · Monaco      │
+└──────────────┬─────────────┬────────────────┘
+               │ REST API    │ WebSocket
+               ▼             ▼
+┌─────────────────────────────────────────────┐
+│        File binary Go duy nhất (~30MB)      │
+│                                             │
+│  Gin Router ─► 21 Services ─► SQLite        │
+│  WS Handlers ─► PTY Terminal                │
+│  Nhúng Frontend (go:embed)                  │
+│  JWT Auth · RBAC · Rate Limit · Audit       │
+└─────────────────────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────────┐
+│           Linux Host (Ubuntu/Debian)        │
+│    Nginx · PHP-FPM · MySQL · Redis · Docker │
+└─────────────────────────────────────────────┘
+```
+
+### Công nghệ sử dụng
+
+| Tầng | Công nghệ |
+|------|-----------|
+| Backend | Go 1.22, Gin, SQLite, gopsutil, creack/pty |
+| Frontend | React 19, TypeScript, Ant Design 6, Vite 8 |
+| Quản lý state | Zustand (auth + theme stores) |
+| Biểu đồ | Recharts |
+| Trình soạn thảo | Monaco Editor |
+| Terminal | xterm.js + WebSocket |
+| Đa ngôn ngữ | Tiếng Anh 🇺🇸 / Tiếng Việt 🇻🇳 |
+
+---
+
+## 🚀 Bắt đầu nhanh
+
+### Yêu cầu
+
+- Go 1.22+
+- Node.js 18+
+- Linux (Ubuntu 20.04+ / Debian 11+)
+
+### Build từ mã nguồn
+
+```bash
+# Clone
+git clone https://github.com/your-org/ITDLUPanel.git
+cd ITDLUPanel
+
+# Build frontend
+cd web && npm install && npm run build && cd ..
+
+# Build backend (nhúng frontend)
+export PATH=/usr/local/go/bin:$PATH
+CGO_ENABLED=0 go build -o bin/itdlupanel ./cmd/panel
+
+# Chạy
+./bin/itdlupanel
+```
+
+Panel mặc định chạy tại **http://localhost:8888**.
+
+### Thông tin đăng nhập mặc định
+
+| Trường | Giá trị |
+|--------|---------|
+| Tên đăng nhập | `admin` |
+| Mật khẩu | `admin@123456` |
+
+> ⚠️ **Hãy đổi mật khẩu mặc định ngay sau lần đăng nhập đầu tiên.**
+
+### Đặt lại mật khẩu Admin
+
+```bash
+./bin/itdlupanel reset-password -password "NewPassword123"
+
+# Đặt lại cho người dùng cụ thể
+./bin/itdlupanel reset-password -user admin -password "NewPassword123"
+
+# Với đường dẫn cấu hình tùy chỉnh
+./bin/itdlupanel reset-password -config /path/to/panel.json -password "NewPassword123"
+```
+
+### Cấu hình
+
+File cấu hình được tự động tạo tại `config/panel.json`:
+
+```json
+{
+  "server": { "host": "0.0.0.0", "port": 8888 },
+  "database": { "path": "data/panel.db" },
+  "auth": { "jwt_secret": "<auto>", "access_token_ttl": 900 },
+  "paths": { "wwwroot": "/ITDLUPanel/wwwroot" },
+  "panel": { "language": "en", "version": "0.1.0" }
+}
+```
+
+---
+
+## 📡 API
+
+**~150 REST endpoints** + 2 WebSocket endpoints, được tổ chức theo module:
+
+| Module | Endpoints | Xác thực |
+|--------|-----------|----------|
+| Auth | 9 | Hỗn hợp |
+| Sites | 14 | JWT + `sites.*` |
+| Databases | 8 | JWT + `databases.*` |
+| Files | 17 | JWT + `files.*` |
+| Docker | 15 | JWT + `docker.*` |
+| Security | 12 | JWT + Admin |
+| Software | 14 | JWT + Admin |
+| Monitor | 5 + WS | JWT |
+| Terminal | WS | JWT + `terminal.access` |
+| Cron | 8 | JWT + `cron.*` |
+| Logs | 7 | JWT + `logs.*` |
+| SSL | 9 | JWT + Admin |
+| Backups | 6 | JWT + `backup.*` |
+| Khác | ~20 | Đa dạng |
+
+Tài liệu API đầy đủ: [`docs/2026-03-22/SPECIFICATION.md`](docs/2026-03-22/SPECIFICATION.md)
+
+---
+
+## 🔒 Bảo mật
+
+- **Xác thực**: JWT (HS256) với access token 15 phút + refresh token 7 ngày
+- **2FA**: Xác thực hai yếu tố dựa trên TOTP
+- **Mật khẩu**: bcrypt (cost=12)
+- **CSRF**: Xác thực bằng cookie + header token
+- **Giới hạn tốc độ**: 60 request/phút mỗi IP
+- **Nhật ký kiểm toán**: Ghi lại toàn bộ thao tác ghi
+- **RBAC**: Ba vai trò — Admin (toàn quyền), Operator (giới hạn phạm vi), Viewer (chỉ đọc)
+
+---
+
+## 📊 Cơ sở dữ liệu
+
+**SQLite** với 16 bảng: `users`, `roles`, `sites`, `domains`, `databases`, `ftps`, `crons`, `tasks`, `software`, `plugins`, `firewall_rules`, `backups`, `audit_logs`, `settings`, `docker_containers`, `schema_migrations`
+
+---
+
+## 📁 Cấu trúc dự án
+
+```
+ITDLUPanel/
+├── cmd/panel/main.go          # Điểm khởi chạy
+├── web.go                     # Nhúng frontend (go:embed)
+├── internal/
+│   ├── api/v1/                # REST handlers (18 files)
+│   ├── api/ws/                # WebSocket (terminal, monitor)
+│   ├── app/                   # Router, middleware, bootstrap
+│   ├── service/               # Logic nghiệp vụ (21 services)
+│   ├── service/installer/     # Trình cài đặt phần mềm (6)
+│   ├── service/vhost/         # Trình tạo vhost (3)
+│   ├── database/              # SQLite, migrations, models
+│   ├── config/                # Trình đọc cấu hình JSON
+│   ├── pkg/                   # Tiện ích dùng chung (crypto, logger, v.v.)
+│   ├── i18n/                  # Bản dịch backend
+│   ├── task/                  # Hàng đợi tác vụ nền
+│   └── websocket/             # WS hub
+├── web/src/
+│   ├── pages/                 # 15 trang (~10K dòng code)
+│   ├── layouts/               # MainLayout, AuthLayout
+│   ├── components/            # NginxManageModal, RequireSoftware
+│   ├── stores/                # auth, theme (Zustand)
+│   ├── hooks/                 # useIsMobile, useBreakpoint
+│   ├── services/api.ts        # Axios client
+│   ├── types/                 # TypeScript interfaces
+│   ├── router/                # Định nghĩa routes
+│   └── i18n/                  # Bản dịch EN/VI
+└── docs/                      # Tài liệu kiến trúc & đặc tả
+```
+
+---
+
+## 🌐 Phần mềm hỗ trợ
+
+| Phần mềm | Cài đặt | Cấu hình | Giám sát |
+|-----------|---------|----------|----------|
+| Nginx | ✅ | ✅ | ✅ |
+| Apache | ✅ | ✅ | ✅ |
+| OpenLiteSpeed | ✅ | ✅ | ✅ |
+| PHP 7.4–8.3 | ✅ | ✅ | ✅ |
+| MySQL/MariaDB | ✅ | ✅ | ✅ |
+| Redis | ✅ | ✅ | ✅ |
+| phpMyAdmin | ✅ | — | — |
+| Docker | Phát hiện | ✅ | ✅ |
+
+---
+
+## 📄 Tài liệu
+
+- [Kiến trúc hệ thống](docs/2026-03-22/SYSTEM_ARCHITECTURE.md)
+- [Đặc tả kỹ thuật](docs/2026-03-22/SPECIFICATION.md)
+
+---
+
+## 📝 Giấy phép
+
+Giấy phép MIT — © 2026 Đại học Đà Lạt
+
+---
+
+# English
+
+**Linux Server Management Panel** — A modern, all-in-one web panel for managing Linux servers. Built for **Đại học Đà Lạt** (Dalat University) with Go backend and React frontend in a single binary.
 
 ---
 
