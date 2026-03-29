@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/ITDLUPanel/panel/internal/config"
+	apperrors "github.com/ITDLUPanel/panel/internal/pkg/errors"
 	"github.com/ITDLUPanel/panel/internal/pkg/response"
 	"github.com/ITDLUPanel/panel/internal/pkg/validator"
 	"github.com/ITDLUPanel/panel/internal/service"
@@ -40,6 +41,7 @@ func (h *DatabaseHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, permMW gin
 		db.POST("/:id/import", h.Import)
 		db.PUT("/:id/access", h.SetAccess)
 		db.GET("/version", h.GetVersion)
+		db.POST("/service", h.ServiceAction)
 		db.GET("/:id/size", h.GetSize)
 		db.PUT("/:id/quota", h.SetQuota)
 	}
@@ -250,6 +252,22 @@ func (h *DatabaseHandler) GetVersion(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"version": ver})
+}
+
+// ServiceAction performs start/stop/restart/reload on the MySQL/MariaDB service.
+func (h *DatabaseHandler) ServiceAction(c *gin.Context) {
+	var req struct {
+		Action string `json:"action" validate:"required,oneof=start stop restart reload"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid action"))
+		return
+	}
+	if err := h.dbService.ServiceAction(req.Action); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"action": req.Action, "status": "ok"})
 }
 
 type setAccessRequest struct {

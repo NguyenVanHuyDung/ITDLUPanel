@@ -7,6 +7,8 @@ import {
   SafetyCertificateOutlined, GlobalOutlined, CloudUploadOutlined,
   UndoOutlined, DownloadOutlined, CloudOutlined, LaptopOutlined,
   TeamOutlined, AimOutlined, CheckOutlined, LoadingOutlined,
+  PlayCircleOutlined, PauseCircleOutlined, SyncOutlined,
+  PoweroffOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
@@ -77,6 +79,24 @@ function DatabasesContent() {
   const [quotaInput, setQuotaInput] = useState(0);
   const [quotaUnit, setQuotaUnit] = useState<'MB' | 'GB'>('MB');
   const [quotaSaving, setQuotaSaving] = useState(false);
+  const [serviceActionLoading, setServiceActionLoading] = useState<string | null>(null);
+
+  const handleServiceAction = async (action: string) => {
+    setServiceActionLoading(action);
+    try {
+      await api.post('/databases/service', { action });
+      message.success(`${action} successful`);
+      if (action === 'stop') {
+        setDbVersion('');
+      } else {
+        setTimeout(fetchDbVersion, 1500);
+      }
+    } catch {
+      message.error(`Failed to ${action} database service`);
+    } finally {
+      setServiceActionLoading(null);
+    }
+  };
 
   const togglePasswordVisibility = (id: number) => {
     setVisiblePasswords(prev => {
@@ -732,12 +752,45 @@ function DatabasesContent() {
               {databases.length} databases
             </span>
             {dbVersion && (
-              <span style={{
-                fontSize: 11, padding: '2px 9px', borderRadius: 4,
-                background: `${p.green}15`, color: p.green, fontWeight: 500,
-              }}>
-                {dbVersion}
-              </span>
+              <Popover
+                trigger="hover"
+                placement="bottom"
+                arrow={false}
+                overlayInnerStyle={{ padding: 0, background: p.card, border: `1px solid ${p.cardBorder}`, borderRadius: 8 }}
+                content={
+                  <div style={{ display: 'flex', gap: 4, padding: '6px 8px' }}>
+                    {([
+                      { action: 'restart', icon: <SyncOutlined />, label: 'Restart', color: p.amber },
+                      { action: 'reload', icon: <ReloadOutlined />, label: 'Reload', color: p.accent },
+                      { action: 'stop', icon: <PoweroffOutlined />, label: 'Stop', color: p.red },
+                    ] as const).map(({ action, icon, label, color }) => (
+                      <button
+                        key={action}
+                        disabled={!!serviceActionLoading}
+                        onClick={() => handleServiceAction(action)}
+                        style={{
+                          padding: '4px 12px', borderRadius: 6, border: `1px solid ${color}30`,
+                          background: `${color}12`, color, fontSize: 11, fontWeight: 500,
+                          cursor: serviceActionLoading ? 'wait' : 'pointer',
+                          display: 'inline-flex', alignItems: 'center', gap: 5,
+                          opacity: serviceActionLoading && serviceActionLoading !== action ? 0.5 : 1,
+                          transition: 'all 0.15s',
+                        }}
+                      >
+                        {serviceActionLoading === action ? <LoadingOutlined spin /> : icon} {label}
+                      </button>
+                    ))}
+                  </div>
+                }
+              >
+                <span style={{
+                  fontSize: 11, padding: '2px 9px', borderRadius: 4,
+                  background: `${p.green}15`, color: p.green, fontWeight: 500,
+                  cursor: 'pointer', transition: 'all 0.15s',
+                }}>
+                  {dbVersion}
+                </span>
+              </Popover>
             )}
           </div>
           <button
