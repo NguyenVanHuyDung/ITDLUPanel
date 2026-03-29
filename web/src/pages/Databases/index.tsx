@@ -765,7 +765,7 @@ function DatabasesContent() {
             background: `${p.accent}15`, color: p.accent,
             display: 'inline-flex', alignItems: 'center', gap: 6,
           }}>
-            <DatabaseOutlined /> {dbVersion || 'MySQL'}
+            <DatabaseOutlined /> {dbVersion ? (dbVersion.startsWith('MariaDB') ? 'MariaDB' : 'MySQL') : 'MySQL'}
           </button>
           <button disabled style={{
             padding: '6px 16px', borderRadius: 6,
