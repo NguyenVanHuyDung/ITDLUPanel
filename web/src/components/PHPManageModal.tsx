@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Modal, Button, Space, message, Typography, Spin, Select, Input, Tag, Tooltip, Badge } from 'antd';
+import { Modal, Button, Space, message, Typography, Spin, Select, Input, Tag, Tooltip, Badge, Form } from 'antd';
 import {
   PlayCircleOutlined, PauseCircleOutlined, ReloadOutlined,
   CodeOutlined, AppstoreOutlined, SettingOutlined,
@@ -9,6 +9,7 @@ import {
   SafetyCertificateOutlined, PictureOutlined, FileZipOutlined,
   ThunderboltOutlined, GlobalOutlined, FontSizeOutlined,
   ToolOutlined, CalculatorOutlined, ClockCircleOutlined,
+  RocketOutlined,
 } from '@ant-design/icons';
 import api from '@/services/api';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -25,6 +26,7 @@ const SECTIONS = [
   { key: 'extensions', label: 'Extensions',  icon: <AppstoreOutlined /> },
   { key: 'fpmprofile', label: 'FPM Profile', icon: <CloudServerOutlined /> },
   { key: 'config',     label: 'Limits',      icon: <SettingOutlined /> },
+  { key: 'opcache',   label: 'OPcache',     icon: <RocketOutlined /> },
   { key: 'disablefn',  label: 'Disable Func', icon: <SafetyCertificateOutlined /> },
   { key: 'configfile', label: 'Config File', icon: <CodeOutlined /> },
   { key: 'errorlog',   label: 'Error Log',   icon: <FileTextOutlined /> },
@@ -116,6 +118,7 @@ export default function PHPManageModal({ open, onClose }: Props) {
       case 'extensions': return <ExtensionsTab version={phpVersion} />;
       case 'fpmprofile': return <FPMProfileTab version={phpVersion} />;
       case 'config':     return <ConfigTab version={phpVersion} />;
+      case 'opcache':    return <OPcacheTab version={phpVersion} />;
       case 'disablefn':  return <DisableFunctionsTab version={phpVersion} />;
       case 'configfile': return <ConfigFileTab version={phpVersion} />;
       case 'errorlog':   return <ErrorLogTab version={phpVersion} />;
@@ -1102,6 +1105,166 @@ function ConfigTab({ version }: { version: string }) {
         color: isDark ? p.amber : '#92400E',
       }}>
         ⚠️ Saving will update both FPM and CLI php.ini files and restart PHP-FPM service.
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// OPcache Tab
+// ============================================================================
+interface OPcacheConfig {
+  opcache_enable: string;
+  opcache_memory_consumption: string;
+  opcache_max_accelerated_files: string;
+  opcache_validate_timestamps: string;
+  opcache_revalidate_freq: string;
+  opcache_save_comments: string;
+  opcache_enable_cli: string;
+  opcache_interned_strings_buffer: string;
+}
+
+function OPcacheTab({ version }: { version: string }) {
+  const { p, isDark } = usePalette();
+  const [config, setConfig] = useState<OPcacheConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const ACCENT = isDark ? '#818CF8' : '#4F46E5';
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const { data: resp } = await api.get(`/software/php/${version}/opcache`);
+        setConfig(resp.data);
+      } catch {
+        message.error('Failed to load OPcache config');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [version]);
+
+  const handleSave = async () => {
+    if (!config) return;
+    setSaving(true);
+    try {
+      await api.put(`/software/php/${version}/opcache`, config);
+      message.success('OPcache config saved & FPM restarted');
+    } catch (e: any) {
+      message.error(e.response?.data?.message || 'Failed to save OPcache config');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateField = (key: keyof OPcacheConfig, value: string) => {
+    setConfig(prev => prev ? { ...prev, [key]: value } : prev);
+  };
+
+  const FIELDS: { key: keyof OPcacheConfig; label: string; hint: string; icon: React.ReactNode; type?: 'select'; options?: string[] }[] = [
+    { key: 'opcache_enable', label: 'Enable OPcache', hint: 'Enable the opcode cache (1 = on, 0 = off)', icon: <ThunderboltOutlined />, type: 'select', options: ['1', '0'] },
+    { key: 'opcache_memory_consumption', label: 'Memory (MB)', hint: 'Shared memory size for opcache in megabytes (e.g., 128, 256)', icon: <DatabaseOutlined /> },
+    { key: 'opcache_interned_strings_buffer', label: 'Interned Strings Buffer (MB)', hint: 'Memory for interned strings in MB (e.g., 16, 32)', icon: <DatabaseOutlined /> },
+    { key: 'opcache_max_accelerated_files', label: 'Max Accelerated Files', hint: 'Max cached scripts. Recommended: 20000 for WordPress/CMS', icon: <CloudServerOutlined /> },
+    { key: 'opcache_validate_timestamps', label: 'Validate Timestamps', hint: 'Check file timestamps for changes (1 = yes, 0 = no — set 0 for production)', icon: <ClockCircleOutlined />, type: 'select', options: ['1', '0'] },
+    { key: 'opcache_revalidate_freq', label: 'Revalidate Frequency (s)', hint: 'How often to check for changes in seconds (e.g., 2, 60)', icon: <ClockCircleOutlined /> },
+    { key: 'opcache_save_comments', label: 'Save Comments', hint: 'Cache doc comments. Required by some frameworks (1 = yes)', icon: <FileTextOutlined />, type: 'select', options: ['1', '0'] },
+    { key: 'opcache_enable_cli', label: 'Enable CLI', hint: 'Enable opcache for CLI scripts (1 = on, 0 = off)', icon: <ToolOutlined />, type: 'select', options: ['1', '0'] },
+  ];
+
+  if (loading) return <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>;
+  if (!config) return <div style={{ textAlign: 'center', padding: 40, color: p.textMuted }}>Failed to load OPcache config</div>;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <div>
+          <Text style={{ fontSize: 16, fontWeight: 600, color: p.text }}>OPcache Configuration</Text>
+          <Text style={{ fontSize: 12, color: p.textMuted, marginLeft: 8 }}>PHP {version}</Text>
+        </div>
+        <Button
+          type="primary"
+          onClick={handleSave}
+          loading={saving}
+          style={{ background: ACCENT, borderColor: ACCENT, borderRadius: 6 }}
+        >
+          Save & Restart FPM
+        </Button>
+      </div>
+
+      {/* Info banner */}
+      <div style={{
+        padding: '12px 16px',
+        borderRadius: 8,
+        background: isDark ? 'rgba(99,102,241,0.08)' : '#EEF2FF',
+        border: `1px solid ${isDark ? 'rgba(99,102,241,0.2)' : '#C7D2FE'}`,
+        marginBottom: 20,
+        display: 'flex', alignItems: 'center', gap: 10,
+      }}>
+        <ThunderboltOutlined style={{ color: ACCENT, fontSize: 16 }} />
+        <Text style={{ fontSize: 12, color: isDark ? '#A5B4FC' : '#4338CA' }}>
+          OPcache caches compiled PHP scripts in memory, dramatically improving performance. Changes require FPM restart.
+        </Text>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {FIELDS.map(f => (
+          <div
+            key={f.key}
+            style={{
+              padding: '12px 16px',
+              borderRadius: 8,
+              background: isDark ? p.codeBg : '#F8FAFC',
+              border: `1px solid ${isDark ? p.cardBorder : '#E2E8F0'}`,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              flexWrap: 'wrap',
+            }}
+          >
+            <span style={{ color: ACCENT, fontSize: 14, flexShrink: 0 }}>{f.icon}</span>
+            <div style={{ flex: '1 1 160px', minWidth: 120 }}>
+              <Text style={{ fontSize: 13, fontWeight: 500, color: p.text, display: 'block' }}>{f.label}</Text>
+              <Text style={{ fontSize: 11, color: p.textMuted }}>{f.hint}</Text>
+            </div>
+            {f.type === 'select' ? (
+              <Select
+                value={config[f.key]}
+                onChange={v => updateField(f.key, v)}
+                options={f.options!.map(o => ({ value: o, label: o === '1' ? 'Enabled' : o === '0' ? 'Disabled' : o }))}
+                style={{ width: 140 }}
+              />
+            ) : (
+              <Input
+                value={config[f.key]}
+                onChange={e => updateField(f.key, e.target.value)}
+                style={{
+                  width: 180,
+                  borderRadius: 6,
+                  background: isDark ? p.inputBg : '#fff',
+                  borderColor: isDark ? p.cardBorder : '#D1D5DB',
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: 13,
+                }}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Recommendation box */}
+      <div style={{
+        marginTop: 16,
+        padding: '10px 14px',
+        borderRadius: 8,
+        background: isDark ? 'rgba(16,185,129,0.06)' : '#ECFDF5',
+        border: `1px solid ${isDark ? 'rgba(16,185,129,0.15)' : '#A7F3D0'}`,
+      }}>
+        <Text style={{ fontSize: 12, color: isDark ? '#6EE7B7' : '#065F46' }}>
+          <strong>Recommended for WordPress/CMS:</strong> memory=256, max_files=20000, validate_timestamps=1, revalidate_freq=2, save_comments=1
+        </Text>
       </div>
     </div>
   );

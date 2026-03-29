@@ -61,6 +61,8 @@ func (h *SoftwareHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gi
 		sw.POST("/php/:version/extensions/uninstall", h.uninstallPHPExtension)
 		sw.GET("/php/:version/config", h.getPHPConfig)
 		sw.PUT("/php/:version/config", h.setPHPConfig)
+		sw.GET("/php/:version/opcache", h.getPHPOPcache)
+		sw.PUT("/php/:version/opcache", h.setPHPOPcache)
 		sw.GET("/php/:version/config-file", h.getPHPConfigFile)
 		sw.PUT("/php/:version/config-file", h.setPHPConfigFile)
 		sw.GET("/php/:version/error-log", h.getPHPErrorLog)
@@ -541,6 +543,45 @@ func (h *SoftwareHandler) setPHPConfig(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": "PHP configuration updated"})
+}
+
+// getPHPOPcache returns PHP OPcache config settings for a version.
+func (h *SoftwareHandler) getPHPOPcache(c *gin.Context) {
+	version := c.Param("version")
+	if !validPHPVersions[version] {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
+		return
+	}
+
+	cfg, err := h.softwareService.GetPHPOPcache(version)
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, cfg)
+}
+
+// setPHPOPcache updates PHP OPcache config settings for a version.
+func (h *SoftwareHandler) setPHPOPcache(c *gin.Context) {
+	version := c.Param("version")
+	if !validPHPVersions[version] {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
+		return
+	}
+
+	var cfg service.PHPOPcacheConfig
+	if err := c.ShouldBindJSON(&cfg); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid OPcache configuration"},
+		})
+		return
+	}
+
+	if err := h.softwareService.SetPHPOPcache(version, cfg); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, gin.H{"message": "PHP OPcache configuration updated"})
 }
 
 // getPHPConfigFile returns the raw php.ini content for a PHP version.

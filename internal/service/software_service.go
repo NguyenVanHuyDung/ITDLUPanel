@@ -525,6 +525,78 @@ func (s *SoftwareService) SetPHPConfig(version string, cfg PHPConfig) error {
 	return nil
 }
 
+// PHPOPcacheConfig represents PHP OPcache settings.
+type PHPOPcacheConfig struct {
+	Enable                string `json:"opcache_enable"`
+	MemoryConsumption     string `json:"opcache_memory_consumption"`
+	MaxAcceleratedFiles   string `json:"opcache_max_accelerated_files"`
+	ValidateTimestamps    string `json:"opcache_validate_timestamps"`
+	RevalidateFreq        string `json:"opcache_revalidate_freq"`
+	SaveComments          string `json:"opcache_save_comments"`
+	EnableCLI             string `json:"opcache_enable_cli"`
+	InternedStringsBuffer string `json:"opcache_interned_strings_buffer"`
+}
+
+// GetPHPOPcache reads OPcache config values from php.ini for the given version.
+func (s *SoftwareService) GetPHPOPcache(version string) (*PHPOPcacheConfig, error) {
+	iniPath := phpFPMIni(version)
+	if _, err := os.Stat(iniPath); err != nil {
+		return nil, fmt.Errorf("php.ini not found for PHP %s: %w", version, err)
+	}
+
+	cfg := &PHPOPcacheConfig{
+		Enable:                readPHPIniValue(iniPath, "opcache.enable"),
+		MemoryConsumption:     readPHPIniValue(iniPath, "opcache.memory_consumption"),
+		MaxAcceleratedFiles:   readPHPIniValue(iniPath, "opcache.max_accelerated_files"),
+		ValidateTimestamps:    readPHPIniValue(iniPath, "opcache.validate_timestamps"),
+		RevalidateFreq:        readPHPIniValue(iniPath, "opcache.revalidate_freq"),
+		SaveComments:          readPHPIniValue(iniPath, "opcache.save_comments"),
+		EnableCLI:             readPHPIniValue(iniPath, "opcache.enable_cli"),
+		InternedStringsBuffer: readPHPIniValue(iniPath, "opcache.interned_strings_buffer"),
+	}
+	return cfg, nil
+}
+
+// SetPHPOPcache updates OPcache config values in php.ini and restarts php-fpm.
+func (s *SoftwareService) SetPHPOPcache(version string, cfg PHPOPcacheConfig) error {
+	iniPaths := []string{
+		phpFPMIni(version),
+		phpCLIIni(version),
+	}
+
+	settings := map[string]string{
+		"opcache.enable":                  cfg.Enable,
+		"opcache.memory_consumption":      cfg.MemoryConsumption,
+		"opcache.max_accelerated_files":   cfg.MaxAcceleratedFiles,
+		"opcache.validate_timestamps":     cfg.ValidateTimestamps,
+		"opcache.revalidate_freq":         cfg.RevalidateFreq,
+		"opcache.save_comments":           cfg.SaveComments,
+		"opcache.enable_cli":              cfg.EnableCLI,
+		"opcache.interned_strings_buffer": cfg.InternedStringsBuffer,
+	}
+
+	for _, iniPath := range iniPaths {
+		if _, err := os.Stat(iniPath); err != nil {
+			continue
+		}
+		for key, value := range settings {
+			if value == "" {
+				continue
+			}
+			if err := setPHPIniValue(iniPath, key, value); err != nil {
+				return fmt.Errorf("failed to set %s in %s: %w", key, iniPath, err)
+			}
+		}
+	}
+
+	svcName := fmt.Sprintf("php%s-fpm", version)
+	if _, err := system.ExecWithTimeout(30*time.Second, "systemctl", "restart", svcName); err != nil {
+		logger.Warn().Err(err).Str("service", svcName).Msg("failed to restart php-fpm after opcache config change")
+	}
+
+	return nil
+}
+
 func readPHPIniValue(filePath, key string) string {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
@@ -1152,6 +1224,22 @@ type NginxOptimization struct {
 	ServerNamesHashBucketSize string `json:"server_names_hash_bucket_size"`
 	ClientHeaderBufferSize   string `json:"client_header_buffer_size"`
 	ClientBodyBufferSize     string `json:"client_body_buffer_size"`
+
+	// Advanced Performance
+	WorkerRlimitNofile string `json:"worker_rlimit_nofile"`
+	SendTimeout        string `json:"send_timeout"`
+
+	// File Cache
+	OpenFileCache        string `json:"open_file_cache"`
+	OpenFileCacheValid   string `json:"open_file_cache_valid"`
+	OpenFileCacheMinUses string `json:"open_file_cache_min_uses"`
+
+	// SSL
+	SSLProtocols           string `json:"ssl_protocols"`
+	SSLPreferServerCiphers string `json:"ssl_prefer_server_ciphers"`
+
+	// FastCGI Cache
+	FastcgiCachePath string `json:"fastcgi_cache_path"`
 }
 
 // GetNginxOptimization reads tunable params from nginx.conf.
@@ -1159,6 +1247,14 @@ func (s *SoftwareService) GetNginxOptimization() (*NginxOptimization, error) {
 	content, err := s.GetConfig("nginx")
 	if err != nil {
 		return nil, err
+	}
+
+	// Extract fastcgi_cache_path with custom regex (value is multi-word with options).
+	fastcgiCachePath := ""
+	if re := regexp.MustCompile(`(?m)^\s*fastcgi_cache_path\s+(.+?)\s*;`); true {
+		if m := re.FindStringSubmatch(content); len(m) > 1 {
+			fastcgiCachePath = strings.TrimSpace(m[1])
+		}
 	}
 
 	opt := &NginxOptimization{
@@ -1172,6 +1268,15 @@ func (s *SoftwareService) GetNginxOptimization() (*NginxOptimization, error) {
 		ServerNamesHashBucketSize: extractDirective(content, "server_names_hash_bucket_size", "64"),
 		ClientHeaderBufferSize:   extractDirective(content, "client_header_buffer_size", "1k"),
 		ClientBodyBufferSize:     extractDirective(content, "client_body_buffer_size", "8k"),
+
+		WorkerRlimitNofile:     extractDirective(content, "worker_rlimit_nofile", "65535"),
+		SendTimeout:            extractDirective(content, "send_timeout", "60"),
+		OpenFileCache:          extractDirective(content, "open_file_cache", "off"),
+		OpenFileCacheValid:     extractDirective(content, "open_file_cache_valid", "60s"),
+		OpenFileCacheMinUses:   extractDirective(content, "open_file_cache_min_uses", "2"),
+		SSLProtocols:           extractDirective(content, "ssl_protocols", "TLSv1.2 TLSv1.3"),
+		SSLPreferServerCiphers: extractDirective(content, "ssl_prefer_server_ciphers", "on"),
+		FastcgiCachePath:       fastcgiCachePath,
 	}
 	return opt, nil
 }
@@ -1193,6 +1298,17 @@ func (s *SoftwareService) UpdateNginxOptimization(opt *NginxOptimization) error 
 	content = setDirective(content, "server_names_hash_bucket_size", opt.ServerNamesHashBucketSize)
 	content = setDirective(content, "client_header_buffer_size", opt.ClientHeaderBufferSize)
 	content = setDirective(content, "client_body_buffer_size", opt.ClientBodyBufferSize)
+
+	content = setDirective(content, "worker_rlimit_nofile", opt.WorkerRlimitNofile)
+	content = setDirective(content, "send_timeout", opt.SendTimeout)
+	content = setDirective(content, "open_file_cache ", opt.OpenFileCache) // trailing space to avoid matching open_file_cache_*
+	content = setDirective(content, "open_file_cache_valid", opt.OpenFileCacheValid)
+	content = setDirective(content, "open_file_cache_min_uses", opt.OpenFileCacheMinUses)
+	content = setDirective(content, "ssl_protocols", opt.SSLProtocols)
+	content = setDirective(content, "ssl_prefer_server_ciphers", opt.SSLPreferServerCiphers)
+	if opt.FastcgiCachePath != "" {
+		content = setDirective(content, "fastcgi_cache_path", opt.FastcgiCachePath)
+	}
 
 	return s.UpdateConfig("nginx", content)
 }

@@ -695,17 +695,61 @@ function LoadStatusTab() {
 // ============================================================================
 // Optimization Tab
 // ============================================================================
-const OPT_FIELDS = [
-  { key: 'worker_processes',            label: 'Worker Processes',             desc: 'Number of worker processes. "auto" = detect CPU cores.' },
-  { key: 'worker_connections',          label: 'Worker Connections',           desc: 'Max simultaneous connections per worker.' },
-  { key: 'keepalive_timeout',           label: 'Keepalive Timeout',            desc: 'Timeout for keep-alive connections (seconds).' },
-  { key: 'gzip',                        label: 'Gzip',                         desc: 'Enable gzip compression.',             type: 'select', options: ['on', 'off'] },
-  { key: 'gzip_min_length',             label: 'Gzip Min Length',              desc: 'Min response size (bytes) to gzip.' },
-  { key: 'gzip_comp_level',             label: 'Gzip Comp Level',              desc: 'Compression level (1-9). Higher = smaller but slower.' },
-  { key: 'client_max_body_size',        label: 'Client Max Body Size',         desc: 'Max upload file size (e.g. 50m, 1g).' },
-  { key: 'server_names_hash_bucket_size', label: 'Server Names Hash Bucket',  desc: 'Hash bucket size for server names.' },
-  { key: 'client_header_buffer_size',   label: 'Client Header Buffer',         desc: 'Buffer size for reading client request header.' },
-  { key: 'client_body_buffer_size',     label: 'Client Body Buffer',           desc: 'Buffer size for reading client request body.' },
+const OPT_GROUPS = [
+  {
+    title: 'Workers',
+    icon: <CloudServerOutlined />,
+    fields: [
+      { key: 'worker_processes', label: 'Worker Processes', desc: 'Number of worker processes. "auto" = detect CPU cores.' },
+      { key: 'worker_connections', label: 'Worker Connections', desc: 'Max simultaneous connections per worker.' },
+      { key: 'worker_rlimit_nofile', label: 'Worker File Limit', desc: 'Max file descriptors per worker. Recommended: 65535.' },
+      { key: 'keepalive_timeout', label: 'Keepalive Timeout', desc: 'Timeout for keep-alive connections (seconds).' },
+      { key: 'send_timeout', label: 'Send Timeout', desc: 'Timeout for sending response to client (seconds).' },
+    ],
+  },
+  {
+    title: 'Gzip Compression',
+    icon: <ThunderboltOutlined />,
+    fields: [
+      { key: 'gzip', label: 'Gzip', desc: 'Enable gzip compression.', type: 'select' as const, options: ['on', 'off'] },
+      { key: 'gzip_min_length', label: 'Min Length', desc: 'Min response size (bytes) to gzip.' },
+      { key: 'gzip_comp_level', label: 'Compression Level', desc: 'Compression level (1-9). Higher = smaller but slower.' },
+    ],
+  },
+  {
+    title: 'Buffers & Limits',
+    icon: <SettingOutlined />,
+    fields: [
+      { key: 'client_max_body_size', label: 'Max Body Size', desc: 'Max upload file size (e.g. 50m, 1g).' },
+      { key: 'client_header_buffer_size', label: 'Header Buffer', desc: 'Buffer size for reading client request header.' },
+      { key: 'client_body_buffer_size', label: 'Body Buffer', desc: 'Buffer size for reading client request body.' },
+      { key: 'server_names_hash_bucket_size', label: 'Names Hash Bucket', desc: 'Hash bucket size for server names.' },
+    ],
+  },
+  {
+    title: 'File Cache',
+    icon: <DashboardOutlined />,
+    fields: [
+      { key: 'open_file_cache', label: 'Open File Cache', desc: 'File descriptor cache. e.g., "max=10000 inactive=20s" or "off".' },
+      { key: 'open_file_cache_valid', label: 'Cache Valid', desc: 'Time to validate cached entries (e.g., 30s).' },
+      { key: 'open_file_cache_min_uses', label: 'Cache Min Uses', desc: 'Minimum accesses before caching a file descriptor.' },
+    ],
+  },
+  {
+    title: 'SSL / TLS',
+    icon: <SafetyCertificateOutlined />,
+    fields: [
+      { key: 'ssl_protocols', label: 'SSL Protocols', desc: 'Allowed TLS versions (e.g., "TLSv1.2 TLSv1.3").' },
+      { key: 'ssl_prefer_server_ciphers', label: 'Prefer Server Ciphers', desc: 'Prefer server cipher order.', type: 'select' as const, options: ['on', 'off'] },
+    ],
+  },
+  {
+    title: 'FastCGI Cache',
+    icon: <RocketOutlined />,
+    fields: [
+      { key: 'fastcgi_cache_path', label: 'Cache Path & Settings', desc: 'Full cache path with options (e.g., "/tmp/nginx-cache levels=1:2 keys_zone=WORDPRESS:100m inactive=60m max_size=512m").' },
+    ],
+  },
 ];
 
 function OptimizationTab() {
@@ -754,23 +798,37 @@ function OptimizationTab() {
 
       {loading ? <Spin /> : (
         <Form form={form} layout="vertical" size="small">
-          {OPT_FIELDS.map(f => (
-            <div key={f.key} style={{
-              padding: '12px 0',
-              borderBottom: `1px solid ${BORDER}`,
+          {OPT_GROUPS.map(group => (
+            <div key={group.title} style={{
+              marginBottom: 20,
+              padding: 16,
+              borderRadius: 10,
+              background: '#F8FAFC',
+              border: `1px solid ${BORDER}`,
             }}>
-              <Form.Item
-                name={f.key}
-                label={<span style={{ fontWeight: 600, fontSize: 13 }}>{f.label}</span>}
-                style={{ marginBottom: 0 }}
-              >
-                {f.type === 'select' ? (
-                  <Select options={f.options!.map(o => ({ value: o, label: o }))} style={{ width: 120 }} />
-                ) : (
-                  <Input style={{ maxWidth: 300, fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }} />
-                )}
-              </Form.Item>
-              <Text style={{ fontSize: 11, color: TEXT_SECONDARY }}>{f.desc}</Text>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <span style={{ color: PRIMARY, fontSize: 15 }}>{group.icon}</span>
+                <Text style={{ fontSize: 14, fontWeight: 600, color: TEXT_PRIMARY }}>{group.title}</Text>
+              </div>
+              {group.fields.map(f => (
+                <div key={f.key} style={{
+                  padding: '10px 0',
+                  borderBottom: `1px solid ${BORDER}`,
+                }}>
+                  <Form.Item
+                    name={f.key}
+                    label={<span style={{ fontWeight: 600, fontSize: 13 }}>{f.label}</span>}
+                    style={{ marginBottom: 0 }}
+                  >
+                    {f.type === 'select' ? (
+                      <Select options={f.options!.map(o => ({ value: o, label: o }))} style={{ width: 120 }} />
+                    ) : (
+                      <Input style={{ maxWidth: 300, fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }} />
+                    )}
+                  </Form.Item>
+                  <Text style={{ fontSize: 11, color: TEXT_SECONDARY }}>{f.desc}</Text>
+                </div>
+              ))}
             </div>
           ))}
         </Form>
