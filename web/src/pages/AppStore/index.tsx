@@ -66,6 +66,7 @@ export default function AppStore() {
   const [configLoading, setConfigLoading] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [manageTab, setManageTab] = useState<'status' | 'config'>('status');
+  const [installedWebServer, setInstalledWebServer] = useState<string>('');
 
   // Global task store
   const { addTask, setModalOpen: openTaskModal, setActiveTab: setTaskTab } = useTaskStore();
@@ -131,6 +132,11 @@ export default function AppStore() {
       const { data } = await api.get<ApiResponse<{ installed: Software[]; available: AvailableSoftware[] }>>('/software');
       setInstalled(data.data?.installed ?? []);
       setAvailable(data.data?.available ?? []);
+      // Fetch which web server is installed for conflict check
+      try {
+        const { data: wsData } = await api.get('/software/webserver-check');
+        setInstalledWebServer(wsData.data?.installed_webserver ?? '');
+      } catch { /* ignore */ }
     } catch {
       message.error('Failed to load software');
     } finally {
@@ -312,6 +318,9 @@ export default function AppStore() {
   /* ───────── Helpers ───────── */
 
   const isInstalled = (name: string) => installed.some((s) => s.name === name);
+  const WEB_SERVERS = ['nginx', 'apache', 'openlitespeed'];
+  const isWebServerBlocked = (name: string) =>
+    WEB_SERVERS.includes(name) && installedWebServer && installedWebServer !== name;
   const runningCount = installed.filter(s => s.status === 1).length;
 
   const actionBtn = (color: string, disabled?: boolean, busy?: boolean): React.CSSProperties => ({
@@ -525,6 +534,8 @@ export default function AppStore() {
             }}>
               {available.map(sw => {
                 const done = isInstalled(sw.name);
+                const blocked = isWebServerBlocked(sw.name);
+                const wsName = installed.find(s => s.name === installedWebServer)?.display_name || installedWebServer;
                 return (
                   <div
                     key={sw.name}
@@ -533,10 +544,10 @@ export default function AppStore() {
                       border: `1px solid ${p.cardBorder}`,
                       background: isDark ? p.rowAlt : p.card,
                       transition: 'all 0.15s',
-                      opacity: done ? 0.6 : 1,
+                      opacity: done || blocked ? 0.6 : 1,
                       display: 'flex', flexDirection: 'column',
                     }}
-                    onMouseEnter={e => { if (!done) e.currentTarget.style.borderColor = `${p.accent}60`; }}
+                    onMouseEnter={e => { if (!done && !blocked) e.currentTarget.style.borderColor = `${p.accent}60`; }}
                     onMouseLeave={e => { e.currentTarget.style.borderColor = p.cardBorder; }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
@@ -575,6 +586,18 @@ export default function AppStore() {
                           background: p.green, display: 'inline-block',
                         }} />
                         Installed
+                      </div>
+                    ) : blocked ? (
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: 5,
+                        fontSize: 11, fontWeight: 500, color: p.amber || p.textMuted,
+                        padding: '6px 0',
+                      }}>
+                        <span style={{
+                          width: 6, height: 6, borderRadius: 3,
+                          background: p.amber || p.textMuted, display: 'inline-block',
+                        }} />
+                        {wsName} is installed — uninstall it first
                       </div>
                     ) : (
                       <button
@@ -708,6 +731,7 @@ export default function AppStore() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {allComponents.map(comp => {
                         const done = installedNames.has(comp);
+                        const blocked = isWebServerBlocked(comp);
                         const color = SOFTWARE_COLORS[comp] || '#666';
                         const isBusy = stackInstalling === comp;
                         return (
@@ -736,6 +760,13 @@ export default function AppStore() {
                                 padding: '3px 10px', borderRadius: 5,
                                 background: `${p.green}12`,
                               }}>✓ Installed</span>
+                            ) : blocked ? (
+                              <span style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 4,
+                                fontSize: 11, fontWeight: 500, color: p.amber || p.textMuted,
+                                padding: '3px 10px', borderRadius: 5,
+                                background: `${(p.amber || p.textMuted)}12`,
+                              }}>⚠ Conflict</span>
                             ) : (
                               <button
                                 disabled={isBusy}
