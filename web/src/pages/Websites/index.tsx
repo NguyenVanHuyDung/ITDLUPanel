@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Table, Button, Modal, Form, Input, Select, message, Popconfirm, Switch, Tooltip, Spin, InputNumber } from 'antd';
+import { Table, Button, Modal, Form, Input, Select, message, Popconfirm, Switch, Tooltip, Spin, InputNumber, Popover } from 'antd';
 import {
   PlusOutlined, SettingOutlined, SafetyCertificateOutlined,
   SearchOutlined, ReloadOutlined, GlobalOutlined, CodeOutlined,
@@ -8,7 +8,7 @@ import {
   MoreOutlined, DeleteOutlined, ExclamationCircleOutlined,
   CloudUploadOutlined, DownloadOutlined, UndoOutlined,
   ApiOutlined, EditOutlined, SafetyOutlined, ToolOutlined,
-  DatabaseOutlined,
+  DatabaseOutlined, SyncOutlined, PoweroffOutlined, LoadingOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import Editor from '@monaco-editor/react';
@@ -2961,6 +2961,7 @@ function WebsitesContent() {
   const [configSite, setConfigSite] = useState<Site | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
   const [nginxVersion, setNginxVersion] = useState('');
+  const [nginxServiceLoading, setNginxServiceLoading] = useState<string | null>(null);
   const [phpVersions, setPhpVersions] = useState<string[]>([]);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [bulkLoading, setBulkLoading] = useState(false);
@@ -2990,15 +2991,28 @@ function WebsitesContent() {
 
   const fetchNginxVersion = useCallback(async () => {
     try {
-      const { data: resp } = await api.get('/software');
-      const sw = resp.data || {};
-      const available = sw.available || [];
-      const nginx = available.find((s: { name: string; installed: boolean; version?: string }) =>
-        s.name === 'nginx' && s.installed
-      );
-      if (nginx) setNginxVersion(`Nginx ${(nginx as { version?: string }).version || ''}`);
+      const { data: resp } = await api.get('/software/nginx/status');
+      const d = resp.data;
+      if (d?.version) {
+        const label = d.version_display ? `Nginx ${d.version_display}` : `Nginx ${d.version}`;
+        setNginxVersion(label);
+      }
     } catch { /* ignore */ }
   }, []);
+
+  const handleNginxAction = async (action: 'restart' | 'reload' | 'stop') => {
+    setNginxServiceLoading(action);
+    try {
+      await api.post(`/software/nginx/${action}`);
+      message.success(`Nginx ${action} successful`);
+      if (action === 'stop') setNginxVersion('');
+      else setTimeout(fetchNginxVersion, 1500);
+    } catch {
+      message.error(`Failed to ${action} Nginx`);
+    } finally {
+      setNginxServiceLoading(null);
+    }
+  };
 
   const fetchPhpVersions = useCallback(async () => {
     try {
@@ -3457,13 +3471,46 @@ function WebsitesContent() {
           ))}
           <div style={{ flex: 1 }} />
           {nginxVersion && (
-            <span style={{
-              fontSize: 11, fontWeight: 600,
-              padding: '2px 8px', borderRadius: 4,
-              background: `${p.accent}15`, color: p.accent,
-            }}>
-              {nginxVersion}
-            </span>
+            <Popover
+              trigger="hover"
+              placement="bottom"
+              arrow={false}
+              overlayInnerStyle={{ padding: 0, background: p.card, border: `1px solid ${p.cardBorder}`, borderRadius: 8 }}
+              content={
+                <div style={{ display: 'flex', gap: 4, padding: '6px 8px' }}>
+                  {([
+                    { action: 'restart' as const, icon: <SyncOutlined />, label: 'Restart', color: p.amber },
+                    { action: 'reload' as const, icon: <ReloadOutlined />, label: 'Reload', color: p.accent },
+                    { action: 'stop' as const, icon: <PoweroffOutlined />, label: 'Stop', color: p.red },
+                  ]).map(({ action, icon, label, color }) => (
+                    <button
+                      key={action}
+                      disabled={!!nginxServiceLoading}
+                      onClick={() => handleNginxAction(action)}
+                      style={{
+                        padding: '4px 12px', borderRadius: 6, border: `1px solid ${color}30`,
+                        background: `${color}12`, color, fontSize: 11, fontWeight: 500,
+                        cursor: nginxServiceLoading ? 'wait' : 'pointer',
+                        display: 'inline-flex', alignItems: 'center', gap: 5,
+                        opacity: nginxServiceLoading && nginxServiceLoading !== action ? 0.5 : 1,
+                        transition: 'all 0.15s',
+                      }}
+                    >
+                      {nginxServiceLoading === action ? <LoadingOutlined spin /> : icon} {label}
+                    </button>
+                  ))}
+                </div>
+              }
+            >
+              <span style={{
+                fontSize: 11, fontWeight: 600,
+                padding: '2px 8px', borderRadius: 4,
+                background: `${p.green}15`, color: p.green,
+                cursor: 'pointer', transition: 'all 0.15s',
+              }}>
+                {nginxVersion}
+              </span>
+            </Popover>
           )}
         </div>
 
