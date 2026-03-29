@@ -762,7 +762,7 @@ function DatabasesContent() {
             background: `${p.accent}15`, color: p.accent,
             display: 'inline-flex', alignItems: 'center', gap: 6,
           }}>
-            <DatabaseOutlined /> MySQL
+            <DatabaseOutlined /> {dbVersion || 'MySQL'}
           </button>
           <button disabled style={{
             padding: '6px 16px', borderRadius: 6,
