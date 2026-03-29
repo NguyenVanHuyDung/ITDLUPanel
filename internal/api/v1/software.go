@@ -32,6 +32,7 @@ func (h *SoftwareHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gi
 	sw.Use(authMW, adminMW)
 	{
 		sw.GET("", h.list)
+		sw.GET("/webserver-check", h.getInstalledWebServer)
 		sw.POST("/install", h.install)
 		sw.POST("/install-stack", h.installStack)
 		sw.DELETE("/:name", h.uninstall)
@@ -75,6 +76,12 @@ func (h *SoftwareHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gi
 		sw.PUT("/php/:version/slow-log-config", h.setPHPSlowLogConfig)
 		sw.GET("/php/:version/phpinfo", h.getPHPInfo)
 	}
+}
+
+// getInstalledWebServer returns the currently installed web server name.
+func (h *SoftwareHandler) getInstalledWebServer(c *gin.Context) {
+	name, _ := h.softwareService.GetInstalledWebServer()
+	response.Success(c, gin.H{"installed_webserver": name})
 }
 
 // list returns all installed software and available software.
@@ -322,40 +329,76 @@ func (h *SoftwareHandler) errorLog(c *gin.Context) {
 	})
 }
 
-// getOptimization returns tunable nginx parameters.
+// getOptimization returns tunable parameters for the specified web server.
 func (h *SoftwareHandler) getOptimization(c *gin.Context) {
 	name := c.Param("name")
-	if name != "nginx" {
-		response.Error(c, apperrors.New(apperrors.ErrValidation, "optimization only supported for nginx"))
-		return
+	switch name {
+	case "nginx":
+		opt, err := h.softwareService.GetNginxOptimization()
+		if err != nil {
+			response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get nginx optimization"))
+			return
+		}
+		response.Success(c, opt)
+	case "apache":
+		opt, err := h.softwareService.GetApacheOptimization()
+		if err != nil {
+			response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get apache optimization"))
+			return
+		}
+		response.Success(c, opt)
+	case "openlitespeed":
+		opt, err := h.softwareService.GetOLSOptimization()
+		if err != nil {
+			response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get openlitespeed optimization"))
+			return
+		}
+		response.Success(c, opt)
+	default:
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "optimization not supported for "+name))
 	}
-	opt, err := h.softwareService.GetNginxOptimization()
-	if err != nil {
-		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
-		return
-	}
-	response.Success(c, opt)
 }
 
-// updateOptimization updates tunable nginx parameters.
+// updateOptimization updates tunable parameters for the specified web server.
 func (h *SoftwareHandler) updateOptimization(c *gin.Context) {
 	name := c.Param("name")
-	if name != "nginx" {
-		response.Error(c, apperrors.New(apperrors.ErrValidation, "optimization only supported for nginx"))
-		return
+	switch name {
+	case "nginx":
+		var opt service.NginxOptimization
+		if err := c.ShouldBindJSON(&opt); err != nil {
+			response.Error(c, apperrors.Wrap(err, apperrors.ErrValidation, "invalid request"))
+			return
+		}
+		if err := h.softwareService.UpdateNginxOptimization(&opt); err != nil {
+			response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to update nginx optimization"))
+			return
+		}
+		response.Success(c, gin.H{"message": "nginx optimization updated"})
+	case "apache":
+		var opt service.ApacheOptimization
+		if err := c.ShouldBindJSON(&opt); err != nil {
+			response.Error(c, apperrors.Wrap(err, apperrors.ErrValidation, "invalid request"))
+			return
+		}
+		if err := h.softwareService.UpdateApacheOptimization(&opt); err != nil {
+			response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to update apache optimization"))
+			return
+		}
+		response.Success(c, gin.H{"message": "apache optimization updated"})
+	case "openlitespeed":
+		var opt service.OLSOptimization
+		if err := c.ShouldBindJSON(&opt); err != nil {
+			response.Error(c, apperrors.Wrap(err, apperrors.ErrValidation, "invalid request"))
+			return
+		}
+		if err := h.softwareService.UpdateOLSOptimization(&opt); err != nil {
+			response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to update openlitespeed optimization"))
+			return
+		}
+		response.Success(c, gin.H{"message": "openlitespeed optimization updated"})
+	default:
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "optimization not supported for "+name))
 	}
-	var opt service.NginxOptimization
-	if err := c.ShouldBindJSON(&opt); err != nil {
-		response.ValidationError(c, []response.FieldError{
-			{Field: "body", Message: "invalid optimization parameters"},
-		})
-		return
-	}
-	if err := h.softwareService.UpdateNginxOptimization(&opt); err != nil {
-		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
-		return
-	}
-	response.Success(c, gin.H{"message": "nginx optimization updated"})
 }
 
 // getPhpMyAdminConfig returns the current phpMyAdmin manager configuration.

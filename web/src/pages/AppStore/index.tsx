@@ -11,8 +11,10 @@ import { useTaskStore } from '@/stores/task';
 import api from '@/services/api';
 import type { ApiResponse, Software } from '@/types';
 import NginxManageModal from '@/components/NginxManageModal';
+import ApacheManageModal from '@/components/ApacheManageModal';
 import PhpMyAdminManageModal from '@/components/PhpMyAdminManageModal';
 import PHPManageModal from '@/components/PHPManageModal';
+import OLSManageModal from '@/components/OLSManageModal';
 import { getSoftwareIcon } from './SoftwareIcons';
 
 const { Text } = Typography;
@@ -57,6 +59,8 @@ export default function AppStore() {
   const [nginxModalOpen, setNginxModalOpen] = useState(false);
   const [pmaModalOpen, setPmaModalOpen] = useState(false);
   const [phpModalOpen, setPhpModalOpen] = useState(false);
+  const [olsModalOpen, setOlsModalOpen] = useState(false);
+  const [apacheModalOpen, setApacheModalOpen] = useState(false);
   const [swStatus, setSwStatus] = useState<Record<string, string> | null>(null);
   const [swConfig, setSwConfig] = useState('');
   const [configLoading, setConfigLoading] = useState(false);
@@ -262,6 +266,8 @@ export default function AppStore() {
 
   const openManageModal = async (sw: Software) => {
     if (sw.name === 'nginx') { setNginxModalOpen(true); return; }
+    if (sw.name === 'apache') { setApacheModalOpen(true); return; }
+    if (sw.name === 'openlitespeed') { setOlsModalOpen(true); return; }
     if (sw.name === 'phpmyadmin') { setPmaModalOpen(true); return; }
     if (sw.name === 'php') { setPhpModalOpen(true); return; }
     setManageSW(sw);
@@ -952,8 +958,10 @@ export default function AppStore() {
       </Modal>
 
       <NginxManageModal open={nginxModalOpen} onClose={() => setNginxModalOpen(false)} />
+      <ApacheManageModal open={apacheModalOpen} onClose={() => setApacheModalOpen(false)} />
       <PhpMyAdminManageModal open={pmaModalOpen} onClose={() => setPmaModalOpen(false)} />
       <PHPManageModal open={phpModalOpen} onClose={() => setPhpModalOpen(false)} />
+      <OLSManageModal open={olsModalOpen} onClose={() => setOlsModalOpen(false)} />
     </div>
   );
 }

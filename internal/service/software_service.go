@@ -197,6 +197,15 @@ func (s *SoftwareService) registerTaskHandlers() {
 
 		progress(0, fmt.Sprintf("Starting installation of %s", name))
 
+		// Double-check conflict at execution time (since tasks are async)
+		if m := knownSoftware[name]; m.Type == "webserver" {
+			var existing string
+			_ = s.db.QueryRow("SELECT name FROM software WHERE type = 'webserver' AND status = 1 AND name != ? LIMIT 1", name).Scan(&existing)
+			if existing != "" {
+				return fmt.Errorf("cannot install %s: web server %s is already installed", name, existing)
+			}
+		}
+
 		if err := inst.Install(ctx, version, func(pct int) {
 			progress(pct, fmt.Sprintf("Installing %s... %d%%", name, pct))
 		}); err != nil {
@@ -402,8 +411,19 @@ func (s *SoftwareService) GetSoftwareInfo(name string) (*SoftwareListItem, error
 
 // InstallSoftware enqueues a background install task. Returns the task ID.
 func (s *SoftwareService) InstallSoftware(name, version string, createdBy int64) (int64, error) {
-	if _, ok := s.registry.Get(name); !ok {
-		return 0, fmt.Errorf("unknown software: %s", name)
+	meta, ok := knownSoftware[name]
+	if !ok {
+		if _, ok2 := s.registry.Get(name); !ok2 {
+			return 0, fmt.Errorf("unknown software: %s", name)
+		}
+	}
+
+	// Prevent installing multiple web servers
+	if meta.Type == "webserver" {
+		installed, err := s.getInstalledWebServer()
+		if err == nil && installed != "" && installed != name {
+			return 0, fmt.Errorf("web server %s is already installed; uninstall it before installing %s", installed, name)
+		}
 	}
 
 	taskName := name
@@ -412,6 +432,21 @@ func (s *SoftwareService) InstallSoftware(name, version string, createdBy int64)
 	}
 
 	return s.queue.Enqueue("software_install", taskName, createdBy)
+}
+
+// getInstalledWebServer returns the name of the currently installed web server, or "" if none.
+func (s *SoftwareService) getInstalledWebServer() (string, error) {
+	var name string
+	err := s.db.QueryRow("SELECT name FROM software WHERE type = 'webserver' AND status = 1 LIMIT 1").Scan(&name)
+	if err != nil {
+		return "", err
+	}
+	return name, nil
+}
+
+// GetInstalledWebServer is the exported version for API handlers.
+func (s *SoftwareService) GetInstalledWebServer() (string, error) {
+	return s.getInstalledWebServer()
 }
 
 // UninstallSoftware enqueues a background uninstall task. Returns the task ID.
@@ -1328,6 +1363,241 @@ func extractDirective(content, directive, defaultVal string) string {
 func setDirective(content, directive, value string) string {
 	d := strings.TrimSpace(directive)
 	re := regexp.MustCompile(`(?m)(^\s*` + regexp.QuoteMeta(d) + `\s+).+?(\s*;)`)
+	if re.MatchString(content) {
+		return re.ReplaceAllString(content, "${1}"+value+"${2}")
+	}
+	return content
+}
+
+// ---------------------------------------------------------------------------
+// Apache Optimization
+// ---------------------------------------------------------------------------
+
+// ApacheOptimization holds tunable Apache parameters.
+type ApacheOptimization struct {
+	// General
+	Timeout              string `json:"timeout"`
+	KeepAlive            string `json:"keep_alive"`
+	MaxKeepAliveRequests string `json:"max_keep_alive_requests"`
+	KeepAliveTimeout     string `json:"keep_alive_timeout"`
+	// MPM (event/worker)
+	MaxRequestWorkers string `json:"max_request_workers"`
+	StartServers      string `json:"start_servers"`
+	MinSpareThreads   string `json:"min_spare_threads"`
+	MaxSpareThreads   string `json:"max_spare_threads"`
+	ServerLimit       string `json:"server_limit"`
+	ThreadLimit       string `json:"thread_limit"`
+	// Security
+	ServerTokens    string `json:"server_tokens"`
+	ServerSignature string `json:"server_signature"`
+	TraceEnable     string `json:"trace_enable"`
+}
+
+// GetApacheOptimization reads tunable params from Apache config.
+func (s *SoftwareService) GetApacheOptimization() (*ApacheOptimization, error) {
+	content, err := s.GetConfig("apache")
+	if err != nil {
+		return nil, err
+	}
+
+	// Also try to read MPM config
+	mpmContent := ""
+	mpmPaths := []string{
+		"/etc/apache2/mods-enabled/mpm_event.conf",
+		"/etc/apache2/mods-enabled/mpm_worker.conf",
+		"/etc/apache2/mods-enabled/mpm_prefork.conf",
+	}
+	for _, p := range mpmPaths {
+		if data, err := os.ReadFile(p); err == nil {
+			mpmContent = string(data)
+			break
+		}
+	}
+
+	opt := &ApacheOptimization{
+		Timeout:              extractApacheDirective(content, "Timeout", "300"),
+		KeepAlive:            extractApacheDirective(content, "KeepAlive", "On"),
+		MaxKeepAliveRequests: extractApacheDirective(content, "MaxKeepAliveRequests", "100"),
+		KeepAliveTimeout:     extractApacheDirective(content, "KeepAliveTimeout", "5"),
+		ServerTokens:         extractApacheDirective(content, "ServerTokens", "OS"),
+		ServerSignature:      extractApacheDirective(content, "ServerSignature", "On"),
+		TraceEnable:          extractApacheDirective(content, "TraceEnable", "On"),
+	}
+
+	// MPM directives from mpm config
+	if mpmContent != "" {
+		opt.MaxRequestWorkers = extractApacheDirective(mpmContent, "MaxRequestWorkers", "150")
+		opt.StartServers = extractApacheDirective(mpmContent, "StartServers", "2")
+		opt.MinSpareThreads = extractApacheDirective(mpmContent, "MinSpareThreads", "25")
+		opt.MaxSpareThreads = extractApacheDirective(mpmContent, "MaxSpareThreads", "75")
+		opt.ServerLimit = extractApacheDirective(mpmContent, "ServerLimit", "16")
+		opt.ThreadLimit = extractApacheDirective(mpmContent, "ThreadLimit", "64")
+	} else {
+		opt.MaxRequestWorkers = "150"
+		opt.StartServers = "2"
+		opt.MinSpareThreads = "25"
+		opt.MaxSpareThreads = "75"
+		opt.ServerLimit = "16"
+		opt.ThreadLimit = "64"
+	}
+
+	return opt, nil
+}
+
+// UpdateApacheOptimization updates tunable params in Apache config.
+func (s *SoftwareService) UpdateApacheOptimization(opt *ApacheOptimization) error {
+	// Update main config
+	content, err := s.GetConfig("apache")
+	if err != nil {
+		return err
+	}
+
+	content = setApacheDirective(content, "Timeout", opt.Timeout)
+	content = setApacheDirective(content, "KeepAlive", opt.KeepAlive)
+	content = setApacheDirective(content, "MaxKeepAliveRequests", opt.MaxKeepAliveRequests)
+	content = setApacheDirective(content, "KeepAliveTimeout", opt.KeepAliveTimeout)
+	content = setApacheDirective(content, "ServerTokens", opt.ServerTokens)
+	content = setApacheDirective(content, "ServerSignature", opt.ServerSignature)
+	content = setApacheDirective(content, "TraceEnable", opt.TraceEnable)
+
+	if err := s.UpdateConfig("apache", content); err != nil {
+		return err
+	}
+
+	// Update MPM config
+	mpmPaths := []string{
+		"/etc/apache2/mods-enabled/mpm_event.conf",
+		"/etc/apache2/mods-enabled/mpm_worker.conf",
+		"/etc/apache2/mods-enabled/mpm_prefork.conf",
+	}
+	for _, p := range mpmPaths {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		mpmContent := string(data)
+		mpmContent = setApacheDirective(mpmContent, "MaxRequestWorkers", opt.MaxRequestWorkers)
+		mpmContent = setApacheDirective(mpmContent, "StartServers", opt.StartServers)
+		mpmContent = setApacheDirective(mpmContent, "MinSpareThreads", opt.MinSpareThreads)
+		mpmContent = setApacheDirective(mpmContent, "MaxSpareThreads", opt.MaxSpareThreads)
+		mpmContent = setApacheDirective(mpmContent, "ServerLimit", opt.ServerLimit)
+		mpmContent = setApacheDirective(mpmContent, "ThreadLimit", opt.ThreadLimit)
+		os.WriteFile(p, []byte(mpmContent), 0644)
+		break
+	}
+
+	return nil
+}
+
+// extractApacheDirective reads a directive value from Apache config text.
+func extractApacheDirective(content, directive, defaultVal string) string {
+	re := regexp.MustCompile(`(?mi)^\s*` + regexp.QuoteMeta(directive) + `\s+(.+?)\s*$`)
+	matches := re.FindStringSubmatch(content)
+	if len(matches) > 1 {
+		return strings.TrimSpace(matches[1])
+	}
+	return defaultVal
+}
+
+// setApacheDirective replaces a directive's value in Apache config text.
+func setApacheDirective(content, directive, value string) string {
+	re := regexp.MustCompile(`(?mi)(^\s*` + regexp.QuoteMeta(directive) + `\s+).+?(\s*)$`)
+	if re.MatchString(content) {
+		return re.ReplaceAllString(content, "${1}"+value+"${2}")
+	}
+	return content
+}
+
+// ---------------------------------------------------------------------------
+// OpenLiteSpeed Optimization
+// ---------------------------------------------------------------------------
+
+// OLSOptimization holds tunable OpenLiteSpeed parameters.
+type OLSOptimization struct {
+	// Server
+	MaxConnections    string `json:"max_connections"`
+	MaxSSLConnections string `json:"max_ssl_connections"`
+	ConnTimeout       string `json:"conn_timeout"`
+	MaxKeepAliveReq   string `json:"max_keep_alive_req"`
+	KeepAliveTimeout  string `json:"keep_alive_timeout"`
+	// Tuning
+	MaxReqURLLen         string `json:"max_req_url_len"`
+	MaxReqHeaderSize     string `json:"max_req_header_size"`
+	MaxReqBodySize       string `json:"max_req_body_size"`
+	MaxDynRespHeaderSize string `json:"max_dyn_resp_header_size"`
+	MaxDynRespSize       string `json:"max_dyn_resp_size"`
+	// Gzip
+	EnableGzip    string `json:"enable_gzip"`
+	GzipCompLevel string `json:"gzip_comp_level"`
+	// Security
+	ServerName          string `json:"server_name"`
+	DisableServerHeader string `json:"disable_server_header"`
+}
+
+// GetOLSOptimization reads tunable params from OpenLiteSpeed config.
+func (s *SoftwareService) GetOLSOptimization() (*OLSOptimization, error) {
+	content, err := s.GetConfig("openlitespeed")
+	if err != nil {
+		return nil, err
+	}
+
+	opt := &OLSOptimization{
+		MaxConnections:       extractOLSDirective(content, "maxConnections", "10000"),
+		MaxSSLConnections:    extractOLSDirective(content, "maxSSLConnections", "10000"),
+		ConnTimeout:          extractOLSDirective(content, "connTimeout", "300"),
+		MaxKeepAliveReq:      extractOLSDirective(content, "maxKeepAliveReq", "10000"),
+		KeepAliveTimeout:     extractOLSDirective(content, "keepAliveTimeout", "5"),
+		MaxReqURLLen:         extractOLSDirective(content, "maxReqURLLen", "8192"),
+		MaxReqHeaderSize:     extractOLSDirective(content, "maxReqHeaderSize", "16380"),
+		MaxReqBodySize:       extractOLSDirective(content, "maxReqBodySize", "2047M"),
+		MaxDynRespHeaderSize: extractOLSDirective(content, "maxDynRespHeaderSize", "8192"),
+		MaxDynRespSize:       extractOLSDirective(content, "maxDynRespSize", "2047M"),
+		EnableGzip:           extractOLSDirective(content, "enableGzipCompress", "1"),
+		GzipCompLevel:        extractOLSDirective(content, "gzipCompressLevel", "6"),
+		ServerName:           extractOLSDirective(content, "serverName", "LiteSpeed"),
+		DisableServerHeader:  extractOLSDirective(content, "useIpInProxyHeader", "0"),
+	}
+	return opt, nil
+}
+
+// UpdateOLSOptimization updates tunable params in OpenLiteSpeed config.
+func (s *SoftwareService) UpdateOLSOptimization(opt *OLSOptimization) error {
+	content, err := s.GetConfig("openlitespeed")
+	if err != nil {
+		return err
+	}
+
+	content = setOLSDirective(content, "maxConnections", opt.MaxConnections)
+	content = setOLSDirective(content, "maxSSLConnections", opt.MaxSSLConnections)
+	content = setOLSDirective(content, "connTimeout", opt.ConnTimeout)
+	content = setOLSDirective(content, "maxKeepAliveReq", opt.MaxKeepAliveReq)
+	content = setOLSDirective(content, "keepAliveTimeout", opt.KeepAliveTimeout)
+	content = setOLSDirective(content, "maxReqURLLen", opt.MaxReqURLLen)
+	content = setOLSDirective(content, "maxReqHeaderSize", opt.MaxReqHeaderSize)
+	content = setOLSDirective(content, "maxReqBodySize", opt.MaxReqBodySize)
+	content = setOLSDirective(content, "maxDynRespHeaderSize", opt.MaxDynRespHeaderSize)
+	content = setOLSDirective(content, "maxDynRespSize", opt.MaxDynRespSize)
+	content = setOLSDirective(content, "enableGzipCompress", opt.EnableGzip)
+	content = setOLSDirective(content, "gzipCompressLevel", opt.GzipCompLevel)
+	content = setOLSDirective(content, "serverName", opt.ServerName)
+	content = setOLSDirective(content, "useIpInProxyHeader", opt.DisableServerHeader)
+
+	return s.UpdateConfig("openlitespeed", content)
+}
+
+// extractOLSDirective reads a directive value from OpenLiteSpeed config text.
+func extractOLSDirective(content, directive, defaultVal string) string {
+	re := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(directive) + `\s+(.+?)\s*$`)
+	matches := re.FindStringSubmatch(content)
+	if len(matches) > 1 {
+		return strings.TrimSpace(matches[1])
+	}
+	return defaultVal
+}
+
+// setOLSDirective replaces a directive's value in OpenLiteSpeed config text.
+func setOLSDirective(content, directive, value string) string {
+	re := regexp.MustCompile(`(?m)(^\s*` + regexp.QuoteMeta(directive) + `\s+).+?(\s*)$`)
 	if re.MatchString(content) {
 		return re.ReplaceAllString(content, "${1}"+value+"${2}")
 	}
