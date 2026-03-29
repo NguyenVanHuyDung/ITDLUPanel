@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -201,6 +202,9 @@ func (i *PHPInstaller) Install(ctx context.Context, version string, progress fun
 		logger.Warn().Err(err).Str("service", serviceName).Msg("failed to start php-fpm")
 	}
 
+	// Optimize FPM pool and PHP settings
+	optimizePHPFPM(version)
+
 	SetupServerDir("php", []SymlinkDef{
 		{Name: "conf", Target: "/etc/php"},
 	})
@@ -275,4 +279,71 @@ func (i *PHPInstaller) InstallExtensions(ctx context.Context, version string, ex
 		return fmt.Errorf("failed to install php extensions: %w", err)
 	}
 	return nil
+}
+
+// optimizePHPFPM tunes FPM pool settings and php.ini for the given PHP version.
+func optimizePHPFPM(version string) {
+	// Optimize www.conf pool settings
+	wwwConf := fmt.Sprintf("/etc/php/%s/fpm/pool.d/www.conf", version)
+	if data, err := os.ReadFile(wwwConf); err == nil {
+		content := string(data)
+
+		replacements := map[string]string{
+			`pm\.max_children\s*=\s*\d+`:    "pm.max_children = 30",
+			`pm\.start_servers\s*=\s*\d+`:   "pm.start_servers = 8",
+			`pm\.min_spare_servers\s*=\s*\d+`: "pm.min_spare_servers = 4",
+			`pm\.max_spare_servers\s*=\s*\d+`: "pm.max_spare_servers = 16",
+		}
+		for pattern, replacement := range replacements {
+			re := regexp.MustCompile(pattern)
+			content = re.ReplaceAllString(content, replacement)
+		}
+
+		if !strings.Contains(content, "pm.max_requests") {
+			content += "\npm.max_requests = 500\n"
+		}
+
+		if err := os.WriteFile(wwwConf, []byte(content), 0644); err != nil {
+			logger.Warn().Err(err).Str("path", wwwConf).Msg("failed to write optimized www.conf")
+		} else {
+			logger.Info().Str("path", wwwConf).Msg("optimized php-fpm pool settings")
+		}
+	} else {
+		logger.Warn().Err(err).Str("path", wwwConf).Msg("could not read www.conf for optimization")
+	}
+
+	// Optimize php.ini opcache settings
+	phpIni := fmt.Sprintf("/etc/php/%s/fpm/php.ini", version)
+	if data, err := os.ReadFile(phpIni); err == nil {
+		content := string(data)
+		appendSettings := []string{
+			"opcache.max_accelerated_files=20000",
+			"opcache.validate_timestamps=1",
+			"opcache.save_comments=1",
+		}
+		changed := false
+		for _, setting := range appendSettings {
+			key := strings.SplitN(setting, "=", 2)[0]
+			if !strings.Contains(content, key) {
+				content += "\n" + setting
+				changed = true
+			}
+		}
+		if changed {
+			content += "\n"
+			if err := os.WriteFile(phpIni, []byte(content), 0644); err != nil {
+				logger.Warn().Err(err).Str("path", phpIni).Msg("failed to write optimized php.ini")
+			} else {
+				logger.Info().Str("path", phpIni).Msg("optimized php.ini opcache settings")
+			}
+		}
+	} else {
+		logger.Warn().Err(err).Str("path", phpIni).Msg("could not read php.ini for optimization")
+	}
+
+	// Restart php-fpm to apply changes
+	svcName := fmt.Sprintf("php%s-fpm", version)
+	if _, err := system.ExecWithTimeout(30*time.Second, "systemctl", "restart", svcName); err != nil {
+		logger.Warn().Err(err).Str("service", svcName).Msg("failed to restart php-fpm after optimization")
+	}
 }

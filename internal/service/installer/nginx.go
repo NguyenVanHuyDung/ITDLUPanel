@@ -189,6 +189,9 @@ func (i *NginxInstaller) Install(ctx context.Context, version string, progress f
 		_ = os.Remove(nginxConfBackup)
 	}
 
+	// Apply optimized nginx.conf defaults
+	optimizeNginxConf()
+
 	// Enable and start nginx
 	progress(85)
 	if _, err := system.ExecWithTimeout(30*time.Second, "systemctl", "enable", "nginx"); err != nil {
@@ -556,4 +559,80 @@ func fetchNginxRepoVersions(ctx context.Context, url, branch string) []NginxVers
 	}
 
 	return versions
+}
+
+// optimizeNginxConf replaces nginx.conf with a performance-optimized version if not already tuned.
+func optimizeNginxConf() {
+	data, err := os.ReadFile(nginxConfPath)
+	if err != nil {
+		logger.Warn().Err(err).Msg("failed to read nginx.conf for optimization")
+		return
+	}
+
+	if strings.Contains(string(data), "fastcgi_cache_path") {
+		logger.Info().Msg("nginx.conf already optimized, skipping")
+		return
+	}
+
+	const optimizedConf = `user www-data;
+worker_processes auto;
+pid /run/nginx.pid;
+worker_rlimit_nofile 65535;
+include /etc/nginx/modules-enabled/*.conf;
+
+events {
+    worker_connections 2048;
+    multi_accept on;
+    use epoll;
+}
+
+http {
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    types_hash_max_size 2048;
+    server_tokens off;
+    keepalive_timeout 30;
+    keepalive_requests 1000;
+
+    client_body_buffer_size 16k;
+    client_max_body_size 64m;
+
+    open_file_cache max=10000 inactive=30s;
+    open_file_cache_valid 60s;
+    open_file_cache_min_uses 2;
+    open_file_cache_errors on;
+
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    access_log /var/log/nginx/access.log;
+    error_log /var/log/nginx/error.log;
+
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 5;
+    gzip_min_length 256;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml font/ttf font/otf application/wasm;
+
+    fastcgi_cache_path /tmp/nginx-cache levels=1:2 keys_zone=WORDPRESS:100m inactive=60m max_size=512m;
+    fastcgi_cache_key "$scheme$request_method$host$request_uri";
+
+    include /etc/nginx/conf.d/*.conf;
+    include /etc/nginx/sites-enabled/*;
+}
+`
+
+	if err := os.WriteFile(nginxConfPath, []byte(optimizedConf), 0644); err != nil {
+		logger.Warn().Err(err).Msg("failed to write optimized nginx.conf")
+		return
+	}
+
+	logger.Info().Msg("wrote optimized nginx.conf")
 }

@@ -68,6 +68,13 @@ const nginxTemplate = `server {
     gzip_comp_level 5;
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml font/ttf font/otf;
 
+    # Cache bypass rules
+    set $skip_cache 0;
+    if ($request_method = POST) { set $skip_cache 1; }
+    if ($query_string != "") { set $skip_cache 1; }
+    if ($request_uri ~* "/wp-admin/|/xmlrpc.php|wp-.*.php|/feed/|index.php|sitemap(_index)?.xml") { set $skip_cache 1; }
+    if ($http_cookie ~* "comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_no_cache|wordpress_logged_in") { set $skip_cache 1; }
+
     #PHP-INFO-START
 {{ if .PHPVersion }}    include enable-php-{{ .PHPVersion }}.conf;{{ end }}
     #PHP-INFO-END
@@ -89,6 +96,14 @@ const nginxTemplate = `server {
         fastcgi_buffers 4 64k;
         fastcgi_busy_buffers_size 128k;
         fastcgi_temp_file_write_size 256k;
+
+        # FastCGI cache
+        fastcgi_cache WORDPRESS;
+        fastcgi_cache_valid 200 301 302 60m;
+        fastcgi_cache_valid 404 1m;
+        fastcgi_cache_bypass $skip_cache;
+        fastcgi_no_cache $skip_cache;
+        add_header X-Cache $upstream_cache_status;
     }
 
     # Deny access to hidden files
@@ -185,6 +200,13 @@ server {
     gzip_comp_level 5;
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml font/ttf font/otf;
 
+    # Cache bypass rules
+    set $skip_cache 0;
+    if ($request_method = POST) { set $skip_cache 1; }
+    if ($query_string != "") { set $skip_cache 1; }
+    if ($request_uri ~* "/wp-admin/|/xmlrpc.php|wp-.*.php|/feed/|index.php|sitemap(_index)?.xml") { set $skip_cache 1; }
+    if ($http_cookie ~* "comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_no_cache|wordpress_logged_in") { set $skip_cache 1; }
+
     #PHP-INFO-START
 {{ if .PHPVersion }}    include enable-php-{{ .PHPVersion }}.conf;{{ end }}
     #PHP-INFO-END
@@ -206,6 +228,14 @@ server {
         fastcgi_buffers 4 64k;
         fastcgi_busy_buffers_size 128k;
         fastcgi_temp_file_write_size 256k;
+
+        # FastCGI cache
+        fastcgi_cache WORDPRESS;
+        fastcgi_cache_valid 200 301 302 60m;
+        fastcgi_cache_valid 404 1m;
+        fastcgi_cache_bypass $skip_cache;
+        fastcgi_no_cache $skip_cache;
+        add_header X-Cache $upstream_cache_status;
     }
 
     # Deny access to hidden files

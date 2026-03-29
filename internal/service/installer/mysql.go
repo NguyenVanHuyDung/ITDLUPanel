@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -90,6 +92,9 @@ func (i *MySQLInstaller) Install(ctx context.Context, version string, progress f
 		}
 	}
 
+	// Write performance tuning config and restart
+	writeDefaultMySQLTuning(ctx, isMariaDB, serviceName)
+
 	SetupServerDir("mysql", []SymlinkDef{
 		{Name: "conf", Target: "/etc/mysql"},
 		{Name: "data", Target: "/var/lib/mysql"},
@@ -141,4 +146,77 @@ func (i *MySQLInstaller) IsInstalled() bool {
 
 func (i *MySQLInstaller) GetVersions() []string {
 	return []string{"mysql-8.0", "mariadb-10.6", "mariadb-10.11"}
+}
+
+// writeDefaultMySQLTuning writes a performance tuning config scaled by server RAM.
+func writeDefaultMySQLTuning(ctx context.Context, isMariaDB bool, serviceName string) {
+	res, err := system.Exec(ctx, "free", "-b")
+	if err != nil {
+		logger.Warn().Err(err).Msg("failed to detect RAM for mysql tuning")
+		return
+	}
+
+	var totalRAM int64
+	for _, line := range strings.Split(res.Stdout, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "Mem:" {
+			totalRAM, _ = strconv.ParseInt(fields[1], 10, 64)
+			break
+		}
+	}
+	if totalRAM <= 0 {
+		logger.Warn().Msg("could not parse total RAM, skipping mysql tuning")
+		return
+	}
+
+	bufferPoolSize := totalRAM / 8
+	const maxBufferPool = 4 * 1024 * 1024 * 1024 // 4GB
+	if bufferPoolSize > maxBufferPool {
+		bufferPoolSize = maxBufferPool
+	}
+
+	cnf := fmt.Sprintf(`[mysqld]
+innodb_buffer_pool_size = %d
+innodb_log_file_size = 256M
+innodb_flush_log_at_trx_commit = 2
+innodb_flush_method = O_DIRECT
+innodb_io_capacity = 2000
+innodb_io_capacity_max = 4000
+query_cache_type = 1
+query_cache_size = 64M
+query_cache_limit = 2M
+max_connections = 200
+thread_cache_size = 16
+tmp_table_size = 64M
+max_heap_table_size = 64M
+join_buffer_size = 2M
+sort_buffer_size = 2M
+read_buffer_size = 2M
+read_rnd_buffer_size = 2M
+table_open_cache = 4000
+table_definition_cache = 2000
+`, bufferPoolSize)
+
+	var confPath string
+	if isMariaDB {
+		confPath = "/etc/mysql/mariadb.conf.d/99-itdlu-tuning.cnf"
+	} else {
+		confPath = "/etc/mysql/mysql.conf.d/99-itdlu-tuning.cnf"
+	}
+
+	if err := os.MkdirAll(filepath.Dir(confPath), 0755); err != nil {
+		logger.Warn().Err(err).Msg("failed to create mysql conf directory")
+		return
+	}
+
+	if err := os.WriteFile(confPath, []byte(cnf), 0644); err != nil {
+		logger.Warn().Err(err).Str("path", confPath).Msg("failed to write mysql tuning config")
+		return
+	}
+
+	logger.Info().Str("path", confPath).Int64("buffer_pool", bufferPoolSize).Msg("wrote mysql tuning config")
+
+	if _, err := system.ExecWithTimeout(30*time.Second, "systemctl", "restart", serviceName); err != nil {
+		logger.Warn().Err(err).Str("service", serviceName).Msg("failed to restart mysql after tuning")
+	}
 }
