@@ -50,7 +50,7 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 	apiV1 := engine.Group("/api/v1")
 
 	// Rate limiting on all API routes
-	apiV1.Use(RateLimitMiddleware(60, 1*time.Minute))
+	apiV1.Use(RateLimitMiddleware(300, 1*time.Minute))
 
 	// Audit logging for state-changing operations
 	apiV1.Use(AuditMiddleware(db))

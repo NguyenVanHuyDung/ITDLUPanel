@@ -16,11 +16,24 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Response interceptor - handle 401, auto-refresh
+// Response interceptor - handle 401 (auto-refresh) and 429 (retry with backoff)
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+
+    // 429 Too Many Requests — retry with exponential backoff
+    if (error.response?.status === 429) {
+      const retryCount = originalRequest._retryCount || 0;
+      if (retryCount < 3) {
+        originalRequest._retryCount = retryCount + 1;
+        const delay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+        await new Promise((r) => setTimeout(r, delay));
+        return api(originalRequest);
+      }
+    }
+
+    // 401 Unauthorized — refresh token
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       try {
