@@ -39,6 +39,7 @@ func (h *DatabaseHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, permMW gin
 		db.POST("/:id/restore", h.Restore)
 		db.POST("/:id/import", h.Import)
 		db.PUT("/:id/access", h.SetAccess)
+		db.GET("/version", h.GetVersion)
 		db.GET("/:id/size", h.GetSize)
 		db.PUT("/:id/quota", h.SetQuota)
 	}
@@ -239,6 +240,16 @@ func (h *DatabaseHandler) GetSize(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"size": size})
+}
+
+// GetVersion returns the running MySQL/MariaDB engine version.
+func (h *DatabaseHandler) GetVersion(c *gin.Context) {
+	ver, err := h.dbService.GetVersion()
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"version": ver})
 }
 
 type setAccessRequest struct {

@@ -121,13 +121,16 @@ function DatabasesContent() {
       const available = sw.available || [];
       const pma = available.find((s: { name: string; installed: boolean }) => s.name === 'phpmyadmin');
       setPmaInstalled(pma?.installed ?? false);
-      const mysql = available.find((s: { name: string; installed: boolean; version?: string }) =>
-        (s.name === 'mysql' || s.name === 'mariadb') && s.installed
-      );
-      if (mysql) setDbVersion(`${mysql.name === 'mariadb' ? 'MariaDB' : 'MySQL'} ${(mysql as { version?: string }).version || ''}`);
     } catch {
       setPmaInstalled(false);
     }
+  }, []);
+
+  const fetchDbVersion = useCallback(async () => {
+    try {
+      const { data: resp } = await api.get('/databases/version');
+      if (resp.data?.version) setDbVersion(resp.data.version);
+    } catch { /* ignore */ }
   }, []);
 
   const fetchData = useCallback(async () => {
@@ -152,7 +155,7 @@ function DatabasesContent() {
     } catch { /* ignore */ }
   }, []);
 
-  useEffect(() => { fetchData(); checkPma(); fetchBackupCounts(); }, [fetchData, checkPma, fetchBackupCounts]);
+  useEffect(() => { fetchData(); checkPma(); fetchBackupCounts(); fetchDbVersion(); }, [fetchData, checkPma, fetchBackupCounts, fetchDbVersion]);
 
   const handleCreate = async () => {
     try {
@@ -443,7 +446,7 @@ function DatabasesContent() {
             <div style={{
               fontSize: 10, color: p.textMuted, marginTop: 2, marginLeft: 20,
             }}>
-              {r.db_type === 'mariadb' ? 'MariaDB' : 'MySQL'} {dbVersion.replace(/^(MariaDB|MySQL)\s*/i, '')}
+              {dbVersion}
             </div>
           )}
         </div>

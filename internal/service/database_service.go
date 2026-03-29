@@ -401,6 +401,22 @@ func (s *DatabaseService) GetSize(id int64) (int64, error) {
 	return size, nil
 }
 
+// GetVersion returns the running MySQL/MariaDB version string (e.g. "MariaDB 10.6.23").
+func (s *DatabaseService) GetVersion() (string, error) {
+	ctx := context.Background()
+	result, err := system.Exec(ctx, "mysql", "-u", "root", "-N", "-e", "SELECT VERSION()")
+	if err != nil {
+		return "", apperrors.Wrap(err, apperrors.ErrInternal, "failed to get database version")
+	}
+	raw := strings.TrimSpace(result.Stdout)
+	if strings.Contains(strings.ToLower(raw), "mariadb") {
+		ver := strings.Split(raw, "-")[0]
+		return "MariaDB " + ver, nil
+	}
+	ver := strings.Split(raw, "-")[0]
+	return "MySQL " + ver, nil
+}
+
 // SetDiskQuota sets the disk quota for a database (0 = unlimited).
 func (s *DatabaseService) SetDiskQuota(id int64, quotaBytes int64) error {
 	_, err := s.db.Exec("UPDATE databases SET disk_quota = ? WHERE id = ?", quotaBytes, id)
