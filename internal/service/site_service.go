@@ -82,14 +82,18 @@ func escapeNginxSingleQuote(s string) string {
 
 // CreateSiteRequest holds the data needed to create a new site.
 type CreateSiteRequest struct {
-	Name       string `json:"name" validate:"required,min=1,max=128"`
-	Domain     string `json:"domain" validate:"required,min=1,max=253"`
-	Webserver  string `json:"webserver" validate:"required,oneof=nginx apache openlitespeed"`
-	PHPVersion string `json:"php_version" validate:"omitempty"`
-	CreateDB   bool   `json:"create_db"`
-	DBName     string `json:"db_name" validate:"omitempty,min=1,max=64"`
-	DBUser     string `json:"db_user" validate:"omitempty,min=1,max=32"`
-	DBPass     string `json:"db_pass" validate:"omitempty,min=1"`
+	Name        string `json:"name" validate:"required,min=1,max=128"`
+	Domain      string `json:"domain" validate:"required,min=1,max=253"`
+	Description string `json:"description" validate:"omitempty,max=500"`
+	Path        string `json:"path" validate:"omitempty"`
+	Webserver   string `json:"webserver" validate:"required,oneof=nginx apache openlitespeed"`
+	PHPVersion  string `json:"php_version" validate:"omitempty"`
+	CreateDB    bool   `json:"create_db"`
+	DBName      string `json:"db_name" validate:"omitempty,min=1,max=64"`
+	DBUser      string `json:"db_user" validate:"omitempty,min=1,max=32"`
+	DBPass      string `json:"db_pass" validate:"omitempty,min=1"`
+	FTPUser     string `json:"ftp_user" validate:"omitempty,min=1,max=32"`
+	FTPPass     string `json:"ftp_pass" validate:"omitempty,min=6"`
 }
 
 // UpdateSiteRequest holds the mutable fields of a site.
@@ -103,6 +107,7 @@ type Site struct {
 	ID          int64   `json:"id"`
 	Name        string  `json:"name"`
 	Domain      string  `json:"domain"`
+	Description string  `json:"description"`
 	Path        string  `json:"path"`
 	Webserver   string  `json:"webserver"`
 	PHPVersion  *string `json:"php_version"`
@@ -170,6 +175,9 @@ func (s *SiteService) Create(req CreateSiteRequest, userID int64) (*Site, error)
 
 	// 2. Create document root
 	docRoot := filepath.Join(wwwrootBase, req.Domain)
+	if req.Path != "" {
+		docRoot = req.Path
+	}
 	if err := os.MkdirAll(docRoot, 0755); err != nil {
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create document root")
 	}
@@ -218,9 +226,9 @@ func (s *SiteService) Create(req CreateSiteRequest, userID int64) (*Site, error)
 
 	// 6. Insert into DB
 	result, err := s.db.Exec(
-		`INSERT INTO sites (name, domain, path, webserver, php_version, status, created_by, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, 1, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-		req.Name, req.Domain, docRoot, req.Webserver, req.PHPVersion, userID,
+		`INSERT INTO sites (name, domain, description, path, webserver, php_version, status, created_by, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, 1, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		req.Name, req.Domain, req.Description, docRoot, req.Webserver, req.PHPVersion, userID,
 	)
 	if err != nil {
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to insert site")
@@ -237,6 +245,41 @@ func (s *SiteService) Create(req CreateSiteRequest, userID int64) (*Site, error)
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to insert primary domain")
 	}
 
+	// Create database if requested
+	if req.CreateDB && req.DBName != "" {
+		dbSvc := NewDatabaseService(s.db)
+		dbType := "mysql"
+		// Auto-detect MariaDB
+		if _, err := system.ExecWithTimeout(5*time.Second, "systemctl", "is-enabled", "mariadb"); err == nil {
+			dbType = "mariadb"
+		}
+		dbReq := CreateDBRequest{
+			Name:         req.DBName,
+			DBType:       dbType,
+			Username:     req.DBUser,
+			Password:     req.DBPass,
+			Charset:      "utf8mb4",
+			Collation:    "utf8mb4_unicode_ci",
+			RemoteAccess: "localhost",
+		}
+		if _, err := dbSvc.Create(dbReq); err != nil {
+			logger.Warn().Err(err).Str("db", req.DBName).Msg("failed to create database for site (non-fatal)")
+		}
+	}
+
+	// Create FTP account if requested
+	if req.FTPUser != "" && req.FTPPass != "" {
+		ftpSvc := NewFTPService(s.db)
+		ftpReq := CreateFTPRequest{
+			Username: req.FTPUser,
+			Password: req.FTPPass,
+			Path:     docRoot,
+		}
+		if _, err := ftpSvc.Create(ftpReq); err != nil {
+			logger.Warn().Err(err).Str("user", req.FTPUser).Msg("failed to create FTP account for site (non-fatal)")
+		}
+	}
+
 	logger.Info().Int64("id", id).Str("domain", req.Domain).Msg("site created")
 
 	return s.GetByID(id)
@@ -251,7 +294,7 @@ func (s *SiteService) List(page, pageSize int) ([]*Site, int, error) {
 
 	offset := (page - 1) * pageSize
 	rows, err := s.db.Query(
-		`SELECT id, name, domain, path, webserver, php_version, ssl_enabled,
+		`SELECT id, name, domain, description, path, webserver, php_version, ssl_enabled,
 		        ssl_type, ssl_expiry, status, config_extra, created_by, created_at, updated_at,
 		        disk_quota, disk_usage
 		 FROM sites ORDER BY id DESC LIMIT ? OFFSET ?`, pageSize, offset,
@@ -265,7 +308,7 @@ func (s *SiteService) List(page, pageSize int) ([]*Site, int, error) {
 	for rows.Next() {
 		site := &Site{}
 		if err := rows.Scan(
-			&site.ID, &site.Name, &site.Domain, &site.Path, &site.Webserver,
+			&site.ID, &site.Name, &site.Domain, &site.Description, &site.Path, &site.Webserver,
 			&site.PHPVersion, &site.SSLEnabled, &site.SSLType, &site.SSLExpiry,
 			&site.Status, &site.ConfigExtra, &site.CreatedBy,
 			&site.CreatedAt, &site.UpdatedAt,
@@ -283,12 +326,12 @@ func (s *SiteService) List(page, pageSize int) ([]*Site, int, error) {
 func (s *SiteService) GetByID(id int64) (*Site, error) {
 	site := &Site{}
 	err := s.db.QueryRow(
-		`SELECT id, name, domain, path, webserver, php_version, ssl_enabled,
+		`SELECT id, name, domain, description, path, webserver, php_version, ssl_enabled,
 		        ssl_type, ssl_expiry, status, config_extra, created_by, created_at, updated_at,
 		        disk_quota, disk_usage
 		 FROM sites WHERE id = ?`, id,
 	).Scan(
-		&site.ID, &site.Name, &site.Domain, &site.Path, &site.Webserver,
+		&site.ID, &site.Name, &site.Domain, &site.Description, &site.Path, &site.Webserver,
 		&site.PHPVersion, &site.SSLEnabled, &site.SSLType, &site.SSLExpiry,
 		&site.Status, &site.ConfigExtra, &site.CreatedBy,
 		&site.CreatedAt, &site.UpdatedAt,
