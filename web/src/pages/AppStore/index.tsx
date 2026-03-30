@@ -15,6 +15,7 @@ import ApacheManageModal from '@/components/ApacheManageModal';
 import PhpMyAdminManageModal from '@/components/PhpMyAdminManageModal';
 import PHPManageModal from '@/components/PHPManageModal';
 import OLSManageModal from '@/components/OLSManageModal';
+import FTPManageModal from '@/components/FTPManageModal';
 import { getSoftwareIcon } from './SoftwareIcons';
 
 const { Text } = Typography;
@@ -61,6 +62,7 @@ export default function AppStore() {
   const [phpModalOpen, setPhpModalOpen] = useState(false);
   const [olsModalOpen, setOlsModalOpen] = useState(false);
   const [apacheModalOpen, setApacheModalOpen] = useState(false);
+  const [ftpModalOpen, setFtpModalOpen] = useState(false);
   const [swStatus, setSwStatus] = useState<Record<string, string> | null>(null);
   const [swConfig, setSwConfig] = useState('');
   const [configLoading, setConfigLoading] = useState(false);
@@ -276,6 +278,7 @@ export default function AppStore() {
     if (sw.name === 'openlitespeed') { setOlsModalOpen(true); return; }
     if (sw.name === 'phpmyadmin') { setPmaModalOpen(true); return; }
     if (sw.name === 'php') { setPhpModalOpen(true); return; }
+    if (sw.name === 'pureftpd') { setFtpModalOpen(true); return; }
     setManageSW(sw);
     setManageTab('status');
     setSwStatus(null);
@@ -993,6 +996,7 @@ export default function AppStore() {
       <PhpMyAdminManageModal open={pmaModalOpen} onClose={() => setPmaModalOpen(false)} />
       <PHPManageModal open={phpModalOpen} onClose={() => setPhpModalOpen(false)} />
       <OLSManageModal open={olsModalOpen} onClose={() => setOlsModalOpen(false)} />
+      <FTPManageModal open={ftpModalOpen} onClose={() => setFtpModalOpen(false)} />
     </div>
   );
 }
