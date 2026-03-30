@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ITDLUPanel/panel/internal/pkg/logger"
@@ -63,6 +64,13 @@ func (i *PureFTPdInstaller) Install(ctx context.Context, version string, progres
 	}
 	// Enable PureDB virtual user authentication
 	_ = os.Symlink("../conf/PureDB", "/etc/pure-ftpd/auth/50puredb")
+	// Set ForcePassiveIP to server's public IP for external access
+	if pubIP, err := system.ExecWithTimeout(5*time.Second, "curl", "-s", "ifconfig.me"); err == nil {
+		ip := strings.TrimSpace(pubIP.Stdout)
+		if ip != "" {
+			_ = os.WriteFile("/etc/pure-ftpd/conf/ForcePassiveIP", []byte(ip+"\n"), 0644)
+		}
+	}
 	// Restart to apply
 	system.ExecWithTimeout(10*time.Second, "systemctl", "restart", "pure-ftpd")
 
