@@ -595,18 +595,18 @@ function ExtensionsTab({ version }: { version: string }) {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            padding: '2px 10px', borderRadius: 99, fontSize: 12, fontWeight: 500,
-            background: `${p.green}18`, color: p.green,
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '3px 12px', borderRadius: 99, fontSize: 12, fontWeight: 600,
+            background: p.green, color: '#fff',
           }}>
-            Installed <strong>{installedCount}</strong>
+            Installed {installedCount}
           </span>
           <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            padding: '2px 10px', borderRadius: 99, fontSize: 12, fontWeight: 500,
-            background: `${p.textMuted}18`, color: p.textMuted,
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '3px 12px', borderRadius: 99, fontSize: 12, fontWeight: 600,
+            background: p.accent, color: '#fff',
           }}>
-            Available <strong>{extensions.length - installedCount}</strong>
+            Available {extensions.length - installedCount}
           </span>
         </div>
       </div>
