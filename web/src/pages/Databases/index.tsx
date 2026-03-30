@@ -76,6 +76,7 @@ function DatabasesContent() {
   const [customIpDb, setCustomIpDb] = useState<Database | null>(null);
   const [customIpValue, setCustomIpValue] = useState('');
   const [quotaDb, setQuotaDb] = useState<Database | null>(null);
+  const [detectedDbType, setDetectedDbType] = useState<string>('');
   const [quotaInput, setQuotaInput] = useState(0);
   const [quotaUnit, setQuotaUnit] = useState<'MB' | 'GB'>('MB');
   const [quotaSaving, setQuotaSaving] = useState(false);
@@ -141,6 +142,11 @@ function DatabasesContent() {
       const available = sw.available || [];
       const pma = available.find((s: { name: string; installed: boolean }) => s.name === 'phpmyadmin');
       setPmaInstalled(pma?.installed ?? false);
+      const installed = sw.installed || [];
+      const dbSw = installed.find((s: any) => s.type === 'database');
+      if (dbSw?.version) {
+        setDetectedDbType(dbSw.version.startsWith('mariadb') ? 'mariadb' : 'mysql');
+      }
     } catch {
       setPmaInstalled(false);
     }
@@ -794,7 +800,7 @@ function DatabasesContent() {
             )}
           </div>
           <button
-            onClick={() => { form.setFieldsValue({ password: generatePassword() }); setModalOpen(true); }}
+            onClick={() => { form.setFieldsValue({ password: generatePassword(), db_type: detectedDbType || 'mysql' }); setModalOpen(true); }}
             style={{
               padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
               background: p.accent, color: '#fff', fontSize: 13, fontWeight: 500,
@@ -1019,8 +1025,10 @@ function DatabasesContent() {
         width={520}
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
-          <Form.Item name="db_type" label={t('databases.db_type') || 'Database Type'} initialValue="mysql" rules={[{ required: true }]}>
-            <Select options={[
+          <Form.Item name="db_type" label={t('databases.db_type') || 'Database Type'} initialValue={detectedDbType || 'mysql'} rules={[{ required: true }]}>
+            <Select disabled={!!detectedDbType} options={detectedDbType ? [
+              { value: detectedDbType, label: detectedDbType === 'mariadb' ? 'MariaDB' : 'MySQL' },
+            ] : [
               { value: 'mysql', label: 'MySQL' },
               { value: 'mariadb', label: 'MariaDB' },
             ]} />
