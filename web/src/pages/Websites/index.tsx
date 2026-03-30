@@ -2987,10 +2987,11 @@ function WebsitesContent() {
   const loadPathChildren = async (parentPath: string) => {
     try {
       const { data } = await api.get('/files', { params: { path: parentPath } });
-      const dirs = (data.data || []).filter((f: any) => f.is_dir);
+      const items = data.data?.items || data.data || [];
+      const dirs = items.filter((f: any) => f.is_dir);
       return dirs.map((d: any) => ({
         title: d.name,
-        key: d.path || `${parentPath}/${d.name}`,
+        key: d.path || `${parentPath === '/' ? '' : parentPath}/${d.name}`,
         isLeaf: false,
       }));
     } catch { return []; }
@@ -3003,12 +3004,19 @@ function WebsitesContent() {
     setPathBrowserOpen(true);
   };
 
-  const onPathTreeLoad = async (node: any) => {
-    const children = await loadPathChildren(node.key);
-    setPathTreeData(prev => {
-      const update = (nodes: any[]): any[] =>
-        nodes.map(n => n.key === node.key ? { ...n, children } : { ...n, children: n.children ? update(n.children) : undefined });
-      return update(prev);
+  const onPathTreeLoad = (node: any): Promise<void> => {
+    return new Promise(async (resolve) => {
+      if (node.children) { resolve(); return; }
+      const children = await loadPathChildren(node.key);
+      setPathTreeData(prev => {
+        const update = (nodes: any[]): any[] =>
+          nodes.map(n => n.key === node.key
+            ? { ...n, children: children.length ? children : [{ title: '(empty)', key: `${node.key}/__empty`, isLeaf: true, disabled: true, selectable: false }] }
+            : { ...n, children: n.children ? update(n.children) : undefined }
+          );
+        return update(prev);
+      });
+      resolve();
     });
   };
 
