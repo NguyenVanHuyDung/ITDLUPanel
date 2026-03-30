@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Table, Button, Modal, Form, Input, Select, message, Popconfirm, Switch, Tooltip, Spin, InputNumber, Popover } from 'antd';
+import { Table, Button, Modal, Form, Input, Select, message, Popconfirm, Switch, Tooltip, Spin, InputNumber, Popover, Row, Col, Tree } from 'antd';
 import {
   PlusOutlined, SettingOutlined, SafetyCertificateOutlined,
   SearchOutlined, ReloadOutlined, GlobalOutlined, CodeOutlined,
@@ -2980,6 +2980,37 @@ function WebsitesContent() {
   const [ftpOption, setFtpOption] = useState<'none' | 'create'>('none');
   const [pathManual, setPathManual] = useState(false);
   const prevDomainRef = useRef<string>('');
+  const [pathBrowserOpen, setPathBrowserOpen] = useState(false);
+  const [pathTreeData, setPathTreeData] = useState<any[]>([]);
+  const [pathBrowserSelected, setPathBrowserSelected] = useState<string>('/ITDLUPanel/wwwroot');
+
+  const loadPathChildren = async (parentPath: string) => {
+    try {
+      const { data } = await api.get('/files', { params: { path: parentPath } });
+      const dirs = (data.data || []).filter((f: any) => f.is_dir);
+      return dirs.map((d: any) => ({
+        title: d.name,
+        key: d.path || `${parentPath}/${d.name}`,
+        isLeaf: false,
+      }));
+    } catch { return []; }
+  };
+
+  const openPathBrowser = async () => {
+    const roots = await loadPathChildren('/');
+    setPathTreeData(roots);
+    setPathBrowserSelected(form.getFieldValue('path') || '/ITDLUPanel/wwwroot');
+    setPathBrowserOpen(true);
+  };
+
+  const onPathTreeLoad = async (node: any) => {
+    const children = await loadPathChildren(node.key);
+    setPathTreeData(prev => {
+      const update = (nodes: any[]): any[] =>
+        nodes.map(n => n.key === node.key ? { ...n, children } : { ...n, children: n.children ? update(n.children) : undefined });
+      return update(prev);
+    });
+  };
 
   const generatePassword = () => {
     const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%';
@@ -3690,172 +3721,155 @@ function WebsitesContent() {
         okText={t('common.create')}
         cancelText={t('common.cancel')}
         destroyOnHidden
-        width={isMobile ? '95%' : 600}
+        width={isMobile ? '95%' : 640}
         okButtonProps={{ style: { background: p.accent, borderColor: p.accent } }}
       >
-        <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
-          {/* ── Basic Info ── */}
-          <div style={{ fontSize: 12, fontWeight: 600, color: p.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            Basic Info
-          </div>
+        <Form form={form} layout="vertical" size="small" style={{ marginTop: 12 }}>
+          <Row gutter={12}>
+            <Col span={14}>
+              <Form.Item name="domain" label={t('websites.domain')} rules={[{ required: true, message: 'Required' }]} style={{ marginBottom: 10 }}>
+                <Input placeholder="example.com" onChange={e => {
+                  const domain = e.target.value;
+                  const prev = prevDomainRef.current;
+                  const currentName = form.getFieldValue('name');
+                  if (!currentName || currentName === prev) form.setFieldsValue({ name: domain });
+                  if (!pathManual) form.setFieldsValue({ path: `/ITDLUPanel/wwwroot/${domain}` });
+                  const sanitized = domain.replace(/[^a-zA-Z0-9]/g, '_');
+                  form.setFieldsValue({ db_name: sanitized, db_user: sanitized, ftp_user: sanitized });
+                  prevDomainRef.current = domain;
+                }} />
+              </Form.Item>
+            </Col>
+            <Col span={10}>
+              <Form.Item name="name" label="Site Name" rules={[{ required: true }]} style={{ marginBottom: 10 }}>
+                <Input placeholder="my-site" />
+              </Form.Item>
+            </Col>
+          </Row>
 
-          <Form.Item name="domain" label={t('websites.domain')}
-            rules={[{ required: true, message: 'Domain is required' }]}
-          >
-            <Input placeholder="example.com" onChange={e => {
-              const domain = e.target.value;
-              const prev = prevDomainRef.current;
-              const currentName = form.getFieldValue('name');
-              if (!currentName || currentName === prev) {
-                form.setFieldsValue({ name: domain });
+          <Form.Item name="description" label="Description" style={{ marginBottom: 10 }}>
+            <Input placeholder="Brief description (optional)" maxLength={500} />
+          </Form.Item>
+
+          <Form.Item name="path" label="Document Root" rules={[{ required: true }]} style={{ marginBottom: 10 }}>
+            <Input placeholder="/ITDLUPanel/wwwroot/example.com"
+              onChange={() => { if (!pathManual) setPathManual(true); }}
+              addonAfter={
+                <FolderOpenOutlined onClick={openPathBrowser} style={{ cursor: 'pointer', color: p.accent }} title="Browse" />
               }
-              if (!pathManual) {
-                form.setFieldsValue({ path: `/ITDLUPanel/wwwroot/${domain}` });
-              }
-              const sanitized = domain.replace(/[^a-zA-Z0-9]/g, '_');
-              form.setFieldsValue({
-                db_name: sanitized,
-                db_user: sanitized,
-                ftp_user: sanitized,
-              });
-              prevDomainRef.current = domain;
-            }} />
+            />
           </Form.Item>
 
-          <Form.Item name="name" label="Site Name"
-            rules={[{ required: true, message: 'Site name is required' }]}
-            extra="Internal identifier"
-          >
-            <Input placeholder="example.com" />
-          </Form.Item>
-
-          <Form.Item name="description" label="Description">
-            <Input.TextArea rows={2} placeholder="Brief description of this website..." maxLength={500} showCount />
-          </Form.Item>
-
-          {/* ── Server Configuration ── */}
-          <div style={{ fontSize: 12, fontWeight: 600, color: p.textMuted, marginTop: 16, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            Server Configuration
-          </div>
-
-          <Form.Item name="path" label="Path"
-            rules={[{ required: true, message: 'Path is required' }]}
-            extra="Document root directory"
-            initialValue="/ITDLUPanel/wwwroot/"
-          >
-            <Input placeholder="/ITDLUPanel/wwwroot/example.com" onChange={() => { if (!pathManual) setPathManual(true); }} />
-          </Form.Item>
-
-          <Form.Item name="webserver" label={t('websites.web_server')} rules={[{ required: true }]}>
-            {detectedWebServer ? (
-              <Select disabled options={[
-                { value: 'nginx', label: 'Nginx' },
-                { value: 'apache', label: 'Apache' },
-                { value: 'openlitespeed', label: 'OpenLiteSpeed' },
-              ]} />
-            ) : (
-              <>
-                <Select options={[
+          <Row gutter={12}>
+            <Col span={8}>
+              <Form.Item name="webserver" label={t('websites.web_server')} rules={[{ required: true }]} style={{ marginBottom: 10 }}>
+                <Select disabled={!!detectedWebServer} options={[
                   { value: 'nginx', label: 'Nginx' },
                   { value: 'apache', label: 'Apache' },
                   { value: 'openlitespeed', label: 'OpenLiteSpeed' },
                 ]} />
-                <div style={{ fontSize: 11, color: p.amber || '#F59E0B', marginTop: 4 }}>
-                  <ExclamationCircleOutlined style={{ marginRight: 4 }} />
-                  No web server detected. Please install one first.
-                </div>
-              </>
-            )}
-          </Form.Item>
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="php_version" label={t('websites.php_version')} style={{ marginBottom: 10 }}>
+                <Select allowClear placeholder="Select" options={[
+                  { value: '', label: 'Static' },
+                  ...phpVersions.map(v => ({ value: v, label: `PHP ${v}` })),
+                ]} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item label="FTP Account" style={{ marginBottom: 10 }}>
+                <Select value={ftpOption} onChange={val => {
+                  setFtpOption(val);
+                  if (val === 'create') {
+                    const domain = form.getFieldValue('domain') || '';
+                    form.setFieldsValue({ ftp_user: domain.replace(/[^a-zA-Z0-9]/g, '_'), ftp_pass: generatePassword() });
+                  }
+                }} options={[
+                  { value: 'none', label: 'Not Set' },
+                  { value: 'create', label: 'Create New' },
+                ]} />
+              </Form.Item>
+            </Col>
+          </Row>
 
-          <Form.Item name="php_version" label={t('websites.php_version')}>
-            <Select allowClear placeholder={phpVersions.length ? 'Select PHP version' : 'No PHP installed'}
-              options={[
-                { value: '', label: 'Static (No PHP)' },
-                ...phpVersions.map(v => ({ value: v, label: `PHP ${v}` })),
-              ]}
-            />
-          </Form.Item>
-
-          {/* ── Optional Services ── */}
-          <div style={{ fontSize: 12, fontWeight: 600, color: p.textMuted, marginTop: 16, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            Optional Services
-          </div>
-
-          {/* FTP Account */}
-          <Form.Item label="FTP Account">
-            <Select value={ftpOption} onChange={val => {
-              setFtpOption(val);
-              if (val === 'create') {
-                const domain = form.getFieldValue('domain') || '';
-                const sanitized = domain.replace(/[^a-zA-Z0-9]/g, '_');
-                form.setFieldsValue({ ftp_user: sanitized, ftp_pass: generatePassword() });
-              }
-            }} options={[
-              { value: 'none', label: 'Not Set' },
-              { value: 'create', label: 'Create New' },
-            ]} />
-          </Form.Item>
           {ftpOption === 'create' && (
-            <>
-              <Form.Item name="ftp_user" label="FTP Username"
-                rules={[{ required: true, message: 'FTP username is required' }]}
-                style={{ marginBottom: 8 }}
-              >
-                <Input placeholder="ftp_username" />
-              </Form.Item>
-              <Form.Item name="ftp_pass" label="FTP Password"
-                rules={[{ required: true, message: 'FTP password is required' }]}
-                style={{ marginBottom: 8 }}
-              >
-                <Input.Password placeholder="Password" />
-              </Form.Item>
-              <Button type="link" size="small" style={{ padding: 0, marginBottom: 12, fontSize: 12 }}
-                onClick={() => form.setFieldsValue({ ftp_pass: generatePassword() })}>
-                Generate password
-              </Button>
-            </>
-          )}
-
-          {/* Database */}
-          <Form.Item name="create_db" label="Create Database" valuePropName="checked">
-            <Switch onChange={checked => {
-              if (checked) {
-                const domain = form.getFieldValue('domain') || '';
-                const sanitized = domain.replace(/[^a-zA-Z0-9]/g, '_');
-                form.setFieldsValue({ db_name: sanitized, db_user: sanitized, db_pass: generatePassword() });
-              }
-            }} />
-          </Form.Item>
-          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.create_db !== cur.create_db}>
-            {({ getFieldValue }) => getFieldValue('create_db') ? (
-              <>
-                <Form.Item name="db_name" label="Database Name"
-                  rules={[{ required: true, message: 'Database name is required' }]}
-                  style={{ marginBottom: 8 }}
-                >
-                  <Input placeholder="database_name" />
+            <Row gutter={12}>
+              <Col span={12}>
+                <Form.Item name="ftp_user" label="FTP User" rules={[{ required: true }]} style={{ marginBottom: 10 }}>
+                  <Input placeholder="ftp_username" />
                 </Form.Item>
-                <Form.Item name="db_user" label="Database User"
-                  rules={[{ required: true, message: 'Database user is required' }]}
-                  style={{ marginBottom: 8 }}
-                >
-                  <Input placeholder="database_user" />
-                </Form.Item>
-                <Form.Item name="db_pass" label="Database Password"
-                  rules={[{ required: true, message: 'Database password is required' }]}
-                  style={{ marginBottom: 8 }}
-                >
+              </Col>
+              <Col span={12}>
+                <Form.Item name="ftp_pass" label={<span>FTP Password <a onClick={() => form.setFieldsValue({ ftp_pass: generatePassword() })} style={{ fontSize: 11, marginLeft: 6 }}>Generate</a></span>} rules={[{ required: true }]} style={{ marginBottom: 10 }}>
                   <Input.Password placeholder="Password" />
                 </Form.Item>
-                <Button type="link" size="small" style={{ padding: 0, marginBottom: 12, fontSize: 12 }}
-                  onClick={() => form.setFieldsValue({ db_pass: generatePassword() })}>
-                  Generate password
-                </Button>
-              </>
+              </Col>
+            </Row>
+          )}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, marginTop: 2 }}>
+            <Form.Item name="create_db" valuePropName="checked" noStyle>
+              <Switch size="small" onChange={checked => {
+                if (checked) {
+                  const domain = form.getFieldValue('domain') || '';
+                  const sanitized = domain.replace(/[^a-zA-Z0-9]/g, '_');
+                  form.setFieldsValue({ db_name: sanitized, db_user: sanitized, db_pass: generatePassword() });
+                }
+              }} />
+            </Form.Item>
+            <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>Create Database</span>
+          </div>
+
+          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.create_db !== cur.create_db}>
+            {({ getFieldValue }) => getFieldValue('create_db') ? (
+              <Row gutter={12}>
+                <Col span={8}>
+                  <Form.Item name="db_name" label="DB Name" rules={[{ required: true }]} style={{ marginBottom: 10 }}>
+                    <Input placeholder="database_name" />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item name="db_user" label="DB User" rules={[{ required: true }]} style={{ marginBottom: 10 }}>
+                    <Input placeholder="database_user" />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item name="db_pass" label={<span>DB Pass <a onClick={() => form.setFieldsValue({ db_pass: generatePassword() })} style={{ fontSize: 11, marginLeft: 4 }}>Gen</a></span>} rules={[{ required: true }]} style={{ marginBottom: 10 }}>
+                    <Input.Password placeholder="Password" />
+                  </Form.Item>
+                </Col>
+              </Row>
             ) : null}
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* Path Browser Modal */}
+      <Modal
+        title={<span><FolderOpenOutlined style={{ color: p.accent, marginRight: 8 }} />Select Directory</span>}
+        open={pathBrowserOpen}
+        onOk={() => { form.setFieldsValue({ path: pathBrowserSelected }); setPathManual(true); setPathBrowserOpen(false); }}
+        onCancel={() => setPathBrowserOpen(false)}
+        width={460}
+        okText="Select"
+        cancelText="Cancel"
+        okButtonProps={{ style: { background: p.accent, borderColor: p.accent } }}
+      >
+        <div style={{ padding: '8px 0', fontSize: 12, color: p.textMuted, marginBottom: 4 }}>
+          Selected: <code style={{ color: p.accent }}>{pathBrowserSelected}</code>
+        </div>
+        <div style={{ maxHeight: 340, overflow: 'auto', border: `1px solid ${p.cardBorder}`, borderRadius: 6, padding: 8, background: p.codeBg }}>
+          <Tree
+            treeData={pathTreeData}
+            loadData={onPathTreeLoad}
+            onSelect={(keys) => { if (keys.length) setPathBrowserSelected(keys[0] as string); }}
+            selectedKeys={[pathBrowserSelected]}
+            showLine
+            style={{ background: 'transparent' }}
+          />
+        </div>
       </Modal>
 
       {/* Site Config Modal */}
