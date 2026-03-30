@@ -41,6 +41,14 @@ func (i *PureFTPdInstaller) Install(ctx context.Context, version string, progres
 
 	progress(70)
 
+	// Create ftpuser/ftpgroup for virtual user mapping
+	if _, err := system.ExecWithTimeout(5*time.Second, "groupadd", "-f", "ftpgroup"); err != nil {
+		logger.Warn().Err(err).Msg("failed to create ftpgroup (non-fatal)")
+	}
+	if _, err := system.ExecWithTimeout(5*time.Second, "useradd", "-g", "ftpgroup", "-d", "/dev/null", "-s", "/usr/sbin/nologin", "ftpuser"); err != nil {
+		logger.Warn().Err(err).Msg("ftpuser may already exist (non-fatal)")
+	}
+
 	if _, err := system.ExecWithTimeout(30*time.Second, "systemctl", "enable", serviceName); err != nil {
 		logger.Warn().Err(err).Msg("failed to enable pure-ftpd service")
 	}
