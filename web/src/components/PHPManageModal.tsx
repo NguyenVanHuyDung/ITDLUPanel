@@ -593,13 +593,21 @@ function ExtensionsTab({ version }: { version: string }) {
             PHP {version}
           </Text>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <Badge count={installedCount} style={{ backgroundColor: p.green }} showZero>
-            <Tag style={{ borderRadius: 6, margin: 0 }}>Installed</Tag>
-          </Badge>
-          <Badge count={extensions.length - installedCount} style={{ backgroundColor: p.textMuted }} showZero>
-            <Tag style={{ borderRadius: 6, margin: 0 }}>Available</Tag>
-          </Badge>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '2px 10px', borderRadius: 99, fontSize: 12, fontWeight: 500,
+            background: `${p.green}18`, color: p.green,
+          }}>
+            Installed <strong>{installedCount}</strong>
+          </span>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '2px 10px', borderRadius: 99, fontSize: 12, fontWeight: 500,
+            background: `${p.textMuted}18`, color: p.textMuted,
+          }}>
+            Available <strong>{extensions.length - installedCount}</strong>
+          </span>
         </div>
       </div>
 
