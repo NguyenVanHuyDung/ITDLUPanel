@@ -61,6 +61,8 @@ func (i *PureFTPdInstaller) Install(ctx context.Context, version string, progres
 	if err := os.WriteFile(passiveConf, []byte("39000 40000\n"), 0644); err != nil {
 		logger.Warn().Err(err).Msg("failed to set passive port range (non-fatal)")
 	}
+	// Enable PureDB virtual user authentication
+	_ = os.Symlink("../conf/PureDB", "/etc/pure-ftpd/auth/50puredb")
 	// Restart to apply
 	system.ExecWithTimeout(10*time.Second, "systemctl", "restart", "pure-ftpd")
 
