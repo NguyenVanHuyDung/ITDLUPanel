@@ -256,7 +256,7 @@ function AccountsTab({ refreshKey }: { refreshKey: number }) {
   const [addVisible, setAddVisible] = useState(false);
   const [addLoading, setAddLoading] = useState(false);
   const [newUser, setNewUser] = useState({ username: '', password: '', path: '' });
-  const [pwdModalUser, setPwdModalUser] = useState<string | null>(null);
+  const [pwdModalRecord, setPwdModalRecord] = useState<any | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [pwdLoading, setPwdLoading] = useState(false);
   const [pathBrowserVisible, setPathBrowserVisible] = useState(false);
@@ -301,9 +301,9 @@ function AccountsTab({ refreshKey }: { refreshKey: number }) {
     }
   };
 
-  const handleDelete = async (username: string) => {
+  const handleDelete = async (record: any) => {
     try {
-      await api.delete(`/ftp/${username}`);
+      await api.delete(`/ftp/${record.id}`);
       message.success('Account deleted');
       fetchAccounts();
     } catch (e: any) {
@@ -313,9 +313,9 @@ function AccountsTab({ refreshKey }: { refreshKey: number }) {
 
   const handleToggleStatus = async (record: any) => {
     try {
-      const action = record.status === 'active' ? 'disable' : 'enable';
-      await api.put(`/ftp/${record.username}/${action}`);
-      message.success(`Account ${action}d`);
+      const newEnabled = record.status !== 1;
+      await api.put(`/ftp/${record.id}/status`, { enabled: newEnabled });
+      message.success(newEnabled ? 'Account enabled' : 'Account disabled');
       fetchAccounts();
     } catch (e: any) {
       message.error(e.response?.data?.message || 'Failed to toggle status');
@@ -324,11 +324,12 @@ function AccountsTab({ refreshKey }: { refreshKey: number }) {
 
   const handleChangePassword = async () => {
     if (!newPassword) { message.warning('Password is required'); return; }
+    if (!pwdModalRecord) return;
     setPwdLoading(true);
     try {
-      await api.put(`/ftp/${pwdModalUser}/password`, { password: newPassword });
+      await api.put(`/ftp/${pwdModalRecord.id}/password`, { password: newPassword });
       message.success('Password changed');
-      setPwdModalUser(null);
+      setPwdModalRecord(null);
       setNewPassword('');
     } catch (e: any) {
       message.error(e.response?.data?.message || 'Failed to change password');
@@ -373,10 +374,10 @@ function AccountsTab({ refreshKey }: { refreshKey: number }) {
       render: (v: string) => <Text style={{ fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}>{v}</Text>,
     },
     { title: 'Status', dataIndex: 'status', key: 'status', width: 90,
-      render: (v: string) => (
+      render: (v: number) => (
         <Badge
-          color={v === 'active' ? SUCCESS : ERROR}
-          text={<span style={{ fontSize: 12 }}>{v === 'active' ? 'Active' : 'Disabled'}</span>}
+          color={v === 1 ? SUCCESS : ERROR}
+          text={<span style={{ fontSize: 12 }}>{v === 1 ? 'Active' : 'Disabled'}</span>}
         />
       ),
     },
@@ -384,10 +385,10 @@ function AccountsTab({ refreshKey }: { refreshKey: number }) {
       render: (_: any, record: any) => (
         <Space size={4}>
           <Button size="small" type="link" onClick={() => handleToggleStatus(record)}>
-            {record.status === 'active' ? 'Disable' : 'Enable'}
+            {record.status === 1 ? 'Disable' : 'Enable'}
           </Button>
-          <Button size="small" type="link" icon={<LockOutlined />} onClick={() => { setPwdModalUser(record.username); setNewPassword(''); }} />
-          <Popconfirm title="Delete this account?" onConfirm={() => handleDelete(record.username)}>
+          <Button size="small" type="link" icon={<LockOutlined />} onClick={() => { setPwdModalRecord(record); setNewPassword(''); }} />
+          <Popconfirm title="Delete this account?" onConfirm={() => handleDelete(record)}>
             <Button size="small" type="link" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
@@ -448,9 +449,9 @@ function AccountsTab({ refreshKey }: { refreshKey: number }) {
 
       {/* Change Password Modal */}
       <Modal
-        title={`Change password: ${pwdModalUser}`}
-        open={!!pwdModalUser}
-        onCancel={() => setPwdModalUser(null)}
+        title={`Change password: ${pwdModalRecord?.username || ''}`}
+        open={!!pwdModalRecord}
+        onCancel={() => setPwdModalRecord(null)}
         onOk={handleChangePassword}
         confirmLoading={pwdLoading}
         destroyOnClose
