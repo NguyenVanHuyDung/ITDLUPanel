@@ -48,6 +48,14 @@ func (i *PureFTPdInstaller) Install(ctx context.Context, version string, progres
 		logger.Warn().Err(err).Msg("failed to start pure-ftpd service")
 	}
 
+	// Configure passive port range
+	passiveConf := "/etc/pure-ftpd/conf/PassivePortRange"
+	if err := os.WriteFile(passiveConf, []byte("39000 40000\n"), 0644); err != nil {
+		logger.Warn().Err(err).Msg("failed to set passive port range (non-fatal)")
+	}
+	// Restart to apply
+	system.ExecWithTimeout(10*time.Second, "systemctl", "restart", "pure-ftpd")
+
 	SetupServerDir("pureftpd", []SymlinkDef{
 		{Name: "conf", Target: "/etc/pure-ftpd"},
 	})
