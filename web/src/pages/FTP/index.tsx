@@ -373,7 +373,7 @@ function FTPContent() {
       render: (v: string) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <UserOutlined style={{ color: p.accent, fontSize: 13 }} />
-          <span style={{ fontWeight: 600, fontFamily: 'SFMono-Regular, Menlo, Consolas, monospace', fontSize: 13, color: p.text }}>{v}</span>
+          <span style={{ fontWeight: 600, fontSize: 13, color: p.text }}>{v}</span>
         </div>
       ),
     },
@@ -388,7 +388,7 @@ function FTPContent() {
           <a
             href={`/files?path=${encodeURIComponent(v)}`}
             style={{
-              fontSize: 12, fontFamily: 'SFMono-Regular, Menlo, Consolas, monospace',
+              fontSize: 12,
               color: p.accent, background: p.codeBg,
               padding: '1px 6px', borderRadius: 4,
               textDecoration: 'none', wordBreak: 'break-all',
