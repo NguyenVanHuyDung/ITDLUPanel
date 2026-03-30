@@ -3088,10 +3088,11 @@ function WebsitesContent() {
         setDetectedWebServer(ws);
         if (ws) form.setFieldsValue({ webserver: ws });
       }).catch(() => {});
-      // Default PHP to latest installed version
       if (phpVersions.length > 0) {
         form.setFieldsValue({ php_version: phpVersions[phpVersions.length - 1] });
       }
+      form.setFieldsValue({ path: '/ITDLUPanel/wwwroot/' });
+      setPathManual(false);
     }
   }, [modalOpen, form, phpVersions]);
 
