@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Table, Button, Modal, Form, Input, InputNumber, message, Popconfirm, Tooltip, Tree, Progress } from 'antd';
+import { Table, Button, Modal, Form, Input, InputNumber, message, Popconfirm, Tooltip, Tree, Progress, Checkbox } from 'antd';
 import {
   PlusOutlined, SearchOutlined, ReloadOutlined, UserOutlined,
   FolderOpenOutlined, LockOutlined, DeleteOutlined, PoweroffOutlined,
-  TeamOutlined, DownloadOutlined, CloseOutlined,
+  TeamOutlined, DownloadOutlined, CloseOutlined, CheckSquareOutlined,
+  StopOutlined, PlayCircleOutlined, ExclamationCircleOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
@@ -94,6 +95,12 @@ function FTPContent() {
   const [bulkPrefix, setBulkPrefix] = useState('');
   const [bulkCount, setBulkCount] = useState(5);
   const [bulkBasePath, setBulkBasePath] = useState('/ITDLUPanel/wwwroot');
+
+  // Multi-select
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [batchLoading, setBatchLoading] = useState(false);
+  const [batchPathOpen, setBatchPathOpen] = useState(false);
+  const [batchPathForm] = Form.useForm();
 
   // ---------------------------------------------------------------------------
   // Data fetching
@@ -295,6 +302,67 @@ function FTPContent() {
   const bulkDone = bulkUsers.some(u => u.status === 'success' || u.status === 'error');
   const bulkProgress = bulkUsers.filter(u => u.status === 'success' || u.status === 'error').length;
   const bulkTotal = bulkUsers.filter(u => u.username && u.password && u.path).length;
+
+  // ---------------------------------------------------------------------------
+  // Batch operations
+  // ---------------------------------------------------------------------------
+  const selectedIds = selectedRowKeys.map(Number);
+
+  const handleBatchDelete = () => {
+    Modal.confirm({
+      title: 'Delete Selected Accounts',
+      icon: <ExclamationCircleOutlined />,
+      content: `Are you sure you want to delete ${selectedIds.length} account(s)? This action cannot be undone.`,
+      okText: 'Delete All',
+      okButtonProps: { danger: true },
+      cancelText: t('common.cancel'),
+      onOk: async () => {
+        setBatchLoading(true);
+        try {
+          const { data } = await api.post('/ftp/batch/delete', { ids: selectedIds });
+          message.success(data.data?.message || 'Done');
+          setSelectedRowKeys([]);
+          fetchAccounts();
+        } catch {
+          message.error(t('common.error'));
+        } finally {
+          setBatchLoading(false);
+        }
+      },
+    });
+  };
+
+  const handleBatchStatus = async (enabled: boolean) => {
+    setBatchLoading(true);
+    try {
+      const { data } = await api.post('/ftp/batch/status', { ids: selectedIds, enabled });
+      message.success(data.data?.message || 'Done');
+      setSelectedRowKeys([]);
+      fetchAccounts();
+    } catch {
+      message.error(t('common.error'));
+    } finally {
+      setBatchLoading(false);
+    }
+  };
+
+  const handleBatchPath = async (values: { path: string }) => {
+    setBatchLoading(true);
+    try {
+      const { data } = await api.post('/ftp/batch/path', { ids: selectedIds, path: values.path });
+      message.success(data.data?.message || 'Done');
+      setSelectedRowKeys([]);
+      setBatchPathOpen(false);
+      batchPathForm.resetFields();
+      fetchAccounts();
+    } catch {
+      message.error(t('common.error'));
+    } finally {
+      setBatchLoading(false);
+    }
+  };
+
+  const hasSelection = selectedRowKeys.length > 0;
   // ---------------------------------------------------------------------------
   const columns = [
     {
@@ -467,6 +535,62 @@ function FTPContent() {
         </div>
       </div>
 
+      {/* Batch Actions Toolbar */}
+      {hasSelection && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+          padding: '10px 20px',
+          background: `${p.accent}08`,
+          borderBottom: `1px solid ${p.cardBorder}`,
+        }}>
+          <CheckSquareOutlined style={{ color: p.accent, fontSize: 14 }} />
+          <span style={{ fontSize: 13, fontWeight: 600, color: p.text }}>
+            {selectedRowKeys.length} selected
+          </span>
+          <div style={{ width: 1, height: 20, background: p.cardBorder, margin: '0 4px' }} />
+          <Button
+            size="small"
+            icon={<PlayCircleOutlined />}
+            loading={batchLoading}
+            onClick={() => handleBatchStatus(true)}
+            style={{ borderColor: p.green, color: p.green }}
+          >
+            Enable
+          </Button>
+          <Button
+            size="small"
+            icon={<StopOutlined />}
+            loading={batchLoading}
+            onClick={() => handleBatchStatus(false)}
+            style={{ borderColor: p.amber, color: p.amber }}
+          >
+            Disable
+          </Button>
+          <Button
+            size="small"
+            icon={<FolderOpenOutlined />}
+            loading={batchLoading}
+            onClick={() => setBatchPathOpen(true)}
+            style={{ borderColor: p.accent, color: p.accent }}
+          >
+            Change Path
+          </Button>
+          <Button
+            size="small"
+            danger
+            icon={<DeleteOutlined />}
+            loading={batchLoading}
+            onClick={handleBatchDelete}
+          >
+            Delete
+          </Button>
+          <div style={{ flex: 1 }} />
+          <Button type="link" size="small" onClick={() => setSelectedRowKeys([])} style={{ color: p.textMuted, fontSize: 12 }}>
+            Clear Selection
+          </Button>
+        </div>
+      )}
+
       {/* Table */}
       <Table
         columns={isMobile ? mobileColumns : columns}
@@ -475,6 +599,11 @@ function FTPContent() {
         loading={loading}
         scroll={{ x: 650 }}
         size="middle"
+        rowSelection={{
+          selectedRowKeys,
+          onChange: (keys) => setSelectedRowKeys(keys),
+          columnWidth: 40,
+        }}
         pagination={{
           pageSize: 20,
           showSizeChanger: true,
@@ -740,9 +869,53 @@ function FTPContent() {
         </div>
       </Modal>
 
+      {/* ============ Batch Change Path Modal ============ */}
+      <Modal
+        title={
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <FolderOpenOutlined style={{ color: p.accent }} />
+            Change Path — {selectedRowKeys.length} account(s)
+          </span>
+        }
+        open={batchPathOpen}
+        onCancel={() => { setBatchPathOpen(false); batchPathForm.resetFields(); }}
+        onOk={() => batchPathForm.submit()}
+        confirmLoading={batchLoading}
+        okText="Update All"
+        cancelText={t('common.cancel')}
+        destroyOnHidden
+        width={isMobile ? '95%' : 480}
+        okButtonProps={{ style: { background: p.accent, borderColor: p.accent } }}
+      >
+        <div style={{
+          fontSize: 12, color: p.textMuted, marginBottom: 12, marginTop: 8,
+          padding: '8px 12px', background: p.codeBg, borderRadius: 6,
+        }}>
+          This will change the home directory for all <strong>{selectedRowKeys.length}</strong> selected account(s) to the same path.
+        </div>
+        <Form form={batchPathForm} layout="vertical" onFinish={handleBatchPath} size="small">
+          <Form.Item
+            name="path"
+            label="New Path"
+            rules={[{ required: true, message: 'Path is required' }]}
+          >
+            <Input
+              placeholder="/ITDLUPanel/wwwroot/shared"
+              addonAfter={
+                <FolderOpenOutlined
+                  style={{ cursor: 'pointer', color: p.accent }}
+                  onClick={() => openPathBrowser('edit')}
+                />
+              }
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
       {/* Row hover style */}
       <style>{`
         .ftp-table-row:hover td { background: ${p.rowHover} !important; }
+        .ant-table-selection-column .ant-checkbox-wrapper { transform: scale(0.9); }
       `}</style>
     </div>
   );

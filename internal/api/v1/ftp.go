@@ -1,6 +1,8 @@
 package v1
 
 import (
+	"fmt"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/ITDLUPanel/panel/internal/pkg/response"
@@ -30,6 +32,10 @@ func (h *FTPHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, permMW gin.Hand
 		ftp.DELETE("/:id", h.Delete)
 		ftp.PUT("/:id/password", h.ChangePassword)
 		ftp.PUT("/:id/status", h.SetStatus)
+		// Batch operations
+		ftp.POST("/batch/delete", h.BatchDelete)
+		ftp.POST("/batch/status", h.BatchSetStatus)
+		ftp.POST("/batch/path", h.BatchUpdatePath)
 	}
 }
 
@@ -219,4 +225,100 @@ func (h *FTPHandler) SetStatus(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"message": "FTP account status updated successfully"})
+}
+
+// ---------------------------------------------------------------------------
+// Batch operations
+// ---------------------------------------------------------------------------
+
+type ftpBatchIDsRequest struct {
+	IDs []int64 `json:"ids" validate:"required,min=1"`
+}
+
+type ftpBatchStatusRequest struct {
+	IDs     []int64 `json:"ids" validate:"required,min=1"`
+	Enabled bool    `json:"enabled"`
+}
+
+type ftpBatchPathRequest struct {
+	IDs  []int64 `json:"ids" validate:"required,min=1"`
+	Path string  `json:"path" validate:"required"`
+}
+
+// BatchDelete removes multiple FTP accounts at once.
+func (h *FTPHandler) BatchDelete(c *gin.Context) {
+	var req ftpBatchIDsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid request body"},
+		})
+		return
+	}
+
+	success, failed := 0, 0
+	for _, id := range req.IDs {
+		if err := h.ftpService.Delete(id); err != nil {
+			failed++
+		} else {
+			success++
+		}
+	}
+
+	response.Success(c, gin.H{
+		"message": fmt.Sprintf("Deleted %d account(s), %d failed", success, failed),
+		"success": success,
+		"failed":  failed,
+	})
+}
+
+// BatchSetStatus enables or disables multiple FTP accounts at once.
+func (h *FTPHandler) BatchSetStatus(c *gin.Context) {
+	var req ftpBatchStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid request body"},
+		})
+		return
+	}
+
+	success, failed := 0, 0
+	for _, id := range req.IDs {
+		if err := h.ftpService.SetStatus(id, req.Enabled); err != nil {
+			failed++
+		} else {
+			success++
+		}
+	}
+
+	response.Success(c, gin.H{
+		"message": fmt.Sprintf("Updated %d account(s), %d failed", success, failed),
+		"success": success,
+		"failed":  failed,
+	})
+}
+
+// BatchUpdatePath updates the home directory for multiple FTP accounts at once.
+func (h *FTPHandler) BatchUpdatePath(c *gin.Context) {
+	var req ftpBatchPathRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid request body"},
+		})
+		return
+	}
+
+	success, failed := 0, 0
+	for _, id := range req.IDs {
+		if err := h.ftpService.Update(id, service.UpdateFTPRequest{Path: req.Path}); err != nil {
+			failed++
+		} else {
+			success++
+		}
+	}
+
+	response.Success(c, gin.H{
+		"message": fmt.Sprintf("Updated %d account(s), %d failed", success, failed),
+		"success": success,
+		"failed":  failed,
+	})
 }
