@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/ITDLUPanel/panel/internal/config"
@@ -61,6 +62,12 @@ func (s *FTPService) Create(req CreateFTPRequest) (*FTPAccount, error) {
 	}
 
 	ctx := context.Background()
+
+	// Ensure home directory exists and is owned by ftpuser.
+	if err := os.MkdirAll(req.Path, 0755); err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create FTP home directory")
+	}
+	_, _ = system.Exec(ctx, "chown", "ftpuser:ftpgroup", req.Path)
 
 	// Create virtual user: pipe password twice (password + confirmation) to pure-pw.
 	addCmd := fmt.Sprintf("printf '%%s\\n%%s\\n' %s %s | pure-pw useradd %s -u ftpuser -g ftpgroup -d %s",
