@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Table, Button, Modal, Form, Input, message, Popconfirm, Tooltip, Tree } from 'antd';
+import { Table, Button, Modal, Form, Input, InputNumber, message, Popconfirm, Tooltip, Tree, Progress } from 'antd';
 import {
   PlusOutlined, SearchOutlined, ReloadOutlined, UserOutlined,
   FolderOpenOutlined, LockOutlined, DeleteOutlined, PoweroffOutlined,
+  TeamOutlined, DownloadOutlined, CloseOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
@@ -84,6 +85,15 @@ function FTPContent() {
   const [pathBrowserTarget, setPathBrowserTarget] = useState<'create' | 'edit'>('create');
   const [pathTreeData, setPathTreeData] = useState<any[]>([]);
   const [pathBrowserSelected, setPathBrowserSelected] = useState('/');
+
+  // Bulk create
+  interface BulkUser { username: string; password: string; path: string; status?: 'pending' | 'creating' | 'success' | 'error'; error?: string; }
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkUsers, setBulkUsers] = useState<BulkUser[]>([{ username: '', password: '', path: '' }, { username: '', password: '', path: '' }, { username: '', password: '', path: '' }]);
+  const [bulkCreating, setBulkCreating] = useState(false);
+  const [bulkPrefix, setBulkPrefix] = useState('');
+  const [bulkCount, setBulkCount] = useState(5);
+  const [bulkBasePath, setBulkBasePath] = useState('/ITDLUPanel/wwwroot');
 
   // ---------------------------------------------------------------------------
   // Data fetching
@@ -225,7 +235,66 @@ function FTPContent() {
   };
 
   // ---------------------------------------------------------------------------
-  // Table columns
+  // Bulk create
+  // ---------------------------------------------------------------------------
+  const handleQuickGenerate = () => {
+    if (!bulkPrefix) { message.warning('Enter a prefix'); return; }
+    const users: BulkUser[] = [];
+    for (let i = 1; i <= bulkCount; i++) {
+      const num = String(i).padStart(2, '0');
+      users.push({ username: `${bulkPrefix}_${num}`, password: generatePassword(), path: `${bulkBasePath}/${bulkPrefix}_${num}` });
+    }
+    setBulkUsers(users);
+  };
+
+  const handleAutoFillPasswords = () => {
+    setBulkUsers(prev => prev.map(u => ({ ...u, password: u.password || generatePassword() })));
+  };
+
+  const addBulkRow = () => setBulkUsers(prev => [...prev, { username: '', password: '', path: '' }]);
+  const removeBulkRow = (idx: number) => setBulkUsers(prev => prev.filter((_, i) => i !== idx));
+  const updateBulkRow = (idx: number, field: keyof BulkUser, val: string) => {
+    setBulkUsers(prev => prev.map((u, i) => i === idx ? { ...u, [field]: val } : u));
+  };
+
+  const handleBulkCreate = async () => {
+    const valid = bulkUsers.filter(u => u.username && u.password && u.path);
+    if (!valid.length) { message.warning('No valid rows to create'); return; }
+    setBulkCreating(true);
+    const updated = bulkUsers.map(u => ({ ...u, status: (u.username && u.password && u.path ? 'pending' : undefined) as BulkUser['status'] }));
+    for (let i = 0; i < updated.length; i++) {
+      if (updated[i].status !== 'pending') continue;
+      updated[i].status = 'creating';
+      setBulkUsers([...updated]);
+      try {
+        await api.post('/ftp', { username: updated[i].username, password: updated[i].password, path: updated[i].path });
+        updated[i].status = 'success';
+      } catch (err: any) {
+        updated[i].status = 'error';
+        updated[i].error = err?.response?.data?.message || 'Failed';
+      }
+      setBulkUsers([...updated]);
+    }
+    setBulkCreating(false);
+    fetchAccounts();
+    const ok = updated.filter(u => u.status === 'success').length;
+    const fail = updated.filter(u => u.status === 'error').length;
+    message.info(`Created ${ok} account(s)${fail ? `, ${fail} failed` : ''}`);
+  };
+
+  const exportBulkCSV = () => {
+    const rows = bulkUsers.filter(u => u.status === 'success');
+    if (!rows.length) { message.warning('No successful accounts to export'); return; }
+    const csv = 'Username,Password,Path\n' + rows.map(u => `${u.username},${u.password},${u.path}`).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'ftp_accounts.csv'; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const bulkDone = bulkUsers.some(u => u.status === 'success' || u.status === 'error');
+  const bulkProgress = bulkUsers.filter(u => u.status === 'success' || u.status === 'error').length;
+  const bulkTotal = bulkUsers.filter(u => u.username && u.password && u.path).length;
   // ---------------------------------------------------------------------------
   const columns = [
     {
@@ -387,6 +456,13 @@ function FTPContent() {
             style={{ background: p.accent, borderColor: p.accent }}
           >
             {isMobile ? '' : 'Add Account'}
+          </Button>
+          <Button
+            icon={<TeamOutlined />}
+            onClick={() => { setBulkOpen(true); setBulkUsers([{ username: '', password: '', path: '' }, { username: '', password: '', path: '' }, { username: '', password: '', path: '' }]); }}
+            style={{ borderColor: p.accent, color: p.accent }}
+          >
+            {isMobile ? '' : 'Bulk Create'}
           </Button>
         </div>
       </div>
@@ -594,6 +670,73 @@ function FTPContent() {
             showLine
             style={{ background: 'transparent' }}
           />
+        </div>
+      </Modal>
+
+      {/* ============ Bulk Create Modal ============ */}
+      <Modal
+        title={<span><TeamOutlined style={{ color: p.accent, marginRight: 8 }} />Bulk Create FTP Accounts</span>}
+        open={bulkOpen}
+        onCancel={() => { if (!bulkCreating) { setBulkOpen(false); } }}
+        footer={null}
+        width={720}
+        destroyOnHidden
+      >
+        {/* Quick Generate */}
+        <div style={{ background: p.codeBg, borderRadius: 8, padding: 12, marginBottom: 12, border: `1px solid ${p.cardBorder}` }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: p.textMuted, marginBottom: 8 }}>Quick Generate</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'end' }}>
+            <div>
+              <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 2 }}>Prefix</div>
+              <Input size="small" placeholder="student" value={bulkPrefix} onChange={e => setBulkPrefix(e.target.value)} style={{ width: 120 }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 2 }}>Count</div>
+              <InputNumber size="small" min={1} max={100} value={bulkCount} onChange={v => setBulkCount(v || 5)} style={{ width: 70 }} />
+            </div>
+            <div style={{ flex: 1, minWidth: 150 }}>
+              <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 2 }}>Base Path</div>
+              <Input size="small" value={bulkBasePath} onChange={e => setBulkBasePath(e.target.value)} />
+            </div>
+            <Button size="small" type="primary" onClick={handleQuickGenerate} style={{ background: p.accent, borderColor: p.accent }}>Generate</Button>
+          </div>
+        </div>
+
+        {/* User rows */}
+        <div style={{ maxHeight: 320, overflow: 'auto', marginBottom: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.5fr 28px', gap: 4, fontSize: 11, fontWeight: 600, color: p.textMuted, marginBottom: 4, paddingRight: 4 }}>
+            <span>Username</span><span>Password</span><span>Path</span><span />
+          </div>
+          {bulkUsers.map((u, i) => (
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.5fr 28px', gap: 4, marginBottom: 4, alignItems: 'center' }}>
+              <Input size="small" value={u.username} onChange={e => updateBulkRow(i, 'username', e.target.value)}
+                placeholder="username" disabled={bulkCreating}
+                style={{ background: u.status === 'success' ? '#E8F5E9' : u.status === 'error' ? '#FFEBEE' : undefined }} />
+              <Input size="small" value={u.password} onChange={e => updateBulkRow(i, 'password', e.target.value)}
+                placeholder="password" disabled={bulkCreating} />
+              <Input size="small" value={u.path} onChange={e => updateBulkRow(i, 'path', e.target.value)}
+                placeholder="/path" disabled={bulkCreating}
+                suffix={u.status === 'success' ? <span style={{ color: p.green }}>✓</span> : u.status === 'error' ? <Tooltip title={u.error}><span style={{ color: p.red }}>✗</span></Tooltip> : null} />
+              {!bulkCreating && <Button type="text" size="small" icon={<CloseOutlined style={{ fontSize: 10 }} />} onClick={() => removeBulkRow(i)} disabled={bulkUsers.length <= 1} />}
+            </div>
+          ))}
+        </div>
+
+        {bulkCreating && <Progress percent={Math.round((bulkProgress / bulkTotal) * 100)} size="small" style={{ marginBottom: 8 }} />}
+
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button size="small" onClick={addBulkRow} disabled={bulkCreating}>+ Add Row</Button>
+            <Button size="small" onClick={handleAutoFillPasswords} disabled={bulkCreating}>Fill Passwords</Button>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {bulkDone && <Button size="small" icon={<DownloadOutlined />} onClick={exportBulkCSV}>Export CSV</Button>}
+            <Button type="primary" size="small" onClick={handleBulkCreate} loading={bulkCreating}
+              style={{ background: p.accent, borderColor: p.accent }}>
+              {bulkCreating ? 'Creating...' : `Create ${bulkTotal} Account(s)`}
+            </Button>
+          </div>
         </div>
       </Modal>
 

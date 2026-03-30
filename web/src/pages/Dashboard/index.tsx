@@ -10,6 +10,7 @@ import type { SystemInfo, Software, ApiResponse } from '@/types';
 import NginxManageModal from '@/components/NginxManageModal';
 import PhpMyAdminManageModal from '@/components/PhpMyAdminManageModal';
 import PHPManageModal from '@/components/PHPManageModal';
+import FTPManageModal from '@/components/FTPManageModal';
 import { getSoftwareIcon } from '../AppStore/SoftwareIcons';
 
 const { Text } = Typography;
@@ -223,6 +224,7 @@ export default function Dashboard() {
   const [nginxModalOpen, setNginxModalOpen] = useState(false);
   const [pmaModalOpen, setPmaModalOpen] = useState(false);
   const [phpModalOpen, setPhpModalOpen] = useState(false);
+  const [ftpModalOpen, setFtpModalOpen] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevNetworkRef = useRef<{ sent: number; recv: number } | null>(null);
 
@@ -798,11 +800,11 @@ export default function Dashboard() {
                       display: 'flex', alignItems: 'center', gap: 10,
                       padding: '10px 12px', borderRadius: 8,
                       border: '1px solid #f0f0f0', background: '#fafafa',
-                      cursor: (sw.name === 'nginx' || sw.name === 'phpmyadmin' || sw.name === 'php') ? 'pointer' : 'default',
+                      cursor: (sw.name === 'nginx' || sw.name === 'phpmyadmin' || sw.name === 'php' || sw.name === 'pureftpd') ? 'pointer' : 'default',
                       transition: 'box-shadow 0.15s',
                     }}
-                    onClick={() => { if (sw.name === 'nginx') setNginxModalOpen(true); if (sw.name === 'phpmyadmin') setPmaModalOpen(true); if (sw.name === 'php') setPhpModalOpen(true); }}
-                    onMouseEnter={e => { if (sw.name === 'nginx' || sw.name === 'phpmyadmin' || sw.name === 'php') e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)'; }}
+                    onClick={() => { if (sw.name === 'nginx') setNginxModalOpen(true); if (sw.name === 'phpmyadmin') setPmaModalOpen(true); if (sw.name === 'php') setPhpModalOpen(true); if (sw.name === 'pureftpd') setFtpModalOpen(true); }}
+                    onMouseEnter={e => { if (sw.name === 'nginx' || sw.name === 'phpmyadmin' || sw.name === 'php' || sw.name === 'pureftpd') e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)'; }}
                     onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}
                     >
                       <div style={{
@@ -871,6 +873,7 @@ export default function Dashboard() {
       <NginxManageModal open={nginxModalOpen} onClose={() => setNginxModalOpen(false)} />
       <PhpMyAdminManageModal open={pmaModalOpen} onClose={() => setPmaModalOpen(false)} />
       <PHPManageModal open={phpModalOpen} onClose={() => setPhpModalOpen(false)} />
+      <FTPManageModal open={ftpModalOpen} onClose={() => setFtpModalOpen(false)} />
     </div>
   );
 }
