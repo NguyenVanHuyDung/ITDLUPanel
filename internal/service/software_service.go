@@ -1042,6 +1042,35 @@ func (s *SoftwareService) GetServiceStatus(name string) (map[string]interface{},
 		}
 	}
 
+	// MySQL/MariaDB specific: get version from mysqld, port, datadir, uptime
+	if name == "mysql" {
+		vRes, _ := system.ExecWithTimeout(5*time.Second, "mysql", "--version")
+		if vRes != nil && vRes.Stdout != "" {
+			result["version_string"] = strings.TrimSpace(vRes.Stdout)
+		}
+		if s.isServiceRunning(svcName) {
+			statusRes, _ := system.ExecWithTimeout(5*time.Second, "mysql", "-e",
+				"SELECT @@port AS port, @@datadir AS datadir, @@version AS version;",
+				"--batch", "--skip-column-names")
+			if statusRes != nil && statusRes.Stdout != "" {
+				fields := strings.Split(strings.TrimSpace(statusRes.Stdout), "\t")
+				if len(fields) >= 3 {
+					result["port"] = fields[0]
+					result["datadir"] = fields[1]
+					result["version"] = fields[2]
+				}
+			}
+			uptimeRes, _ := system.ExecWithTimeout(5*time.Second, "mysql", "-e",
+				"SHOW GLOBAL STATUS LIKE 'Uptime';", "--batch", "--skip-column-names")
+			if uptimeRes != nil && uptimeRes.Stdout != "" {
+				parts := strings.Fields(strings.TrimSpace(uptimeRes.Stdout))
+				if len(parts) >= 2 {
+					result["uptime_seconds"] = parts[1]
+				}
+			}
+		}
+	}
+
 	return result, nil
 }
 
@@ -2141,4 +2170,314 @@ func (s *SoftwareService) GetPHPInfo(version string) (string, error) {
 		return "", fmt.Errorf("failed to run %s -i: %w", bin, err)
 	}
 	return res.Stdout, nil
+}
+
+// ---------------------------------------------------------------------------
+// MariaDB / MySQL Optimization
+// ---------------------------------------------------------------------------
+
+// MariaDBOptimization holds tunable MariaDB/MySQL parameters.
+type MariaDBOptimization struct {
+	InnodbBufferPoolSize    string `json:"innodb_buffer_pool_size"`
+	InnodbLogFileSize       string `json:"innodb_log_file_size"`
+	InnodbFlushLogAtTrxCommit string `json:"innodb_flush_log_at_trx_commit"`
+	InnodbFlushMethod       string `json:"innodb_flush_method"`
+	InnodbIOCapacity        string `json:"innodb_io_capacity"`
+	InnodbIOCapacityMax     string `json:"innodb_io_capacity_max"`
+	QueryCacheType          string `json:"query_cache_type"`
+	QueryCacheSize          string `json:"query_cache_size"`
+	QueryCacheLimit         string `json:"query_cache_limit"`
+	MaxConnections          string `json:"max_connections"`
+	ThreadCacheSize         string `json:"thread_cache_size"`
+	TmpTableSize            string `json:"tmp_table_size"`
+	MaxHeapTableSize        string `json:"max_heap_table_size"`
+	JoinBufferSize          string `json:"join_buffer_size"`
+	SortBufferSize          string `json:"sort_buffer_size"`
+	ReadBufferSize          string `json:"read_buffer_size"`
+	ReadRndBufferSize       string `json:"read_rnd_buffer_size"`
+	TableOpenCache          string `json:"table_open_cache"`
+	TableDefinitionCache    string `json:"table_definition_cache"`
+	KeyBufferSize           string `json:"key_buffer_size"`
+	SlowQueryLog            string `json:"slow_query_log"`
+	LongQueryTime           string `json:"long_query_time"`
+	LogBin                  string `json:"log_bin"`
+	ExpireLogsDays          string `json:"expire_logs_days"`
+	BinlogFormat            string `json:"binlog_format"`
+	MaxBinlogSize           string `json:"max_binlog_size"`
+}
+
+func (s *SoftwareService) getMariaDBTuningPath() string {
+	// Check MariaDB path first, then MySQL
+	paths := []string{
+		"/etc/mysql/mariadb.conf.d/99-itdlu-tuning.cnf",
+		"/etc/mysql/mysql.conf.d/99-itdlu-tuning.cnf",
+	}
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	// Check version from DB to determine default
+	var version string
+	s.db.QueryRow("SELECT version FROM software WHERE name = 'mysql'").Scan(&version)
+	if strings.Contains(version, "mariadb") {
+		return "/etc/mysql/mariadb.conf.d/99-itdlu-tuning.cnf"
+	}
+	return "/etc/mysql/mysql.conf.d/99-itdlu-tuning.cnf"
+}
+
+func parseMySQLConfig(content string) map[string]string {
+	result := make(map[string]string)
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "[") {
+			continue
+		}
+		k, v, ok := strings.Cut(line, "=")
+		if ok {
+			result[strings.TrimSpace(k)] = strings.TrimSpace(v)
+		}
+	}
+	return result
+}
+
+func (s *SoftwareService) GetMariaDBOptimization() (*MariaDBOptimization, error) {
+	path := s.getMariaDBTuningPath()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return &MariaDBOptimization{}, nil
+	}
+	kv := parseMySQLConfig(string(data))
+	opt := &MariaDBOptimization{
+		InnodbBufferPoolSize:      kv["innodb_buffer_pool_size"],
+		InnodbLogFileSize:         kv["innodb_log_file_size"],
+		InnodbFlushLogAtTrxCommit: kv["innodb_flush_log_at_trx_commit"],
+		InnodbFlushMethod:         kv["innodb_flush_method"],
+		InnodbIOCapacity:          kv["innodb_io_capacity"],
+		InnodbIOCapacityMax:       kv["innodb_io_capacity_max"],
+		QueryCacheType:            kv["query_cache_type"],
+		QueryCacheSize:            kv["query_cache_size"],
+		QueryCacheLimit:           kv["query_cache_limit"],
+		MaxConnections:            kv["max_connections"],
+		ThreadCacheSize:           kv["thread_cache_size"],
+		TmpTableSize:              kv["tmp_table_size"],
+		MaxHeapTableSize:          kv["max_heap_table_size"],
+		JoinBufferSize:            kv["join_buffer_size"],
+		SortBufferSize:            kv["sort_buffer_size"],
+		ReadBufferSize:            kv["read_buffer_size"],
+		ReadRndBufferSize:         kv["read_rnd_buffer_size"],
+		TableOpenCache:            kv["table_open_cache"],
+		TableDefinitionCache:      kv["table_definition_cache"],
+		KeyBufferSize:             kv["key_buffer_size"],
+		SlowQueryLog:              kv["slow_query_log"],
+		LongQueryTime:             kv["long_query_time"],
+		LogBin:                    kv["log_bin"],
+		ExpireLogsDays:            kv["expire_logs_days"],
+		BinlogFormat:              kv["binlog_format"],
+		MaxBinlogSize:             kv["max_binlog_size"],
+	}
+	return opt, nil
+}
+
+func (s *SoftwareService) UpdateMariaDBOptimization(opt *MariaDBOptimization) error {
+	path := s.getMariaDBTuningPath()
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	lines := []string{"[mysqld]"}
+	add := func(k, v string) {
+		if v != "" {
+			lines = append(lines, fmt.Sprintf("%s = %s", k, v))
+		}
+	}
+	add("innodb_buffer_pool_size", opt.InnodbBufferPoolSize)
+	add("innodb_log_file_size", opt.InnodbLogFileSize)
+	add("innodb_flush_log_at_trx_commit", opt.InnodbFlushLogAtTrxCommit)
+	add("innodb_flush_method", opt.InnodbFlushMethod)
+	add("innodb_io_capacity", opt.InnodbIOCapacity)
+	add("innodb_io_capacity_max", opt.InnodbIOCapacityMax)
+	add("query_cache_type", opt.QueryCacheType)
+	add("query_cache_size", opt.QueryCacheSize)
+	add("query_cache_limit", opt.QueryCacheLimit)
+	add("max_connections", opt.MaxConnections)
+	add("thread_cache_size", opt.ThreadCacheSize)
+	add("tmp_table_size", opt.TmpTableSize)
+	add("max_heap_table_size", opt.MaxHeapTableSize)
+	add("join_buffer_size", opt.JoinBufferSize)
+	add("sort_buffer_size", opt.SortBufferSize)
+	add("read_buffer_size", opt.ReadBufferSize)
+	add("read_rnd_buffer_size", opt.ReadRndBufferSize)
+	add("table_open_cache", opt.TableOpenCache)
+	add("table_definition_cache", opt.TableDefinitionCache)
+	add("key_buffer_size", opt.KeyBufferSize)
+	add("slow_query_log", opt.SlowQueryLog)
+	add("long_query_time", opt.LongQueryTime)
+	if opt.LogBin != "" {
+		add("log_bin", opt.LogBin)
+	}
+	add("expire_logs_days", opt.ExpireLogsDays)
+	add("binlog_format", opt.BinlogFormat)
+	add("max_binlog_size", opt.MaxBinlogSize)
+
+	content := strings.Join(lines, "\n") + "\n"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return err
+	}
+
+	// Restart service to apply
+	svcName, _ := s.resolveServiceName("mysql")
+	system.ExecWithTimeout(15*time.Second, "systemctl", "restart", svcName)
+	return nil
+}
+
+// GetMariaDBSlowLog reads the slow query log.
+func (s *SoftwareService) GetMariaDBSlowLog(lines int) (string, string, error) {
+	paths := []string{
+		"/var/log/mysql/mariadb-slow.log",
+		"/var/log/mysql/mysql-slow.log",
+		"/var/lib/mysql/slow.log",
+	}
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			if lines <= 0 { lines = 100 }
+			if lines > 2000 { lines = 2000 }
+			res, err := system.ExecWithTimeout(10*time.Second, "tail", "-n", strconv.Itoa(lines), p)
+			if err != nil {
+				return "", p, err
+			}
+			return res.Stdout, p, nil
+		}
+	}
+	return "", "", fmt.Errorf("slow query log not found")
+}
+
+// GetMariaDBBinaryLogs lists binary log files and sizes.
+func (s *SoftwareService) GetMariaDBBinaryLogs() ([]map[string]interface{}, error) {
+	svcName, _ := s.resolveServiceName("mysql")
+	if !s.isServiceRunning(svcName) {
+		return nil, fmt.Errorf("MySQL/MariaDB is not running")
+	}
+	res, err := system.ExecWithTimeout(10*time.Second, "mysql", "-e", "SHOW BINARY LOGS;", "--batch", "--skip-column-names")
+	if err != nil {
+		return nil, fmt.Errorf("failed to query binary logs: %w", err)
+	}
+	var logs []map[string]interface{}
+	for _, line := range strings.Split(strings.TrimSpace(res.Stdout), "\n") {
+		if line == "" { continue }
+		parts := strings.Fields(line)
+		if len(parts) >= 2 {
+			logs = append(logs, map[string]interface{}{
+				"name": parts[0],
+				"size": parts[1],
+			})
+		}
+	}
+	return logs, nil
+}
+
+// GetMariaDBMemoryProtection returns systemd memory limit settings.
+func (s *SoftwareService) GetMariaDBMemoryProtection() (map[string]string, error) {
+	svcName, _ := s.resolveServiceName("mysql")
+	res, err := system.ExecWithTimeout(10*time.Second, "systemctl", "show", svcName,
+		"--property=MemoryLimit,MemoryCurrent,MemoryHigh,MemoryMax,OOMPolicy")
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]string)
+	for _, line := range strings.Split(strings.TrimSpace(res.Stdout), "\n") {
+		k, v, ok := strings.Cut(line, "=")
+		if ok {
+			result[strings.ToLower(strings.TrimSpace(k))] = strings.TrimSpace(v)
+		}
+	}
+	return result, nil
+}
+
+// SetMariaDBMemoryProtection sets systemd memory limits for the DB service.
+func (s *SoftwareService) SetMariaDBMemoryProtection(memoryMax string) error {
+	svcName, _ := s.resolveServiceName("mysql")
+	// Create override dir
+	overrideDir := fmt.Sprintf("/etc/systemd/system/%s.service.d", svcName)
+	if err := os.MkdirAll(overrideDir, 0755); err != nil {
+		return err
+	}
+	content := "[Service]\n"
+	if memoryMax != "" && memoryMax != "infinity" {
+		content += fmt.Sprintf("MemoryMax=%s\nMemoryHigh=%s\n", memoryMax, memoryMax)
+	} else {
+		content += "MemoryMax=infinity\nMemoryHigh=infinity\n"
+	}
+	if err := os.WriteFile(overrideDir+"/memory.conf", []byte(content), 0644); err != nil {
+		return err
+	}
+	system.ExecWithTimeout(10*time.Second, "systemctl", "daemon-reload")
+	system.ExecWithTimeout(15*time.Second, "systemctl", "restart", svcName)
+	return nil
+}
+
+// GetMariaDBRAMPlan returns optimization presets for different RAM sizes.
+func (s *SoftwareService) GetMariaDBRAMPlan(totalRAM int64) map[string]map[string]string {
+	mb := totalRAM / (1024 * 1024)
+	plans := make(map[string]map[string]string)
+
+	// Low: 1-2 GB
+	plans["low"] = map[string]string{
+		"label": "Low (1-2 GB RAM)",
+		"innodb_buffer_pool_size": "128M", "innodb_log_file_size": "64M",
+		"max_connections": "50", "query_cache_size": "16M",
+		"tmp_table_size": "16M", "max_heap_table_size": "16M",
+		"thread_cache_size": "8", "table_open_cache": "400",
+		"key_buffer_size": "16M", "sort_buffer_size": "512K",
+		"read_buffer_size": "256K", "join_buffer_size": "256K",
+	}
+
+	// Medium: 2-4 GB
+	plans["medium"] = map[string]string{
+		"label": "Medium (2-4 GB RAM)",
+		"innodb_buffer_pool_size": "512M", "innodb_log_file_size": "128M",
+		"max_connections": "150", "query_cache_size": "32M",
+		"tmp_table_size": "32M", "max_heap_table_size": "32M",
+		"thread_cache_size": "16", "table_open_cache": "2000",
+		"key_buffer_size": "32M", "sort_buffer_size": "1M",
+		"read_buffer_size": "1M", "join_buffer_size": "1M",
+	}
+
+	// High: 4-8 GB
+	plans["high"] = map[string]string{
+		"label": "High (4-8 GB RAM)",
+		"innodb_buffer_pool_size": "1G", "innodb_log_file_size": "256M",
+		"max_connections": "200", "query_cache_size": "64M",
+		"tmp_table_size": "64M", "max_heap_table_size": "64M",
+		"thread_cache_size": "32", "table_open_cache": "4000",
+		"key_buffer_size": "64M", "sort_buffer_size": "2M",
+		"read_buffer_size": "2M", "join_buffer_size": "2M",
+	}
+
+	// Ultra: 8+ GB
+	bufPool := fmt.Sprintf("%dM", mb/4)
+	if mb/4 > 4096 { bufPool = "4G" }
+	plans["ultra"] = map[string]string{
+		"label": fmt.Sprintf("Ultra (8+ GB RAM, yours: %dMB)", mb),
+		"innodb_buffer_pool_size": bufPool, "innodb_log_file_size": "512M",
+		"max_connections": "500", "query_cache_size": "128M",
+		"tmp_table_size": "128M", "max_heap_table_size": "128M",
+		"thread_cache_size": "64", "table_open_cache": "8000",
+		"key_buffer_size": "128M", "sort_buffer_size": "4M",
+		"read_buffer_size": "4M", "join_buffer_size": "4M",
+	}
+
+	// Determine recommended plan
+	switch {
+	case mb <= 2048:
+		plans["recommended"] = plans["low"]
+	case mb <= 4096:
+		plans["recommended"] = plans["medium"]
+	case mb <= 8192:
+		plans["recommended"] = plans["high"]
+	default:
+		plans["recommended"] = plans["ultra"]
+	}
+	return plans
 }

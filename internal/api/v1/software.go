@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/ITDLUPanel/panel/internal/pkg/response"
 	"github.com/ITDLUPanel/panel/internal/service"
 	"github.com/ITDLUPanel/panel/internal/service/installer"
+	"github.com/ITDLUPanel/panel/internal/system"
 )
 
 // SoftwareHandler handles software management API endpoints.
@@ -55,6 +58,13 @@ func (h *SoftwareHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gi
 
 		// Nginx version management
 		sw.GET("/nginx/available-versions", h.getNginxAvailableVersions)
+
+		// MariaDB/MySQL management
+		sw.GET("/mysql/slow-log", h.getMariaDBSlowLog)
+		sw.GET("/mysql/binary-logs", h.getMariaDBBinaryLogs)
+		sw.GET("/mysql/memory-protection", h.getMariaDBMemoryProtection)
+		sw.PUT("/mysql/memory-protection", h.setMariaDBMemoryProtection)
+		sw.GET("/mysql/ram-plans", h.getMariaDBRAMPlans)
 
 		// PHP management
 		sw.GET("/php/:version/extensions", h.getPHPExtensions)
@@ -354,6 +364,13 @@ func (h *SoftwareHandler) getOptimization(c *gin.Context) {
 			return
 		}
 		response.Success(c, opt)
+	case "mysql":
+		opt, err := h.softwareService.GetMariaDBOptimization()
+		if err != nil {
+			response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get mysql optimization"))
+			return
+		}
+		response.Success(c, opt)
 	default:
 		response.Error(c, apperrors.New(apperrors.ErrValidation, "optimization not supported for "+name))
 	}
@@ -396,6 +413,17 @@ func (h *SoftwareHandler) updateOptimization(c *gin.Context) {
 			return
 		}
 		response.Success(c, gin.H{"message": "openlitespeed optimization updated"})
+	case "mysql":
+		var opt service.MariaDBOptimization
+		if err := c.ShouldBindJSON(&opt); err != nil {
+			response.Error(c, apperrors.Wrap(err, apperrors.ErrValidation, "invalid request"))
+			return
+		}
+		if err := h.softwareService.UpdateMariaDBOptimization(&opt); err != nil {
+			response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to update mysql optimization"))
+			return
+		}
+		response.Success(c, gin.H{"message": "mysql optimization updated"})
 	default:
 		response.Error(c, apperrors.New(apperrors.ErrValidation, "optimization not supported for "+name))
 	}
@@ -841,4 +869,73 @@ func (h *SoftwareHandler) getPHPInfo(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"info": info, "version": version})
+}
+
+// ---------------------------------------------------------------------------
+// MariaDB / MySQL management handlers
+// ---------------------------------------------------------------------------
+
+func (h *SoftwareHandler) getMariaDBSlowLog(c *gin.Context) {
+	lines := 100
+	if l := c.Query("lines"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil {
+			lines = n
+		}
+	}
+	content, path, err := h.softwareService.GetMariaDBSlowLog(lines)
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read slow log"))
+		return
+	}
+	response.Success(c, gin.H{"content": content, "path": path})
+}
+
+func (h *SoftwareHandler) getMariaDBBinaryLogs(c *gin.Context) {
+	logs, err := h.softwareService.GetMariaDBBinaryLogs()
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to list binary logs"))
+		return
+	}
+	response.Success(c, gin.H{"logs": logs})
+}
+
+func (h *SoftwareHandler) getMariaDBMemoryProtection(c *gin.Context) {
+	info, err := h.softwareService.GetMariaDBMemoryProtection()
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get memory protection"))
+		return
+	}
+	response.Success(c, info)
+}
+
+func (h *SoftwareHandler) setMariaDBMemoryProtection(c *gin.Context) {
+	var req struct {
+		MemoryMax string `json:"memory_max"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrValidation, "invalid request"))
+		return
+	}
+	if err := h.softwareService.SetMariaDBMemoryProtection(req.MemoryMax); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to set memory protection"))
+		return
+	}
+	response.Success(c, gin.H{"message": "memory protection updated"})
+}
+
+func (h *SoftwareHandler) getMariaDBRAMPlans(c *gin.Context) {
+	// Get total RAM from /proc/meminfo
+	res, err := system.ExecWithTimeout(5*time.Second, "grep", "MemTotal", "/proc/meminfo")
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get total RAM"))
+		return
+	}
+	var totalKB int64
+	fields := strings.Fields(strings.TrimSpace(res.Stdout))
+	if len(fields) >= 2 {
+		fmt.Sscanf(fields[1], "%d", &totalKB)
+	}
+	totalBytes := totalKB * 1024
+	plans := h.softwareService.GetMariaDBRAMPlan(totalBytes)
+	response.Success(c, gin.H{"plans": plans, "total_ram_mb": totalKB / 1024})
 }

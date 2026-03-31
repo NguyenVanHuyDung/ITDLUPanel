@@ -16,6 +16,7 @@ import PhpMyAdminManageModal from '@/components/PhpMyAdminManageModal';
 import PHPManageModal from '@/components/PHPManageModal';
 import OLSManageModal from '@/components/OLSManageModal';
 import FTPManageModal from '@/components/FTPManageModal';
+import MariadbManageModal from '@/components/MariadbManageModal';
 import { getSoftwareIcon } from './SoftwareIcons';
 
 const { Text } = Typography;
@@ -63,6 +64,7 @@ export default function AppStore() {
   const [olsModalOpen, setOlsModalOpen] = useState(false);
   const [apacheModalOpen, setApacheModalOpen] = useState(false);
   const [ftpModalOpen, setFtpModalOpen] = useState(false);
+  const [mariadbModalOpen, setMariadbModalOpen] = useState(false);
   const [swStatus, setSwStatus] = useState<Record<string, string> | null>(null);
   const [swConfig, setSwConfig] = useState('');
   const [configLoading, setConfigLoading] = useState(false);
@@ -279,6 +281,7 @@ export default function AppStore() {
     if (sw.name === 'phpmyadmin') { setPmaModalOpen(true); return; }
     if (sw.name === 'php') { setPhpModalOpen(true); return; }
     if (sw.name === 'pureftpd') { setFtpModalOpen(true); return; }
+    if (sw.name === 'mysql') { setMariadbModalOpen(true); return; }
     setManageSW(sw);
     setManageTab('status');
     setSwStatus(null);
@@ -997,6 +1000,7 @@ export default function AppStore() {
       <PHPManageModal open={phpModalOpen} onClose={() => setPhpModalOpen(false)} />
       <OLSManageModal open={olsModalOpen} onClose={() => setOlsModalOpen(false)} />
       <FTPManageModal open={ftpModalOpen} onClose={() => setFtpModalOpen(false)} />
+      <MariadbManageModal open={mariadbModalOpen} onClose={() => setMariadbModalOpen(false)} />
     </div>
   );
 }
