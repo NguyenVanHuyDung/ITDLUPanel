@@ -119,7 +119,7 @@ func (mc *MetricsCollector) collectOnce() {
 		return
 	}
 
-	now := time.Now().UTC()
+	now := time.Now().UTC().Format("2006-01-02 15:04:05")
 	loadAvg := overview.CPU.LoadAverage
 	var l1, l5, l15 float64
 	if len(loadAvg) >= 3 {
@@ -218,7 +218,7 @@ func (mc *MetricsCollector) aggregate(srcTable, dstTable string, bucket time.Dur
 	// Use SQLite strftime to bucket timestamps, then AVG all columns
 	query := fmt.Sprintf(`
 		SELECT
-			datetime((strftime('%%s', timestamp) / %d) * %d, 'unixepoch') as bucket_ts,
+			datetime((strftime('%%s', SUBSTR(timestamp, 1, 19)) / %d) * %d, 'unixepoch') as bucket_ts,
 			AVG(cpu_percent), AVG(mem_percent),
 			AVG(mem_used), AVG(mem_total),
 			AVG(swap_percent), AVG(disk_percent),
