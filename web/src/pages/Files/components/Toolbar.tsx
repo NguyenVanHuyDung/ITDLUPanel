@@ -10,7 +10,7 @@ import {
   CloudDownloadOutlined,
 } from '@ant-design/icons';
 import type { ViewMode } from '../types';
-import { usePalette, mono } from '../palette';
+import { usePalette } from '../palette';
 
 interface ToolbarProps {
   viewMode: ViewMode;
@@ -133,7 +133,7 @@ export default function Toolbar({
               <Tag
                 style={{
                   margin: 0, background: `${p.red}20`, border: `1px solid ${p.red}30`,
-                  color: p.red, fontSize: 10, fontWeight: 700, fontFamily: mono,
+                  color: p.red, fontSize: 10, fontWeight: 700,
                   borderRadius: 4, padding: '0 5px', lineHeight: '18px',
                 }}
               >
@@ -145,7 +145,7 @@ export default function Toolbar({
               <Tag
                 style={{
                   margin: 0, background: `${p.accent}15`, border: `1px solid ${p.accent}30`,
-                  color: p.accent, fontSize: 10, fontWeight: 700, fontFamily: mono,
+                  color: p.accent, fontSize: 10, fontWeight: 700,
                   borderRadius: 4, padding: '0 5px', lineHeight: '18px',
                 }}
               >

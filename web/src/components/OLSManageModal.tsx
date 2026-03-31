@@ -323,7 +323,6 @@ function ConfigTab() {
             options={{
               minimap: { enabled: false },
               fontSize: 13,
-              fontFamily: "'JetBrains Mono', monospace",
               lineNumbers: 'on',
               scrollBeyondLastLine: false,
               wordWrap: 'on',
@@ -460,7 +459,7 @@ function OptimizationTab() {
                     {f.type === 'select' ? (
                       <Select options={f.options!.map(o => ({ value: o, label: o }))} style={{ width: 120 }} />
                     ) : (
-                      <Input style={{ maxWidth: 300, fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }} />
+                      <Input style={{ maxWidth: 300, fontSize: 13 }} />
                     )}
                   </Form.Item>
                   <Text style={{ fontSize: 11, color: TEXT_SECONDARY }}>{f.desc}</Text>
@@ -536,7 +535,6 @@ function ErrorLogTab() {
             padding: 16,
             borderRadius: 10,
             fontSize: 12,
-            fontFamily: "'JetBrains Mono', monospace",
             lineHeight: 1.7,
             maxHeight: 420,
             overflow: 'auto',

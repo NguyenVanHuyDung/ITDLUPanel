@@ -535,7 +535,7 @@ export default function Logs() {
     {
       title: 'Path', dataIndex: 'path', key: 'path', ellipsis: true,
       render: (v: string) => (
-        <span style={{ fontSize: 12, color: p.text, fontFamily: 'monospace' }}>{v}</span>
+        <span style={{ fontSize: 12, color: p.text }}>{v}</span>
       ),
     },
     {

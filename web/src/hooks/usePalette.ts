@@ -81,4 +81,4 @@ export function usePalette(): { p: Palette; isDark: boolean } {
   return { p: isDark ? darkPalette : lightPalette, isDark };
 }
 
-export const mono = '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace';
+

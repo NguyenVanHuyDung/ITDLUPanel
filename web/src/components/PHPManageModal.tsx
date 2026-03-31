@@ -455,7 +455,7 @@ function ServiceTab({ version, versions }: { version: string; versions: string[]
                     border: `1px solid ${isDark ? 'rgba(139,92,246,0.15)' : '#DDD6FE'}`,
                   }}>
                     <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4 }}>Load Average</div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: p.purple, fontFamily: "'JetBrains Mono', monospace" }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: p.purple }}>
                       {fpmStatus.load_average.load1} <span style={{ color: p.textMuted, fontWeight: 400 }}>/ </span>
                       {fpmStatus.load_average.load5} <span style={{ color: p.textMuted, fontWeight: 400 }}>/ </span>
                       {fpmStatus.load_average.load15}
@@ -487,10 +487,10 @@ function ServiceTab({ version, versions }: { version: string; versions: string[]
                     <tbody>
                       {fpmStatus.processes.map((proc: any, i: number) => (
                         <tr key={proc.pid} style={{ background: i % 2 === 0 ? 'transparent' : (isDark ? p.rowAlt : '#F1F5F9') }}>
-                          <td style={{ padding: '5px 10px', color: p.text, fontFamily: "'JetBrains Mono', monospace" }}>{proc.pid}</td>
+                          <td style={{ padding: '5px 10px', color: p.text }}>{proc.pid}</td>
                           <td style={{ padding: '5px 10px', color: p.text }}>{proc.cpu}</td>
                           <td style={{ padding: '5px 10px', color: p.text }}>{proc.memory_mb} MB</td>
-                          <td style={{ padding: '5px 10px', color: p.text, fontFamily: "'JetBrains Mono', monospace" }}>{proc.time}</td>
+                          <td style={{ padding: '5px 10px', color: p.text }}>{proc.time}</td>
                           <td style={{ padding: '5px 10px' }}>
                             <Tag color={proc.role === 'master' ? 'purple' : 'blue'} style={{ fontSize: 11, borderRadius: 4 }}>
                               {proc.role}
@@ -686,7 +686,7 @@ function ExtensionsTab({ version }: { version: string }) {
                   <span style={{ color: catMeta.color, fontSize: 14, flexShrink: 0 }}>{catMeta.icon}</span>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <Text style={{ fontSize: 13, fontWeight: 500, color: p.text, fontFamily: "'JetBrains Mono', monospace" }}>
+                      <Text style={{ fontSize: 13, fontWeight: 500, color: p.text }}>
                         {ext.name}
                       </Text>
                       <Tag
@@ -926,7 +926,6 @@ function FPMProfileTab({ version }: { version: string }) {
                 borderRadius: 6,
                 background: isDark ? p.inputBg : '#fff',
                 borderColor: isDark ? p.cardBorder : '#D1D5DB',
-                fontFamily: "'JetBrains Mono', monospace",
                 fontSize: 13,
               }}
             />
@@ -966,7 +965,6 @@ function FPMProfileTab({ version }: { version: string }) {
                 borderRadius: 6,
                 background: isDark ? p.inputBg : '#fff',
                 borderColor: isDark ? p.cardBorder : '#D1D5DB',
-                fontFamily: "'JetBrains Mono', monospace",
                 fontSize: 13,
               }}
             />
@@ -1091,7 +1089,6 @@ function ConfigTab({ version }: { version: string }) {
                 borderRadius: 6,
                 background: isDark ? p.inputBg : '#fff',
                 borderColor: isDark ? p.cardBorder : '#D1D5DB',
-                fontFamily: "'JetBrains Mono', monospace",
                 fontSize: 13,
               }}
             />
@@ -1253,7 +1250,6 @@ function OPcacheTab({ version }: { version: string }) {
                   borderRadius: 6,
                   background: isDark ? p.inputBg : '#fff',
                   borderColor: isDark ? p.cardBorder : '#D1D5DB',
-                  fontFamily: "'JetBrains Mono', monospace",
                   fontSize: 13,
                 }}
               />
@@ -1437,7 +1433,6 @@ function DisableFunctionsTab({ version }: { version: string }) {
                       borderRadius: 6,
                       padding: '3px 8px',
                       fontSize: 12,
-                      fontFamily: "'JetBrains Mono', monospace",
                       background: isDark ? 'rgba(248,113,113,0.1)' : '#FEF2F2',
                       border: `1px solid ${isDark ? 'rgba(248,113,113,0.25)' : '#FECACA'}`,
                       color: p.red,
@@ -1474,7 +1469,6 @@ function DisableFunctionsTab({ version }: { version: string }) {
                       borderRadius: 6,
                       padding: '3px 8px',
                       fontSize: 12,
-                      fontFamily: "'JetBrains Mono', monospace",
                       background: isDark ? 'rgba(251,191,36,0.08)' : '#FEF9C3',
                       border: `1px solid ${isDark ? 'rgba(251,191,36,0.2)' : '#FDE68A'}`,
                       color: isDark ? p.amber : '#92400E',
@@ -1587,7 +1581,6 @@ function ConfigFileTab({ version }: { version: string }) {
             options={{
               minimap: { enabled: false },
               fontSize: 13,
-              fontFamily: "'JetBrains Mono', monospace",
               lineNumbers: 'on',
               scrollBeyondLastLine: false,
               wordWrap: 'on',
@@ -1675,7 +1668,6 @@ function ErrorLogTab({ version }: { version: string }) {
           padding: 16,
           borderRadius: 8,
           fontSize: 12,
-          fontFamily: "'JetBrains Mono', monospace",
           lineHeight: 1.6,
           maxHeight: 450,
           overflow: 'auto',
@@ -1823,7 +1815,6 @@ function SlowLogTab({ version }: { version: string }) {
           padding: 16,
           borderRadius: 8,
           fontSize: 12,
-          fontFamily: "'JetBrains Mono', monospace",
           lineHeight: 1.6,
           maxHeight: 400,
           overflow: 'auto',
@@ -2010,7 +2001,7 @@ function PHPInfoTab({ version }: { version: string }) {
                     background: cardBg, border: `1px solid ${borderColor}`,
                   }}>
                     <div style={{ fontSize: 10, color: p.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>{c.label}</div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: c.color, fontFamily: "'JetBrains Mono', monospace", wordBreak: 'break-all' }}>{val}</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: c.color, wordBreak: 'break-all' }}>{val}</div>
                   </div>
                 );
               })}
@@ -2103,7 +2094,7 @@ function PHPInfoTab({ version }: { version: string }) {
                           </td>
                           <td style={{
                             padding: '3px 12px', color: p.text,
-                            fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5,
+                            fontSize: 10.5,
                             wordBreak: 'break-all',
                           }}>
                             {filter ? highlightText(d.value, filter, p) : (

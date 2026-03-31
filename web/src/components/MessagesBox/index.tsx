@@ -295,7 +295,6 @@ function ExecutionLogTab() {
           padding: 12,
           background: isDark ? '#0d1117' : '#1a1a2e',
           color: '#e0e0e0',
-          fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
           fontSize: 12,
           lineHeight: 1.6,
           overflowY: 'auto',

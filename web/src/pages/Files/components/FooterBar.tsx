@@ -2,7 +2,7 @@ import React from 'react';
 import { Select } from 'antd';
 import { formatSize } from '../utils/fileHelpers';
 import { PAGE_SIZE_KEY } from '../utils/constants';
-import { usePalette, mono } from '../palette';
+import { usePalette } from '../palette';
 
 interface FooterBarProps {
   dirCount: number;
@@ -37,9 +37,9 @@ const FooterBar: React.FC<FooterBarProps> = ({
       }}
     >
       <span style={{ fontSize: 11, color: p.textDim }}>
-        <strong style={{ color: p.text, fontFamily: mono }}>{dirCount}</strong> dirs,{' '}
-        <strong style={{ color: p.text, fontFamily: mono }}>{fileCount}</strong> files{' '}
-        — <strong style={{ color: p.text, fontFamily: mono }}>{formatSize(totalSize)}</strong>
+        <strong style={{ color: p.text }}>{dirCount}</strong> dirs,{' '}
+        <strong style={{ color: p.text }}>{fileCount}</strong> files{' '}
+        — <strong style={{ color: p.text }}>{formatSize(totalSize)}</strong>
       </span>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -83,7 +83,7 @@ const FooterBar: React.FC<FooterBarProps> = ({
           </div>
         )}
 
-        <span style={{ fontSize: 10, color: p.textDim, fontFamily: mono }}>
+        <span style={{ fontSize: 10, color: p.textDim }}>
           {total} total
         </span>
       </div>

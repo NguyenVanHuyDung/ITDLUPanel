@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Input, Tag } from 'antd';
 import { SearchOutlined, FileSearchOutlined, CloseCircleOutlined } from '@ant-design/icons';
-import { usePalette, mono } from '../palette';
+import { usePalette } from '../palette';
 
 export type SearchMode = 'name' | 'content';
 

@@ -11,7 +11,7 @@ import type { FileItem } from '../types';
 import { getFileIcon } from './FileIcon';
 import { formatSize, formatDate, getExtension } from '../utils/fileHelpers';
 import { ARCHIVE_EXTENSIONS } from '../utils/constants';
-import { usePalette, mono } from '../palette';
+import { usePalette } from '../palette';
 
 interface FileTableProps {
   files: FileItem[];
@@ -40,7 +40,7 @@ function SortableHeader({ label, field, sortField, sortDir, onClick, p }: {
         display: 'flex', alignItems: 'center', gap: 3, padding: 0,
         color: active ? p.accent : p.textMuted,
         fontWeight: active ? 700 : 600, fontSize: 10,
-        letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: mono,
+        letterSpacing: '0.08em', textTransform: 'uppercase',
         transition: 'color 0.2s',
       }}
     >
@@ -127,7 +127,7 @@ export default function FileTable({
 
   const colHeaderStyle: React.CSSProperties = {
     fontSize: 10, color: p.textDim, fontWeight: 600,
-    textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: mono,
+    textTransform: 'uppercase', letterSpacing: '0.08em',
   };
 
   const actionBtn: React.CSSProperties = {
@@ -247,7 +247,7 @@ export default function FileTable({
               {/* Permissions / Owner */}
               <span
                 style={{
-                  fontSize: 11, fontFamily: mono, color: p.accent,
+                  fontSize: 11, color: p.accent,
                   cursor: 'pointer', whiteSpace: 'nowrap',
                 }}
                 onClick={() => onAction('permissions', file)}
@@ -258,7 +258,7 @@ export default function FileTable({
               </span>
 
               {/* Size */}
-              <span style={{ fontSize: 11, fontFamily: mono, color: p.textDim }}>
+              <span style={{ fontSize: 11, color: p.textDim }}>
                 {file.is_dir ? '—' : formatSize(file.size)}
               </span>
 

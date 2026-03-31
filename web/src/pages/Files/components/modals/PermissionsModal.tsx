@@ -74,7 +74,7 @@ export default function PermissionsModal({ open, file, onOk, onCancel }: Props) 
         <Input
           value={permOctal}
           onChange={(e) => handleOctalChange(e.target.value)}
-          style={{ width: 120, fontFamily: 'monospace', fontSize: 18, textAlign: 'center' }}
+          style={{ width: 120, fontSize: 18, textAlign: 'center' }}
           maxLength={3}
         />
       </div>

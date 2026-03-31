@@ -353,7 +353,7 @@ export default function Dashboard() {
 
   // Popover style helpers
   const popLabel: React.CSSProperties = { fontSize: 13, color: '#555' };
-  const popVal: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: '#1A1A2E', fontFamily: "'JetBrains Mono', monospace", whiteSpace: 'nowrap' };
+  const popVal: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: '#1A1A2E', whiteSpace: 'nowrap' };
   const popRow: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '7px 0', borderBottom: '1px solid #f0f0f0' };
   const popSection: React.CSSProperties = { fontWeight: 600, fontSize: 13, color: '#1565C0', margin: '12px 0 6px' };
   const popWrap: React.CSSProperties = { padding: '0 14px' };
@@ -535,7 +535,7 @@ export default function Dashboard() {
               <div style={{ marginTop: 12, padding: '8px 12px', borderTop: '1px solid #f0f0f0', borderRadius: 4 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                   <Text type="secondary" style={{ fontSize: 11 }}>Swap</Text>
-                  <Text type="secondary" style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>
+                  <Text type="secondary" style={{ fontSize: 11 }}>
                     {formatMB(swapUsed)} / {formatMB(swapTotal)} MB ({swapPct}%)
                   </Text>
                 </div>
@@ -721,19 +721,19 @@ export default function Dashboard() {
                 </div>
                 <div style={{ padding: '10px 12px', borderRadius: 6, background: isDark ? p.codeBg : '#F8FAFC', border: `1px solid ${isDark ? p.cardBorder : '#E2E8F0'}` }}>
                   <Text style={{ fontSize: 11, color: p.textMuted, display: 'block' }}>SSH Port</Text>
-                  <Text style={{ fontSize: 16, fontWeight: 700, color: p.text, fontFamily: "'JetBrains Mono', monospace" }}>
+                  <Text style={{ fontSize: 16, fontWeight: 700, color: p.text }}>
                     {sshPort ?? '—'}
                   </Text>
                 </div>
                 <div style={{ padding: '10px 12px', borderRadius: 6, background: isDark ? p.codeBg : '#F8FAFC', border: `1px solid ${isDark ? p.cardBorder : '#E2E8F0'}` }}>
                   <Text style={{ fontSize: 11, color: p.textMuted, display: 'block' }}>Blocked IPs</Text>
-                  <Text style={{ fontSize: 16, fontWeight: 700, color: (blockedIPsCount ?? 0) > 0 ? p.red : p.text, fontFamily: "'JetBrains Mono', monospace" }}>
+                  <Text style={{ fontSize: 16, fontWeight: 700, color: (blockedIPsCount ?? 0) > 0 ? p.red : p.text }}>
                     {blockedIPsCount ?? '—'}
                   </Text>
                 </div>
                 <div style={{ padding: '10px 12px', borderRadius: 6, background: isDark ? p.codeBg : '#F8FAFC', border: `1px solid ${isDark ? p.cardBorder : '#E2E8F0'}` }}>
                   <Text style={{ fontSize: 11, color: p.textMuted, display: 'block' }}>FW Rules</Text>
-                  <Text style={{ fontSize: 16, fontWeight: 700, color: p.text, fontFamily: "'JetBrains Mono', monospace" }}>
+                  <Text style={{ fontSize: 16, fontWeight: 700, color: p.text }}>
                     {firewallRulesCount ?? '—'}
                   </Text>
                 </div>
@@ -765,12 +765,12 @@ export default function Dashboard() {
                     display: 'flex', padding: '5px 16px', alignItems: 'center',
                     background: i % 2 === 1 ? (isDark ? p.rowAlt : '#FAFAFA') : 'transparent',
                   }}>
-                    <span style={{ fontSize: 12, color: p.textMuted, fontFamily: "'JetBrains Mono', monospace", width: 52 }}>{proc.pid}</span>
+                    <span style={{ fontSize: 12, color: p.textMuted, width: 52 }}>{proc.pid}</span>
                     <span style={{ fontSize: 12, color: p.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{proc.name}</span>
-                    <span style={{ fontSize: 12, fontFamily: "'JetBrains Mono', monospace", width: 50, textAlign: 'right', color: proc.cpu_percent > 50 ? p.red : p.text }}>
+                    <span style={{ fontSize: 12, width: 50, textAlign: 'right', color: proc.cpu_percent > 50 ? p.red : p.text }}>
                       {proc.cpu_percent.toFixed(1)}
                     </span>
-                    <span style={{ fontSize: 12, fontFamily: "'JetBrains Mono', monospace", width: 50, textAlign: 'right', color: proc.memory_percent > 50 ? p.amber : p.text }}>
+                    <span style={{ fontSize: 12, width: 50, textAlign: 'right', color: proc.memory_percent > 50 ? p.amber : p.text }}>
                       {proc.memory_percent.toFixed(1)}
                     </span>
                   </div>

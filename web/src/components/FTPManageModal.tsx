@@ -371,7 +371,7 @@ function AccountsTab({ refreshKey }: { refreshKey: number }) {
   const columns = [
     { title: 'Username', dataIndex: 'username', key: 'username', ellipsis: true },
     { title: 'Path', dataIndex: 'path', key: 'path', ellipsis: true,
-      render: (v: string) => <Text style={{ fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}>{v}</Text>,
+      render: (v: string) => <Text style={{ fontSize: 12 }}>{v}</Text>,
     },
     { title: 'Status', dataIndex: 'status', key: 'status', width: 90,
       render: (v: number) => (
@@ -784,7 +784,6 @@ function ConfigTab() {
             options={{
               minimap: { enabled: false },
               fontSize: 13,
-              fontFamily: "'JetBrains Mono', monospace",
               lineNumbers: 'on',
               scrollBeyondLastLine: false,
               wordWrap: 'on',
@@ -853,7 +852,6 @@ function TransferLogTab() {
             padding: 16,
             borderRadius: 10,
             fontSize: 12,
-            fontFamily: "'JetBrains Mono', monospace",
             lineHeight: 1.7,
             maxHeight: 420,
             overflow: 'auto',

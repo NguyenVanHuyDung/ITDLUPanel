@@ -4,7 +4,7 @@ import {
   LeftOutlined, RightOutlined, StarOutlined, CloseOutlined, FolderFilled,
 } from '@ant-design/icons';
 import type { Bookmark } from '../types';
-import { usePalette, mono } from '../palette';
+import { usePalette } from '../palette';
 
 interface BookmarkBarProps {
   bookmarks: Bookmark[];

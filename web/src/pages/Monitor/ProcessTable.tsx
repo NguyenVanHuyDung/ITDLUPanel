@@ -184,7 +184,7 @@ function statusLabel(s: string, p: Palette): { label: string; color: string } {
 }
 
 type SortField = 'pid' | 'cpu' | 'memory' | 'name' | 'threads';
-const mono = '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace';
+
 
 /* ─── Inline bar ─────────────────────────────────────────────────────── */
 
@@ -206,7 +206,7 @@ function ResourceBar({ value, gradient, color, trackColor }: {
           }}
         />
       </div>
-      <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 600, color, minWidth: 42, textAlign: 'right' }}>
+      <span style={{ fontSize: 11, fontWeight: 600, color, minWidth: 42, textAlign: 'right' }}>
         {value.toFixed(1)}%
       </span>
     </div>
@@ -228,7 +228,7 @@ function SortableHeader({ label, field, sortField, sortDir, onClick, p }: {
         display: 'flex', alignItems: 'center', gap: 3, padding: 0,
         color: active ? p.accent : p.textMuted,
         fontWeight: active ? 700 : 600, fontSize: 10,
-        letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: mono,
+        letterSpacing: '0.08em', textTransform: 'uppercase',
         transition: 'color 0.2s',
       }}
     >
@@ -268,7 +268,7 @@ function StatCard({ icon, label, value, color, p }: {
         <div style={{ fontSize: 10, color: p.textMuted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
           {label}
         </div>
-        <div style={{ fontSize: 16, fontWeight: 700, color: p.text, fontFamily: mono }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: p.text }}>
           {value}
         </div>
       </div>
@@ -345,7 +345,7 @@ export default function ProcessTable({ processes, onRefresh }: Props) {
 
   const colHeaderStyle: React.CSSProperties = {
     fontSize: 10, color: p.textDim, fontWeight: 600,
-    textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: mono,
+    textTransform: 'uppercase', letterSpacing: '0.08em',
   };
 
   return (
@@ -376,7 +376,7 @@ export default function ProcessTable({ processes, onRefresh }: Props) {
             <Tag
               style={{
                 background: `${p.accent}12`, border: `1px solid ${p.accent}30`,
-                color: p.accent, fontSize: 11, fontWeight: 700, fontFamily: mono,
+                color: p.accent, fontSize: 11, fontWeight: 700,
                 borderRadius: 6, padding: '0 8px', lineHeight: '22px',
               }}
             >
@@ -468,13 +468,13 @@ export default function ProcessTable({ processes, onRefresh }: Props) {
                 onMouseEnter={(e) => { e.currentTarget.style.background = p.rowHover; }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = rowBg; }}
               >
-                <span style={{ fontFamily: mono, fontSize: 11, color: p.textMuted, fontWeight: 500 }}>
+                <span style={{ fontSize: 11, color: p.textMuted, fontWeight: 500 }}>
                   {proc.pid}
                 </span>
 
                 <span
                   style={{
-                    fontSize: 9, fontWeight: 800, fontFamily: mono,
+                    fontSize: 9, fontWeight: 800,
                     color: st.color, background: `${st.color}15`,
                     padding: '2px 5px', borderRadius: 4,
                     border: `1px solid ${st.color}30`,
@@ -523,7 +523,7 @@ export default function ProcessTable({ processes, onRefresh }: Props) {
                   {proc.user || '—'}
                 </span>
 
-                <span style={{ fontFamily: mono, fontSize: 11, color: p.textDim, textAlign: 'center' }}>
+                <span style={{ fontSize: 11, color: p.textDim, textAlign: 'center' }}>
                   {proc.threads || '—'}
                 </span>
 
@@ -565,7 +565,7 @@ export default function ProcessTable({ processes, onRefresh }: Props) {
                   </div>
                   <code
                     style={{
-                      fontSize: 11, color: p.accent, fontFamily: mono,
+                      fontSize: 11, color: p.accent,
                       wordBreak: 'break-all', lineHeight: 1.5, display: 'block',
                       background: p.codeBg, padding: '6px 10px',
                       borderRadius: 6, border: `1px solid ${p.cardBorder}`,
@@ -612,7 +612,7 @@ export default function ProcessTable({ processes, onRefresh }: Props) {
                     background: pageIdx === safePage ? `${p.accent}15` : 'transparent',
                     color: pageIdx === safePage ? p.accent : p.textDim,
                     fontSize: 11, fontWeight: pageIdx === safePage ? 700 : 500,
-                    cursor: 'pointer', fontFamily: mono, transition: 'all 0.15s',
+                    cursor: 'pointer', transition: 'all 0.15s',
                   }}
                 >
                   {pageIdx + 1}

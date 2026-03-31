@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Tooltip, Input } from 'antd';
 import { LeftOutlined, RightOutlined, HomeOutlined, ReloadOutlined } from '@ant-design/icons';
-import { usePalette, mono } from '../palette';
+import { usePalette } from '../palette';
 
 interface BreadcrumbNavProps {
   currentPath: string;
@@ -78,7 +78,7 @@ export default function BreadcrumbNav({
           onBlur={commitEdit}
           autoFocus
           style={{
-            flex: 1, fontFamily: mono, fontSize: 12,
+            flex: 1, fontSize: 12,
             background: p.inputBg, borderColor: p.cardBorder,
             color: p.text, borderRadius: 6,
           }}

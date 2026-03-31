@@ -339,10 +339,10 @@ function DefaultDocPanel({ siteId }: { siteId: number }) {
           value={indexStr}
           onChange={e => setIndexStr(e.target.value)}
           placeholder="index.php index.html index.htm"
-          style={{ fontSize: 12, marginBottom: 12, fontFamily: 'monospace' }}
+          style={{ fontSize: 12, marginBottom: 12 }}
         />
 
-        <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 12, padding: '6px 10px', background: p.codeBg, borderRadius: 4, fontFamily: 'monospace' }}>
+        <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 12, padding: '6px 10px', background: p.codeBg, borderRadius: 4 }}>
           nginx directive: <span style={{ color: p.accent }}>index {indexStr};</span>
         </div>
 
@@ -994,7 +994,7 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
       <span style={{ fontSize: 12, fontWeight: 500, color: p.text }}>{value}</span>
     </div>
   );
-  const textareaStyle: React.CSSProperties = { width: '100%', minHeight: 120, padding: 10, borderRadius: 6, border: `1px solid ${p.cardBorder}`, background: p.card, color: p.text, fontFamily: 'monospace', fontSize: 12, resize: 'vertical' };
+  const textareaStyle: React.CSSProperties = { width: '100%', minHeight: 120, padding: 10, borderRadius: 6, border: `1px solid ${p.cardBorder}`, background: p.card, color: p.text, fontSize: 12, resize: 'vertical' };
 
   if (loading) return <div style={{ textAlign: 'center', padding: '40px 0' }}><Spin /></div>;
 
@@ -1052,7 +1052,7 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
             }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: p.text, marginBottom: 10 }}>Current Certificate</div>
               <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4 }}>
-                Private Key — <span style={{ fontFamily: 'monospace', fontSize: 10 }}>{sslInfo.key_path}</span>
+                Private Key — <span style={{ fontSize: 10 }}>{sslInfo.key_path}</span>
               </div>
               <textarea style={{ ...textareaStyle, minHeight: 80 }}
                 value={keyPEM || sslInfo.key_content || ''}
@@ -1060,7 +1060,7 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
                 onClick={e => { if (!keyPEM) setKeyPEM(sslInfo.key_content || ''); (e.target as HTMLTextAreaElement).select(); }}
                 placeholder="-----BEGIN PRIVATE KEY-----&#10;..." />
               <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4, marginTop: 8 }}>
-                Certificate / CRT / PEM — <span style={{ fontFamily: 'monospace', fontSize: 10 }}>{sslInfo.cert_path}</span>
+                Certificate / CRT / PEM — <span style={{ fontSize: 10 }}>{sslInfo.cert_path}</span>
               </div>
               <textarea style={{ ...textareaStyle, minHeight: 80 }}
                 value={certPEM || sslInfo.cert_content || ''}
@@ -1268,7 +1268,7 @@ function ResponseLogPanel({ site }: { site: Site }) {
         borderRadius: 8,
         maxHeight: 360,
         overflow: 'auto',
-        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+
         fontSize: 11,
         lineHeight: 1.7,
       }}>
@@ -1993,7 +1993,7 @@ function ReverseProxyPanel({ siteId }: { siteId: number }) {
                 <div style={{ marginBottom: 8 }}>
                   <div style={{ fontSize: 11, fontWeight: 600, color: p.textMuted, marginBottom: 4 }}>URL Rewrites:</div>
                   {rule.url_rewrite.map((rw, j) => (
-                    <div key={j} style={{ fontSize: 11, color: p.text, fontFamily: 'monospace', padding: '2px 0' }}>
+                    <div key={j} style={{ fontSize: 11, color: p.text, padding: '2px 0' }}>
                       <span style={{ color: p.amber || '#F59E0B' }}>{rw.pattern}</span> → <span style={{ color: p.green }}>{rw.replacement}</span>
                     </div>
                   ))}
@@ -2003,7 +2003,7 @@ function ReverseProxyPanel({ siteId }: { siteId: number }) {
                 <div style={{ marginBottom: 8 }}>
                   <div style={{ fontSize: 11, fontWeight: 600, color: p.textMuted, marginBottom: 4 }}>Content Replace:</div>
                   {rule.content_replace.map((cr, j) => (
-                    <div key={j} style={{ fontSize: 11, color: p.text, fontFamily: 'monospace', padding: '2px 0' }}>
+                    <div key={j} style={{ fontSize: 11, color: p.text, padding: '2px 0' }}>
                       <span style={{ color: p.red }}>{cr.search}</span> → <span style={{ color: p.green }}>{cr.replace}</span>
                     </div>
                   ))}
@@ -2213,7 +2213,7 @@ function RedirectPanel({ siteId }: { siteId: number }) {
           {/* Preview */}
           <div style={{
             fontSize: 11, color: p.textMuted, marginBottom: 12, padding: '8px 12px',
-            background: p.codeBg, borderRadius: 6, fontFamily: 'monospace', lineHeight: 1.6,
+            background: p.codeBg, borderRadius: 6, lineHeight: 1.6,
           }}>
             <div style={{ fontWeight: 600, marginBottom: 4, color: p.text }}>Preview:</div>
             {keepUri ? (
@@ -2283,7 +2283,7 @@ function RedirectPanel({ siteId }: { siteId: number }) {
                     </span>
                   )}
                 </div>
-                <div style={{ fontSize: 11, color: p.textMuted, marginTop: 2, fontFamily: 'monospace' }}>
+                <div style={{ fontSize: 11, color: p.textMuted, marginTop: 2 }}>
                   <span style={{ color: p.amber || '#F59E0B' }}>{rule.type === 'domain' ? rule.source : `*${rule.source}`}</span>
                   <span style={{ margin: '0 6px' }}>→</span>
                   <span style={{ color: p.green }}>{rule.target_url}</span>
@@ -2447,7 +2447,7 @@ function HotlinkPanel({ siteId }: { siteId: number }) {
               })}
             </div>
             <Input value={urlSuffix} onChange={e => setUrlSuffix(e.target.value)}
-              placeholder="jpg|jpeg|png|gif" style={{ fontSize: 12, fontFamily: 'monospace' }} />
+              placeholder="jpg|jpeg|png|gif" style={{ fontSize: 12 }} />
           </div>
 
           {/* Allowed domains */}
@@ -2634,7 +2634,7 @@ function MaintenancePanel({ siteId, siteDomain }: { siteId: number; siteDomain: 
             onChange={e => setCustomHtml(e.target.value)}
             placeholder="<!DOCTYPE html>\n<html>\n<head><title>Maintenance</title></head>\n<body>\n  <h1>Under Maintenance</h1>\n</body>\n</html>"
             rows={12}
-            style={{ fontSize: 12, fontFamily: 'monospace' }}
+            style={{ fontSize: 12 }}
           />
         </div>
       )}
