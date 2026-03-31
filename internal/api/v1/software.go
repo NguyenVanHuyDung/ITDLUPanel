@@ -884,7 +884,7 @@ func (h *SoftwareHandler) getMariaDBSlowLog(c *gin.Context) {
 	}
 	content, path, err := h.softwareService.GetMariaDBSlowLog(lines)
 	if err != nil {
-		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read slow log"))
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
 		return
 	}
 	response.Success(c, gin.H{"content": content, "path": path})
@@ -893,7 +893,7 @@ func (h *SoftwareHandler) getMariaDBSlowLog(c *gin.Context) {
 func (h *SoftwareHandler) getMariaDBBinaryLogs(c *gin.Context) {
 	logs, err := h.softwareService.GetMariaDBBinaryLogs()
 	if err != nil {
-		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to list binary logs"))
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
 		return
 	}
 	response.Success(c, gin.H{"logs": logs})

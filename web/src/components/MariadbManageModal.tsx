@@ -652,8 +652,9 @@ function ErrorLogTab() {
       const { data: resp } = await api.get(`/software/mysql/error-log?lines=${n}`);
       setContent(resp.data?.content || '(empty)');
       setLogPath(resp.data?.path || '');
-    } catch {
-      setContent('Failed to load error log');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setContent(msg || 'Failed to load error log');
     }
     setLoading(false);
     setTimeout(() => { logRef.current?.scrollTo(0, logRef.current.scrollHeight); }, 100);
@@ -735,8 +736,9 @@ function SlowLogTab() {
       const { data: resp } = await api.get(`/software/mysql/slow-log?lines=${n}`);
       setContent(resp.data?.content || '(empty)');
       setLogPath(resp.data?.path || '');
-    } catch {
-      setContent('Failed to load slow query log');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setContent(msg || 'Failed to load slow query log');
     }
     setLoading(false);
     setTimeout(() => { logRef.current?.scrollTo(0, logRef.current.scrollHeight); }, 100);
@@ -822,13 +824,17 @@ interface BinlogEntry {
 function BinaryLogTab() {
   const [logs, setLogs] = useState<BinlogEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState('');
 
   const fetchLogs = useCallback(async () => {
     setLoading(true);
+    setErrorMsg('');
     try {
       const { data: resp } = await api.get('/software/mysql/binary-logs');
       setLogs(resp.data?.logs || []);
-    } catch {
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setErrorMsg(msg || 'Failed to load binary logs');
       setLogs([]);
     }
     setLoading(false);
@@ -862,7 +868,7 @@ function BinaryLogTab() {
       {loading ? <Spin /> : logs.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 40, color: TEXT_SECONDARY }}>
           <DatabaseOutlined style={{ fontSize: 32, marginBottom: 12, display: 'block' }} />
-          <p>No binary logs found.</p>
+          <p>{errorMsg || 'No binary logs found.'}</p>
           <p style={{ fontSize: 12 }}>Binary logging may be disabled. Enable <strong>log_bin</strong> in the Optimization tab.</p>
         </div>
       ) : (

@@ -1257,11 +1257,6 @@ func (s *SoftwareService) GetErrorLog(name string, lines int) (string, string, e
 		"apache": "/var/log/apache2/error.log",
 	}
 
-	logPath, ok := logPaths[name]
-	if !ok {
-		return "", "", fmt.Errorf("no error log path known for %s", name)
-	}
-
 	if lines <= 0 {
 		lines = 100
 	}
@@ -1269,11 +1264,31 @@ func (s *SoftwareService) GetErrorLog(name string, lines int) (string, string, e
 		lines = 1000
 	}
 
-	res, err := system.ExecWithTimeout(10*time.Second, "tail", "-n", strconv.Itoa(lines), logPath)
-	if err != nil {
-		return "", logPath, fmt.Errorf("failed to read error log: %w", err)
+	logPath, ok := logPaths[name]
+	if !ok {
+		return "", "", fmt.Errorf("no error log path known for %s", name)
 	}
-	return res.Stdout, logPath, nil
+
+	// Try file-based log first
+	if _, statErr := os.Stat(logPath); statErr == nil {
+		res, err := system.ExecWithTimeout(10*time.Second, "tail", "-n", strconv.Itoa(lines), logPath)
+		if err != nil {
+			return "", logPath, fmt.Errorf("failed to read error log: %w", err)
+		}
+		return res.Stdout, logPath, nil
+	}
+
+	// Fallback to journalctl for MySQL/MariaDB (often logs to syslog)
+	if name == "mysql" {
+		for _, svc := range []string{"mariadb", "mysql", "mysqld"} {
+			res, err := system.ExecWithTimeout(10*time.Second, "journalctl", "-u", svc, "--no-pager", "-n", strconv.Itoa(lines))
+			if err == nil && res.Stdout != "" && !strings.Contains(res.Stdout, "No entries") {
+				return res.Stdout, "journalctl -u " + svc, nil
+			}
+		}
+	}
+
+	return "", logPath, fmt.Errorf("error log not found at %s (file does not exist)", logPath)
 }
 
 // NginxOptimization holds tunable nginx parameters.
@@ -2350,7 +2365,7 @@ func (s *SoftwareService) GetMariaDBSlowLog(lines int) (string, string, error) {
 			return res.Stdout, p, nil
 		}
 	}
-	return "", "", fmt.Errorf("slow query log not found")
+	return "", "", fmt.Errorf("slow query log is not enabled or log file not found. Enable it in Optimization → Logging section (slow_query_log = 1)")
 }
 
 // GetMariaDBBinaryLogs lists binary log files and sizes.
@@ -2361,7 +2376,7 @@ func (s *SoftwareService) GetMariaDBBinaryLogs() ([]map[string]interface{}, erro
 	}
 	res, err := system.ExecWithTimeout(10*time.Second, "mysql", "-e", "SHOW BINARY LOGS;", "--batch", "--skip-column-names")
 	if err != nil {
-		return nil, fmt.Errorf("failed to query binary logs: %w", err)
+		return nil, fmt.Errorf("binary logging is not enabled. Enable it in Optimization → Logging section (log_bin)")
 	}
 	var logs []map[string]interface{}
 	for _, line := range strings.Split(strings.TrimSpace(res.Stdout), "\n") {
