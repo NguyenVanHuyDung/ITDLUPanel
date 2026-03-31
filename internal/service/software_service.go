@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -147,11 +148,13 @@ type SoftwareListItem struct {
 
 // AvailableSoftware describes software that can be installed.
 type AvailableSoftware struct {
-	Name        string   `json:"name"`
-	DisplayName string   `json:"display_name"`
-	Type        string   `json:"type"`
-	Installed   bool     `json:"installed"`
-	Versions    []string `json:"versions"`
+	Name              string   `json:"name"`
+	DisplayName       string   `json:"display_name"`
+	Type              string   `json:"type"`
+	Installed         bool     `json:"installed"`
+	Versions          []string `json:"versions"`
+	InstalledVersions []string `json:"installed_versions,omitempty"`
+	MultiVersion      bool     `json:"multi_version,omitempty"`
 }
 
 // SoftwareService manages software installation, removal, and service control.
@@ -217,10 +220,35 @@ func (s *SoftwareService) registerTaskHandlers() {
 		if version == "" {
 			version = meta.DefaultVersion
 		}
+
+		dbVersion := version
+		// For PHP, track all installed versions as comma-separated list
+		if name == "php" {
+			var existing string
+			_ = s.db.QueryRow("SELECT version FROM software WHERE name = 'php'").Scan(&existing)
+			if existing != "" {
+				// Merge: add new version if not already present
+				versions := strings.Split(existing, ",")
+				found := false
+				for _, v := range versions {
+					if strings.TrimSpace(v) == version {
+						found = true
+						break
+					}
+				}
+				if !found {
+					versions = append(versions, version)
+				}
+				// Sort versions
+				sort.Strings(versions)
+				dbVersion = strings.Join(versions, ",")
+			}
+		}
+
 		if _, err := s.db.Exec(
 			`INSERT OR REPLACE INTO software (name, display_name, version, type, status, config_path, install_path, service_name, installed_at, updated_at)
 			 VALUES (?, ?, ?, ?, 1, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-			name, meta.DisplayName, version, meta.Type, meta.ConfigPath, meta.InstallPath, meta.ServiceName,
+			name, meta.DisplayName, dbVersion, meta.Type, meta.ConfigPath, meta.InstallPath, meta.ServiceName,
 		); err != nil {
 			logger.Error().Err(err).Str("software", name).Msg("failed to record software installation in DB")
 		}
@@ -379,15 +407,34 @@ func (s *SoftwareService) ListAvailable() []AvailableSoftware {
 	for _, name := range names {
 		inst, _ := s.registry.Get(name)
 		meta := knownSoftware[name]
-		result = append(result, AvailableSoftware{
+		item := AvailableSoftware{
 			Name:        name,
 			DisplayName: meta.DisplayName,
 			Type:        meta.Type,
 			Installed:   inst.IsInstalled(),
 			Versions:    inst.GetVersions(),
-		})
+		}
+		// PHP supports multi-version: detect which versions are installed
+		if name == "php" {
+			item.MultiVersion = true
+			item.InstalledVersions = s.detectInstalledPHPVersions()
+		}
+		result = append(result, item)
 	}
 	return result
+}
+
+// detectInstalledPHPVersions returns which PHP-FPM versions have binaries on disk.
+func (s *SoftwareService) detectInstalledPHPVersions() []string {
+	candidates := []string{"7.4", "8.0", "8.1", "8.2", "8.3", "8.4"}
+	var installed []string
+	for _, v := range candidates {
+		bin := fmt.Sprintf("/usr/sbin/php-fpm%s", v)
+		if _, err := os.Stat(bin); err == nil {
+			installed = append(installed, v)
+		}
+	}
+	return installed
 }
 
 // GetSoftwareInfo returns info about a specific software from the database.

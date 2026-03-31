@@ -29,6 +29,8 @@ interface AvailableSoftware {
   category?: string;
   versions: string[];
   installed?: boolean;
+  installed_versions?: string[];
+  multi_version?: boolean;
   icon?: string;
 }
 
@@ -215,7 +217,11 @@ export default function AppStore() {
 
   const openInstallModal = (sw: AvailableSoftware) => {
     setInstallTarget(sw);
-    setInstallVersion(sw.versions[sw.versions.length - 1] ?? '');
+    // For multi-version software, filter out already installed versions
+    const availableVersions = sw.multi_version
+      ? sw.versions.filter(v => !(sw.installed_versions ?? []).includes(v))
+      : sw.versions;
+    setInstallVersion(availableVersions[availableVersions.length - 1] ?? '');
     setInstallModalOpen(true);
   };
 
@@ -550,10 +556,10 @@ export default function AppStore() {
                       border: `1px solid ${p.cardBorder}`,
                       background: isDark ? p.rowAlt : p.card,
                       transition: 'all 0.15s',
-                      opacity: done || blocked ? 0.6 : 1,
+                      opacity: (done && !sw.multi_version) || blocked ? 0.6 : 1,
                       display: 'flex', flexDirection: 'column',
                     }}
-                    onMouseEnter={e => { if (!done && !blocked) e.currentTarget.style.borderColor = `${p.accent}60`; }}
+                    onMouseEnter={e => { if ((!done || sw.multi_version) && !blocked) e.currentTarget.style.borderColor = `${p.accent}60`; }}
                     onMouseLeave={e => { e.currentTarget.style.borderColor = p.cardBorder; }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
@@ -582,6 +588,36 @@ export default function AppStore() {
                     </div>
 
                     {done ? (
+                      sw.multi_version ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <div style={{
+                            display: 'flex', alignItems: 'center', gap: 5,
+                            fontSize: 12, fontWeight: 500, color: p.green,
+                          }}>
+                            <span style={{
+                              width: 6, height: 6, borderRadius: 3,
+                              background: p.green, display: 'inline-block',
+                            }} />
+                            {(sw.installed_versions ?? []).join(', ')}
+                          </div>
+                          {(sw.versions.filter(v => !(sw.installed_versions ?? []).includes(v)).length > 0) && (
+                            <button
+                              onClick={() => openInstallModal(sw)}
+                              style={{
+                                width: '100%', padding: '6px 0',
+                                borderRadius: 7, border: `1px solid ${p.accent}`,
+                                background: 'transparent', color: p.accent,
+                                fontSize: 12, fontWeight: 500,
+                                cursor: 'pointer', transition: 'opacity 0.15s',
+                              }}
+                              onMouseEnter={e => { e.currentTarget.style.background = `${p.accent}10`; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                            >
+                              + Add Version
+                            </button>
+                          )}
+                        </div>
+                      ) : (
                       <div style={{
                         display: 'flex', alignItems: 'center', gap: 5,
                         fontSize: 12, fontWeight: 500, color: p.green,
@@ -593,6 +629,7 @@ export default function AppStore() {
                         }} />
                         Installed
                       </div>
+                      )
                     ) : blocked ? (
                       <div style={{
                         display: 'flex', alignItems: 'center', gap: 5,
@@ -836,7 +873,15 @@ export default function AppStore() {
               value={installVersion}
               onChange={setInstallVersion}
               style={{ width: '100%' }}
-              options={installTarget?.versions.map((v) => ({ value: v, label: `v${v}` })) ?? []}
+              options={(() => {
+                const versions = installTarget?.versions ?? [];
+                const installedVers = installTarget?.installed_versions ?? [];
+                return versions.map((v) => ({
+                  value: v,
+                  label: installedVers.includes(v) ? `v${v} (Installed)` : `v${v}`,
+                  disabled: installedVers.includes(v),
+                }));
+              })()}
             />
           </div>
         </div>
