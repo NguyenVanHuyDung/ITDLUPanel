@@ -23,36 +23,36 @@ func NewSecurityHandler(firewallService *service.FirewallService, securityServic
 }
 
 // RegisterRoutes registers all firewall and security routes.
-func (h *SecurityHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, securityMW gin.HandlerFunc) {
+func (h *SecurityHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc, rbac func(string) gin.HandlerFunc) {
 	// Firewall routes
 	firewall := rg.Group("/firewall")
-	firewall.Use(authMW, securityMW)
+	firewall.Use(authMW)
 	{
-		firewall.GET("/rules", h.ListRules)
-		firewall.POST("/rules", h.AddRule)
-		firewall.DELETE("/rules/:id", h.DeleteRule)
-		firewall.PUT("/rules/:id/status", h.ToggleRule)
+		firewall.GET("/rules", rbac("firewall.read"), h.ListRules)
+		firewall.POST("/rules", rbac("firewall.manage"), h.AddRule)
+		firewall.DELETE("/rules/:id", rbac("firewall.manage"), h.DeleteRule)
+		firewall.PUT("/rules/:id/status", rbac("firewall.manage"), h.ToggleRule)
 
-		firewall.GET("/settings", h.GetFirewallSettings)
-		firewall.PUT("/settings", h.UpdateFirewallSettings)
+		firewall.GET("/settings", rbac("firewall.read"), h.GetFirewallSettings)
+		firewall.PUT("/settings", rbac("firewall.manage"), h.UpdateFirewallSettings)
 
-		firewall.GET("/port-status", h.GetPortStatuses)
-		firewall.GET("/blocked-ips", h.GetBlockedIPs)
-		firewall.POST("/blocked-ips", h.BlockIP)
-		firewall.DELETE("/blocked-ips", h.UnblockIP)
+		firewall.GET("/port-status", rbac("firewall.read"), h.GetPortStatuses)
+		firewall.GET("/blocked-ips", rbac("firewall.read"), h.GetBlockedIPs)
+		firewall.POST("/blocked-ips", rbac("firewall.manage"), h.BlockIP)
+		firewall.DELETE("/blocked-ips", rbac("firewall.manage"), h.UnblockIP)
 
-		firewall.GET("/status", h.GetFirewallStatus)
-		firewall.POST("/install", h.InstallUFW)
+		firewall.GET("/status", rbac("firewall.read"), h.GetFirewallStatus)
+		firewall.POST("/install", rbac("firewall.manage"), h.InstallUFW)
 	}
 
 	// Security routes
 	security := rg.Group("/security")
-	security.Use(authMW, securityMW)
+	security.Use(authMW)
 	{
-		security.GET("/ssh", h.GetSSHConfig)
-		security.PUT("/ssh", h.UpdateSSHConfig)
-		security.GET("/fail2ban", h.GetFail2banStatus)
-		security.PUT("/fail2ban", h.ConfigureFail2ban)
+		security.GET("/ssh", rbac("security.manage"), h.GetSSHConfig)
+		security.PUT("/ssh", rbac("security.manage"), h.UpdateSSHConfig)
+		security.GET("/fail2ban", rbac("security.manage"), h.GetFail2banStatus)
+		security.PUT("/fail2ban", rbac("security.manage"), h.ConfigureFail2ban)
 	}
 }
 

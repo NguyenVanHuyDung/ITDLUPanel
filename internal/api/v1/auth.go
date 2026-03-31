@@ -15,15 +15,17 @@ import (
 
 // AuthHandler handles authentication API endpoints.
 type AuthHandler struct {
-	authService *service.AuthService
-	totpService *service.TOTPService
+	authService    *service.AuthService
+	totpService    *service.TOTPService
+	getPermissions func(role string) []string
 }
 
 // NewAuthHandler creates a new AuthHandler.
-func NewAuthHandler(authService *service.AuthService, totpService *service.TOTPService) *AuthHandler {
+func NewAuthHandler(authService *service.AuthService, totpService *service.TOTPService, getPermissions func(string) []string) *AuthHandler {
 	return &AuthHandler{
-		authService: authService,
-		totpService: totpService,
+		authService:    authService,
+		totpService:    totpService,
+		getPermissions: getPermissions,
 	}
 }
 
@@ -138,10 +140,18 @@ func (h *AuthHandler) Me(c *gin.Context) {
 	username, _ := c.Get("username")
 	role, _ := c.Get("role")
 
+	var permissions []string
+	if h.getPermissions != nil {
+		if roleStr, ok := role.(string); ok {
+			permissions = h.getPermissions(roleStr)
+		}
+	}
+
 	response.Success(c, gin.H{
-		"user_id":  userID,
-		"username": username,
-		"role":     role,
+		"user_id":     userID,
+		"username":    username,
+		"role":        role,
+		"permissions": permissions,
 	})
 }
 

@@ -21,28 +21,28 @@ func NewDockerHandler(dockerService *service.DockerService) *DockerHandler {
 }
 
 // RegisterRoutes registers Docker routes on the given router group.
-func (h *DockerHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gin.HandlerFunc) {
+func (h *DockerHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc, rbac func(string) gin.HandlerFunc) {
 	docker := rg.Group("/docker")
-	docker.Use(authMW, adminMW)
+	docker.Use(authMW)
 	{
-		docker.GET("/info", h.info)
+		docker.GET("/info", rbac("docker.read"), h.info)
 
-		docker.GET("/containers", h.listContainers)
-		docker.POST("/containers", h.createContainer)
-		docker.GET("/containers/:id", h.getContainer)
-		docker.DELETE("/containers/:id", h.removeContainer)
-		docker.POST("/containers/:id/start", h.startContainer)
-		docker.POST("/containers/:id/stop", h.stopContainer)
-		docker.POST("/containers/:id/restart", h.restartContainer)
-		docker.GET("/containers/:id/logs", h.containerLogs)
-		docker.GET("/containers/:id/stats", h.containerStats)
+		docker.GET("/containers", rbac("docker.read"), h.listContainers)
+		docker.POST("/containers", rbac("docker.create"), h.createContainer)
+		docker.GET("/containers/:id", rbac("docker.read"), h.getContainer)
+		docker.DELETE("/containers/:id", rbac("docker.create"), h.removeContainer)
+		docker.POST("/containers/:id/start", rbac("docker.manage"), h.startContainer)
+		docker.POST("/containers/:id/stop", rbac("docker.manage"), h.stopContainer)
+		docker.POST("/containers/:id/restart", rbac("docker.manage"), h.restartContainer)
+		docker.GET("/containers/:id/logs", rbac("docker.read"), h.containerLogs)
+		docker.GET("/containers/:id/stats", rbac("docker.read"), h.containerStats)
 
-		docker.GET("/images", h.listImages)
-		docker.POST("/images/pull", h.pullImage)
-		docker.DELETE("/images/:id", h.removeImage)
+		docker.GET("/images", rbac("docker.read"), h.listImages)
+		docker.POST("/images/pull", rbac("docker.manage"), h.pullImage)
+		docker.DELETE("/images/:id", rbac("docker.manage"), h.removeImage)
 
-		docker.GET("/networks", h.listNetworks)
-		docker.GET("/volumes", h.listVolumes)
+		docker.GET("/networks", rbac("docker.read"), h.listNetworks)
+		docker.GET("/volumes", rbac("docker.read"), h.listVolumes)
 	}
 }
 

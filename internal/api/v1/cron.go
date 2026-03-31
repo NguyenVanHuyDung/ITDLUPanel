@@ -19,18 +19,18 @@ func NewCronHandler(cronService *service.CronService) *CronHandler {
 }
 
 // RegisterRoutes registers all cron job routes.
-func (h *CronHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, cronMW gin.HandlerFunc) {
+func (h *CronHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc, rbac func(string) gin.HandlerFunc) {
 	crons := rg.Group("/crons")
-	crons.Use(authMW, cronMW)
+	crons.Use(authMW)
 	{
-		crons.GET("", h.ListCrons)
-		crons.POST("", h.CreateCron)
-		crons.GET("/:id", h.GetCron)
-		crons.PUT("/:id", h.UpdateCron)
-		crons.DELETE("/:id", h.DeleteCron)
-		crons.PUT("/:id/status", h.SetStatus)
-		crons.GET("/:id/log", h.GetLog)
-		crons.POST("/:id/run", h.RunNow)
+		crons.GET("", rbac("cron.read"), h.ListCrons)
+		crons.POST("", rbac("cron.create"), h.CreateCron)
+		crons.GET("/:id", rbac("cron.read"), h.GetCron)
+		crons.PUT("/:id", rbac("cron.edit"), h.UpdateCron)
+		crons.DELETE("/:id", rbac("cron.delete"), h.DeleteCron)
+		crons.PUT("/:id/status", rbac("cron.edit"), h.SetStatus)
+		crons.GET("/:id/log", rbac("cron.read"), h.GetLog)
+		crons.POST("/:id/run", rbac("cron.edit"), h.RunNow)
 	}
 }
 

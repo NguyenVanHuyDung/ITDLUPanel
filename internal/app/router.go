@@ -119,11 +119,18 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		// -------------------------------------------------------
 		// Auth & User (public / admin)
 		// -------------------------------------------------------
-		authHandler := v1.NewAuthHandler(authService, totpService)
+		authHandler := v1.NewAuthHandler(authService, totpService, GetUserPermissions)
 		authHandler.RegisterRoutes(apiV1, authMW)
 
 		userHandler := v1.NewUserHandler(userService)
 		userHandler.RegisterRoutes(apiV1, authMW, adminMW)
+
+		// -------------------------------------------------------
+		// Role management (admin only)
+		// -------------------------------------------------------
+		roleService := service.NewRoleService(db)
+		roleHandler := v1.NewRoleHandler(roleService)
+		roleHandler.RegisterRoutes(apiV1, authMW, adminMW)
 
 		// -------------------------------------------------------
 		// Dashboard & Monitor (all authenticated users)
@@ -150,7 +157,7 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		// Site management
 		// -------------------------------------------------------
 		siteHandler := v1.NewSiteHandler(siteService)
-		siteHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware("sites.*"))
+		siteHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
 
 		// -------------------------------------------------------
 		// SSL management (admin)
@@ -162,49 +169,49 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		// Database management
 		// -------------------------------------------------------
 		databaseHandler := v1.NewDatabaseHandler(databaseService)
-		databaseHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware("databases.*"))
+		databaseHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
 
 		// -------------------------------------------------------
 		// FTP management
 		// -------------------------------------------------------
 		ftpHandler := v1.NewFTPHandler(ftpService)
-		ftpHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware("ftp.*"))
+		ftpHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
 
 		// -------------------------------------------------------
 		// File management
 		// -------------------------------------------------------
 		fileHandler := v1.NewFileHandler(fileService)
-		fileHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware("files.*"))
+		fileHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
 
 		// -------------------------------------------------------
 		// Cron management
 		// -------------------------------------------------------
 		cronHandler := v1.NewCronHandler(cronService)
-		cronHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware("cron.*"))
+		cronHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
 
 		// -------------------------------------------------------
 		// Security & Firewall (admin)
 		// -------------------------------------------------------
 		securityHandler := v1.NewSecurityHandler(firewallService, securityService)
-		securityHandler.RegisterRoutes(apiV1, authMW, adminMW)
+		securityHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
 
 		// -------------------------------------------------------
 		// Docker management
 		// -------------------------------------------------------
 		dockerHandler := v1.NewDockerHandler(dockerService)
-		dockerHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware("docker.*"))
+		dockerHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
 
 		// -------------------------------------------------------
 		// Log management
 		// -------------------------------------------------------
 		logHandler := v1.NewLogHandler(logService)
-		logHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware("logs.*"))
+		logHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
 
 		// -------------------------------------------------------
 		// Backup management
 		// -------------------------------------------------------
 		backupHandler := v1.NewBackupHandler(backupService)
-		backupHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware("backup.*"))
+		backupHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
 
 		// -------------------------------------------------------
 		// Plugin management (admin)

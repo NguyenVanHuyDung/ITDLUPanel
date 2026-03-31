@@ -17,5 +17,6 @@ func All() []Migration {
 		&Migration004PhpMyAdminDefaultPort{},
 		&Migration005DiskQuota{},
 		&Migration006SiteDescription{},
+		&Migration007Permissions{},
 	}
 }

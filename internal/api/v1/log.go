@@ -20,20 +20,20 @@ func NewLogHandler(logService *service.LogService) *LogHandler {
 }
 
 // RegisterRoutes registers log management routes.
-func (h *LogHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, permMW gin.HandlerFunc) {
+func (h *LogHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc, rbac func(string) gin.HandlerFunc) {
 	logs := rg.Group("/logs")
-	logs.Use(authMW, permMW)
+	logs.Use(authMW)
 	{
-		logs.GET("/panel", h.GetPanelLog)
-		logs.GET("/website/:id/access", h.GetWebsiteAccessLog)
-		logs.GET("/website/:id/error", h.GetWebsiteErrorLog)
-		logs.GET("/website/:id/dates", h.ListWebsiteLogDates)
-		logs.DELETE("/website/:id/:logType", h.ClearWebsiteLog)
-		logs.GET("/sites", h.ListSitesMinimal)
-		logs.GET("/ssh", h.GetSSHLog)
-		logs.GET("/audit", h.GetAuditLog)
-		logs.DELETE("/:type", h.ClearLog)
-		logs.GET("/search", h.SearchLog)
+		logs.GET("/panel", rbac("logs.read"), h.GetPanelLog)
+		logs.GET("/website/:id/access", rbac("logs.read"), h.GetWebsiteAccessLog)
+		logs.GET("/website/:id/error", rbac("logs.read"), h.GetWebsiteErrorLog)
+		logs.GET("/website/:id/dates", rbac("logs.read"), h.ListWebsiteLogDates)
+		logs.DELETE("/website/:id/:logType", rbac("logs.manage"), h.ClearWebsiteLog)
+		logs.GET("/sites", rbac("logs.read"), h.ListSitesMinimal)
+		logs.GET("/ssh", rbac("logs.read"), h.GetSSHLog)
+		logs.GET("/audit", rbac("logs.read"), h.GetAuditLog)
+		logs.DELETE("/:type", rbac("logs.manage"), h.ClearLog)
+		logs.GET("/search", rbac("logs.read"), h.SearchLog)
 	}
 }
 

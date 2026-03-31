@@ -23,99 +23,99 @@ func NewSiteHandler(siteService *service.SiteService) *SiteHandler {
 }
 
 // RegisterRoutes registers all site management routes.
-func (h *SiteHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, sitesMW gin.HandlerFunc) {
+func (h *SiteHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc, rbac func(string) gin.HandlerFunc) {
 	sites := rg.Group("/sites")
-	sites.Use(authMW, sitesMW)
+	sites.Use(authMW)
 	{
-		sites.GET("", h.ListSites)
-		sites.POST("", h.CreateSite)
-		sites.GET("/php-versions", h.ListPHPVersions)
+		sites.GET("", rbac("sites.read"), h.ListSites)
+		sites.POST("", rbac("sites.create"), h.CreateSite)
+		sites.GET("/php-versions", rbac("sites.read"), h.ListPHPVersions)
 
 		// Batch operations
-		sites.POST("/batch/delete", h.BatchDeleteSites)
-		sites.PUT("/batch/php", h.BatchSwitchPHP)
-		sites.POST("/batch/ssl", h.BatchApplySSL)
+		sites.POST("/batch/delete", rbac("sites.delete"), h.BatchDeleteSites)
+		sites.PUT("/batch/php", rbac("sites.edit"), h.BatchSwitchPHP)
+		sites.POST("/batch/ssl", rbac("sites.ssl"), h.BatchApplySSL)
 
-		sites.GET("/:id", h.GetSite)
-		sites.PUT("/:id", h.UpdateSite)
-		sites.DELETE("/:id", h.DeleteSite)
+		sites.GET("/:id", rbac("sites.read"), h.GetSite)
+		sites.PUT("/:id", rbac("sites.edit"), h.UpdateSite)
+		sites.DELETE("/:id", rbac("sites.delete"), h.DeleteSite)
 
 		// Operations
-		sites.POST("/:id/start", h.StartSite)
-		sites.POST("/:id/stop", h.StopSite)
-		sites.GET("/:id/config", h.GetConfig)
-		sites.PUT("/:id/config", h.UpdateConfig)
-		sites.PUT("/:id/php", h.SwitchPHP)
+		sites.POST("/:id/start", rbac("sites.edit"), h.StartSite)
+		sites.POST("/:id/stop", rbac("sites.edit"), h.StopSite)
+		sites.GET("/:id/config", rbac("sites.config"), h.GetConfig)
+		sites.PUT("/:id/config", rbac("sites.config"), h.UpdateConfig)
+		sites.PUT("/:id/php", rbac("sites.edit"), h.SwitchPHP)
 
 		// Domains
-		sites.POST("/:id/domains", h.AddDomain)
-		sites.DELETE("/:id/domains/:did", h.RemoveDomain)
-		sites.GET("/:id/domains", h.ListDomains)
+		sites.POST("/:id/domains", rbac("sites.edit"), h.AddDomain)
+		sites.DELETE("/:id/domains/:did", rbac("sites.edit"), h.RemoveDomain)
+		sites.GET("/:id/domains", rbac("sites.read"), h.ListDomains)
 
 		// SSL
-		sites.GET("/:id/ssl", h.GetSSLInfo)
-		sites.POST("/:id/ssl/enable", h.EnableSSL)
-		sites.POST("/:id/ssl/disable", h.DisableSSL)
-		sites.POST("/:id/ssl/apply", h.ApplySSLFromHolder)
+		sites.GET("/:id/ssl", rbac("sites.ssl"), h.GetSSLInfo)
+		sites.POST("/:id/ssl/enable", rbac("sites.ssl"), h.EnableSSL)
+		sites.POST("/:id/ssl/disable", rbac("sites.ssl"), h.DisableSSL)
+		sites.POST("/:id/ssl/apply", rbac("sites.ssl"), h.ApplySSLFromHolder)
 
 		// Directory management
-		sites.PUT("/:id/directory", h.UpdateDirectory)
-		sites.GET("/:id/subdirs", h.ListSubdirs)
-		sites.PUT("/:id/running-directory", h.SetRunningDirectory)
-		sites.GET("/:id/open-basedir", h.GetOpenBasedir)
-		sites.PUT("/:id/open-basedir", h.SetOpenBasedir)
-		sites.GET("/:id/access-log", h.GetAccessLog)
-		sites.PUT("/:id/access-log", h.SetAccessLog)
-		sites.GET("/:id/password-access", h.GetPasswordAccess)
-		sites.PUT("/:id/password-access", h.SetPasswordAccess)
+		sites.PUT("/:id/directory", rbac("sites.config"), h.UpdateDirectory)
+		sites.GET("/:id/subdirs", rbac("sites.config"), h.ListSubdirs)
+		sites.PUT("/:id/running-directory", rbac("sites.config"), h.SetRunningDirectory)
+		sites.GET("/:id/open-basedir", rbac("sites.config"), h.GetOpenBasedir)
+		sites.PUT("/:id/open-basedir", rbac("sites.config"), h.SetOpenBasedir)
+		sites.GET("/:id/access-log", rbac("sites.config"), h.GetAccessLog)
+		sites.PUT("/:id/access-log", rbac("sites.config"), h.SetAccessLog)
+		sites.GET("/:id/password-access", rbac("sites.config"), h.GetPasswordAccess)
+		sites.PUT("/:id/password-access", rbac("sites.config"), h.SetPasswordAccess)
 
 		// Sub Directory Binding
-		sites.GET("/:id/subdir-bindings", h.GetSubdirBindings)
-		sites.POST("/:id/subdir-bindings", h.AddSubdirBinding)
-		sites.DELETE("/:id/subdir-bindings/:index", h.RemoveSubdirBinding)
+		sites.GET("/:id/subdir-bindings", rbac("sites.config"), h.GetSubdirBindings)
+		sites.POST("/:id/subdir-bindings", rbac("sites.config"), h.AddSubdirBinding)
+		sites.DELETE("/:id/subdir-bindings/:index", rbac("sites.config"), h.RemoveSubdirBinding)
 
 		// Limit Access
-		sites.GET("/:id/limit-access", h.GetLimitAccessRules)
-		sites.POST("/:id/limit-access", h.AddLimitAccessRule)
-		sites.DELETE("/:id/limit-access/:index", h.RemoveLimitAccessRule)
+		sites.GET("/:id/limit-access", rbac("sites.config"), h.GetLimitAccessRules)
+		sites.POST("/:id/limit-access", rbac("sites.config"), h.AddLimitAccessRule)
+		sites.DELETE("/:id/limit-access/:index", rbac("sites.config"), h.RemoveLimitAccessRule)
 
 		// Deny Access
-		sites.GET("/:id/deny-access", h.GetDenyAccessRules)
-		sites.POST("/:id/deny-access", h.AddDenyAccessRule)
-		sites.DELETE("/:id/deny-access/:index", h.RemoveDenyAccessRule)
+		sites.GET("/:id/deny-access", rbac("sites.config"), h.GetDenyAccessRules)
+		sites.POST("/:id/deny-access", rbac("sites.config"), h.AddDenyAccessRule)
+		sites.DELETE("/:id/deny-access/:index", rbac("sites.config"), h.RemoveDenyAccessRule)
 
 		// Traffic Control
-		sites.GET("/:id/traffic-control", h.GetTrafficControl)
-		sites.PUT("/:id/traffic-control", h.SetTrafficControl)
+		sites.GET("/:id/traffic-control", rbac("sites.config"), h.GetTrafficControl)
+		sites.PUT("/:id/traffic-control", rbac("sites.config"), h.SetTrafficControl)
 
 		// Default Document
-		sites.GET("/:id/default-doc", h.GetDefaultDoc)
-		sites.PUT("/:id/default-doc", h.SetDefaultDoc)
+		sites.GET("/:id/default-doc", rbac("sites.config"), h.GetDefaultDoc)
+		sites.PUT("/:id/default-doc", rbac("sites.config"), h.SetDefaultDoc)
 
 		// Reverse Proxy
-		sites.GET("/:id/reverse-proxy", h.GetReverseProxyRules)
-		sites.POST("/:id/reverse-proxy", h.AddReverseProxyRule)
-		sites.PUT("/:id/reverse-proxy/:index", h.UpdateReverseProxyRule)
-		sites.DELETE("/:id/reverse-proxy/:index", h.RemoveReverseProxyRule)
+		sites.GET("/:id/reverse-proxy", rbac("sites.config"), h.GetReverseProxyRules)
+		sites.POST("/:id/reverse-proxy", rbac("sites.config"), h.AddReverseProxyRule)
+		sites.PUT("/:id/reverse-proxy/:index", rbac("sites.config"), h.UpdateReverseProxyRule)
+		sites.DELETE("/:id/reverse-proxy/:index", rbac("sites.config"), h.RemoveReverseProxyRule)
 
 		// Redirect Rules
-		sites.GET("/:id/redirect-rules", h.GetRedirectRules)
-		sites.POST("/:id/redirect-rules", h.AddRedirectRule)
-		sites.PUT("/:id/redirect-rules/:index", h.UpdateRedirectRule)
-		sites.DELETE("/:id/redirect-rules/:index", h.RemoveRedirectRule)
+		sites.GET("/:id/redirect-rules", rbac("sites.config"), h.GetRedirectRules)
+		sites.POST("/:id/redirect-rules", rbac("sites.config"), h.AddRedirectRule)
+		sites.PUT("/:id/redirect-rules/:index", rbac("sites.config"), h.UpdateRedirectRule)
+		sites.DELETE("/:id/redirect-rules/:index", rbac("sites.config"), h.RemoveRedirectRule)
 
 		// Hotlink Protection
-		sites.GET("/:id/hotlink", h.GetHotlinkConfig)
-		sites.PUT("/:id/hotlink", h.SetHotlinkConfig)
+		sites.GET("/:id/hotlink", rbac("sites.config"), h.GetHotlinkConfig)
+		sites.PUT("/:id/hotlink", rbac("sites.config"), h.SetHotlinkConfig)
 
 		// Maintenance Mode
-		sites.GET("/:id/maintenance", h.GetMaintenanceConfig)
-		sites.PUT("/:id/maintenance", h.SetMaintenanceConfig)
-		sites.GET("/:id/maintenance/templates", h.GetMaintenanceTemplates)
+		sites.GET("/:id/maintenance", rbac("sites.config"), h.GetMaintenanceConfig)
+		sites.PUT("/:id/maintenance", rbac("sites.config"), h.SetMaintenanceConfig)
+		sites.GET("/:id/maintenance/templates", rbac("sites.config"), h.GetMaintenanceTemplates)
 
 		// Disk Quota
-		sites.PUT("/:id/quota", h.SetQuota)
-		sites.GET("/:id/disk-usage", h.GetDiskUsage)
+		sites.PUT("/:id/quota", rbac("sites.config"), h.SetQuota)
+		sites.GET("/:id/disk-usage", rbac("sites.config"), h.GetDiskUsage)
 	}
 }
 

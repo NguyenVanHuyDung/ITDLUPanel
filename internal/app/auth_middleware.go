@@ -136,7 +136,7 @@ func getPermissions(role string) []string {
 
 // CheckPermission checks if a role has a specific permission.
 // admin has "*" (all permissions).
-// Supports wildcard: "sites.*" matches "sites.read", "sites.write", etc.
+// Supports wildcard: role with "sites.*" matches route check "sites.read".
 func CheckPermission(role string, permission string) bool {
 	perms := getPermissions(role)
 
@@ -156,6 +156,23 @@ func CheckPermission(role string, permission string) bool {
 		}
 	}
 	return false
+}
+
+// GetUserPermissions returns the permissions list for a role.
+func GetUserPermissions(role string) []string {
+	return getPermissions(role)
+}
+
+// ReloadPermissionCache forces a reload of the permission cache.
+func ReloadPermissionCache() {
+	permissionCache.Lock()
+	defer permissionCache.Unlock()
+	loadPermissions()
+}
+
+// IsAdmin checks if a role has full admin access.
+func IsAdmin(role string) bool {
+	return CheckPermission(role, "*")
 }
 
 // RBACMiddleware checks if the user has the required permission.

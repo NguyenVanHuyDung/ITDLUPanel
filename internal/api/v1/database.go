@@ -27,23 +27,23 @@ func NewDatabaseHandler(dbService *service.DatabaseService) *DatabaseHandler {
 }
 
 // RegisterRoutes registers database management routes.
-func (h *DatabaseHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, permMW gin.HandlerFunc) {
+func (h *DatabaseHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc, rbac func(string) gin.HandlerFunc) {
 	db := rg.Group("/databases")
-	db.Use(authMW, permMW)
+	db.Use(authMW)
 	{
-		db.GET("", h.List)
-		db.POST("", h.Create)
-		db.GET("/:id", h.Get)
-		db.DELETE("/:id", h.Delete)
-		db.PUT("/:id/password", h.ChangePassword)
-		db.POST("/:id/backup", h.Backup)
-		db.POST("/:id/restore", h.Restore)
-		db.POST("/:id/import", h.Import)
-		db.PUT("/:id/access", h.SetAccess)
-		db.GET("/version", h.GetVersion)
-		db.POST("/service", h.ServiceAction)
-		db.GET("/:id/size", h.GetSize)
-		db.PUT("/:id/quota", h.SetQuota)
+		db.GET("", rbac("databases.read"), h.List)
+		db.POST("", rbac("databases.create"), h.Create)
+		db.GET("/:id", rbac("databases.read"), h.Get)
+		db.DELETE("/:id", rbac("databases.delete"), h.Delete)
+		db.PUT("/:id/password", rbac("databases.edit"), h.ChangePassword)
+		db.POST("/:id/backup", rbac("databases.backup"), h.Backup)
+		db.POST("/:id/restore", rbac("databases.backup"), h.Restore)
+		db.POST("/:id/import", rbac("databases.edit"), h.Import)
+		db.PUT("/:id/access", rbac("databases.edit"), h.SetAccess)
+		db.GET("/version", rbac("databases.read"), h.GetVersion)
+		db.POST("/service", rbac("databases.edit"), h.ServiceAction)
+		db.GET("/:id/size", rbac("databases.read"), h.GetSize)
+		db.PUT("/:id/quota", rbac("databases.edit"), h.SetQuota)
 	}
 }
 

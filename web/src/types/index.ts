@@ -8,6 +8,23 @@ export interface User {
   last_login?: string;
   last_ip?: string;
   created_at: string;
+  permissions?: string[];
+}
+
+export interface Role {
+  id: number;
+  name: string;
+  description: string;
+  permissions: string[];
+  is_system: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PermissionGroup {
+  key: string;
+  label: string;
+  permissions: { key: string; label: string }[];
 }
 
 export interface LoginRequest {

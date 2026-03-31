@@ -31,28 +31,28 @@ func NewFileHandler(fileService *service.FileService) *FileHandler {
 }
 
 // RegisterRoutes registers file management routes (all require admin role).
-func (h *FileHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gin.HandlerFunc) {
+func (h *FileHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc, rbac func(string) gin.HandlerFunc) {
 	files := rg.Group("/files")
-	files.Use(authMW, adminMW)
+	files.Use(authMW)
 	{
-		files.GET("", h.list)
-		files.GET("/content", h.readFile)
-		files.PUT("/content", h.writeFile)
-		files.POST("/upload", h.upload)
-		files.GET("/download", h.download)
-		files.POST("/mkdir", h.createDir)
-		files.POST("/create", h.createFile)
-		files.POST("/rename", h.rename)
-		files.POST("/copy", h.copyFile)
-		files.POST("/move", h.move)
-		files.DELETE("", h.delete)
-		files.PUT("/permissions", h.setPermissions)
-		files.PUT("/owner", h.setOwner)
-		files.POST("/compress", h.compress)
-		files.POST("/decompress", h.decompress)
-		files.GET("/search", h.search)
-		files.GET("/search-content", h.searchContent)
-		files.POST("/calculate-size", h.calculateSize)
+		files.GET("", rbac("files.read"), h.list)
+		files.GET("/content", rbac("files.read"), h.readFile)
+		files.PUT("/content", rbac("files.write"), h.writeFile)
+		files.POST("/upload", rbac("files.write"), h.upload)
+		files.GET("/download", rbac("files.read"), h.download)
+		files.POST("/mkdir", rbac("files.write"), h.createDir)
+		files.POST("/create", rbac("files.write"), h.createFile)
+		files.POST("/rename", rbac("files.write"), h.rename)
+		files.POST("/copy", rbac("files.write"), h.copyFile)
+		files.POST("/move", rbac("files.write"), h.move)
+		files.DELETE("", rbac("files.delete"), h.delete)
+		files.PUT("/permissions", rbac("files.write"), h.setPermissions)
+		files.PUT("/owner", rbac("files.write"), h.setOwner)
+		files.POST("/compress", rbac("files.write"), h.compress)
+		files.POST("/decompress", rbac("files.write"), h.decompress)
+		files.GET("/search", rbac("files.read"), h.search)
+		files.GET("/search-content", rbac("files.read"), h.searchContent)
+		files.POST("/calculate-size", rbac("files.read"), h.calculateSize)
 	}
 }
 

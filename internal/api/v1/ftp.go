@@ -21,21 +21,21 @@ func NewFTPHandler(ftpService *service.FTPService) *FTPHandler {
 }
 
 // RegisterRoutes registers FTP management routes.
-func (h *FTPHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, permMW gin.HandlerFunc) {
+func (h *FTPHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc, rbac func(string) gin.HandlerFunc) {
 	ftp := rg.Group("/ftp")
-	ftp.Use(authMW, permMW)
+	ftp.Use(authMW)
 	{
-		ftp.GET("", h.List)
-		ftp.POST("", h.Create)
-		ftp.GET("/:id", h.Get)
-		ftp.PUT("/:id", h.Update)
-		ftp.DELETE("/:id", h.Delete)
-		ftp.PUT("/:id/password", h.ChangePassword)
-		ftp.PUT("/:id/status", h.SetStatus)
+		ftp.GET("", rbac("ftp.read"), h.List)
+		ftp.POST("", rbac("ftp.create"), h.Create)
+		ftp.GET("/:id", rbac("ftp.read"), h.Get)
+		ftp.PUT("/:id", rbac("ftp.edit"), h.Update)
+		ftp.DELETE("/:id", rbac("ftp.delete"), h.Delete)
+		ftp.PUT("/:id/password", rbac("ftp.edit"), h.ChangePassword)
+		ftp.PUT("/:id/status", rbac("ftp.edit"), h.SetStatus)
 		// Batch operations
-		ftp.POST("/batch/delete", h.BatchDelete)
-		ftp.POST("/batch/status", h.BatchSetStatus)
-		ftp.POST("/batch/path", h.BatchUpdatePath)
+		ftp.POST("/batch/delete", rbac("ftp.delete"), h.BatchDelete)
+		ftp.POST("/batch/status", rbac("ftp.edit"), h.BatchSetStatus)
+		ftp.POST("/batch/path", rbac("ftp.edit"), h.BatchUpdatePath)
 	}
 }
 

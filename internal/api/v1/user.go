@@ -40,7 +40,7 @@ type createUserRequest struct {
 	Username string `json:"username" validate:"required,min=3,max=32"`
 	Password string `json:"password" validate:"required,min=8"`
 	Email    string `json:"email" validate:"omitempty,email"`
-	Role     string `json:"role" validate:"required,oneof=admin operator viewer"`
+	Role     string `json:"role" validate:"required,min=2,max=32"`
 }
 
 // CreateUser creates a new user.
@@ -108,7 +108,7 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 
 type updateUserRequest struct {
 	Email  string `json:"email" validate:"omitempty,email"`
-	Role   string `json:"role" validate:"omitempty,oneof=admin operator viewer"`
+	Role   string `json:"role" validate:"omitempty,min=2,max=32"`
 	Status *int   `json:"status" validate:"omitempty,oneof=0 1"`
 }
 

@@ -20,18 +20,18 @@ func NewBackupHandler(backupService *service.BackupService) *BackupHandler {
 }
 
 // RegisterRoutes registers backup management routes.
-func (h *BackupHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, permMW gin.HandlerFunc) {
+func (h *BackupHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc, rbac func(string) gin.HandlerFunc) {
 	backups := rg.Group("/backups")
-	backups.Use(authMW, permMW)
+	backups.Use(authMW)
 	{
-		backups.GET("", h.List)
-		backups.POST("", h.Create)
-		backups.GET("/site-counts", h.SiteBackupCounts)
-		backups.GET("/database-counts", h.DatabaseBackupCounts)
-		backups.GET("/:id", h.Get)
-		backups.DELETE("/:id", h.Delete)
-		backups.POST("/:id/restore", h.Restore)
-		backups.GET("/:id/download", h.Download)
+		backups.GET("", rbac("backup.read"), h.List)
+		backups.POST("", rbac("backup.create"), h.Create)
+		backups.GET("/site-counts", rbac("backup.read"), h.SiteBackupCounts)
+		backups.GET("/database-counts", rbac("backup.read"), h.DatabaseBackupCounts)
+		backups.GET("/:id", rbac("backup.read"), h.Get)
+		backups.DELETE("/:id", rbac("backup.delete"), h.Delete)
+		backups.POST("/:id/restore", rbac("backup.restore"), h.Restore)
+		backups.GET("/:id/download", rbac("backup.read"), h.Download)
 	}
 }
 

@@ -16,8 +16,19 @@ export default function Login() {
   const [tempToken, setTempToken] = useState('');
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
-  const { setAuth } = useAuthStore();
+  const { setAuth, setPermissions } = useAuthStore();
   const [form] = Form.useForm();
+
+  const fetchPermissions = async (token: string) => {
+    try {
+      const { data } = await api.get('/auth/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (data.data?.permissions) {
+        setPermissions(data.data.permissions);
+      }
+    } catch { /* ignore */ }
+  };
 
   const handleLogin = async (values: { username: string; password: string }) => {
     setLoading(true);
@@ -29,6 +40,7 @@ export default function Login() {
         setTempToken(resp.temp_token ?? '');
       } else if (resp.access_token && resp.user) {
         setAuth(resp.access_token, resp.user);
+        await fetchPermissions(resp.access_token);
         message.success(t('auth.login_success'));
         navigate('/');
       }
@@ -49,6 +61,7 @@ export default function Login() {
       const resp = data.data;
       if (resp.access_token && resp.user) {
         setAuth(resp.access_token, resp.user);
+        await fetchPermissions(resp.access_token);
         message.success(t('auth.login_success'));
         navigate('/');
       }
