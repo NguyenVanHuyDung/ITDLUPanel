@@ -5,7 +5,9 @@ import {
   CodeOutlined, SwapOutlined, DashboardOutlined, ThunderboltOutlined,
   FileTextOutlined, CheckCircleFilled, CloudServerOutlined,
   InfoCircleOutlined, TagOutlined, SafetyCertificateOutlined,
-  RocketOutlined, WarningOutlined,
+  RocketOutlined, WarningOutlined, LinkOutlined, DownloadOutlined,
+  CheckCircleOutlined, BarChartOutlined, ReadOutlined, EditOutlined,
+  ClockCircleOutlined, ToolOutlined, DesktopOutlined, DatabaseOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
@@ -641,16 +643,16 @@ function LoadStatusTab() {
   }, [fetchMetrics]);
 
   const rows = metrics ? [
-    { field: 'Active Connections', value: metrics.active_connections, icon: '🔗' },
-    { field: 'Total Accepts',     value: metrics.total_accepts,      icon: '📥' },
-    { field: 'Total Handled',     value: metrics.total_handled,      icon: '✅' },
-    { field: 'Total Requests',    value: metrics.total_requests,     icon: '📊' },
-    { field: 'Reading',           value: metrics.reading,            icon: '📖' },
-    { field: 'Writing',           value: metrics.writing,            icon: '✍️' },
-    { field: 'Waiting',           value: metrics.waiting,            icon: '⏳' },
-    { field: 'Worker Processes',  value: metrics.worker_processes,   icon: '⚙️' },
-    { field: 'CPU Usage',         value: metrics.nginx_cpu_usage + '%', icon: '🖥️' },
-    { field: 'Memory Usage',      value: metrics.nginx_memory_usage, icon: '💾' },
+    { field: 'Active Connections', value: metrics.active_connections, icon: <LinkOutlined style={{ color: PRIMARY }} /> },
+    { field: 'Total Accepts',     value: metrics.total_accepts,      icon: <DownloadOutlined style={{ color: '#52c41a' }} /> },
+    { field: 'Total Handled',     value: metrics.total_handled,      icon: <CheckCircleOutlined style={{ color: '#52c41a' }} /> },
+    { field: 'Total Requests',    value: metrics.total_requests,     icon: <BarChartOutlined style={{ color: PRIMARY }} /> },
+    { field: 'Reading',           value: metrics.reading,            icon: <ReadOutlined style={{ color: '#1677ff' }} /> },
+    { field: 'Writing',           value: metrics.writing,            icon: <EditOutlined style={{ color: '#fa8c16' }} /> },
+    { field: 'Waiting',           value: metrics.waiting,            icon: <ClockCircleOutlined style={{ color: '#8c8c8c' }} /> },
+    { field: 'Worker Processes',  value: metrics.worker_processes,   icon: <ToolOutlined style={{ color: '#722ed1' }} /> },
+    { field: 'CPU Usage',         value: metrics.nginx_cpu_usage + '%', icon: <DesktopOutlined style={{ color: '#eb2f96' }} /> },
+    { field: 'Memory Usage',      value: metrics.nginx_memory_usage, icon: <DatabaseOutlined style={{ color: '#13c2c2' }} /> },
   ] : [];
 
   return (
