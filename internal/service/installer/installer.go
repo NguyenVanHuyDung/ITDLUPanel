@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/ITDLUPanel/panel/internal/pkg/logger"
+	"github.com/ITDLUPanel/panel/internal/system"
 )
 
 const (
@@ -58,6 +59,14 @@ func CleanupServerDir(name string) {
 	dir := filepath.Join(ServerBaseDir, name)
 	if err := os.RemoveAll(dir); err != nil {
 		logger.Warn().Err(err).Str("path", dir).Msg("failed to cleanup server directory")
+	}
+}
+
+// FixDpkg runs dpkg --configure -a to recover from interrupted package operations.
+func FixDpkg(ctx context.Context) {
+	result, err := system.Exec(ctx, "dpkg", "--configure", "-a")
+	if err != nil {
+		logger.Warn().Err(err).Str("stderr", result.Stderr).Msg("dpkg --configure -a failed")
 	}
 }
 

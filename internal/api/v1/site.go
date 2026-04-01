@@ -30,6 +30,8 @@ func (h *SiteHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc
 		sites.GET("", rbac("sites.read"), h.ListSites)
 		sites.POST("", rbac("sites.create"), h.CreateSite)
 		sites.GET("/php-versions", rbac("sites.read"), h.ListPHPVersions)
+		sites.GET("/rewrite-templates", rbac("sites.read"), h.ListRewriteTemplates)
+		sites.GET("/rewrite-templates/:name", rbac("sites.read"), h.GetRewriteTemplate)
 
 		// Batch operations
 		sites.POST("/batch/delete", rbac("sites.delete"), h.BatchDeleteSites)
@@ -57,6 +59,8 @@ func (h *SiteHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc
 		sites.POST("/:id/ssl/enable", rbac("sites.ssl"), h.EnableSSL)
 		sites.POST("/:id/ssl/disable", rbac("sites.ssl"), h.DisableSSL)
 		sites.POST("/:id/ssl/apply", rbac("sites.ssl"), h.ApplySSLFromHolder)
+		sites.GET("/:id/force-https", rbac("sites.ssl"), h.GetForceHTTPS)
+		sites.PUT("/:id/force-https", rbac("sites.ssl"), h.SetForceHTTPS)
 
 		// Directory management
 		sites.PUT("/:id/directory", rbac("sites.config"), h.UpdateDirectory)
@@ -116,6 +120,17 @@ func (h *SiteHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc
 		// Disk Quota
 		sites.PUT("/:id/quota", rbac("sites.config"), h.SetQuota)
 		sites.GET("/:id/disk-usage", rbac("sites.config"), h.GetDiskUsage)
+
+		// URL Rewrite
+		sites.GET("/:id/rewrite", rbac("sites.config"), h.GetURLRewrite)
+		sites.PUT("/:id/rewrite", rbac("sites.config"), h.SetURLRewrite)
+
+		// Composer
+		sites.GET("/:id/composer", rbac("sites.config"), h.GetComposerStatus)
+		sites.POST("/:id/composer/install", rbac("sites.config"), h.InstallComposer)
+		sites.POST("/:id/composer/run", rbac("sites.config"), h.RunComposer)
+		sites.GET("/:id/composer/json", rbac("sites.config"), h.GetComposerJSON)
+		sites.PUT("/:id/composer/json", rbac("sites.config"), h.UpdateComposerJSON)
 	}
 }
 
@@ -546,6 +561,40 @@ func (h *SiteHandler) ApplySSLFromHolder(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"message": "certificate applied successfully"})
+}
+
+// GetForceHTTPS returns Force HTTPS status for a site.
+func (h *SiteHandler) GetForceHTTPS(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	enabled, err := h.siteService.GetForceHTTPS(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"force_https": enabled})
+}
+
+// SetForceHTTPS toggles Force HTTPS redirect for a site.
+func (h *SiteHandler) SetForceHTTPS(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "enabled", Message: "boolean expected"}})
+		return
+	}
+	if err := h.siteService.SetForceHTTPS(id, req.Enabled); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"force_https": req.Enabled})
 }
 
 // ---------------------------------------------------------------------------
@@ -1294,4 +1343,173 @@ func (h *SiteHandler) GetDiskUsage(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"disk_usage": usage})
+}
+
+// ---------------------------------------------------------------------------
+// URL Rewrite
+// ---------------------------------------------------------------------------
+
+// GetURLRewrite returns the current URL rewrite content for a site.
+func (h *SiteHandler) GetURLRewrite(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+
+	content, err := h.siteService.GetURLRewrite(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"content": content})
+}
+
+type setURLRewriteRequest struct {
+	Content string `json:"content"`
+}
+
+// SetURLRewrite writes the URL rewrite content for a site and reloads.
+func (h *SiteHandler) SetURLRewrite(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+
+	var req setURLRewriteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	if err := h.siteService.SetURLRewrite(id, req.Content); err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"message": "URL rewrite rules updated"})
+}
+
+// ListRewriteTemplates returns all available rewrite template names.
+func (h *SiteHandler) ListRewriteTemplates(c *gin.Context) {
+	webserver := c.Query("webserver")
+	if webserver == "" {
+		webserver = "nginx"
+	}
+	names := h.siteService.ListRewriteTemplates(webserver)
+	response.Success(c, gin.H{"templates": names})
+}
+
+// GetRewriteTemplate returns the content of a specific rewrite template.
+func (h *SiteHandler) GetRewriteTemplate(c *gin.Context) {
+	name := c.Param("name")
+	webserver := c.Query("webserver")
+	if webserver == "" {
+		webserver = "nginx"
+	}
+
+	content, err := h.siteService.GetRewriteTemplate(webserver, name)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"content": content})
+}
+
+// ---------------------------------------------------------------------------
+// Composer
+// ---------------------------------------------------------------------------
+
+// GetComposerStatus returns Composer install status and composer.json info for a site.
+func (h *SiteHandler) GetComposerStatus(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+
+	status, err := h.siteService.GetComposerStatus(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, status)
+}
+
+// InstallComposer downloads and installs Composer on the server.
+func (h *SiteHandler) InstallComposer(c *gin.Context) {
+	if err := h.siteService.InstallComposer(); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "Composer installed successfully"})
+}
+
+type composerRunRequest struct {
+	Command string   `json:"command" validate:"required,oneof=install update require remove dump-autoload"`
+	Args    []string `json:"args"`
+}
+
+// RunComposer executes a Composer command in the site directory.
+func (h *SiteHandler) RunComposer(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+
+	var req composerRunRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	output, err := h.siteService.RunComposer(id, req.Command, req.Args)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"output": output})
+}
+
+// GetComposerJSON returns the composer.json content for a site.
+func (h *SiteHandler) GetComposerJSON(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+
+	content, err := h.siteService.GetComposerJSON(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"content": content})
+}
+
+type updateComposerJSONRequest struct {
+	Content string `json:"content" validate:"required"`
+}
+
+// UpdateComposerJSON writes the composer.json content for a site.
+func (h *SiteHandler) UpdateComposerJSON(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+
+	var req updateComposerJSONRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	if err := h.siteService.UpdateComposerJSON(id, req.Content); err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"message": "composer.json updated"})
 }

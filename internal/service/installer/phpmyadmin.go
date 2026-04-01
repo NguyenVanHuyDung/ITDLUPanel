@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/ITDLUPanel/panel/internal/pkg/logger"
@@ -46,6 +47,10 @@ func (i *PhpMyAdminInstaller) Install(ctx context.Context, version string, progr
 
 	// Ensure parent server dir exists
 	os.MkdirAll("/ITDLUPanel/server/phpmyadmin", 0755)
+
+	SetupServerDir("phpmyadmin", []SymlinkDef{
+		{Name: "ssl", Target: "/ITDLUPanel/server/data/ssl"},
+	})
 
 	progress(40)
 	// Download phpMyAdmin
@@ -131,7 +136,7 @@ func randomHex(n int) string {
 	return hex.EncodeToString(b)
 }
 
-const phpMyAdminNginxConfPath = `/etc/nginx/conf.d/phpmyadmin.conf`
+const phpMyAdminNginxConfPath = `/ITDLUPanel/server/nginx/conf/conf.d/phpmyadmin.conf`
 const phpMyAdminNginxConf = `# phpMyAdmin - managed by ITDLUPanel
 server {
     listen 888;
@@ -156,7 +161,7 @@ server {
 `
 
 func setupPhpMyAdminNginx(ctx context.Context) {
-	os.MkdirAll("/etc/nginx/conf.d", 0755)
+	os.MkdirAll(filepath.Join(ServerBaseDir, "nginx", "conf", "conf.d"), 0755)
 	if err := os.WriteFile(phpMyAdminNginxConfPath, []byte(phpMyAdminNginxConf), 0644); err != nil {
 		logger.Warn().Err(err).Msg("failed to write phpMyAdmin nginx config")
 		return

@@ -13,13 +13,16 @@ import (
 	"github.com/ITDLUPanel/panel/internal/system"
 )
 
+// nginxConfBase is the symlinked base path for nginx config (/ITDLUPanel/server/nginx/conf → /etc/nginx).
+const nginxConfBase = "/ITDLUPanel/server/nginx/conf"
+
 const nginxTemplate = `server {
     listen 80;
     listen [::]:80;
     server_name {{ .Domain }}{{ range .Aliases }} {{ . }}{{ end }};
     index index.php index.html index.htm;
     root {{ .DocRoot }};
-{{ if .SSLEnabled }}
+{{ if .SSLEnabled }}{{ if .ForceHTTPS }}
     #HTTP_TO_HTTPS_START
     location / {
         return 301 https://$host$request_uri;
@@ -79,9 +82,107 @@ const nginxTemplate = `server {
 {{ if .PHPVersion }}    include enable-php-{{ .PHPVersion }}.conf;{{ end }}
     #PHP-INFO-END
 
-    location / {
-        try_files $uri $uri/ /index.php?$query_string;
+    #URL-REWRITE-START
+    include /ITDLUPanel/server/config/rewrite/{{ .Domain }}.conf;
+    #URL-REWRITE-END
+
+    location ~ \.php$ {
+        fastcgi_pass unix:/run/php/php{{ .PHPVersion }}-fpm.sock;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+        fastcgi_intercept_errors on;
+        fastcgi_connect_timeout 300;
+        fastcgi_send_timeout 300;
+        fastcgi_read_timeout 300;
+        fastcgi_buffer_size 64k;
+        fastcgi_buffers 4 64k;
+        fastcgi_busy_buffers_size 128k;
+        fastcgi_temp_file_write_size 256k;
+
+        # FastCGI cache
+        fastcgi_cache WORDPRESS;
+        fastcgi_cache_valid 200 301 302 60m;
+        fastcgi_cache_valid 404 1m;
+        fastcgi_cache_bypass $skip_cache;
+        fastcgi_no_cache $skip_cache;
+        add_header X-Cache $upstream_cache_status;
     }
+
+    # Deny access to hidden files
+    location ~ /\. {
+        deny all;
+        access_log off;
+        log_not_found off;
+    }
+
+    # Static file caching
+    location ~* \.(jpg|jpeg|png|gif|ico|bmp|swf)$ {
+        expires 30d;
+        access_log off;
+        error_log /dev/null;
+    }
+
+    location ~* \.(js|css)$ {
+        expires 12h;
+        access_log off;
+        error_log /dev/null;
+    }
+{{ if .CustomConfig }}
+    # Custom configuration
+{{ .CustomConfig }}
+{{ end }}
+{{ end }}{{ else }}
+    access_log /ITDLUPanel/logs/{{ .Domain }}.access.log;
+    error_log  /ITDLUPanel/logs/{{ .Domain }}.error.log;
+
+    # Error pages
+    error_page 403 /403.html;
+    error_page 404 /404.html;
+    error_page 502 /502.html;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+
+    # Forbidden files or directories
+    location ~ ^/(\.user\.ini|\.htaccess|\.git|\.env|\.svn|\.project|LICENSE|README\.md) {
+        return 404;
+    }
+
+    # ACME challenge for SSL certificate issuance
+    location ~ \.well-known {
+        allow all;
+    }
+
+    # Prohibit sensitive files in ACME challenge directory
+    if ( $uri ~ "^/\.well-known/.*\.(php|jsp|py|js|css|lua|ts|go|zip|tar\.gz|rar|7z|sql|bak)$" ) {
+        return 403;
+    }
+
+    # Gzip
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1k;
+    gzip_comp_level 5;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml font/ttf font/otf;
+
+    # Cache bypass rules
+    set $skip_cache 0;
+    if ($request_method = POST) { set $skip_cache 1; }
+    if ($query_string != "") { set $skip_cache 1; }
+    if ($request_uri ~* "/wp-admin/|/xmlrpc.php|wp-.*.php|/feed/|index.php|sitemap(_index)?.xml") { set $skip_cache 1; }
+    if ($http_cookie ~* "comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_no_cache|wordpress_logged_in") { set $skip_cache 1; }
+
+    #PHP-INFO-START
+{{ if .PHPVersion }}    include enable-php-{{ .PHPVersion }}.conf;{{ end }}
+    #PHP-INFO-END
+
+    #URL-REWRITE-START
+    include /ITDLUPanel/server/config/rewrite/{{ .Domain }}.conf;
+    #URL-REWRITE-END
 
     location ~ \.php$ {
         fastcgi_pass unix:/run/php/php{{ .PHPVersion }}-fpm.sock;
@@ -211,9 +312,9 @@ server {
 {{ if .PHPVersion }}    include enable-php-{{ .PHPVersion }}.conf;{{ end }}
     #PHP-INFO-END
 
-    location / {
-        try_files $uri $uri/ /index.php?$query_string;
-    }
+    #URL-REWRITE-START
+    include /ITDLUPanel/server/config/rewrite/{{ .Domain }}.conf;
+    #URL-REWRITE-END
 
     location ~ \.php$ {
         fastcgi_pass unix:/run/php/php{{ .PHPVersion }}-fpm.sock;
@@ -280,6 +381,9 @@ func (n *NginxGenerator) Generate(cfg VhostConfig) (string, error) {
 		n.ensurePHPSnippet(cfg.PHPVersion)
 	}
 
+	// Ensure rewrite include file exists (nginx errors on missing includes)
+	n.ensureRewriteFile(cfg.Domain)
+
 	tmpl, err := template.New("nginx").Parse(nginxTemplate)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse nginx template: %w", err)
@@ -295,13 +399,13 @@ func (n *NginxGenerator) Generate(cfg VhostConfig) (string, error) {
 
 // GetConfigPath returns the path to the Nginx vhost config file for a domain.
 func (n *NginxGenerator) GetConfigPath(domain string) string {
-	return filepath.Join("/etc/nginx/sites-available", domain+".conf")
+	return filepath.Join(nginxConfBase, "sites-available", domain+".conf")
 }
 
 // EnableSite creates a symlink in sites-enabled to activate the site.
 func (n *NginxGenerator) EnableSite(domain string) error {
 	available := n.GetConfigPath(domain)
-	enabled := filepath.Join("/etc/nginx/sites-enabled", domain+".conf")
+	enabled := filepath.Join(nginxConfBase, "sites-enabled", domain+".conf")
 
 	// Remove existing symlink if present
 	_ = os.Remove(enabled)
@@ -316,7 +420,7 @@ func (n *NginxGenerator) EnableSite(domain string) error {
 
 // DisableSite removes the symlink from sites-enabled.
 func (n *NginxGenerator) DisableSite(domain string) error {
-	enabled := filepath.Join("/etc/nginx/sites-enabled", domain+".conf")
+	enabled := filepath.Join(nginxConfBase, "sites-enabled", domain+".conf")
 
 	if err := os.Remove(enabled); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to disable nginx site %s: %w", domain, err)
@@ -356,9 +460,9 @@ func (n *NginxGenerator) TestConfig() error {
 	return nil
 }
 
-// ensurePHPSnippet creates /etc/nginx/enable-php-X.Y.conf if it doesn't exist.
+// ensurePHPSnippet creates /ITDLUPanel/server/nginx/conf/enable-php-X.Y.conf if it doesn't exist.
 func (n *NginxGenerator) ensurePHPSnippet(version string) {
-	snippetPath := fmt.Sprintf("/etc/nginx/enable-php-%s.conf", version)
+	snippetPath := fmt.Sprintf("%s/enable-php-%s.conf", nginxConfBase, version)
 	if _, err := os.Stat(snippetPath); err == nil {
 		return
 	}
@@ -384,5 +488,16 @@ func (n *NginxGenerator) ensurePHPSnippet(version string) {
 		logger.Warn().Err(err).Str("path", snippetPath).Msg("failed to create PHP snippet")
 	} else {
 		logger.Info().Str("path", snippetPath).Msg("created nginx PHP snippet")
+	}
+}
+
+// ensureRewriteFile creates the rewrite include file if it doesn't exist.
+func (n *NginxGenerator) ensureRewriteFile(domain string) {
+	dir := "/ITDLUPanel/server/config/rewrite"
+	_ = os.MkdirAll(dir, 0755)
+	fp := filepath.Join(dir, domain+".conf")
+	if _, err := os.Stat(fp); err != nil {
+		defaultContent := "location / {\n    try_files $uri $uri/ /index.php?$query_string;\n}\n"
+		_ = os.WriteFile(fp, []byte(defaultContent), 0644)
 	}
 }

@@ -60,7 +60,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({ state, onClose, onAction }) =
       : []),
     'divider',
     { key: 'permissions', label: 'Permissions', icon: <InfoCircleOutlined /> },
-    { key: 'copyPath', label: 'Copy Path', icon: <CopyOutlined /> },
+    { key: 'copy-path', label: 'Copy Path', icon: <CopyOutlined /> },
     'divider',
     { key: 'delete', label: 'Delete', icon: <DeleteOutlined />, danger: true },
   ];

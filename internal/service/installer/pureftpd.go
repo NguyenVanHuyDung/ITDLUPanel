@@ -76,6 +76,7 @@ func (i *PureFTPdInstaller) Install(ctx context.Context, version string, progres
 
 	SetupServerDir("pureftpd", []SymlinkDef{
 		{Name: "conf", Target: "/etc/pure-ftpd"},
+		{Name: "logs", Target: "/var/log"},
 	})
 
 	progress(100)
@@ -90,6 +91,11 @@ func (i *PureFTPdInstaller) Uninstall(ctx context.Context) error {
 
 	_, _ = system.Exec(ctx, "systemctl", "stop", "pure-ftpd")
 	_, _ = system.Exec(ctx, "systemctl", "disable", "pure-ftpd")
+
+	// Fix any interrupted dpkg state
+	if osInfo.PkgManager == "apt" {
+		FixDpkg(ctx)
+	}
 
 	removeCmd := "remove"
 	if osInfo.PkgManager == "apt" {

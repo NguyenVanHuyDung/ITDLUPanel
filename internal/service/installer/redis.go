@@ -81,6 +81,11 @@ func (i *RedisInstaller) Uninstall(ctx context.Context) error {
 		_, _ = system.Exec(ctx, "systemctl", "disable", svc)
 	}
 
+	// Fix any interrupted dpkg state
+	if osInfo.PkgManager == "apt" {
+		FixDpkg(ctx)
+	}
+
 	removeCmd := "remove"
 	if osInfo.PkgManager == "apt" {
 		removeCmd = "purge"

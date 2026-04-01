@@ -18,11 +18,22 @@ export default function FileGrid({
   const { p, isDark } = usePalette();
 
   const toggleSelect = (path: string, e: React.MouseEvent) => {
+    const file = files.find(f => f.path === path);
+    // Single click on directory → navigate into it
+    if (file?.is_dir && !e.ctrlKey && !e.metaKey) {
+      onNavigate(file.path);
+      return;
+    }
     if (e.ctrlKey || e.metaKey) {
       onSelectChange(
         selectedKeys.includes(path)
           ? selectedKeys.filter(k => k !== path)
           : [...selectedKeys, path]
+      );
+    } else {
+      // Single click without modifier → select just this item
+      onSelectChange(
+        selectedKeys.includes(path) ? [] : [path]
       );
     }
   };

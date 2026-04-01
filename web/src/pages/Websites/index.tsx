@@ -45,6 +45,8 @@ const CONFIG_SECTIONS = [
   { key: 'config', label: 'Config', icon: <CodeOutlined /> },
   { key: 'ssl', label: 'SSL', icon: <LockOutlined /> },
   { key: 'php', label: 'PHP Version', icon: <SettingOutlined /> },
+  { key: 'composer', label: 'Composer', icon: <CloudUploadOutlined /> },
+  { key: 'rewrite', label: 'URL Rewrite', icon: <SyncOutlined /> },
   { key: 'access', label: 'Limit Access', icon: <LockOutlined /> },
   { key: 'hotlink', label: 'Hotlink Protection', icon: <SafetyOutlined /> },
   { key: 'proxy', label: 'Reverse Proxy', icon: <ApiOutlined /> },
@@ -431,6 +433,357 @@ function PHPVersionPanel({ siteId, currentVersion, phpVersions }: { siteId: numb
         >
           Apply
         </Button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Composer panel
+// ---------------------------------------------------------------------------
+
+interface ComposerStatus {
+  installed: boolean;
+  version: string;
+  has_composer_json: boolean;
+  php_version: string;
+  php_binary: string;
+}
+
+function ComposerPanel({ siteId }: { siteId: number }) {
+  const { p, isDark } = usePalette();
+  const [status, setStatus] = useState<ComposerStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [installing, setInstalling] = useState(false);
+  const [output, setOutput] = useState('');
+  const [jsonContent, setJsonContent] = useState('');
+  const [jsonLoading, setJsonLoading] = useState(false);
+  const [jsonSaving, setJsonSaving] = useState(false);
+  const [tab, setTab] = useState<'actions' | 'json' | 'require'>('actions');
+  const [packageInput, setPackageInput] = useState('');
+
+  const fetchStatus = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.get<ApiResponse<ComposerStatus>>(`/sites/${siteId}/composer`);
+      setStatus(res.data.data);
+    } catch { /* ignore */ } finally {
+      setLoading(false);
+    }
+  }, [siteId]);
+
+  useEffect(() => { fetchStatus(); }, [fetchStatus]);
+
+  const runCommand = async (command: string, args: string[] = []) => {
+    setRunning(true);
+    setOutput('');
+    try {
+      const res = await api.post<ApiResponse<{ output: string }>>(`/sites/${siteId}/composer/run`, { command, args });
+      setOutput(res.data.data.output || 'Done.');
+      message.success(`composer ${command} completed`);
+      fetchStatus();
+    } catch (e: any) {
+      const msg = e?.response?.data?.data?.output || e?.response?.data?.message || 'Command failed';
+      setOutput(msg);
+      message.error(`composer ${command} failed`);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const loadJSON = async () => {
+    setJsonLoading(true);
+    try {
+      const res = await api.get<ApiResponse<{ content: string }>>(`/sites/${siteId}/composer/json`);
+      setJsonContent(res.data.data.content);
+    } catch {
+      setJsonContent('');
+      message.error('composer.json not found');
+    } finally {
+      setJsonLoading(false);
+    }
+  };
+
+  const saveJSON = async () => {
+    setJsonSaving(true);
+    try {
+      await api.put(`/sites/${siteId}/composer/json`, { content: jsonContent });
+      message.success('composer.json saved');
+    } catch {
+      message.error('Failed to save composer.json');
+    } finally {
+      setJsonSaving(false);
+    }
+  };
+
+  useEffect(() => { if (tab === 'json') loadJSON(); }, [tab]);
+
+  if (loading) return <Spin size="small" />;
+
+  const badgeStyle = (active: boolean): React.CSSProperties => ({
+    padding: '2px 10px', borderRadius: 99, fontSize: 11, fontWeight: 500,
+    display: 'inline-flex', alignItems: 'center', gap: 5,
+    background: active ? `${p.green}15` : `${p.red}15`,
+    color: active ? p.green : p.red,
+  });
+
+  const tabBtn = (key: string, label: string, active: boolean): React.CSSProperties => ({
+    padding: '6px 16px', fontSize: 12, fontWeight: active ? 600 : 400, cursor: 'pointer',
+    border: 'none', borderRadius: 6, transition: 'all 0.15s',
+    background: active ? `${p.accent}15` : 'transparent',
+    color: active ? p.accent : p.textMuted,
+  });
+
+  const actionBtnStyle: React.CSSProperties = {
+    padding: '8px 16px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+    background: isDark ? p.rowAlt : p.card, cursor: running ? 'not-allowed' : 'pointer',
+    fontSize: 12, fontWeight: 500, color: p.text, transition: 'all 0.15s',
+    opacity: running ? 0.6 : 1,
+  };
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: p.text }}>Composer</span>
+        <span style={badgeStyle(!!status?.installed)}>
+          <span style={{ width: 6, height: 6, borderRadius: 3, background: status?.installed ? p.green : p.red }} />
+          {status?.installed ? `v${status.version}` : 'Not Installed'}
+        </span>
+        {status?.php_version && (
+          <span style={{ fontSize: 11, color: p.textMuted }}>· PHP {status.php_version}</span>
+        )}
+      </div>
+
+      {!status?.installed ? (
+        <div style={{ padding: 20, textAlign: 'center', color: p.textMuted, fontSize: 12 }}>
+          <p>Composer is not installed on this server.</p>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 14 }}>
+            <Button type="primary" loading={installing} disabled={installing}
+              onClick={async () => {
+                setInstalling(true);
+                try {
+                  await api.post(`/sites/${siteId}/composer/install`);
+                  message.success('Composer installed successfully');
+                  fetchStatus();
+                } catch (e: any) {
+                  message.error(e?.response?.data?.message || 'Failed to install Composer');
+                } finally {
+                  setInstalling(false);
+                }
+              }}
+              style={{ background: p.accent, borderColor: p.accent }}>
+              <DownloadOutlined /> {installing ? 'Installing...' : 'Install Composer'}
+            </Button>
+            <Button size="small" onClick={fetchStatus} disabled={installing}>
+              <ReloadOutlined /> Re-check
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Tabs */}
+          <div style={{ display: 'flex', gap: 4, marginBottom: 16 }}>
+            <button style={tabBtn('actions', 'Commands', tab === 'actions')} onClick={() => setTab('actions')}>Commands</button>
+            <button style={tabBtn('require', 'Packages', tab === 'require')} onClick={() => setTab('require')}>Packages</button>
+            <button style={tabBtn('json', 'composer.json', tab === 'json')} onClick={() => setTab('json')}>composer.json</button>
+          </div>
+
+          {tab === 'actions' && (
+            <div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+                <button style={actionBtnStyle} disabled={running} onClick={() => runCommand('install')}>
+                  📦 Install
+                </button>
+                <button style={actionBtnStyle} disabled={running} onClick={() => runCommand('update')}>
+                  🔄 Update
+                </button>
+                <button style={actionBtnStyle} disabled={running} onClick={() => runCommand('dump-autoload')}>
+                  ⚙️ Dump Autoload
+                </button>
+              </div>
+              {!status.has_composer_json && (
+                <div style={{ padding: 10, borderRadius: 6, background: `${p.amber}15`, color: p.amber, fontSize: 11, marginBottom: 12 }}>
+                  ⚠ No composer.json found in site directory. Commands may fail.
+                </div>
+              )}
+            </div>
+          )}
+
+          {tab === 'require' && (
+            <div>
+              <span style={{ fontSize: 12, color: p.textMuted, display: 'block', marginBottom: 10 }}>
+                Add or remove packages. Enter package name (e.g. <code>laravel/framework</code>) or with version constraint (e.g. <code>guzzlehttp/guzzle:^7.0</code>).
+              </span>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                <Input
+                  placeholder="vendor/package or vendor/package:^1.0"
+                  value={packageInput}
+                  onChange={e => setPackageInput(e.target.value)}
+                  disabled={running}
+                  style={{ flex: 1 }}
+                  onPressEnter={() => {
+                    if (packageInput.trim()) runCommand('require', [packageInput.trim()]);
+                  }}
+                />
+                <Button type="primary" disabled={!packageInput.trim() || running} loading={running}
+                  onClick={() => runCommand('require', [packageInput.trim()])}
+                  style={{ background: p.accent, borderColor: p.accent }}>
+                  Require
+                </Button>
+                <Button danger disabled={!packageInput.trim() || running} loading={running}
+                  onClick={() => runCommand('remove', [packageInput.trim()])}>
+                  Remove
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {tab === 'json' && (
+            <div>
+              {jsonLoading ? <Spin size="small" /> : (
+                <>
+                  <div style={{ border: `1px solid ${p.cardBorder}`, borderRadius: 6, overflow: 'hidden', marginBottom: 10 }}>
+                    <Editor
+                      height={300}
+                      language="json"
+                      theme={isDark ? 'vs-dark' : 'light'}
+                      value={jsonContent}
+                      onChange={v => setJsonContent(v || '')}
+                      options={{ minimap: { enabled: false }, fontSize: 12, lineNumbers: 'on', scrollBeyondLastLine: false }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <Button type="primary" onClick={saveJSON} loading={jsonSaving}
+                      style={{ background: p.accent, borderColor: p.accent }}>
+                      Save composer.json
+                    </Button>
+                    <Button onClick={loadJSON}>Reload</Button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Output console */}
+          {(output || running) && (
+            <div style={{
+              marginTop: 16, padding: 12, borderRadius: 6,
+              background: isDark ? '#0d1117' : '#f6f8fa',
+              border: `1px solid ${p.cardBorder}`,
+              fontFamily: 'monospace', fontSize: 11, color: p.text,
+              maxHeight: 250, overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+            }}>
+              {running && <span style={{ color: p.accent }}>⏳ Running...</span>}
+              {output}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// URL Rewrite panel
+// ---------------------------------------------------------------------------
+
+function URLRewritePanel({ siteId, webserver }: { siteId: number; webserver: string }) {
+  const { p, isDark } = usePalette();
+  const [content, setContent] = useState('');
+  const [templates, setTemplates] = useState<string[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [rewriteRes, templatesRes] = await Promise.all([
+        api.get<ApiResponse<{ content: string }>>(`/sites/${siteId}/rewrite`),
+        api.get<ApiResponse<{ templates: string[] }>>(`/sites/rewrite-templates?webserver=${webserver}`),
+      ]);
+      setContent(rewriteRes.data.data.content || '');
+      setTemplates(templatesRes.data.data.templates || []);
+    } catch { /* ignore */ } finally {
+      setLoading(false);
+    }
+  }, [siteId, webserver]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const loadTemplate = async (name: string) => {
+    if (!name) return;
+    try {
+      const res = await api.get<ApiResponse<{ content: string }>>(`/sites/rewrite-templates/${name}?webserver=${webserver}`);
+      setContent(res.data.data.content || '');
+      setSelectedTemplate(name);
+      message.info(`Loaded "${name}" template — click Save to apply`);
+    } catch {
+      message.error('Failed to load template');
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/sites/${siteId}/rewrite`, { content });
+      message.success('URL rewrite rules saved and applied');
+    } catch {
+      message.error('Failed to save rewrite rules');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <Spin size="small" />;
+
+  return (
+    <div>
+      <span style={{ fontSize: 12, color: p.textMuted, display: 'block', marginBottom: 12 }}>
+        Configure URL rewrite rules for this site. Select a preset for popular CMS/frameworks or write custom rules.
+      </span>
+
+      {/* Template selector */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        <span style={{ fontSize: 12, fontWeight: 500, color: p.text }}>Preset:</span>
+        <Select
+          value={selectedTemplate || undefined}
+          onChange={loadTemplate}
+          style={{ width: 200 }}
+          placeholder="Select a template..."
+          allowClear
+          onClear={() => setSelectedTemplate('')}
+          showSearch
+          optionFilterProp="label"
+          options={templates.map(t => ({ value: t, label: t.charAt(0).toUpperCase() + t.slice(1) }))}
+        />
+        <span style={{ fontSize: 11, color: p.textMuted }}>
+          {webserver === 'nginx' ? 'Nginx rewrite rules' : '.htaccess rules'}
+        </span>
+      </div>
+
+      {/* Editor */}
+      <div style={{ border: `1px solid ${p.cardBorder}`, borderRadius: 6, overflow: 'hidden', marginBottom: 12 }}>
+        <Editor
+          height={320}
+          language={webserver === 'nginx' ? 'nginx' : 'apacheconf'}
+          theme={isDark ? 'vs-dark' : 'light'}
+          value={content}
+          onChange={v => setContent(v || '')}
+          options={{ minimap: { enabled: false }, fontSize: 12, lineNumbers: 'on', scrollBeyondLastLine: false, wordWrap: 'on' }}
+        />
+      </div>
+
+      {/* Actions */}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <Button type="primary" onClick={handleSave} loading={saving}
+          style={{ background: p.accent, borderColor: p.accent }}>
+          Save
+        </Button>
+        <Button onClick={fetchData}>Reload</Button>
+        <Button onClick={() => { setContent(''); setSelectedTemplate(''); }}>Clear</Button>
       </div>
     </div>
   );
@@ -875,6 +1228,14 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
   const [keyPEM, setKeyPEM] = useState('');
   const [email, setEmail] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Force HTTPS state
+  const [forceHTTPS, setForceHTTPS] = useState(true);
+  const [forceHTTPSLoading, setForceHTTPSLoading] = useState(false);
+  // DNS-01 challenge state
+  const [dnsMethod, setDnsMethod] = useState<'file' | 'dns'>('file');
+  const [dnsDomain, setDnsDomain] = useState('');
+  const [dnsChallenge, setDnsChallenge] = useState<{ record_name: string; record_value: string } | null>(null);
+  const [dnsVerifying, setDnsVerifying] = useState(false);
 
   const fetchSSL = useCallback(async () => {
     try {
@@ -895,7 +1256,14 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
     } catch { /* ignore */ }
   }, []);
 
-  useEffect(() => { fetchSSL(); }, [fetchSSL]);
+  const fetchForceHTTPS = useCallback(async () => {
+    try {
+      const res = await api.get(`/sites/${siteId}/force-https`);
+      setForceHTTPS(res.data?.data?.force_https ?? true);
+    } catch { /* ignore */ }
+  }, [siteId]);
+
+  useEffect(() => { fetchSSL(); fetchForceHTTPS(); }, [fetchSSL, fetchForceHTTPS]);
   useEffect(() => { if (activeTab === 'holder') fetchCerts(); }, [activeTab, fetchCerts]);
 
   const enableSSL = async (certPath: string, keyPath: string, sslType: string) => {
@@ -977,6 +1345,53 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
     }
   };
 
+  const toggleForceHTTPS = async (val: boolean) => {
+    try {
+      setForceHTTPSLoading(true);
+      await api.put(`/sites/${siteId}/force-https`, { enabled: val });
+      setForceHTTPS(val);
+      message.success(val ? 'Force HTTPS enabled' : 'Force HTTPS disabled');
+    } catch (e: any) {
+      message.error(e?.response?.data?.message || 'Failed to toggle Force HTTPS');
+    } finally {
+      setForceHTTPSLoading(false);
+    }
+  };
+
+  const handleInitDNS = async () => {
+    if (!email.trim()) { message.error('Please enter an email address'); return; }
+    const domain = dnsDomain.trim() || `*.${siteDomain}`;
+    try {
+      setSubmitting(true);
+      const res = await api.post('/ssl/letsencrypt-dns/init', { domain, email });
+      const d = res.data?.data ?? res.data;
+      setDnsChallenge({ record_name: d.record_name, record_value: d.record_value });
+      message.success('DNS challenge initiated. Add the TXT record below to your DNS.');
+    } catch (e: any) {
+      message.error(e?.response?.data?.message || 'Failed to initiate DNS challenge');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleVerifyDNS = async () => {
+    if (!email.trim()) { message.error('Please enter an email address'); return; }
+    const domain = dnsDomain.trim() || `*.${siteDomain}`;
+    try {
+      setDnsVerifying(true);
+      const res = await api.post('/ssl/letsencrypt-dns/complete', { domain, email });
+      const d = res.data?.data ?? res.data;
+      await enableSSL(d.cert_path, d.key_path, 'letsencrypt');
+      message.success('Wildcard certificate issued successfully');
+      setDnsChallenge(null);
+      setActiveTab('current');
+    } catch (e: any) {
+      message.error(e?.response?.data?.message || 'DNS verification failed');
+    } finally {
+      setDnsVerifying(false);
+    }
+  };
+
   const isExpired = (d: string) => new Date(d) < new Date();
   const isExpiringSoon = (d: string) => { const diff = new Date(d).getTime() - Date.now(); return diff > 0 && diff < 30 * 86400000; };
   const daysUntil = (d: string) => { const diff = Math.ceil((new Date(d).getTime() - Date.now()) / 86400000); return diff; };
@@ -1032,7 +1447,17 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
                 ? `, Exp in ${daysUntil(sslInfo.valid_until)} days`
                 : `, Expired ${Math.abs(daysUntil(sslInfo.valid_until))} days ago`
               }</span>)}
-              {kvRow('Force HTTPS', <span style={{ fontSize: 12, fontWeight: 500, color: p.green }}>Enabled</span>)}
+              {kvRow('Force HTTPS', <button
+                onClick={() => toggleForceHTTPS(!forceHTTPS)}
+                disabled={forceHTTPSLoading}
+                style={{
+                  padding: '3px 10px', borderRadius: 5, border: 'none', cursor: forceHTTPSLoading ? 'not-allowed' : 'pointer',
+                  fontSize: 11, fontWeight: 600,
+                  background: forceHTTPS ? `${p.green}18` : `${p.red}15`,
+                  color: forceHTTPS ? p.green : p.red,
+                  transition: 'all 0.15s',
+                }}
+              >{forceHTTPSLoading ? '…' : forceHTTPS ? '✓ Enabled' : '✗ Disabled'}</button>)}
               <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                 <button style={dangerBtn} onClick={handleDisable} disabled={submitting}>Disable SSL</button>
                 {sslInfo.ssl_type === 'letsencrypt' && (
@@ -1104,21 +1529,115 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
       )}
 
       {activeTab === 'letsencrypt' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* Email input (shared between methods) */}
           <div>
             <label style={{ fontSize: 12, fontWeight: 500, color: p.text, marginBottom: 4, display: 'block' }}>Email Address</label>
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="admin@example.com"
               style={{ width: '100%', maxWidth: 360, padding: '7px 10px', borderRadius: 6, border: `1px solid ${p.cardBorder}`, background: p.card, color: p.text, fontSize: 12 }} />
           </div>
-          <div style={{ fontSize: 12, color: p.textMuted, lineHeight: 1.6 }}>
-            HTTP-01 file verification. Ensure your domain's DNS A record points to this server and port 80 is accessible.
+
+          {/* Method selector tabs */}
+          <div style={{ display: 'flex', gap: 0, borderRadius: 6, overflow: 'hidden', border: `1px solid ${p.cardBorder}`, alignSelf: 'flex-start' }}>
+            {([['file', '📄 File Verification'], ['dns', '🌐 DNS (Wildcard)']] as const).map(([key, label]) => (
+              <button key={key} onClick={() => setDnsMethod(key)}
+                style={{
+                  padding: '7px 16px', border: 'none', cursor: 'pointer',
+                  fontSize: 12, fontWeight: 500,
+                  background: dnsMethod === key ? p.accent : 'transparent',
+                  color: dnsMethod === key ? '#fff' : p.textMuted,
+                  transition: 'all 0.15s',
+                }}>{label}</button>
+            ))}
           </div>
-          <button style={{ ...primaryBtn, alignSelf: 'flex-start' }} onClick={handleLetsEncrypt} disabled={submitting}>
-            {submitting ? 'Issuing…' : 'Issue Certificate'}
-          </button>
-          <div style={{ fontSize: 11, color: p.textMuted, fontStyle: 'italic', marginTop: 4 }}>
-            For wildcard certificates (*.domain.com), DNS verification is required. This feature will be available in a future update.
-          </div>
+
+          {/* ── Method 1: File Verification (HTTP-01) ── */}
+          {dnsMethod === 'file' && (
+            <div style={{
+              padding: '14px 16px', borderRadius: 8,
+              border: `1px solid ${p.cardBorder}`,
+              background: isDark ? p.rowAlt : p.headerBg,
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: p.text, marginBottom: 8 }}>File Verification (HTTP-01)</div>
+              <div style={{ fontSize: 12, color: p.textMuted, lineHeight: 1.6, marginBottom: 12 }}>
+                Automatically verifies domain ownership by placing a file at <code style={{ fontSize: 11, padding: '1px 4px', borderRadius: 3, background: `${p.accent}12`, color: p.accent }}>/.well-known/acme-challenge/</code>.
+                <br />Ensure your domain's DNS A record points to this server and port 80 is accessible.
+              </div>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '8px 12px', borderRadius: 6,
+                background: `${p.accent}08`, border: `1px solid ${p.accent}20`, marginBottom: 12,
+              }}>
+                <span style={{ fontSize: 12, fontWeight: 500, color: p.text }}>Domain:</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: p.accent }}>{siteDomain}</span>
+              </div>
+              <button style={{ ...primaryBtn }} onClick={handleLetsEncrypt} disabled={submitting}>
+                {submitting ? '⏳ Issuing…' : '▶ Apply Certificate'}
+              </button>
+            </div>
+          )}
+
+          {/* ── Method 2: DNS Verification (DNS-01, Wildcard) ── */}
+          {dnsMethod === 'dns' && (
+            <div style={{
+              padding: '14px 16px', borderRadius: 8,
+              border: `1px solid ${p.cardBorder}`,
+              background: isDark ? p.rowAlt : p.headerBg,
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: p.text, marginBottom: 8 }}>DNS Verification (Wildcard)</div>
+              <div style={{ fontSize: 12, color: p.textMuted, lineHeight: 1.6, marginBottom: 12 }}>
+                Issue a wildcard certificate (e.g. <code style={{ fontSize: 11, padding: '1px 4px', borderRadius: 3, background: `${p.accent}12`, color: p.accent }}>*.{siteDomain}</code>) by adding a DNS TXT record.
+                This covers all subdomains automatically.
+              </div>
+
+              {/* Domain input */}
+              <div style={{ marginBottom: 10 }}>
+                <label style={{ fontSize: 12, fontWeight: 500, color: p.text, marginBottom: 4, display: 'block' }}>Domain (pan-domain)</label>
+                <input value={dnsDomain} onChange={e => setDnsDomain(e.target.value)} placeholder={`*.${siteDomain}`}
+                  style={{ width: '100%', maxWidth: 360, padding: '7px 10px', borderRadius: 6, border: `1px solid ${p.cardBorder}`, background: p.card, color: p.text, fontSize: 12 }} />
+              </div>
+
+              {!dnsChallenge ? (
+                <button style={{ ...primaryBtn }} onClick={handleInitDNS} disabled={submitting}>
+                  {submitting ? '⏳ Generating…' : '1️⃣ Get DNS Record'}
+                </button>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: p.text }}>Add this TXT record to your DNS:</div>
+                  <div style={{
+                    padding: '10px 14px', borderRadius: 6,
+                    background: isDark ? '#1a1a2e' : '#f0f4ff',
+                    border: `1px solid ${p.accent}30`,
+                    fontFamily: 'monospace', fontSize: 12,
+                  }}>
+                    <div style={{ marginBottom: 6 }}>
+                      <span style={{ color: p.textMuted }}>Record Type: </span>
+                      <span style={{ fontWeight: 600, color: p.accent }}>TXT</span>
+                    </div>
+                    <div style={{ marginBottom: 6 }}>
+                      <span style={{ color: p.textMuted }}>Name: </span>
+                      <span style={{ fontWeight: 600, color: p.text, wordBreak: 'break-all' }}>{dnsChallenge.record_name}</span>
+                    </div>
+                    <div>
+                      <span style={{ color: p.textMuted }}>Value: </span>
+                      <span style={{ fontWeight: 600, color: p.green, wordBreak: 'break-all' }}>{dnsChallenge.record_value}</span>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: p.textMuted, lineHeight: 1.5 }}>
+                    After adding the record, wait for DNS propagation (usually 1–5 minutes), then click Verify.
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button style={{ ...primaryBtn }} onClick={handleVerifyDNS} disabled={dnsVerifying}>
+                      {dnsVerifying ? '⏳ Verifying…' : '2️⃣ Verify & Issue'}
+                    </button>
+                    <button style={{ ...dangerBtn, borderColor: p.textMuted, color: p.textMuted }} onClick={() => setDnsChallenge(null)}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -2853,6 +3372,10 @@ function SiteConfigModal({ site, open, onClose, phpVersions }: { site: Site | nu
         return <ConfigEditorPanel siteId={site.id} webserver={site.webserver} />;
       case 'php':
         return <PHPVersionPanel siteId={site.id} currentVersion={site.php_version} phpVersions={phpVersions} />;
+      case 'composer':
+        return <ComposerPanel siteId={site.id} />;
+      case 'rewrite':
+        return <URLRewritePanel siteId={site.id} webserver={site.webserver} />;
       case 'ssl':
         return <SSLPanel siteId={site.id} siteDomain={site.domain} />;
       case 'access':

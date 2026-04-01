@@ -207,6 +207,7 @@ func (i *PHPInstaller) Install(ctx context.Context, version string, progress fun
 
 	SetupServerDir("php", []SymlinkDef{
 		{Name: "conf", Target: "/etc/php"},
+		{Name: "logs", Target: "/var/log/php"},
 	})
 
 	progress(100)
@@ -226,22 +227,59 @@ func (i *PHPInstaller) Uninstall(ctx context.Context) error {
 		_, _ = system.Exec(ctx, "systemctl", "disable", svc)
 	}
 
-	removeCmd := "remove"
 	if osInfo.PkgManager == "apt" {
-		removeCmd = "purge"
-		// Remove all php packages
-		if _, err := system.Exec(ctx, "apt", removeCmd, "-y", "php*"); err != nil {
-			return fmt.Errorf("failed to uninstall php: %w", err)
+		// Fix any interrupted dpkg state
+		FixDpkg(ctx)
+
+		// List all installed php packages and purge them
+		pkgs := listInstalledPHPPackages(ctx)
+		if len(pkgs) > 0 {
+			args := append([]string{"purge", "-y"}, pkgs...)
+			if _, err := system.Exec(ctx, "apt", args...); err != nil {
+				return fmt.Errorf("failed to uninstall php: %w", err)
+			}
 		}
 		_, _ = system.Exec(ctx, "apt", "autoremove", "-y")
 	} else {
-		if _, err := system.Exec(ctx, "dnf", removeCmd, "-y", "php*"); err != nil {
-			return fmt.Errorf("failed to uninstall php: %w", err)
+		// RHEL: build explicit package list per version
+		var pkgs []string
+		for _, ver := range i.GetVersions() {
+			remiVer := strings.ReplaceAll(ver, ".", "")
+			result, err := system.Exec(ctx, "rpm", "-qa", "--queryformat", "%{NAME}\n")
+			if err == nil {
+				for _, line := range strings.Split(result.Stdout, "\n") {
+					if strings.HasPrefix(line, "php"+remiVer) {
+						pkgs = append(pkgs, strings.TrimSpace(line))
+					}
+				}
+			}
+		}
+		if len(pkgs) > 0 {
+			args := append([]string{"remove", "-y"}, pkgs...)
+			if _, err := system.Exec(ctx, "dnf", args...); err != nil {
+				return fmt.Errorf("failed to uninstall php: %w", err)
+			}
 		}
 	}
 
 	logger.Info().Msg("php uninstalled successfully")
 	return nil
+}
+
+// listInstalledPHPPackages returns all installed dpkg packages matching php*.
+func listInstalledPHPPackages(ctx context.Context) []string {
+	result, err := system.Exec(ctx, "dpkg-query", "-W", "-f", "${Package}\n")
+	if err != nil {
+		return nil
+	}
+	var pkgs []string
+	for _, line := range strings.Split(result.Stdout, "\n") {
+		pkg := strings.TrimSpace(line)
+		if pkg != "" && strings.HasPrefix(pkg, "php") {
+			pkgs = append(pkgs, pkg)
+		}
+	}
+	return pkgs
 }
 
 func (i *PHPInstaller) IsInstalled() bool {

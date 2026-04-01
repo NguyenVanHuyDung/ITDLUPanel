@@ -134,21 +134,10 @@ export default function PHPManageModal({ open, onClose }: Props) {
       onCancel={onClose}
       footer={null}
       title={
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: 24 }}>
-          <Space>
-            <span style={{ fontSize: 18 }}>🐘</span>
-            <span>PHP Management</span>
-          </Space>
-          {availableVersions.length > 1 && (
-            <Select
-              size="small"
-              value={phpVersion}
-              onChange={setPHPVersion}
-              style={{ width: 100 }}
-              options={availableVersions.map(v => ({ label: `PHP ${v}`, value: v }))}
-            />
-          )}
-        </div>
+        <Space>
+          <span style={{ fontSize: 18 }}>🐘</span>
+          <span>PHP Management</span>
+        </Space>
       }
       width={isMobile ? '95vw' : 960}
       styles={{
@@ -157,7 +146,81 @@ export default function PHPManageModal({ open, onClose }: Props) {
       }}
       destroyOnClose
     >
-      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', minHeight: 520 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', minHeight: 520 }}>
+        {/* Version Switcher Bar */}
+        {availableVersions.length > 0 && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: isMobile ? '12px 14px' : '14px 20px',
+            borderBottom: `1px solid ${BORDER}`,
+            background: isDark ? 'rgba(99,102,241,0.04)' : '#F8FAFC',
+            overflowX: 'auto',
+          }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: TEXT_SECONDARY, textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap', marginRight: 2 }}>
+              Version
+            </span>
+            {availableVersions.map(v => {
+              const isActive = v === phpVersion;
+              return (
+                <div
+                  key={v}
+                  onClick={() => setPHPVersion(v)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '7px 16px',
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    fontWeight: isActive ? 700 : 500,
+                    color: isActive ? '#fff' : TEXT_PRIMARY,
+                    background: isActive
+                      ? `linear-gradient(135deg, ${ACCENT}, ${isDark ? '#6366F1' : '#7C3AED'})`
+                      : (isDark ? 'rgba(255,255,255,0.06)' : '#fff'),
+                    border: `1.5px solid ${isActive ? 'transparent' : (isDark ? 'rgba(255,255,255,0.10)' : '#E2E8F0')}`,
+                    boxShadow: isActive
+                      ? `0 2px 8px ${ACCENT}40`
+                      : '0 1px 2px rgba(0,0,0,0.04)',
+                    transition: 'all 0.2s ease',
+                    whiteSpace: 'nowrap',
+                    userSelect: 'none',
+                  }}
+                  onMouseEnter={e => {
+                    if (!isActive) {
+                      e.currentTarget.style.borderColor = ACCENT;
+                      e.currentTarget.style.background = isDark ? 'rgba(99,102,241,0.12)' : '#EEF2FF';
+                    }
+                  }}
+                  onMouseLeave={e => {
+                    if (!isActive) {
+                      e.currentTarget.style.borderColor = isDark ? 'rgba(255,255,255,0.10)' : '#E2E8F0';
+                      e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : '#fff';
+                    }
+                  }}
+                >
+                  <span style={{ fontSize: 15 }}>🐘</span>
+                  <span>PHP {v}</span>
+                  {isActive && (
+                    <span style={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: '50%',
+                      background: '#34D399',
+                      boxShadow: '0 0 6px #34D39980',
+                      flexShrink: 0,
+                    }} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Main layout: Sidebar + Content */}
+        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', flex: 1, minHeight: 0 }}>
         {/* Sidebar */}
         <div style={{
           width: isMobile ? '100%' : 180,
@@ -193,6 +256,7 @@ export default function PHPManageModal({ open, onClose }: Props) {
         }}>
           {renderContent()}
         </div>
+        </div>
       </div>
     </Modal>
   );
@@ -212,21 +276,12 @@ function ServiceTab({ version, versions }: { version: string; versions: string[]
 
   const fetchStatuses = useCallback(async () => {
     try {
-      const { data: resp } = await api.get('/software/php/status');
-      const st = resp.data;
-      // status may contain per-version info or single status
-      if (version && st) {
-        setStatuses({ [version]: { running: st.running || st.is_running, version: st.version || version } });
-      }
-    } catch {
-      // Try each version individually
       const results: Record<string, { running: boolean; version: string }> = {};
       for (const v of versions) {
         try {
-          const svcName = `php${v}-fpm`;
-          // Use generic status endpoint pattern
-          const { data: resp } = await api.get(`/software/${svcName}/status`);
-          results[v] = { running: resp.data?.running || resp.data?.is_running, version: v };
+          const { data: resp } = await api.get(`/software/php${v}-fpm/status`);
+          const st = resp.data;
+          results[v] = { running: st?.running || st?.is_running, version: v };
         } catch {
           results[v] = { running: false, version: v };
         }
@@ -235,24 +290,21 @@ function ServiceTab({ version, versions }: { version: string; versions: string[]
     } finally {
       setLoading(false);
     }
-  }, [version, versions]);
+  }, [versions]);
 
   useEffect(() => {
     setLoading(true);
-    // Check each php-fpm version status via systemctl
     const checkAll = async () => {
       const results: Record<string, { running: boolean; version: string }> = {};
       for (const v of versions) {
-        results[v] = { running: false, version: v };
-      }
-      // Use the php status endpoint
-      try {
-        const { data: resp } = await api.get('/software/php/status');
-        const st = resp.data;
-        if (st && version) {
-          results[version] = { running: st.running || st.is_running, version: st.version || version };
+        try {
+          const { data: resp } = await api.get(`/software/php${v}-fpm/status`);
+          const st = resp.data;
+          results[v] = { running: st?.running || st?.is_running, version: v };
+        } catch {
+          results[v] = { running: false, version: v };
         }
-      } catch { /* individual version status already set to false */ }
+      }
       setStatuses(results);
       setLoading(false);
     };
@@ -277,7 +329,7 @@ function ServiceTab({ version, versions }: { version: string; versions: string[]
     const key = `${action}-${ver}`;
     setActionLoading(key);
     try {
-      await api.post(`/software/php/${action}`);
+      await api.post(`/software/php${ver}-fpm/${action}`);
       message.success(`PHP ${ver} FPM ${action}ed successfully`);
       setTimeout(() => {
         setLoading(true);
@@ -357,53 +409,6 @@ function ServiceTab({ version, versions }: { version: string; versions: string[]
               Restart
             </Button>
           </Space>
-
-          {/* Installed versions summary */}
-          {versions.length > 0 && (
-            <div style={{
-              marginTop: 24,
-              padding: 16,
-              borderRadius: 8,
-              background: isDark ? p.codeBg : '#F8FAFC',
-              border: `1px solid ${isDark ? p.cardBorder : '#E2E8F0'}`,
-            }}>
-              <Text style={{ fontSize: 13, fontWeight: 600, color: p.text, display: 'block', marginBottom: 12 }}>
-                Installed PHP Versions
-              </Text>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {versions.map(v => (
-                  <Tag
-                    key={v}
-                    color={v === version ? ACCENT : undefined}
-                    style={{
-                      borderRadius: 6,
-                      padding: '4px 12px',
-                      fontSize: 13,
-                      fontWeight: v === version ? 600 : 400,
-                      cursor: 'default',
-                    }}
-                  >
-                    PHP {v}
-                    {v === version && ' ●'}
-                  </Tag>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Info */}
-          <div style={{
-            marginTop: 16,
-            padding: '10px 14px',
-            borderRadius: 8,
-            background: isDark ? 'rgba(99,102,241,0.06)' : '#EEF2FF',
-            border: `1px solid ${isDark ? 'rgba(99,102,241,0.15)' : '#C7D2FE'}`,
-            fontSize: 12,
-            color: p.textMuted,
-          }}>
-            <InfoCircleOutlined style={{ marginRight: 6, color: ACCENT }} />
-            Use the version selector in the header to switch between installed PHP versions.
-          </div>
 
           {/* FPM Load & System Status */}
           {fpmStatus && (

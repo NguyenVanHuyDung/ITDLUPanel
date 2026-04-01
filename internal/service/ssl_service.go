@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/acme"
@@ -229,6 +230,194 @@ func (s *SSLService) IssueLetsEncrypt(domain, email string) error {
 	}
 
 	logger.Info().Str("domain", domain).Msg("Let's Encrypt certificate issued successfully")
+	return nil
+}
+
+// DNSChallengeInfo holds the DNS TXT record that must be created for DNS-01 validation.
+type DNSChallengeInfo struct {
+	Domain     string `json:"domain"`       // e.g. "*.example.com"
+	RecordName string `json:"record_name"`  // e.g. "_acme-challenge.example.com"
+	RecordType string `json:"record_type"`  // "TXT"
+	RecordVal  string `json:"record_value"` // the challenge digest
+	// internal state (not serialized)
+	acmeClient *acme.Client       `json:"-"`
+	certKey    *ecdsa.PrivateKey   `json:"-"`
+	chalURI    string              `json:"-"`
+	authzURI   string              `json:"-"`
+}
+
+// pending DNS challenges keyed by domain
+var pendingDNS = struct {
+	m  map[string]*DNSChallengeInfo
+	mu sync.Mutex
+}{m: make(map[string]*DNSChallengeInfo)}
+
+// InitDNSChallenge starts a DNS-01 ACME challenge and returns the TXT record to add.
+func (s *SSLService) InitDNSChallenge(domain, email string) (*DNSChallengeInfo, error) {
+	if domain == "" {
+		return nil, apperrors.New(apperrors.ErrValidation, "domain is required")
+	}
+	if email == "" {
+		return nil, apperrors.New(apperrors.ErrValidation, "email is required")
+	}
+
+	certKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to generate cert key")
+	}
+	accountKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to generate account key")
+	}
+
+	client := &acme.Client{Key: accountKey, DirectoryURL: acme.LetsEncryptURL}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	acct := &acme.Account{Contact: []string{"mailto:" + email}}
+	if _, err := client.Register(ctx, acct, acme.AcceptTOS); err != nil {
+		if !strings.Contains(err.Error(), "already") {
+			return nil, apperrors.Wrap(err, apperrors.ErrInternal, "ACME registration failed")
+		}
+	}
+
+	authz, err := client.Authorize(ctx, domain)
+	if err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "ACME authorization failed")
+	}
+
+	var chal *acme.Challenge
+	for _, c := range authz.Challenges {
+		if c.Type == "dns-01" {
+			chal = c
+			break
+		}
+	}
+	if chal == nil {
+		return nil, apperrors.New(apperrors.ErrInternal, "no DNS-01 challenge offered by ACME server")
+	}
+
+	txtValue, err := client.DNS01ChallengeRecord(chal.Token)
+	if err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to compute DNS challenge record")
+	}
+
+	baseDomain := domain
+	if strings.HasPrefix(domain, "*.") {
+		baseDomain = domain[2:]
+	}
+	recordName := "_acme-challenge." + baseDomain
+
+	info := &DNSChallengeInfo{
+		Domain:     domain,
+		RecordName: recordName,
+		RecordType: "TXT",
+		RecordVal:  txtValue,
+		acmeClient: client,
+		certKey:    certKey,
+		chalURI:    chal.URI,
+		authzURI:   authz.URI,
+	}
+
+	pendingDNS.mu.Lock()
+	pendingDNS.m[domain] = info
+	pendingDNS.mu.Unlock()
+
+	logger.Info().Str("domain", domain).Str("record", recordName).Msg("DNS-01 challenge initiated")
+	return info, nil
+}
+
+// CompleteDNSChallenge verifies the DNS TXT record and completes certificate issuance.
+func (s *SSLService) CompleteDNSChallenge(domain, email string) error {
+	pendingDNS.mu.Lock()
+	info, ok := pendingDNS.m[domain]
+	pendingDNS.mu.Unlock()
+	if !ok {
+		return apperrors.New(apperrors.ErrNotFound, "no pending DNS challenge for this domain; initiate first")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	baseDomain := domain
+	if strings.HasPrefix(domain, "*.") {
+		baseDomain = domain[2:]
+	}
+	records, err := net.LookupTXT("_acme-challenge." + baseDomain)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrValidation, "DNS TXT record lookup failed — ensure record is published")
+	}
+	found := false
+	for _, r := range records {
+		if r == info.RecordVal {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return apperrors.New(apperrors.ErrValidation,
+			fmt.Sprintf("TXT record for _acme-challenge.%s not found or value mismatch. Expected: %s", baseDomain, info.RecordVal))
+	}
+
+	if _, err := info.acmeClient.Accept(ctx, &acme.Challenge{URI: info.chalURI}); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to accept DNS-01 challenge")
+	}
+
+	if _, err := info.acmeClient.WaitAuthorization(ctx, info.authzURI); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "DNS-01 authorization validation failed")
+	}
+
+	dnsNames := []string{domain}
+	if strings.HasPrefix(domain, "*.") {
+		dnsNames = append(dnsNames, baseDomain)
+	}
+	csr, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject:  pkix.Name{CommonName: domain},
+		DNSNames: dnsNames,
+	}, info.certKey)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to create CSR")
+	}
+
+	der, _, err := info.acmeClient.CreateCert(ctx, csr, 90*24*time.Hour, true)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to obtain certificate from Let's Encrypt")
+	}
+
+	certName := sanitizeCertName(domain)
+	certDir := filepath.Join(letsencryptDir, certName)
+	if err := os.MkdirAll(certDir, 0700); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to create cert directory")
+	}
+
+	var certPEM []byte
+	for _, b := range der {
+		certPEM = append(certPEM, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: b})...)
+	}
+	keyDER, err := x509.MarshalECPrivateKey(info.certKey)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to marshal key")
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	certPath := filepath.Join(certDir, certFileName)
+	keyPath := filepath.Join(certDir, keyFileName)
+	if err := os.WriteFile(certPath, certPEM, 0600); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to write certificate")
+	}
+	if err := os.WriteFile(keyPath, keyPEM, 0600); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to write key")
+	}
+
+	if err := s.saveCertMeta(domain, certTypeLetsEncrypt, true); err != nil {
+		logger.Error().Err(err).Str("domain", domain).Msg("failed to save cert metadata")
+	}
+
+	pendingDNS.mu.Lock()
+	delete(pendingDNS.m, domain)
+	pendingDNS.mu.Unlock()
+
+	logger.Info().Str("domain", domain).Msg("DNS-01 Let's Encrypt certificate issued")
 	return nil
 }
 

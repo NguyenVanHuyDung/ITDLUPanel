@@ -8,6 +8,7 @@ export const DEFAULT_PATH = '/root';
 
 export const DEFAULT_BOOKMARKS = [
   { path: '/www/wwwroot', label: 'wwwroot' },
+  { path: '/var/www', label: 'www' },
 ];
 
 export const PAGE_SIZE_OPTIONS = [

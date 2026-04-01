@@ -142,7 +142,15 @@ func (s *BackupService) CreatePanelBackup(createdBy int64) (*Backup, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), backupCmdTimeout)
 	defer cancel()
 
-	if _, err := system.Exec(ctx, "tar", "czf", backupPath, "-C", cfg.Paths.Base, "config", "data"); err != nil {
+	// Archive panel config, data, and server directory (software configs/data).
+	// -h follows symlinks so actual config files are archived.
+	args := []string{"czf", backupPath, "-h", "-C", cfg.Paths.Base, "config", "data"}
+	// Include server dir if it exists (contains software configs via symlinks)
+	serverDir := filepath.Join(cfg.Paths.Base, "server")
+	if _, err := os.Stat(serverDir); err == nil {
+		args = append(args, "server")
+	}
+	if _, err := system.Exec(ctx, "tar", args...); err != nil {
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create panel backup")
 	}
 
@@ -386,7 +394,7 @@ func (s *BackupService) restorePanel(b *Backup) error {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to restore panel backup")
 	}
 
-	logger.Info().Int64("id", b.ID).Msg("panel restored from backup")
+	logger.Info().Int64("id", b.ID).Msg("panel restored from backup — software symlinks may need re-creation on next install")
 	return nil
 }
 

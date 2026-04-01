@@ -297,6 +297,119 @@ func (s *SoftwareService) registerTaskHandlers() {
 		return nil
 	})
 
+	// Stack install handler: Name is a JSON array of component names, e.g. ["nginx","mysql","php"]
+	// Installs each component sequentially, waiting for each to complete before starting the next.
+	s.queue.RegisterHandler("stack_install", func(ctx context.Context, t *task.TaskInfo, progress func(int, string)) error {
+		var components []string
+		if err := json.Unmarshal([]byte(t.Name), &components); err != nil {
+			return fmt.Errorf("invalid stack components: %w", err)
+		}
+		if len(components) == 0 {
+			return fmt.Errorf("no components to install")
+		}
+
+		total := len(components)
+		for i, comp := range components {
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("stack installation cancelled")
+			default:
+			}
+
+			basePct := (i * 100) / total
+			progress(basePct, fmt.Sprintf("[%d/%d] Starting installation of %s", i+1, total, comp))
+
+			parts := strings.SplitN(comp, ":", 2)
+			name := parts[0]
+			version := ""
+			if len(parts) > 1 {
+				version = parts[1]
+			}
+
+			inst, ok := s.registry.Get(name)
+			if !ok {
+				progress(basePct, fmt.Sprintf("[%d/%d] Skipping unknown software: %s", i+1, total, name))
+				continue
+			}
+
+			// Skip already installed (unless it's multi-version PHP)
+			if name != "php" && inst.IsInstalled() {
+				progress(basePct, fmt.Sprintf("[%d/%d] %s already installed, skipping", i+1, total, name))
+				continue
+			}
+
+			// Web server conflict check
+			if m := knownSoftware[name]; m.Type == "webserver" {
+				var existing string
+				_ = s.db.QueryRow("SELECT name FROM software WHERE type = 'webserver' AND status = 1 AND name != ? LIMIT 1", name).Scan(&existing)
+				if existing != "" {
+					progress(basePct, fmt.Sprintf("[%d/%d] Skipping %s: web server %s already installed", i+1, total, name, existing))
+					continue
+				}
+			}
+
+			meta := knownSoftware[name]
+			if version == "" {
+				version = meta.DefaultVersion
+			}
+
+			if err := inst.Install(ctx, version, func(pct int) {
+				scaledPct := basePct + (pct*100/total)/100
+				if scaledPct > 99 {
+					scaledPct = 99
+				}
+				progress(scaledPct, fmt.Sprintf("[%d/%d] Installing %s... %d%%", i+1, total, name, pct))
+			}); err != nil {
+				progress(basePct, fmt.Sprintf("[%d/%d] Failed to install %s: %s", i+1, total, name, err.Error()))
+				return fmt.Errorf("failed to install %s: %w", name, err)
+			}
+
+			// Record in database
+			dbVersion := version
+			if name == "php" {
+				var existing string
+				_ = s.db.QueryRow("SELECT version FROM software WHERE name = 'php'").Scan(&existing)
+				if existing != "" {
+					versions := strings.Split(existing, ",")
+					found := false
+					for _, v := range versions {
+						if strings.TrimSpace(v) == version {
+							found = true
+							break
+						}
+					}
+					if !found {
+						versions = append(versions, version)
+					}
+					sort.Strings(versions)
+					dbVersion = strings.Join(versions, ",")
+				}
+			}
+
+			if _, dbErr := s.db.Exec(
+				`INSERT OR REPLACE INTO software (name, display_name, version, type, status, config_path, install_path, service_name, installed_at, updated_at)
+				 VALUES (?, ?, ?, ?, 1, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+				name, meta.DisplayName, dbVersion, meta.Type, meta.ConfigPath, meta.InstallPath, meta.ServiceName,
+			); dbErr != nil {
+				logger.Error().Err(dbErr).Str("software", name).Msg("failed to record software installation in DB")
+			}
+
+			// Auto-open firewall ports
+			if s.firewallService != nil {
+				s.firewallService.OpenPortsForSoftware(name)
+			}
+
+			if name == "nginx" && s.onNginxVersionChanged != nil {
+				s.onNginxVersionChanged()
+			}
+
+			progress(((i + 1) * 100) / total, fmt.Sprintf("[%d/%d] %s installed successfully", i+1, total, name))
+		}
+
+		progress(100, fmt.Sprintf("Stack installation complete: %d components", total))
+		return nil
+	})
+
 	// Extension install handler: Name format "php-8.3:fileinfo" or "php-8.3:fileinfo,mbstring"
 	s.queue.RegisterHandler("extension_install", func(ctx context.Context, t *task.TaskInfo, progress func(int, string)) error {
 		software, extStr, err := parseExtensionTaskName(t.Name)
@@ -322,6 +435,15 @@ func (s *SoftwareService) registerTaskHandlers() {
 			if err := phpInst.InstallExtensions(ctx, version, exts); err != nil {
 				return err
 			}
+		} else if _, ok := inst.(*installer.OLSInstaller); ok {
+			// LSPHP extension install for OpenLiteSpeed
+			version := strings.TrimPrefix(software, "lsphp-")
+			if version == software {
+				version = "8.2"
+			}
+			if err := installer.InstallLSPHPExtensions(ctx, version, exts); err != nil {
+				return err
+			}
 		} else {
 			return fmt.Errorf("software %s does not support extensions", software)
 		}
@@ -339,6 +461,34 @@ func (s *SoftwareService) registerTaskHandlers() {
 
 		exts := strings.Split(extStr, ",")
 		progress(0, fmt.Sprintf("Removing extensions [%s] from %s", extStr, software))
+
+		// LSPHP extension uninstall for OpenLiteSpeed
+		if strings.HasPrefix(software, "lsphp-") {
+			version := strings.TrimPrefix(software, "lsphp-")
+			code := strings.ReplaceAll(version, ".", "")
+			osInfo := system.GetOSInfo()
+			packages := make([]string, 0, len(exts))
+			for _, ext := range exts {
+				ext = strings.TrimSpace(ext)
+				if ext == "" {
+					continue
+				}
+				if osInfo.PkgManager == "apt" {
+					packages = append(packages, fmt.Sprintf("lsphp%s-%s", code, ext))
+				} else {
+					packages = append(packages, fmt.Sprintf("lsphp%s-%s", code, ext))
+				}
+			}
+			if len(packages) == 0 {
+				return fmt.Errorf("no extensions specified")
+			}
+			args := append([]string{"remove", "-y"}, packages...)
+			if _, execErr := system.Exec(ctx, osInfo.PkgManager, args...); execErr != nil {
+				return fmt.Errorf("failed to remove LSPHP extensions: %w", execErr)
+			}
+			progress(100, fmt.Sprintf("Extensions [%s] removed successfully", extStr))
+			return nil
+		}
 
 		osInfo := system.GetOSInfo()
 		version := strings.TrimPrefix(software, "php-")
@@ -479,6 +629,39 @@ func (s *SoftwareService) InstallSoftware(name, version string, createdBy int64)
 	}
 
 	return s.queue.Enqueue("software_install", taskName, createdBy)
+}
+
+// InstallStack enqueues a single task that installs multiple components sequentially.
+// Only components that are not yet installed are included.
+func (s *SoftwareService) InstallStack(components []string, createdBy int64) (int64, error) {
+	var toInstall []string
+	for _, comp := range components {
+		name := strings.SplitN(comp, ":", 2)[0]
+		if _, ok := knownSoftware[name]; !ok {
+			if _, ok2 := s.registry.Get(name); !ok2 {
+				continue
+			}
+		}
+		inst, ok := s.registry.Get(name)
+		if !ok {
+			continue
+		}
+		// Skip already installed (except multi-version PHP)
+		if name != "php" && inst.IsInstalled() {
+			continue
+		}
+		toInstall = append(toInstall, comp)
+	}
+	if len(toInstall) == 0 {
+		return 0, fmt.Errorf("all components are already installed")
+	}
+
+	taskName, err := json.Marshal(toInstall)
+	if err != nil {
+		return 0, fmt.Errorf("failed to encode components: %w", err)
+	}
+
+	return s.queue.Enqueue("stack_install", string(taskName), createdBy)
 }
 
 // getInstalledWebServer returns the name of the currently installed web server, or "" if none.
@@ -1148,6 +1331,11 @@ func (s *SoftwareService) UpdateConfig(name, content string) error {
 
 // resolveServiceName looks up the systemd service name for the given software.
 func (s *SoftwareService) resolveServiceName(name string) (string, error) {
+	// Handle version-specific PHP-FPM names (e.g., "php8.3-fpm", "php8.2-fpm")
+	if strings.HasPrefix(name, "php") && strings.HasSuffix(name, "-fpm") {
+		return name, nil
+	}
+
 	// First try the database
 	var svcName string
 	err := s.db.QueryRow("SELECT service_name FROM software WHERE name = ?", name).Scan(&svcName)
@@ -1297,11 +1485,12 @@ func (s *SoftwareService) fillNginxProcessMetrics(m *NginxMetrics) {
 // GetErrorLog reads the last N lines of a software's error log.
 func (s *SoftwareService) GetErrorLog(name string, lines int) (string, string, error) {
 	logPaths := map[string]string{
-		"nginx":  "/var/log/nginx/error.log",
-		"mysql":  "/var/log/mysql/error.log",
-		"php":    "/var/log/php8.3-fpm.log",
-		"redis":  "/var/log/redis/redis-server.log",
-		"apache": "/var/log/apache2/error.log",
+		"nginx":         filepath.Join(installer.ServerBaseDir, "nginx", "logs", "error.log"),
+		"mysql":         filepath.Join(installer.ServerBaseDir, "mysql", "logs", "error.log"),
+		"php":           "/var/log/php8.3-fpm.log",
+		"redis":         filepath.Join(installer.ServerBaseDir, "redis", "logs", "redis-server.log"),
+		"apache":        filepath.Join(installer.ServerBaseDir, "apache", "logs", "error.log"),
+		"openlitespeed": filepath.Join(installer.ServerBaseDir, "openlitespeed", "logs", "error.log"),
 	}
 
 	if lines <= 0 {
@@ -1493,10 +1682,11 @@ func (s *SoftwareService) GetApacheOptimization() (*ApacheOptimization, error) {
 
 	// Also try to read MPM config
 	mpmContent := ""
+	apacheConf := filepath.Join(installer.ServerBaseDir, "apache", "conf")
 	mpmPaths := []string{
-		"/etc/apache2/mods-enabled/mpm_event.conf",
-		"/etc/apache2/mods-enabled/mpm_worker.conf",
-		"/etc/apache2/mods-enabled/mpm_prefork.conf",
+		filepath.Join(apacheConf, "mods-enabled", "mpm_event.conf"),
+		filepath.Join(apacheConf, "mods-enabled", "mpm_worker.conf"),
+		filepath.Join(apacheConf, "mods-enabled", "mpm_prefork.conf"),
 	}
 	for _, p := range mpmPaths {
 		if data, err := os.ReadFile(p); err == nil {
@@ -1556,12 +1746,13 @@ func (s *SoftwareService) UpdateApacheOptimization(opt *ApacheOptimization) erro
 	}
 
 	// Update MPM config
-	mpmPaths := []string{
-		"/etc/apache2/mods-enabled/mpm_event.conf",
-		"/etc/apache2/mods-enabled/mpm_worker.conf",
-		"/etc/apache2/mods-enabled/mpm_prefork.conf",
+	apacheConf := filepath.Join(installer.ServerBaseDir, "apache", "conf")
+	mpmPaths2 := []string{
+		filepath.Join(apacheConf, "mods-enabled", "mpm_event.conf"),
+		filepath.Join(apacheConf, "mods-enabled", "mpm_worker.conf"),
+		filepath.Join(apacheConf, "mods-enabled", "mpm_prefork.conf"),
 	}
-	for _, p := range mpmPaths {
+	for _, p := range mpmPaths2 {
 		data, err := os.ReadFile(p)
 		if err != nil {
 			continue
@@ -1701,11 +1892,15 @@ func setOLSDirective(content, directive, value string) string {
 
 const (
 	phpmyadminConfigPath = "/ITDLUPanel/server/config/phpmyadmin_config.json"
-	phpmyadminNginxConf  = "/etc/nginx/conf.d/phpmyadmin.conf"
 	phpmyadminRoot       = "/ITDLUPanel/server/phpmyadmin/www"
 	phpmyadminSSLDir     = "/ITDLUPanel/server/phpmyadmin/ssl"
 	phpmyadminHTPasswd   = "/ITDLUPanel/server/phpmyadmin/.htpasswd"
 )
+
+// phpmyadminNginxConfPath returns the path to the phpMyAdmin nginx config via server dir.
+func phpmyadminNginxConfPath() string {
+	return filepath.Join(installer.ServerBaseDir, "nginx", "conf", "conf.d", "phpmyadmin.conf")
+}
 
 // PhpMyAdminConfig holds the phpMyAdmin manager settings.
 type PhpMyAdminConfig struct {
@@ -1754,7 +1949,7 @@ func (s *SoftwareService) GetPhpMyAdminConfig() (*PhpMyAdminConfig, error) {
 // detectPHPVersionFromNginx reads the nginx phpmyadmin config and extracts the
 // php-fpm version from the fastcgi_pass socket path.
 func (s *SoftwareService) detectPHPVersionFromNginx(fallback string) string {
-	data, err := os.ReadFile(phpmyadminNginxConf)
+	data, err := os.ReadFile(phpmyadminNginxConfPath())
 	if err != nil {
 		return fallback
 	}
@@ -1800,7 +1995,7 @@ func (s *SoftwareService) SetPhpMyAdminConfig(cfg *PhpMyAdminConfig) error {
 
 	// Generate nginx config
 	nginxCfg := s.buildPhpMyAdminNginxConfig(cfg)
-	if err := os.WriteFile(phpmyadminNginxConf, []byte(nginxCfg), 0644); err != nil {
+	if err := os.WriteFile(phpmyadminNginxConfPath(), []byte(nginxCfg), 0644); err != nil {
 		return fmt.Errorf("failed to write nginx config: %w", err)
 	}
 
@@ -2269,10 +2464,11 @@ type MariaDBOptimization struct {
 }
 
 func (s *SoftwareService) getMariaDBTuningPath() string {
+	mysqlConf := filepath.Join(installer.ServerBaseDir, "mysql", "conf")
 	// Check MariaDB path first, then MySQL
 	paths := []string{
-		"/etc/mysql/mariadb.conf.d/99-itdlu-tuning.cnf",
-		"/etc/mysql/mysql.conf.d/99-itdlu-tuning.cnf",
+		filepath.Join(mysqlConf, "mariadb.conf.d", "99-itdlu-tuning.cnf"),
+		filepath.Join(mysqlConf, "mysql.conf.d", "99-itdlu-tuning.cnf"),
 	}
 	for _, p := range paths {
 		if _, err := os.Stat(p); err == nil {
@@ -2283,9 +2479,9 @@ func (s *SoftwareService) getMariaDBTuningPath() string {
 	var version string
 	s.db.QueryRow("SELECT version FROM software WHERE name = 'mysql'").Scan(&version)
 	if strings.Contains(version, "mariadb") {
-		return "/etc/mysql/mariadb.conf.d/99-itdlu-tuning.cnf"
+		return filepath.Join(mysqlConf, "mariadb.conf.d", "99-itdlu-tuning.cnf")
 	}
-	return "/etc/mysql/mysql.conf.d/99-itdlu-tuning.cnf"
+	return filepath.Join(mysqlConf, "mysql.conf.d", "99-itdlu-tuning.cnf")
 }
 
 func parseMySQLConfig(content string) map[string]string {
@@ -2396,10 +2592,12 @@ func (s *SoftwareService) UpdateMariaDBOptimization(opt *MariaDBOptimization) er
 
 // GetMariaDBSlowLog reads the slow query log.
 func (s *SoftwareService) GetMariaDBSlowLog(lines int) (string, string, error) {
+	mysqlLogs := filepath.Join(installer.ServerBaseDir, "mysql", "logs")
+	mysqlData := filepath.Join(installer.ServerBaseDir, "mysql", "data")
 	paths := []string{
-		"/var/log/mysql/mariadb-slow.log",
-		"/var/log/mysql/mysql-slow.log",
-		"/var/lib/mysql/slow.log",
+		filepath.Join(mysqlLogs, "mariadb-slow.log"),
+		filepath.Join(mysqlLogs, "mysql-slow.log"),
+		filepath.Join(mysqlData, "slow.log"),
 	}
 	for _, p := range paths {
 		if _, err := os.Stat(p); err == nil {

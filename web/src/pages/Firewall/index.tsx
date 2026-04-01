@@ -182,9 +182,38 @@ export default function Firewall() {
 
   const isPortListening = useCallback((port: string, protocol: string): PortStatus | undefined => {
     if (!port) return undefined;
+    // Exact match
     const key = `${protocol}:${port}`;
     if (listeningPorts.has(key)) return listeningPorts.get(key);
-    if (protocol === 'tcp/udp') return listeningPorts.get(`tcp:${port}`) || listeningPorts.get(`udp:${port}`);
+    if (protocol === 'tcp/udp') {
+      const r = listeningPorts.get(`tcp:${port}`) || listeningPorts.get(`udp:${port}`);
+      if (r) return r;
+    }
+    // Port range support (e.g. "39000:40000" or "39000-40000")
+    const rangeMatch = port.match(/^(\d+)[:\-](\d+)$/);
+    if (rangeMatch) {
+      const lo = parseInt(rangeMatch[1], 10);
+      const hi = parseInt(rangeMatch[2], 10);
+      const protos = protocol === 'tcp/udp' ? ['tcp', 'udp'] : [protocol];
+      for (const pr of protos) {
+        for (const [k, v] of listeningPorts.entries()) {
+          if (!k.startsWith(`${pr}:`)) continue;
+          const p = parseInt(k.split(':')[1], 10);
+          if (p >= lo && p <= hi) return v;
+        }
+      }
+    }
+    // Comma-separated ports (e.g. "80,443")
+    if (port.includes(',')) {
+      const protos = protocol === 'tcp/udp' ? ['tcp', 'udp'] : [protocol];
+      for (const sp of port.split(',')) {
+        const trimmed = sp.trim();
+        for (const pr of protos) {
+          const r = listeningPorts.get(`${pr}:${trimmed}`);
+          if (r) return r;
+        }
+      }
+    }
     return undefined;
   }, [listeningPorts]);
 
@@ -385,9 +414,9 @@ export default function Firewall() {
       ),
     },
     {
-      title: 'Port', dataIndex: 'port', key: 'port', width: 80,
+      title: 'Port', dataIndex: 'port', key: 'port', width: 120,
       render: (val: string, record: FirewallRule) => (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
           {record.is_default === 1 && <FwIcon.Lock size={12} color={p.amber} />}
           <span style={{ fontWeight: 600, color: p.text }}>{val}</span>
         </span>

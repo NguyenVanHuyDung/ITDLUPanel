@@ -147,7 +147,7 @@ type installStackRequest struct {
 	Components []string `json:"components" binding:"required,min=1"`
 }
 
-// installStack enqueues multiple software installation tasks sequentially.
+// installStack enqueues a single sequential task that installs all missing components.
 func (h *SoftwareHandler) installStack(c *gin.Context) {
 	var req installStackRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -167,20 +167,17 @@ func (h *SoftwareHandler) installStack(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	uid, _ := userID.(int64)
 
-	var taskIDs []int64
-	for _, comp := range req.Components {
-		taskID, err := h.softwareService.InstallSoftware(comp, "", uid)
-		if err != nil {
-			continue
-		}
-		taskIDs = append(taskIDs, taskID)
+	taskID, err := h.softwareService.InstallStack(req.Components, uid)
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrValidation, err.Error()))
+		return
 	}
 
 	c.JSON(http.StatusAccepted, response.Response{
 		Code:    http.StatusAccepted,
-		Message: "stack installation tasks created",
+		Message: "stack installation task created",
 		Data: gin.H{
-			"task_ids": taskIDs,
+			"task_id": taskID,
 		},
 	})
 }

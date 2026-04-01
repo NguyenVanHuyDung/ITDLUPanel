@@ -60,6 +60,7 @@ function DatabasesContent() {
   const [form] = Form.useForm();
   const [pwForm] = Form.useForm();
   const [pmaInstalled, setPmaInstalled] = useState<boolean | null>(null);
+  const [pmaConfig, setPmaConfig] = useState<{ ssl_enabled?: boolean; ssl_port?: number; access_port?: number } | null>(null);
   const [visiblePasswords, setVisiblePasswords] = useState<Set<number>>(new Set());
   const [searchText, setSearchText] = useState('');
   const [dbVersion, setDbVersion] = useState('');
@@ -142,6 +143,12 @@ function DatabasesContent() {
       const available = sw.available || [];
       const pma = available.find((s: { name: string; installed: boolean }) => s.name === 'phpmyadmin');
       setPmaInstalled(pma?.installed ?? false);
+      if (pma?.installed) {
+        try {
+          const { data: cfgResp } = await api.get('/software/phpmyadmin/manager');
+          setPmaConfig(cfgResp.data || null);
+        } catch { /* ignore */ }
+      }
       const installed = sw.installed || [];
       const dbSw = installed.find((s: any) => s.type === 'database');
       if (dbSw?.version) {
@@ -448,7 +455,9 @@ function DatabasesContent() {
 
   const openPma = () => {
     const host = window.location.hostname;
-    window.open(`http://${host}:888/`, '_blank');
+    const proto = pmaConfig?.ssl_enabled ? 'https' : 'http';
+    const port = pmaConfig?.ssl_enabled ? (pmaConfig?.ssl_port || 887) : (pmaConfig?.access_port || 888);
+    window.open(`${proto}://${host}:${port}/`, '_blank');
   };
 
   const filteredDatabases = searchText

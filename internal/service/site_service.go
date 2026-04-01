@@ -147,6 +147,51 @@ func NewSiteService(db *sql.DB) *SiteService {
 	return &SiteService{db: db}
 }
 
+// ReconcileVhosts checks all active sites and regenerates any missing vhost
+// config files. Call this on startup to ensure nginx state matches the DB.
+func (s *SiteService) ReconcileVhosts() {
+	rows, err := s.db.Query("SELECT id, domain, webserver FROM sites WHERE status = 1")
+	if err != nil {
+		logger.Warn().Err(err).Msg("vhost reconciliation: failed to query active sites")
+		return
+	}
+	defer rows.Close()
+
+	var repaired int
+	for rows.Next() {
+		var id int64
+		var domain, webserver string
+		if err := rows.Scan(&id, &domain, &webserver); err != nil {
+			logger.Warn().Err(err).Msg("vhost reconciliation: failed to scan row")
+			continue
+		}
+
+		gen := generatorFor(webserver)
+		confPath := gen.GetConfigPath(domain)
+		if _, statErr := os.Stat(confPath); os.IsNotExist(statErr) {
+			site, err := s.GetByID(id)
+			if err != nil {
+				logger.Warn().Err(err).Str("domain", domain).Msg("vhost reconciliation: failed to load site")
+				continue
+			}
+			if err := s.regenerateVhost(site); err != nil {
+				logger.Error().Err(err).Str("domain", domain).Msg("vhost reconciliation: failed to regenerate")
+				continue
+			}
+			// Ensure the site is enabled (symlink exists)
+			_ = gen.EnableSite(domain)
+			repaired++
+			logger.Info().Str("domain", domain).Msg("vhost reconciliation: config regenerated")
+		}
+	}
+
+	if repaired > 0 {
+		logger.Info().Int("count", repaired).Msg("vhost reconciliation: repaired missing configs")
+	} else {
+		logger.Info().Msg("vhost reconciliation: all configs intact")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // CRUD
 // ---------------------------------------------------------------------------
@@ -194,13 +239,15 @@ func (s *SiteService) Create(req CreateSiteRequest, userID int64) (*Site, error)
 
 	// 4. Generate vhost config
 	gen := generatorFor(req.Webserver)
-	nginxVer := installer.DetectNginxVersion()
 	cfg := vhost.VhostConfig{
-		Domain:             req.Domain,
-		DocRoot:            docRoot,
-		PHPVersion:         req.PHPVersion,
-		SupportsQUIC:       nginxVer.SupportsQUIC(),
-		UsesHTTP2Directive: nginxVer.UsesHTTP2Directive(),
+		Domain:     req.Domain,
+		DocRoot:    docRoot,
+		PHPVersion: req.PHPVersion,
+	}
+	if req.Webserver == "nginx" || req.Webserver == "" {
+		nginxVer := installer.DetectNginxVersion()
+		cfg.SupportsQUIC = nginxVer.SupportsQUIC()
+		cfg.UsesHTTP2Directive = nginxVer.UsesHTTP2Directive()
 	}
 
 	content, err := gen.Generate(cfg)
@@ -358,8 +405,10 @@ func (s *SiteService) Update(id int64, req UpdateSiteRequest) error {
 		name = req.Name
 	}
 	phpVersion := site.PHPVersion
+	phpChanged := false
 	if req.PHPVersion != "" {
 		phpVersion = &req.PHPVersion
+		phpChanged = site.PHPVersion == nil || *site.PHPVersion != req.PHPVersion
 	}
 
 	_, err = s.db.Exec(
@@ -368,6 +417,14 @@ func (s *SiteService) Update(id int64, req UpdateSiteRequest) error {
 	)
 	if err != nil {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to update site")
+	}
+
+	// Regenerate vhost when PHP version changes so nginx config stays in sync
+	if phpChanged {
+		site.PHPVersion = phpVersion
+		if err := s.regenerateVhost(site); err != nil {
+			logger.Warn().Err(err).Int64("id", id).Msg("failed to regenerate vhost after PHP version change")
+		}
 	}
 
 	logger.Info().Int64("id", id).Msg("site updated")
@@ -459,6 +516,16 @@ func (s *SiteService) Start(id int64) error {
 	}
 
 	gen := generatorFor(site.Webserver)
+
+	// Ensure the vhost config file exists before enabling
+	confPath := gen.GetConfigPath(site.Domain)
+	if _, statErr := os.Stat(confPath); os.IsNotExist(statErr) {
+		logger.Warn().Str("domain", site.Domain).Msg("vhost config missing, regenerating")
+		if regErr := s.regenerateVhost(site); regErr != nil {
+			return apperrors.Wrap(regErr, apperrors.ErrInternal, "vhost config missing and failed to regenerate")
+		}
+	}
+
 	if err := gen.EnableSite(site.Domain); err != nil {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to enable site")
 	}
@@ -590,14 +657,16 @@ func (s *SiteService) SwitchPHP(id int64, phpVersion string) error {
 		return err
 	}
 
-	nginxVer2 := installer.DetectNginxVersion()
 	cfg := vhost.VhostConfig{
-		Domain:             site.Domain,
-		Aliases:            aliases,
-		DocRoot:            site.Path,
-		PHPVersion:         phpVersion,
-		SupportsQUIC:       nginxVer2.SupportsQUIC(),
-		UsesHTTP2Directive: nginxVer2.UsesHTTP2Directive(),
+		Domain:     site.Domain,
+		Aliases:    aliases,
+		DocRoot:    site.Path,
+		PHPVersion: phpVersion,
+	}
+	if site.Webserver == "nginx" || site.Webserver == "" {
+		nginxVer2 := installer.DetectNginxVersion()
+		cfg.SupportsQUIC = nginxVer2.SupportsQUIC()
+		cfg.UsesHTTP2Directive = nginxVer2.UsesHTTP2Directive()
 	}
 	if site.SSLEnabled == 1 {
 		cfg.SSLEnabled = true
@@ -834,15 +903,18 @@ func (s *SiteService) regenerateVhostNoReload(site *Site) error {
 	if site.PHPVersion != nil {
 		phpVersion = *site.PHPVersion
 	}
-	nginxVer := installer.DetectNginxVersion()
 	cfg := vhost.VhostConfig{
-		Domain:             site.Domain,
-		Aliases:            aliases,
-		DocRoot:            site.Path,
-		PHPVersion:         phpVersion,
-		SSLEnabled:         site.SSLEnabled == 1,
-		SupportsQUIC:       nginxVer.SupportsQUIC(),
-		UsesHTTP2Directive: nginxVer.UsesHTTP2Directive(),
+		Domain:     site.Domain,
+		Aliases:    aliases,
+		DocRoot:    site.Path,
+		PHPVersion: phpVersion,
+		SSLEnabled: site.SSLEnabled == 1,
+		ForceHTTPS: s.getConfigExtraField(site, "force_https") == "1",
+	}
+	if site.Webserver == "nginx" || site.Webserver == "" {
+		nginxVer := installer.DetectNginxVersion()
+		cfg.SupportsQUIC = nginxVer.SupportsQUIC()
+		cfg.UsesHTTP2Directive = nginxVer.UsesHTTP2Directive()
 	}
 	if cfg.SSLEnabled {
 		cfg.SSLCert, cfg.SSLKey = s.resolveSSLPaths(site.Domain, site.SSLType)
@@ -869,15 +941,18 @@ func (s *SiteService) regenerateVhost(site *Site) error {
 		phpVersion = *site.PHPVersion
 	}
 
-	nginxVer3 := installer.DetectNginxVersion()
 	cfg := vhost.VhostConfig{
-		Domain:             site.Domain,
-		Aliases:            aliases,
-		DocRoot:            site.Path,
-		PHPVersion:         phpVersion,
-		SSLEnabled:         site.SSLEnabled == 1,
-		SupportsQUIC:       nginxVer3.SupportsQUIC(),
-		UsesHTTP2Directive: nginxVer3.UsesHTTP2Directive(),
+		Domain:     site.Domain,
+		Aliases:    aliases,
+		DocRoot:    site.Path,
+		PHPVersion: phpVersion,
+		SSLEnabled: site.SSLEnabled == 1,
+		ForceHTTPS: s.getConfigExtraField(site, "force_https") == "1",
+	}
+	if site.Webserver == "nginx" || site.Webserver == "" {
+		nginxVer3 := installer.DetectNginxVersion()
+		cfg.SupportsQUIC = nginxVer3.SupportsQUIC()
+		cfg.UsesHTTP2Directive = nginxVer3.UsesHTTP2Directive()
 	}
 
 	// Resolve SSL cert/key paths if SSL is enabled
@@ -900,7 +975,7 @@ func (s *SiteService) regenerateVhost(site *Site) error {
 
 // resolveSSLPaths returns cert and key file paths for a domain.
 func (s *SiteService) resolveSSLPaths(domain string, sslType *string) (string, string) {
-	certBase := "/ITDLUPanel/server/data/ssl"
+	certBase := filepath.Join(installer.ServerBaseDir, "data", "ssl")
 	subDir := "custom"
 	if sslType != nil {
 		switch *sslType {
@@ -944,6 +1019,10 @@ func (s *SiteService) EnableSSL(id int64, certPath, keyPath, sslType string) err
 	// Refresh site data and regenerate vhost
 	site.SSLEnabled = 1
 	site.SSLType = &sslType
+	// Default to force HTTPS when enabling SSL
+	if s.getConfigExtraField(site, "force_https") == "" {
+		_ = s.setConfigExtraField(id, site, "force_https", "1")
+	}
 	if err := s.regenerateVhost(site); err != nil {
 		// Rollback DB change
 		_, _ = s.db.Exec(`UPDATE sites SET ssl_enabled = 0, ssl_type = NULL WHERE id = ?`, id)
@@ -962,7 +1041,7 @@ func (s *SiteService) EnableSSLFromHolder(id int64, sourceDomain string) error {
 	}
 
 	// Look for cert in both letsencrypt and custom dirs
-	certBase := "/ITDLUPanel/server/data/ssl"
+	certBase := filepath.Join(installer.ServerBaseDir, "data", "ssl")
 	var certPath, keyPath, sslType string
 
 	for _, dir := range []string{"letsencrypt", "custom"} {
@@ -1212,6 +1291,38 @@ func (s *SiteService) SetRunningDirectory(id int64, subdir string) error {
 	return nil
 }
 
+// GetForceHTTPS returns whether Force HTTPS is enabled for a site.
+func (s *SiteService) GetForceHTTPS(id int64) (bool, error) {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return false, err
+	}
+	return s.getConfigExtraField(site, "force_https") == "1", nil
+}
+
+// SetForceHTTPS enables or disables the Force HTTPS redirect for a site.
+func (s *SiteService) SetForceHTTPS(id int64, enabled bool) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+	if site.SSLEnabled != 1 {
+		return apperrors.New(apperrors.ErrValidation, "SSL must be enabled to toggle Force HTTPS")
+	}
+	val := "0"
+	if enabled {
+		val = "1"
+	}
+	if err := s.setConfigExtraField(id, site, "force_https", val); err != nil {
+		return err
+	}
+	if err := s.regenerateVhost(site); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "force HTTPS saved but vhost regeneration failed")
+	}
+	logger.Info().Int64("id", id).Bool("force_https", enabled).Msg("site force HTTPS updated")
+	return nil
+}
+
 // GetOpenBasedir returns the open_basedir status for a site.
 func (s *SiteService) GetOpenBasedir(id int64) (bool, string, error) {
 	site, err := s.GetByID(id)
@@ -1368,7 +1479,7 @@ func (s *SiteService) SetPasswordAccess(id int64, enabled bool, username, passwo
 
 	gen := generatorFor(site.Webserver)
 	confPath := gen.GetConfigPath(site.Domain)
-	htpasswdDir := "/ITDLUPanel/server/nginx/htpasswd"
+	htpasswdDir := filepath.Join(installer.ServerBaseDir, "nginx", "htpasswd")
 	htpasswdFile := filepath.Join(htpasswdDir, site.Domain)
 
 	if enabled {
@@ -1428,7 +1539,7 @@ func (s *SiteService) GetPasswordAccess(id int64) (bool, string, error) {
 		return false, "", err
 	}
 
-	htpasswdFile := filepath.Join("/ITDLUPanel/server/nginx/htpasswd", site.Domain)
+	htpasswdFile := filepath.Join(installer.ServerBaseDir, "nginx", "htpasswd", site.Domain)
 	content, err := os.ReadFile(htpasswdFile)
 	if err != nil {
 		return false, "", nil
@@ -1567,7 +1678,7 @@ func (s *SiteService) setConfigExtraField(id int64, site *Site, field, value str
 // ---------------------------------------------------------------------------
 
 func siteConfigDir() string {
-	return "/ITDLUPanel/server/config/sites"
+	return filepath.Join(installer.ServerBaseDir, "config", "sites")
 }
 
 func readJSONFile(path string, v interface{}) error {
@@ -1768,11 +1879,11 @@ func subdirBindingsPath(id int64) string {
 }
 
 func subdirNginxConfPath(bindingDomain string) string {
-	return filepath.Join("/etc/nginx/sites-available", bindingDomain+"_subdir.conf")
+	return filepath.Join(installer.ServerBaseDir, "nginx", "conf", "sites-available", bindingDomain+"_subdir.conf")
 }
 
 func subdirNginxEnabledPath(bindingDomain string) string {
-	return filepath.Join("/etc/nginx/sites-enabled", bindingDomain+"_subdir.conf")
+	return filepath.Join(installer.ServerBaseDir, "nginx", "conf", "sites-enabled", bindingDomain+"_subdir.conf")
 }
 
 // GetSubdirBindings returns all subdirectory bindings for a site.
@@ -1977,7 +2088,7 @@ func (s *SiteService) AddLimitAccessRule(id int64, rule LimitAccessRule) error {
 	}
 
 	// Create htpasswd file
-	htpasswdDir := "/ITDLUPanel/server/nginx/htpasswd"
+	htpasswdDir := filepath.Join(installer.ServerBaseDir, "nginx", "htpasswd")
 	_ = os.MkdirAll(htpasswdDir, 0755)
 	htpasswdFile := filepath.Join(htpasswdDir, fmt.Sprintf("%s_%s", site.Domain, rule.Name))
 
@@ -2038,7 +2149,7 @@ func (s *SiteService) RemoveLimitAccessRule(id int64, index int) error {
 	rules = append(rules[:index], rules[index+1:]...)
 
 	// Remove htpasswd file
-	htpasswdFile := filepath.Join("/ITDLUPanel/server/nginx/htpasswd", fmt.Sprintf("%s_%s", site.Domain, removed.Name))
+	htpasswdFile := filepath.Join(installer.ServerBaseDir, "nginx", "htpasswd", fmt.Sprintf("%s_%s", site.Domain, removed.Name))
 	_ = os.Remove(htpasswdFile)
 
 	if err := writeJSONFile(limitAccessPath(id), rules); err != nil {
@@ -2072,7 +2183,7 @@ func (s *SiteService) rebuildLimitAccessNginx(site *Site, rules []LimitAccessRul
 
 	var blockLines []string
 	for _, r := range rules {
-		htpasswdFile := filepath.Join("/ITDLUPanel/server/nginx/htpasswd", fmt.Sprintf("%s_%s", site.Domain, r.Name))
+		htpasswdFile := filepath.Join(installer.ServerBaseDir, "nginx", "htpasswd", fmt.Sprintf("%s_%s", site.Domain, r.Name))
 		blockLines = append(blockLines,
 			fmt.Sprintf("location ^~ %s {", r.Path),
 			"    auth_basic \"Restricted Area\";",
@@ -2320,13 +2431,14 @@ func (s *SiteService) SetTrafficControl(id int64, config TrafficConfig) error {
 
 // ensureRateLimitZones creates the global nginx rate limit zone config if missing.
 func (s *SiteService) ensureRateLimitZones() error {
-	confPath := "/etc/nginx/conf.d/rate_limit.conf"
+	nginxConfD := filepath.Join(installer.ServerBaseDir, "nginx", "conf", "conf.d")
+	confPath := filepath.Join(nginxConfD, "rate_limit.conf")
 	if _, err := os.Stat(confPath); err == nil {
 		return nil
 	}
 
 	content := "limit_conn_zone $binary_remote_addr zone=addr:10m;\nlimit_req_zone $binary_remote_addr zone=one:10m rate=25r/s;\n"
-	_ = os.MkdirAll("/etc/nginx/conf.d", 0755)
+	_ = os.MkdirAll(nginxConfD, 0755)
 	if err := os.WriteFile(confPath, []byte(content), 0644); err != nil {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to create rate limit zones config")
 	}
@@ -3059,7 +3171,7 @@ func maintenanceConfigPath(siteID int64) string {
 }
 
 func maintenancePageDir() string {
-	return "/ITDLUPanel/server/config/maintenance"
+	return filepath.Join(installer.ServerBaseDir, "config", "maintenance")
 }
 
 type MaintenanceConfig struct {
@@ -3323,4 +3435,839 @@ func (s *SiteService) GetDiskUsage(id int64) (int64, error) {
 	_, _ = s.db.Exec("UPDATE sites SET disk_usage = ? WHERE id = ?", size, id)
 
 	return size, nil
+}
+
+// ---------------------------------------------------------------------------
+// URL Rewrite templates & management
+// ---------------------------------------------------------------------------
+
+// rewriteDir returns the directory for webserver rewrite include files.
+func rewriteDir() string {
+	return filepath.Join(installer.ServerBaseDir, "config", "rewrite")
+}
+
+// RewriteFilePath returns the path to the rewrite include file for a domain.
+func RewriteFilePath(webserver, domain string) string {
+	switch webserver {
+	case "apache":
+		return filepath.Join(rewriteDir(), domain+".htaccess")
+	case "openlitespeed":
+		return filepath.Join(rewriteDir(), domain+".htaccess")
+	default:
+		return filepath.Join(rewriteDir(), domain+".conf")
+	}
+}
+
+// GetURLRewrite returns the current rewrite content for a site.
+func (s *SiteService) GetURLRewrite(id int64) (string, error) {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return "", err
+	}
+
+	fp := RewriteFilePath(site.Webserver, site.Domain)
+	data, readErr := os.ReadFile(fp)
+	if readErr != nil {
+		if os.IsNotExist(readErr) {
+			return "", nil
+		}
+		return "", apperrors.Wrap(readErr, apperrors.ErrInternal, "failed to read rewrite file")
+	}
+	return string(data), nil
+}
+
+// SetURLRewrite writes the rewrite content for a site and reloads the webserver.
+func (s *SiteService) SetURLRewrite(id int64, content string) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	dir := rewriteDir()
+	if mkErr := os.MkdirAll(dir, 0755); mkErr != nil {
+		return apperrors.Wrap(mkErr, apperrors.ErrInternal, "failed to create rewrite directory")
+	}
+
+	fp := RewriteFilePath(site.Webserver, site.Domain)
+	if writeErr := os.WriteFile(fp, []byte(content), 0644); writeErr != nil {
+		return apperrors.Wrap(writeErr, apperrors.ErrInternal, "failed to write rewrite file")
+	}
+
+	// For Apache/OLS, also write .htaccess into the site docroot
+	if site.Webserver == "apache" || site.Webserver == "openlitespeed" {
+		htaccessPath := filepath.Join(site.Path, ".htaccess")
+		_ = os.WriteFile(htaccessPath, []byte(content), 0644)
+	}
+
+	gen := generatorFor(site.Webserver)
+	if testErr := gen.TestConfig(); testErr != nil {
+		return apperrors.Wrap(testErr, apperrors.ErrInternal, "rewrite rules have config errors")
+	}
+	return gen.ReloadServer()
+}
+
+// ListRewriteTemplates returns all available rewrite template names.
+func (s *SiteService) ListRewriteTemplates(webserver string) []string {
+	var templates map[string]string
+	switch webserver {
+	case "apache", "openlitespeed":
+		templates = apacheRewriteTemplates
+	default:
+		templates = nginxRewriteTemplates
+	}
+
+	names := make([]string, 0, len(templates))
+	for k := range templates {
+		names = append(names, k)
+	}
+	// Sort for consistent output
+	for i := 0; i < len(names); i++ {
+		for j := i + 1; j < len(names); j++ {
+			if names[i] > names[j] {
+				names[i], names[j] = names[j], names[i]
+			}
+		}
+	}
+	return names
+}
+
+// GetRewriteTemplate returns the content of a specific rewrite template.
+func (s *SiteService) GetRewriteTemplate(webserver, name string) (string, error) {
+	var templates map[string]string
+	switch webserver {
+	case "apache", "openlitespeed":
+		templates = apacheRewriteTemplates
+	default:
+		templates = nginxRewriteTemplates
+	}
+
+	content, ok := templates[name]
+	if !ok {
+		return "", apperrors.New(apperrors.ErrNotFound, "rewrite template not found: "+name)
+	}
+	return content, nil
+}
+
+// ---------------------------------------------------------------------------
+// Nginx rewrite templates
+// ---------------------------------------------------------------------------
+
+var nginxRewriteTemplates = map[string]string{
+	"wordpress": `# WordPress Rewrite Rules
+location / {
+    try_files $uri $uri/ /index.php?$args;
+}
+
+# Block PHP execution in uploads
+location ~* /wp-content/uploads/.*\.php$ {
+    deny all;
+}
+
+# Block access to xmlrpc.php
+location = /xmlrpc.php {
+    deny all;
+}
+`,
+	"laravel": `# Laravel Rewrite Rules
+location / {
+    try_files $uri $uri/ /index.php?$query_string;
+}
+`,
+	"thinkphp": `# ThinkPHP Rewrite Rules
+location / {
+    if (!-e $request_filename) {
+        rewrite ^(.*)$ /index.php?s=$1 last;
+        break;
+    }
+}
+`,
+	"codeigniter": `# CodeIgniter Rewrite Rules
+location / {
+    try_files $uri $uri/ /index.php?$uri&$args;
+}
+`,
+	"drupal": `# Drupal Rewrite Rules
+location / {
+    try_files $uri /index.php?$query_string;
+}
+
+location @rewrite {
+    rewrite ^/(.*)$ /index.php?q=$1;
+}
+
+location ~ \..*/.*\.php$ {
+    return 403;
+}
+`,
+	"joomla": `# Joomla Rewrite Rules
+location / {
+    try_files $uri $uri/ /index.php?$args;
+}
+`,
+	"typecho": `# Typecho Rewrite Rules
+location / {
+    if (!-e $request_filename) {
+        rewrite ^(.*)$ /index.php$1 last;
+    }
+}
+`,
+	"discuz": `# Discuz Rewrite Rules
+rewrite ^([^\.]*)/topic-(.+)\.html$ $1/portal.php?mod=topic&topic=$2 last;
+rewrite ^([^\.]*)/article-([0-9]+)-([0-9]+)\.html$ $1/portal.php?mod=view&aid=$2&page=$3 last;
+rewrite ^([^\.]*)/forum-(\w+)-([0-9]+)\.html$ $1/forum.php?mod=forumdisplay&fid=$2&page=$3 last;
+rewrite ^([^\.]*)/thread-([0-9]+)-([0-9]+)-([0-9]+)\.html$ $1/forum.php?mod=viewthread&tid=$2&extra=page%3D$4&page=$3 last;
+rewrite ^([^\.]*)/group-([0-9]+)-([0-9]+)\.html$ $1/forum.php?mod=group&fid=$2&page=$3 last;
+rewrite ^([^\.]*)/space-(username|uid)-(.+)\.html$ $1/home.php?mod=space&$2=$3 last;
+rewrite ^([^\.]*)/blog-([0-9]+)-([0-9]+)\.html$ $1/home.php?mod=space&uid=$2&do=blog&id=$3 last;
+rewrite ^([^\.]*)/(fid|tid)-([0-9]+)\.html$ $1/archiver/index.php?action=$2&value=$3 last;
+if (!-e $request_filename) {
+    return 404;
+}
+`,
+	"zblog": `# Z-Blog Rewrite Rules
+location / {
+    try_files $uri $uri/ /index.php?$args;
+}
+
+rewrite ^(.*)/post/(.*)$ $1/zb_system/cmd.php?act=page&id=$2 last;
+rewrite ^(.*)/category/(.*)$ $1/zb_system/cmd.php?act=category&id=$2 last;
+rewrite ^(.*)/auth/(.*)$ $1/zb_system/cmd.php?act=author&id=$2 last;
+rewrite ^(.*)/tags/(.*)$ $1/zb_system/cmd.php?act=tags&id=$2 last;
+rewrite ^(.*)/date/(.*)/(.*)$ $1/zb_system/cmd.php?act=date&y=$2&m=$3 last;
+`,
+	"shopwind": `# Shopwind Rewrite Rules
+location / {
+    try_files $uri $uri/ /index.php?$query_string;
+}
+`,
+	"crmeb": `# CRMEB Rewrite Rules
+location / {
+    try_files $uri $uri/ /index.php?$query_string;
+}
+
+location /adminapi {
+    try_files $uri $uri/ /index.php?$query_string;
+}
+
+location /api {
+    try_files $uri $uri/ /index.php?$query_string;
+}
+`,
+	"edusoho": `# EduSoho Rewrite Rules
+location / {
+    try_files $uri /app.php$is_args$args;
+}
+
+location ~ ^/(app|app_dev)\.php(/|$) {
+    fastcgi_split_path_info ^(.+\.php)(/.*)$;
+    include fastcgi_params;
+    fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    fastcgi_param HTTPS off;
+}
+`,
+	"empirecms": `# EmpireCMS Rewrite Rules
+rewrite ^(.*)/listinfo-(.+)-(.+)\.html$ $1/e/action/ListInfo/index.php?classid=$2&page=$3 last;
+rewrite ^(.*)/showinfo-(.+)-(.+)-(.+)\.html$ $1/e/action/ShowInfo.php?classid=$2&id=$3&page=$4 last;
+rewrite ^(.*)/tags-(.+)-(.+)\.html$ $1/e/tags/index.php?tagname=$2&page=$3 last;
+rewrite ^(.*)/infotags-(.+)-(.+)\.html$ $1/e/tags/index.php?tagid=$2&page=$3 last;
+`,
+	"dabr": `# dabr Rewrite Rules
+location / {
+    try_files $uri $uri/ /index.php?$query_string;
+}
+`,
+	"dbshop": `# DBShop Rewrite Rules
+location / {
+    try_files $uri $uri/ /index.php?$query_string;
+}
+`,
+	"phpcms": `# PHPCMS Rewrite Rules
+rewrite ^(.*)show-([0-9]+)-([0-9]+)-([0-9]+)\.html$ $1/index.php?m=content&c=index&a=show&catid=$2&id=$3&page=$4;
+rewrite ^(.*)list-([0-9]+)-([0-9]+)\.html$ $1/index.php?m=content&c=index&a=lists&catid=$2&page=$3;
+`,
+	"dedecms": `# DedeCMS Rewrite Rules
+rewrite ^/plus/view-([0-9]+)-1\.html$ /plus/view.php?aid=$1 last;
+rewrite ^/plus/list-([0-9]+)-([0-9]+)-([0-9]+)\.html$ /plus/list.php?tid=$1&totalresult=$2&PageNo=$3 last;
+`,
+	"ecshop": `# ECShop Rewrite Rules
+rewrite "^/index\.html$" /index.php last;
+rewrite "^/category$" /index.php last;
+rewrite "^/feed-c([0-9]+)\.xml$" /feed.php?cat=$1 last;
+rewrite "^/feed-b([0-9]+)\.xml$" /feed.php?brand=$1 last;
+rewrite "^/feed\.xml$" /feed.php last;
+rewrite "^/category-([0-9]+)-b([0-9]+)-min([0-9]+)-max([0-9]+)-attr([^/]*)-([0-9]+)-(.+)-([a-zA-Z]+)(.*)\.html$" /category.php?id=$1&brand=$2&price_min=$3&price_max=$4&filter_attr=$5&page=$6&sort=$7&order=$8 last;
+rewrite "^/category-([0-9]+)-b([0-9]+)-min([0-9]+)-max([0-9]+)-attr([^/]*)(.*)\.html$" /category.php?id=$1&brand=$2&price_min=$3&price_max=$4&filter_attr=$5 last;
+rewrite "^/category-([0-9]+)-b([0-9]+)-([0-9]+)-(.+)-([a-zA-Z]+)(.*)\.html$" /category.php?id=$1&brand=$2&page=$3&sort=$4&order=$5 last;
+rewrite "^/category-([0-9]+)-b([0-9]+)-([0-9]+)(.*)\.html$" /category.php?id=$1&brand=$2&page=$3 last;
+rewrite "^/category-([0-9]+)-b([0-9]+)(.*)\.html$" /category.php?id=$1&brand=$2 last;
+rewrite "^/category-([0-9]+)(.*)\.html$" /category.php?id=$1 last;
+rewrite "^/goods-([0-9]+)(.*)\.html" /goods.php?id=$1 last;
+rewrite "^/article_cat-([0-9]+)-([0-9]+)-(.+)-([a-zA-Z]+)(.*)\.html$" /article_cat.php?id=$1&page=$2&sort=$3&order=$4 last;
+rewrite "^/article_cat-([0-9]+)-([0-9]+)(.*)\.html$" /article_cat.php?id=$1&page=$2 last;
+rewrite "^/article_cat-([0-9]+)(.*)\.html$" /article_cat.php?id=$1 last;
+rewrite "^/article-([0-9]+)(.*)\.html$" /article.php?id=$1 last;
+rewrite "^/brand-([0-9]+)-c([0-9]+)-([0-9]+)-(.+)-([a-zA-Z]+)\.html" /brand.php?id=$1&cat=$2&page=$3&sort=$4&order=$5 last;
+rewrite "^/brand-([0-9]+)-c([0-9]+)-([0-9]+)(.*)\.html" /brand.php?id=$1&cat=$2&page=$3 last;
+rewrite "^/brand-([0-9]+)-c([0-9]+)(.*)\.html" /brand.php?id=$1&cat=$2 last;
+rewrite "^/brand-([0-9]+)(.*)\.html" /brand.php?id=$1 last;
+rewrite "^/tag-(.*)\.html" /search.php?keywords=$1 last;
+rewrite "^/snatch-([0-9]+)\.html$" /snatch.php?id=$1 last;
+rewrite "^/group_buy-([0-9]+)\.html$" /group_buy.php?act=view&id=$1 last;
+rewrite "^/auction-([0-9]+)\.html$" /auction.php?act=view&id=$1 last;
+rewrite "^/exchange-id([0-9]+)(.*)\.html$" /exchange.php?id=$1&act=view last;
+rewrite "^/exchange-([0-9]+)-min([0-9]+)-max([0-9]+)-([0-9]+)-(.+)-([a-zA-Z]+)(.*)\.html$" /exchange.php?cat_id=$1&integral_min=$2&integral_max=$3&page=$4&sort=$5&order=$6 last;
+rewrite "^/exchange-([0-9]+)-([0-9]+)-(.+)-([a-zA-Z]+)(.*)\.html$" /exchange.php?cat_id=$1&page=$2&sort=$3&order=$4 last;
+rewrite "^/exchange-([0-9]+)-([0-9]+)(.*)\.html$" /exchange.php?cat_id=$1&page=$2 last;
+rewrite "^/exchange-([0-9]+)(.*)\.html$" /exchange.php?cat_id=$1 last;
+`,
+	"symfony": `# Symfony Rewrite Rules
+location / {
+    try_files $uri /index.php$is_args$args;
+}
+`,
+	"yii2": `# Yii2 Rewrite Rules
+location / {
+    try_files $uri $uri/ /index.php?$args;
+}
+`,
+	"opencart": `# OpenCart Rewrite Rules
+rewrite /admin$ /admin/index.php last;
+rewrite ^/download/(.*) /index.php?route=error/not_found last;
+
+location / {
+    try_files $uri @opencart;
+}
+
+location @opencart {
+    rewrite ^/(.+)$ /index.php?_route_=$1 last;
+}
+`,
+	"prestashop": `# PrestaShop Rewrite Rules
+rewrite ^/api/?(.*)$ /webservice/dispatcher.php?url=$1 last;
+rewrite "^/([0-9])(\-[_a-zA-Z0-9-]*)?(-[0-9]+)?/.+\.jpg$" /img/p/$1/$1$2$3.jpg last;
+rewrite "^/([0-9])([0-9])(\-[_a-zA-Z0-9-]*)?(-[0-9]+)?/.+\.jpg$" /img/p/$1/$2/$1$2$3$4.jpg last;
+rewrite "^/([0-9])([0-9])([0-9])(\-[_a-zA-Z0-9-]*)?(-[0-9]+)?/.+\.jpg$" /img/p/$1/$2/$3/$1$2$3$4$5.jpg last;
+
+location / {
+    try_files $uri $uri/ /index.php?$args;
+}
+`,
+	"maccms": `# MacCMS Rewrite Rules
+if (!-e $request_filename) {
+    rewrite ^/index.php(.*)$ /index.php?s=$1 last;
+    rewrite ^(.*)$ /index.php?s=$1 last;
+    break;
+}
+`,
+	"niushop": `# NiuShop Rewrite Rules
+location / {
+    try_files $uri $uri/ /index.php?$query_string;
+}
+`,
+	"emlog": `# Emlog Rewrite Rules
+location / {
+    try_files $uri $uri/ /index.php?$args;
+}
+
+rewrite ^/post-([0-9]+)\.html$ /index.php?post=$1 last;
+rewrite ^/record/([0-9]+)/$ /index.php?record=$1 last;
+rewrite ^/sort/(.+)$ /index.php?sort=$1 last;
+rewrite ^/tag/(.+)$ /index.php?tag=$1 last;
+rewrite ^/author/([0-9]+)$ /index.php?author=$1 last;
+rewrite ^/date/([0-9]+)/([0-9]+)$ /index.php?date=$1-$2 last;
+rewrite ^/page/([0-9]+)$ /index.php?page=$1 last;
+`,
+}
+
+// ---------------------------------------------------------------------------
+// Apache / OLS rewrite templates (using .htaccess format)
+// ---------------------------------------------------------------------------
+
+var apacheRewriteTemplates = map[string]string{
+	"wordpress": `# WordPress Rewrite Rules
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteRule ^index\.php$ - [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.php [L]
+</IfModule>
+
+# Block PHP in uploads
+<IfModule mod_rewrite.c>
+RewriteRule ^wp-content/uploads/.*\.php$ - [F]
+</IfModule>
+`,
+	"laravel": `# Laravel Rewrite Rules
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteRule ^index\.php$ - [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ /index.php/$1 [L]
+</IfModule>
+`,
+	"thinkphp": `# ThinkPHP Rewrite Rules
+<IfModule mod_rewrite.c>
+Options +FollowSymlinks -Multiviews
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^(.*)$ index.php?s=/$1 [QSA,PT,L]
+</IfModule>
+`,
+	"codeigniter": `# CodeIgniter Rewrite Rules
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php?/$1 [L]
+</IfModule>
+`,
+	"drupal": `# Drupal Rewrite Rules
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_URI} !=/favicon.ico
+RewriteRule ^(.*)$ index.php?q=$1 [L,QSA]
+</IfModule>
+`,
+	"joomla": `# Joomla Rewrite Rules
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+RewriteCond %{REQUEST_URI} !^/index\.php
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule .* index.php [L]
+</IfModule>
+`,
+	"typecho": `# Typecho Rewrite Rules
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ /index.php/$1 [L]
+</IfModule>
+`,
+	"discuz": `# Discuz Rewrite Rules
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteCond %{QUERY_STRING} ^(.*)$
+RewriteRule ^topic-(.+)\.html$ portal.php?mod=topic&topic=$1
+RewriteRule ^article-([0-9]+)-([0-9]+)\.html$ portal.php?mod=view&aid=$1&page=$2
+RewriteRule ^forum-(\w+)-([0-9]+)\.html$ forum.php?mod=forumdisplay&fid=$1&page=$2
+RewriteRule ^thread-([0-9]+)-([0-9]+)-([0-9]+)\.html$ forum.php?mod=viewthread&tid=$1&extra=page%%3D$3&page=$2
+RewriteRule ^group-([0-9]+)-([0-9]+)\.html$ forum.php?mod=group&fid=$1&page=$2
+RewriteRule ^space-(username|uid)-(.+)\.html$ home.php?mod=space&$1=$2
+RewriteRule ^blog-([0-9]+)-([0-9]+)\.html$ home.php?mod=space&uid=$1&do=blog&id=$2
+RewriteRule ^(fid|tid)-([0-9]+)\.html$ archiver/index.php?action=$1&value=$2
+</IfModule>
+`,
+	"zblog": `# Z-Blog Rewrite Rules
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.php [L]
+</IfModule>
+`,
+	"shopwind": `# Shopwind Rewrite Rules
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ /index.php?$1 [QSA,L]
+</IfModule>
+`,
+	"crmeb": `# CRMEB Rewrite Rules
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteRule ^index\.php$ - [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ /index.php/$1 [L]
+</IfModule>
+`,
+	"edusoho": `# EduSoho Rewrite Rules
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteCond %{REQUEST_URI}::$1 ^(/.+)/(.*)::\2$
+RewriteRule ^(.*) - [E=BASE:%1]
+RewriteCond %{ENV:REDIRECT_STATUS} ^$
+RewriteRule ^app\.php(/(.*)|$) %{ENV:BASE}/$2 [R=301,L]
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule .? - [L]
+RewriteRule .? %{ENV:BASE}/app.php [L]
+</IfModule>
+`,
+	"empirecms": `# EmpireCMS Rewrite Rules
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteRule ^listinfo-(.+)-(.+)\.html$ /e/action/ListInfo/index.php?classid=$1&page=$2 [L]
+RewriteRule ^showinfo-(.+)-(.+)-(.+)\.html$ /e/action/ShowInfo.php?classid=$1&id=$2&page=$3 [L]
+RewriteRule ^tags-(.+)-(.+)\.html$ /e/tags/index.php?tagname=$1&page=$2 [L]
+RewriteRule ^infotags-(.+)-(.+)\.html$ /e/tags/index.php?tagid=$1&page=$2 [L]
+</IfModule>
+`,
+	"dabr": `# dabr Rewrite Rules
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ /index.php?$1 [QSA,L]
+</IfModule>
+`,
+	"dbshop": `# DBShop Rewrite Rules
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^(.*)$ /index.php?$1 [QSA,L]
+</IfModule>
+`,
+	"phpcms": `# PHPCMS Rewrite Rules
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteRule ^show-([0-9]+)-([0-9]+)-([0-9]+)\.html$ /index.php?m=content&c=index&a=show&catid=$1&id=$2&page=$3 [L]
+RewriteRule ^list-([0-9]+)-([0-9]+)\.html$ /index.php?m=content&c=index&a=lists&catid=$1&page=$2 [L]
+</IfModule>
+`,
+	"dedecms": `# DedeCMS Rewrite Rules
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteRule ^plus/view-([0-9]+)-1\.html$ /plus/view.php?aid=$1 [L]
+RewriteRule ^plus/list-([0-9]+)-([0-9]+)-([0-9]+)\.html$ /plus/list.php?tid=$1&totalresult=$2&PageNo=$3 [L]
+</IfModule>
+`,
+	"ecshop": `# ECShop Rewrite Rules
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteRule ^index\.html$ /index.php [L]
+RewriteRule ^category$ /index.php [L]
+RewriteRule ^feed-c([0-9]+)\.xml$ /feed.php?cat=$1 [L]
+RewriteRule ^feed\.xml$ /feed.php [L]
+RewriteRule ^category-([0-9]+)-b([0-9]+)(.*)\.html$ /category.php?id=$1&brand=$2 [L]
+RewriteRule ^category-([0-9]+)(.*)\.html$ /category.php?id=$1 [L]
+RewriteRule ^goods-([0-9]+)(.*)\.html$ /goods.php?id=$1 [L]
+RewriteRule ^article_cat-([0-9]+)(.*)\.html$ /article_cat.php?id=$1 [L]
+RewriteRule ^article-([0-9]+)(.*)\.html$ /article.php?id=$1 [L]
+RewriteRule ^brand-([0-9]+)(.*)\.html$ /brand.php?id=$1 [L]
+RewriteRule ^tag-(.*)\.html$ /search.php?keywords=$1 [L]
+</IfModule>
+`,
+	"symfony": `# Symfony Rewrite Rules
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteCond %{REQUEST_URI}::$1 ^(/.+)/(.*)::\2$
+RewriteRule ^(.*) - [E=BASE:%1]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule .? %{ENV:BASE}/index.php [L]
+</IfModule>
+`,
+	"yii2": `# Yii2 Rewrite Rules
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.php [L]
+</IfModule>
+`,
+	"opencart": `# OpenCart Rewrite Rules
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteRule ^sitemap.xml$ index.php?route=extension/feed/google_sitemap [L]
+RewriteRule ^googlebase.xml$ index.php?route=extension/feed/google_base [L]
+RewriteRule ^system/download/(.*) index.php?route=error/not_found [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_URI} !.*\.(ico|gif|jpg|jpeg|png|js|css)
+RewriteRule ^([^?]*) index.php?_route_=$1 [L,QSA]
+</IfModule>
+`,
+	"prestashop": `# PrestaShop Rewrite Rules
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteRule ^api$ api/ [L]
+RewriteRule ^api/(.*)$ /webservice/dispatcher.php?url=$1 [QSA,L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule . /index.php [L]
+</IfModule>
+`,
+	"maccms": `# MacCMS Rewrite Rules
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^(.*)$ index.php?s=/$1 [QSA,PT,L]
+</IfModule>
+`,
+	"niushop": `# NiuShop Rewrite Rules
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ /index.php?$1 [QSA,L]
+</IfModule>
+`,
+	"emlog": `# Emlog Rewrite Rules
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.php [L]
+</IfModule>
+`,
+}
+// ---------------------------------------------------------------------------
+
+// ComposerStatus holds info about Composer availability for a site.
+type ComposerStatus struct {
+	Installed       bool   `json:"installed"`
+	Version         string `json:"version"`
+	HasComposerJSON bool   `json:"has_composer_json"`
+	PHPVersion      string `json:"php_version"`
+	PHPBinary       string `json:"php_binary"`
+}
+
+// GetComposerStatus checks if Composer is installed and if composer.json exists.
+func (s *SiteService) GetComposerStatus(id int64) (*ComposerStatus, error) {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	status := &ComposerStatus{}
+
+	// Detect PHP binary
+	if site.PHPVersion != nil && *site.PHPVersion != "" {
+		status.PHPVersion = *site.PHPVersion
+		phpBin := fmt.Sprintf("/usr/bin/php%s", *site.PHPVersion)
+		if _, statErr := os.Stat(phpBin); statErr == nil {
+			status.PHPBinary = phpBin
+		}
+	}
+	if status.PHPBinary == "" {
+		if _, statErr := os.Stat("/usr/bin/php"); statErr == nil {
+			status.PHPBinary = "/usr/bin/php"
+		}
+	}
+
+	// Check Composer
+	composerPath := s.findComposerBinary()
+	if composerPath != "" {
+		status.Installed = true
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		args := []string{composerPath, "--version", "--no-ansi"}
+		if status.PHPBinary != "" {
+			args = []string{status.PHPBinary, composerPath, "--version", "--no-ansi"}
+		}
+		result, execErr := system.Exec(ctx, args[0], args[1:]...)
+		if execErr == nil {
+			out := strings.TrimSpace(result.Stdout)
+			// "Composer version 2.7.1 2024-02-09 15:26:28"
+			parts := strings.Fields(out)
+			if len(parts) >= 3 && strings.EqualFold(parts[0], "composer") {
+				status.Version = parts[2]
+			}
+		}
+	}
+
+	// Check composer.json
+	composerJSON := filepath.Join(site.Path, "composer.json")
+	if _, statErr := os.Stat(composerJSON); statErr == nil {
+		status.HasComposerJSON = true
+	}
+
+	return status, nil
+}
+
+// findComposerBinary locates the composer binary on the system.
+func (s *SiteService) findComposerBinary() string {
+	candidates := []string{
+		"/usr/local/bin/composer",
+		"/usr/bin/composer",
+		"/usr/local/bin/composer.phar",
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	// Try which
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	result, err := system.Exec(ctx, "which", "composer")
+	if err == nil && strings.TrimSpace(result.Stdout) != "" {
+		return strings.TrimSpace(result.Stdout)
+	}
+	return ""
+}
+
+// InstallComposer downloads and installs Composer globally.
+func (s *SiteService) InstallComposer() error {
+	if path := s.findComposerBinary(); path != "" {
+		return fmt.Errorf("composer is already installed at %s", path)
+	}
+
+	// Find a PHP binary
+	phpBin := ""
+	for _, candidate := range []string{"/usr/bin/php", "/usr/local/bin/php"} {
+		if _, err := os.Stat(candidate); err == nil {
+			phpBin = candidate
+			break
+		}
+	}
+	if phpBin == "" {
+		return fmt.Errorf("PHP is not installed — install PHP first")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	// Download installer
+	dlResult, err := system.Exec(ctx, "curl", "-sS", "https://getcomposer.org/installer", "-o", "/tmp/composer-setup.php")
+	if err != nil {
+		return fmt.Errorf("failed to download composer installer: %w (%s)", err, dlResult.Stderr)
+	}
+
+	// Run installer
+	installResult, err := system.Exec(ctx, phpBin, "/tmp/composer-setup.php", "--install-dir=/usr/local/bin", "--filename=composer")
+	if err != nil {
+		return fmt.Errorf("failed to install composer: %w (%s)", err, installResult.Stderr)
+	}
+
+	// Cleanup
+	os.Remove("/tmp/composer-setup.php")
+
+	// Verify
+	if path := s.findComposerBinary(); path == "" {
+		return fmt.Errorf("composer installation completed but binary not found")
+	}
+
+	return nil
+}
+
+// RunComposer executes a Composer command in the site's directory.
+func (s *SiteService) RunComposer(id int64, command string, args []string) (string, error) {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return "", err
+	}
+
+	composerPath := s.findComposerBinary()
+	if composerPath == "" {
+		return "", apperrors.New(apperrors.ErrValidation, "Composer is not installed. Install it first via: curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer")
+	}
+
+	// Determine PHP binary
+	phpBin := "/usr/bin/php"
+	if site.PHPVersion != nil && *site.PHPVersion != "" {
+		candidate := fmt.Sprintf("/usr/bin/php%s", *site.PHPVersion)
+		if _, statErr := os.Stat(candidate); statErr == nil {
+			phpBin = candidate
+		}
+	}
+
+	// Allowed commands whitelist
+	allowed := map[string]bool{
+		"install":         true,
+		"update":          true,
+		"require":         true,
+		"remove":          true,
+		"dump-autoload":   true,
+	}
+	if !allowed[command] {
+		return "", apperrors.New(apperrors.ErrValidation, "unsupported composer command: "+command)
+	}
+
+	// Build command args
+	cmdArgs := []string{composerPath, command, "--no-interaction", "--no-ansi", "--working-dir=" + site.Path}
+
+	// For require/remove, append package names from args
+	if (command == "require" || command == "remove") && len(args) > 0 {
+		for _, a := range args {
+			a = strings.TrimSpace(a)
+			if a != "" {
+				cmdArgs = append(cmdArgs, a)
+			}
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	result, execErr := system.Exec(ctx, phpBin, cmdArgs...)
+	output := result.Stdout
+	if result.Stderr != "" {
+		if output != "" {
+			output += "\n"
+		}
+		output += result.Stderr
+	}
+
+	if execErr != nil {
+		return output, apperrors.Wrap(execErr, apperrors.ErrInternal, "composer "+command+" failed")
+	}
+
+	return output, nil
+}
+
+// GetComposerJSON reads the composer.json from the site directory.
+func (s *SiteService) GetComposerJSON(id int64) (string, error) {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return "", err
+	}
+
+	jsonPath := filepath.Join(site.Path, "composer.json")
+	data, readErr := os.ReadFile(jsonPath)
+	if readErr != nil {
+		if os.IsNotExist(readErr) {
+			return "", apperrors.New(apperrors.ErrNotFound, "composer.json not found in "+site.Path)
+		}
+		return "", apperrors.Wrap(readErr, apperrors.ErrInternal, "failed to read composer.json")
+	}
+
+	return string(data), nil
+}
+
+// UpdateComposerJSON writes the composer.json to the site directory.
+func (s *SiteService) UpdateComposerJSON(id int64, content string) error {
+	site, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	jsonPath := filepath.Join(site.Path, "composer.json")
+	if writeErr := os.WriteFile(jsonPath, []byte(content), 0644); writeErr != nil {
+		return apperrors.Wrap(writeErr, apperrors.ErrInternal, "failed to write composer.json")
+	}
+
+	return nil
 }

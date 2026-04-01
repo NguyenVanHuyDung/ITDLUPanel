@@ -33,6 +33,8 @@ func (h *SSLHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gin.Han
 
 		// Issuance & upload
 		ssl.POST("/letsencrypt", h.IssueLetsEncrypt)
+		ssl.POST("/letsencrypt-dns/init", h.InitDNSChallenge)
+		ssl.POST("/letsencrypt-dns/complete", h.CompleteDNSChallenge)
 		ssl.POST("/upload", h.UploadCustomCert)
 
 		// Renewal
@@ -121,6 +123,48 @@ func (h *SSLHandler) IssueLetsEncrypt(c *gin.Context) {
 	if err != nil {
 		// Certificate was issued but we couldn't read it back — still report success.
 		response.Created(c, gin.H{"message": "certificate issued successfully", "domain": req.Domain})
+		return
+	}
+	response.Created(c, info)
+}
+
+// InitDNSChallenge starts a DNS-01 challenge and returns the TXT record to add.
+func (h *SSLHandler) InitDNSChallenge(c *gin.Context) {
+	var req letsEncryptRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "body", Message: "invalid request body"}})
+		return
+	}
+	if errs := validator.Validate(req); errs != nil {
+		response.ValidationError(c, errs)
+		return
+	}
+	info, err := h.sslService.InitDNSChallenge(req.Domain, req.Email)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, info)
+}
+
+// CompleteDNSChallenge verifies DNS TXT record and issues the certificate.
+func (h *SSLHandler) CompleteDNSChallenge(c *gin.Context) {
+	var req letsEncryptRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "body", Message: "invalid request body"}})
+		return
+	}
+	if errs := validator.Validate(req); errs != nil {
+		response.ValidationError(c, errs)
+		return
+	}
+	if err := h.sslService.CompleteDNSChallenge(req.Domain, req.Email); err != nil {
+		response.Error(c, err)
+		return
+	}
+	info, err := h.sslService.GetCertInfo(req.Domain)
+	if err != nil {
+		response.Created(c, gin.H{"message": "DNS certificate issued successfully", "domain": req.Domain})
 		return
 	}
 	response.Created(c, info)

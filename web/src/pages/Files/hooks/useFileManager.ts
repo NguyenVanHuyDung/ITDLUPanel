@@ -17,7 +17,7 @@ export function useFileManager(initialPath?: string) {
   const [searchResults, setSearchResults] = useState<FileItem[] | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
 
-  const fetchFiles = useCallback(async (path: string) => {
+  const fetchFiles = useCallback(async (path: string): Promise<boolean> => {
     setLoading(true);
     setSearchResults(null);
     setSearchQuery('');
@@ -32,21 +32,26 @@ export function useFileManager(initialPath?: string) {
       });
       setAllFiles(files);
       setCurrentPath(path);
-    } catch {
-      message.error('Failed to load files');
+      return true;
+    } catch (e: any) {
+      const msg = e?.response?.data?.message || 'Failed to load files';
+      message.error(`${msg}: ${path}`);
+      return false;
     } finally {
       setLoading(false);
     }
   }, [showHidden]);
 
-  const navigateTo = useCallback((path: string) => {
-    setHistory(prev => {
-      const next = prev.slice(0, historyIndex + 1);
-      next.push(path);
-      return next;
-    });
-    setHistoryIndex(prev => prev + 1);
-    fetchFiles(path);
+  const navigateTo = useCallback(async (path: string) => {
+    const ok = await fetchFiles(path);
+    if (ok) {
+      setHistory(prev => {
+        const next = prev.slice(0, historyIndex + 1);
+        next.push(path);
+        return next;
+      });
+      setHistoryIndex(prev => prev + 1);
+    }
   }, [fetchFiles, historyIndex]);
 
   const goBack = useCallback(() => {

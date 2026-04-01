@@ -85,7 +85,11 @@ func New(configPath string) (*App, error) {
 
 	logger.Info().Str("path", dbPath).Msg("Database ready")
 
-	// 5. Initialise i18n.
+	// 5a. Reconcile vhost configs — regenerate any that are missing on disk.
+	siteService := service.NewSiteService(db.GetDB())
+	siteService.ReconcileVhosts()
+
+	// 5b. Initialise i18n.
 	localesDir := filepath.Join(filepath.Dir(configPath), "..", "internal", "i18n", "locales")
 	// Prefer a well-known absolute location if it exists.
 	if cfg.Paths.Base != "" {

@@ -191,6 +191,17 @@ export default function FileTable({
             <div
               key={file.path}
               onContextMenu={(e) => onContextMenu(e, file)}
+              onClick={(e) => {
+                const t = e.target as HTMLElement;
+                if (t.closest('input[type="checkbox"]') || t.closest('button') || t.closest('.ant-dropdown-trigger')) return;
+                if (file.is_dir) {
+                  onNavigate(file.path);
+                } else if (e.ctrlKey || e.metaKey) {
+                  toggleSelect(file.path);
+                } else {
+                  onSelectChange(selected ? [] : [file.path]);
+                }
+              }}
               onDoubleClick={() => {
                 if (file.is_dir) onNavigate(file.path);
                 else onEdit(file);
@@ -203,7 +214,7 @@ export default function FileTable({
                 borderBottom: `1px solid ${borderColor}`,
                 borderLeft: selected ? `2px solid ${p.accent}` : '2px solid transparent',
                 transition: 'background 0.15s',
-                cursor: 'default',
+                cursor: file.is_dir ? 'pointer' : 'default',
               }}
               onMouseEnter={(e) => { if (!selected) e.currentTarget.style.background = p.rowHover; }}
               onMouseLeave={(e) => { if (!selected) e.currentTarget.style.background = rowBg; }}
@@ -225,7 +236,6 @@ export default function FileTable({
                   overflow: 'hidden', paddingRight: 8,
                   cursor: file.is_dir ? 'pointer' : 'default',
                 }}
-                onClick={() => { if (file.is_dir) onNavigate(file.path); }}
               >
                 <span style={{ flexShrink: 0, fontSize: 16 }}>{getFileIcon(file)}</span>
                 <span

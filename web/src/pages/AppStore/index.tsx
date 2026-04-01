@@ -73,6 +73,7 @@ export default function AppStore() {
   const [savingConfig, setSavingConfig] = useState(false);
   const [manageTab, setManageTab] = useState<'status' | 'config'>('status');
   const [installedWebServer, setInstalledWebServer] = useState<string>('');
+  const [pmaConfig, setPmaConfig] = useState<{ ssl_enabled?: boolean; ssl_port?: number; access_port?: number } | null>(null);
 
   // Global task store
   const { addTask, setModalOpen: openTaskModal, setActiveTab: setTaskTab } = useTaskStore();
@@ -81,6 +82,7 @@ export default function AppStore() {
   // Stack installer state
   const [stackExtras, setStackExtras] = useState<Record<string, boolean>>({ phpmyadmin: true, pureftpd: false });
   const [stackInstalling, setStackInstalling] = useState<string | null>(null);
+  const [stackBatchInstalling, setStackBatchInstalling] = useState<string | null>(null);
 
   const STACK_DEFS = [
     {
@@ -130,6 +132,39 @@ export default function AppStore() {
     }
   };
 
+  const handleInstallAllStack = async (stackId: string, components: string[]) => {
+    const installedNames = new Set(installed.map(s => s.name));
+    const missing = components.filter(c => !installedNames.has(c));
+    if (missing.length === 0) {
+      message.info('All components are already installed');
+      return;
+    }
+    setStackBatchInstalling(stackId);
+    try {
+      const { data } = await api.post<ApiResponse<{ task_id: number }>>('/software/install-stack', {
+        components: missing,
+      });
+      const taskId = data.data?.task_id;
+      if (taskId) {
+        addTask({
+          id: taskId,
+          name: `Install ${stackId.toUpperCase()} Stack (${missing.join(', ')})`,
+          type: 'software_install',
+          status: 'running',
+          progress: 0,
+          created_at: new Date().toISOString(),
+        });
+        openTaskModal(true);
+        setTaskTab('tasks');
+        message.info(`Installing ${stackId.toUpperCase()} stack: ${missing.join(' → ')}…`);
+      }
+    } catch {
+      message.error('Failed to start stack installation');
+    } finally {
+      setStackBatchInstalling(null);
+    }
+  };
+
   /* ───────── Data fetching ───────── */
 
   const fetchInstalled = useCallback(async () => {
@@ -142,6 +177,11 @@ export default function AppStore() {
       try {
         const { data: wsData } = await api.get('/software/webserver-check');
         setInstalledWebServer(wsData.data?.installed_webserver ?? '');
+      } catch { /* ignore */ }
+      // Fetch phpMyAdmin config for SSL-aware links
+      try {
+        const { data: cfgResp } = await api.get('/software/phpmyadmin/manager');
+        setPmaConfig(cfgResp.data || null);
       } catch { /* ignore */ }
     } catch {
       message.error('Failed to load software');
@@ -834,6 +874,31 @@ export default function AppStore() {
                         );
                       })}
                     </div>
+
+                    {/* Install All button */}
+                    {!allDone && remaining.length > 0 && (
+                      <button
+                        disabled={stackBatchInstalling === stack.id}
+                        onClick={() => handleInstallAllStack(stack.id, allComponents)}
+                        style={{
+                          width: '100%', padding: '10px 0',
+                          borderRadius: 8, border: 'none',
+                          background: stackBatchInstalling === stack.id ? `${stack.color}80` : stack.color,
+                          color: '#fff',
+                          fontSize: 13, fontWeight: 600,
+                          cursor: stackBatchInstalling === stack.id ? 'not-allowed' : 'pointer',
+                          transition: 'opacity 0.15s',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                        }}
+                        onMouseEnter={e => { if (stackBatchInstalling !== stack.id) e.currentTarget.style.opacity = '0.85'; }}
+                        onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+                      >
+                        {stackBatchInstalling === stack.id
+                          ? '⏳ Installing…'
+                          : `▶ Install All (${remaining.length} remaining)`
+                        }
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -971,7 +1036,9 @@ export default function AppStore() {
                           icon={<LinkOutlined />}
                           onClick={() => {
                             const host = window.location.hostname;
-                            window.open(`http://${host}:888/`, '_blank');
+                            const proto = pmaConfig?.ssl_enabled ? 'https' : 'http';
+                            const port = pmaConfig?.ssl_enabled ? (pmaConfig?.ssl_port || 887) : (pmaConfig?.access_port || 888);
+                            window.open(`${proto}://${host}:${port}/`, '_blank');
                           }}
                           style={{ background: p.accent, borderColor: p.accent }}
                         >

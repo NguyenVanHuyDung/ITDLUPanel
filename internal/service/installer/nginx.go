@@ -258,6 +258,9 @@ func (i *NginxInstaller) Uninstall(ctx context.Context) error {
 	_, _ = system.Exec(ctx, "systemctl", "stop", "nginx")
 	_, _ = system.Exec(ctx, "systemctl", "disable", "nginx")
 
+	// Fix any interrupted dpkg state
+	FixDpkg(ctx)
+
 	// Purge nginx packages
 	if _, err := system.Exec(ctx, "apt", "purge", "-y", "nginx", "nginx-common", "nginx-core", "nginx-full"); err != nil {
 		return fmt.Errorf("failed to uninstall nginx: %w", err)
