@@ -264,7 +264,7 @@ server {
     # HTTP/3 Alt-Svc header
     add_header Alt-Svc 'h3=":443"; ma=2592000, h3-29=":443"; ma=2592000' always;
 {{ end }}
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header Strict-Transport-Security "max-age=31536000" always;
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-XSS-Protection "1; mode=block" always;

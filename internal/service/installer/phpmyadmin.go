@@ -133,7 +133,9 @@ func randomHex(n int) string {
 }
 
 const phpMyAdminNginxConfPath = `/ITDLUPanel/server/nginx/conf/conf.d/phpmyadmin.conf`
-const phpMyAdminNginxConf = `# phpMyAdmin - managed by ITDLUPanel
+
+func phpMyAdminNginxConf(phpVersion string) string {
+	return fmt.Sprintf(`# phpMyAdmin - managed by ITDLUPanel
 server {
     listen 888;
     server_name _;
@@ -145,7 +147,7 @@ server {
     }
 
     location ~ \.php$ {
-        fastcgi_pass unix:/var/run/php/php8.3-fpm.sock;
+        fastcgi_pass unix:/var/run/php/php%s-fpm.sock;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
     }
@@ -154,18 +156,45 @@ server {
         deny all;
     }
 }
-`
+`, phpVersion)
+}
+
+// detectInstalledPHPVersion finds the first active PHP-FPM version on the system.
+func detectInstalledPHPVersion() string {
+	// Check common PHP-FPM sockets
+	for _, ver := range []string{"8.4", "8.3", "8.2", "8.1", "8.0", "7.4"} {
+		sock := fmt.Sprintf("/var/run/php/php%s-fpm.sock", ver)
+		if _, err := os.Stat(sock); err == nil {
+			return ver
+		}
+	}
+	// Fallback: check systemctl
+	for _, ver := range []string{"8.4", "8.3", "8.2", "8.1", "8.0", "7.4"} {
+		result, err := system.ExecWithTimeout(3*time.Second, "systemctl", "is-active", fmt.Sprintf("php%s-fpm", ver))
+		if err == nil && result.ExitCode == 0 {
+			return ver
+		}
+	}
+	return "8.3" // default fallback
+}
 
 func setupPhpMyAdminNginx(ctx context.Context) {
+	phpVer := detectInstalledPHPVersion()
+	logger.Info().Str("php_version", phpVer).Msg("configuring phpMyAdmin nginx with detected PHP version")
+
 	os.MkdirAll(filepath.Join(ServerBaseDir, "nginx", "conf", "conf.d"), 0755)
-	if err := os.WriteFile(phpMyAdminNginxConfPath, []byte(phpMyAdminNginxConf), 0644); err != nil {
+	if err := os.WriteFile(phpMyAdminNginxConfPath, []byte(phpMyAdminNginxConf(phpVer)), 0644); err != nil {
 		logger.Warn().Err(err).Msg("failed to write phpMyAdmin nginx config")
 		return
 	}
 
-	system.ExecWithTimeout(5*time.Second, "nginx", "-t")
+	result, err := system.ExecWithTimeout(5*time.Second, "nginx", "-t")
+	if err != nil || result.ExitCode != 0 {
+		logger.Warn().Str("stderr", result.Stderr).Msg("nginx config test failed after phpMyAdmin setup")
+		return
+	}
 	system.ExecWithTimeout(5*time.Second, "systemctl", "reload", "nginx")
-	logger.Info().Msg("phpMyAdmin nginx config applied")
+	logger.Info().Msg("phpMyAdmin nginx config applied and nginx reloaded")
 }
 
 func removePhpMyAdminNginx(ctx context.Context) {

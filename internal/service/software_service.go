@@ -1944,6 +1944,19 @@ func (s *SoftwareService) GetPhpMyAdminConfig() (*PhpMyAdminConfig, error) {
 	}
 
 	cfg.PHPVersion = s.detectPHPVersionFromNginx(cfg.PHPVersion)
+
+	// Reconcile: if SSL is enabled but nginx config is missing SSL block, regenerate
+	if cfg.SSLEnabled {
+		nginxData, _ := os.ReadFile(phpmyadminNginxConfPath())
+		if !strings.Contains(string(nginxData), "ssl") {
+			go func() {
+				if err := s.SetPhpMyAdminConfig(cfg); err != nil {
+					logger.Warn().Err(err).Msg("failed to reconcile phpMyAdmin SSL config")
+				}
+			}()
+		}
+	}
+
 	return cfg, nil
 }
 
