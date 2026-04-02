@@ -2169,6 +2169,9 @@ func (s *SoftwareService) writePhpMyAdminServerBlock(b *strings.Builder, cfg *Ph
 	fmt.Fprintf(b, "        fastcgi_pass unix:%s;\n", fpmSock)
 	b.WriteString("        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n")
 	b.WriteString("        include fastcgi_params;\n")
+	if ssl {
+		b.WriteString("        fastcgi_param HTTPS on;\n")
+	}
 	b.WriteString("    }\n")
 	b.WriteString("\n")
 
