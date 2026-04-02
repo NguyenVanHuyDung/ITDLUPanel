@@ -63,10 +63,10 @@ var knownSoftware = map[string]softwareMeta{
 	"php": {
 		DisplayName:    "PHP",
 		Type:           "runtime",
-		ServiceName:    "php8.2-fpm",
+		ServiceName:    "php-fpm",
 		ConfigPath:     "/ITDLUPanel/server/php/conf/php.ini",
 		InstallPath:    "/ITDLUPanel/server/php",
-		DefaultVersion: "8.2",
+		DefaultVersion: "8.3",
 	},
 	"redis": {
 		DisplayName:    "Redis",
@@ -542,7 +542,15 @@ func (s *SoftwareService) ListInstalled() ([]SoftwareListItem, error) {
 			return nil, fmt.Errorf("failed to scan software row: %w", err)
 		}
 		item := SoftwareListItem{SoftwareInfo: info}
-		if info.ServiceName != "" {
+		if info.Name == "php" {
+			// PHP multi-version: check if any PHP-FPM version is running
+			for _, ver := range []string{"8.4", "8.3", "8.2", "8.1", "8.0", "7.4"} {
+				if s.isServiceRunning(fmt.Sprintf("php%s-fpm", ver)) {
+					item.IsRunning = true
+					break
+				}
+			}
+		} else if info.ServiceName != "" {
 			item.IsRunning = s.isServiceRunning(info.ServiceName)
 		}
 		items = append(items, item)
@@ -1337,6 +1345,15 @@ func (s *SoftwareService) resolveServiceName(name string) (string, error) {
 		return name, nil
 	}
 
+	// For generic "php", resolve to the first installed PHP-FPM version
+	if name == "php" {
+		versions := s.detectInstalledPHPVersions()
+		if len(versions) > 0 {
+			return fmt.Sprintf("php%s-fpm", versions[len(versions)-1]), nil
+		}
+		return "php8.3-fpm", nil // fallback
+	}
+
 	// First try the database
 	var svcName string
 	err := s.db.QueryRow("SELECT service_name FROM software WHERE name = ?", name).Scan(&svcName)
@@ -1916,14 +1933,31 @@ type PhpMyAdminConfig struct {
 }
 
 func defaultPhpMyAdminConfig() *PhpMyAdminConfig {
+	// Detect installed PHP version instead of hardcoding
+	phpVer := detectDefaultPHPVersion()
 	return &PhpMyAdminConfig{
 		PublicAccess: true,
-		PHPVersion:   "8.3",
+		PHPVersion:   phpVer,
 		AccessPort:   888,
 		SSLEnabled:   false,
 		SSLPort:      887,
 		AuthEnabled:  false,
 	}
+}
+
+// detectDefaultPHPVersion finds the best PHP-FPM version on the system.
+func detectDefaultPHPVersion() string {
+	for _, ver := range []string{"8.4", "8.3", "8.2", "8.1", "8.0", "7.4"} {
+		sock := fmt.Sprintf("/var/run/php/php%s-fpm.sock", ver)
+		if _, err := os.Stat(sock); err == nil {
+			return ver
+		}
+		sock = fmt.Sprintf("/run/php/php%s-fpm.sock", ver)
+		if _, err := os.Stat(sock); err == nil {
+			return ver
+		}
+	}
+	return "8.3"
 }
 
 // GetPhpMyAdminConfig reads the phpMyAdmin config from disk or returns defaults.
@@ -1985,7 +2019,7 @@ func (s *SoftwareService) SetPhpMyAdminConfig(cfg *PhpMyAdminConfig) error {
 		cfg.SSLPort = 887
 	}
 	if cfg.PHPVersion == "" {
-		cfg.PHPVersion = "8.3"
+		cfg.PHPVersion = detectDefaultPHPVersion()
 	}
 
 	// Persist config JSON
