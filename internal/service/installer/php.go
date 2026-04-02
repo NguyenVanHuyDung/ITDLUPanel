@@ -207,7 +207,10 @@ func (i *PHPInstaller) Install(ctx context.Context, version string, progress fun
 
 	SetupServerDir("php", []SymlinkDef{
 		{Name: "conf", Target: "/etc/php"},
-		{Name: "logs", Target: "/var/log/php"},
+	})
+
+	SetupLogLinks([]LogSymlink{
+		{Name: fmt.Sprintf("php%s-fpm.log", version), Target: fmt.Sprintf("/var/log/php%s-fpm.log", version)},
 	})
 
 	progress(100)
@@ -216,7 +219,10 @@ func (i *PHPInstaller) Install(ctx context.Context, version string, progress fun
 }
 
 func (i *PHPInstaller) Uninstall(ctx context.Context) error {
-	CleanupServerDir("php")
+	CleanupServerDir("php",
+		SymlinkDef{Name: "conf", Target: "/etc/php"},
+	)
+	CleanupLogLinks("php")
 
 	osInfo := system.GetOSInfo()
 

@@ -123,13 +123,22 @@ func (i *OLSInstaller) Install(ctx context.Context, version string, progress fun
 		{Name: "logs", Target: "/usr/local/lsws/logs"},
 	})
 
+	SetupLogLinks([]LogSymlink{
+		{Name: "openlitespeed.error.log", Target: "/usr/local/lsws/logs/error.log"},
+		{Name: "openlitespeed.access.log", Target: "/usr/local/lsws/logs/access.log"},
+	})
+
 	progress(100)
 	logger.Info().Msg("openlitespeed installed successfully")
 	return nil
 }
 
 func (i *OLSInstaller) Uninstall(ctx context.Context) error {
-	CleanupServerDir("openlitespeed")
+	CleanupServerDir("openlitespeed",
+		SymlinkDef{Name: "conf", Target: "/usr/local/lsws/conf"},
+		SymlinkDef{Name: "logs", Target: "/usr/local/lsws/logs"},
+	)
+	CleanupLogLinks("openlitespeed")
 
 	osInfo := system.GetOSInfo()
 
@@ -181,7 +190,7 @@ func (i *OLSInstaller) setupLSRepo(ctx context.Context, osInfo *system.OSInfo) e
 		// Import signing key
 		_, _ = system.Exec(ctx, "bash", "-c",
 			"curl -fsSL https://rpms.litespeedtech.com/debian/lst_debian_repo.gpg | "+
-				"gpg --dearmor -o /usr/share/keyrings/lst-debian-repo.gpg 2>/dev/null || "+
+				"gpg --batch --yes --dearmor -o /usr/share/keyrings/lst-debian-repo.gpg 2>/dev/null || "+
 				"wget -qO - https://rpms.litespeedtech.com/debian/lst_debian_repo.gpg | apt-key add -")
 
 		// Detect codename

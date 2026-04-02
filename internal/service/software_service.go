@@ -1017,8 +1017,9 @@ func (s *SoftwareService) GetPHPErrorLog(version string, lines int) (string, str
 		lines = 1000
 	}
 
-	// Try common log paths
+	// Try common log paths — centralized logs first, then system paths
 	candidates := []string{
+		filepath.Join(installer.LogsBaseDir, fmt.Sprintf("php%s-fpm.log", version)),
 		fmt.Sprintf("/var/log/php%s-fpm.log", version),
 		fmt.Sprintf("/var/log/php-fpm/php%s-fpm.log", version),
 		"/var/log/syslog",
@@ -1484,13 +1485,13 @@ func (s *SoftwareService) fillNginxProcessMetrics(m *NginxMetrics) {
 
 // GetErrorLog reads the last N lines of a software's error log.
 func (s *SoftwareService) GetErrorLog(name string, lines int) (string, string, error) {
+	// Log symlinks are in /ITDLUPanel/logs/ — created by installers
 	logPaths := map[string]string{
-		"nginx":         filepath.Join(installer.ServerBaseDir, "nginx", "logs", "error.log"),
-		"mysql":         filepath.Join(installer.ServerBaseDir, "mysql", "logs", "error.log"),
-		"php":           "/var/log/php8.3-fpm.log",
-		"redis":         filepath.Join(installer.ServerBaseDir, "redis", "logs", "redis-server.log"),
-		"apache":        filepath.Join(installer.ServerBaseDir, "apache", "logs", "error.log"),
-		"openlitespeed": filepath.Join(installer.ServerBaseDir, "openlitespeed", "logs", "error.log"),
+		"nginx":         filepath.Join(installer.LogsBaseDir, "nginx.error.log"),
+		"mysql":         filepath.Join(installer.LogsBaseDir, "mysql.error.log"),
+		"redis":         filepath.Join(installer.LogsBaseDir, "redis.log"),
+		"apache":        filepath.Join(installer.LogsBaseDir, "apache.error.log"),
+		"openlitespeed": filepath.Join(installer.LogsBaseDir, "openlitespeed.error.log"),
 	}
 
 	if lines <= 0 {
@@ -2595,6 +2596,7 @@ func (s *SoftwareService) GetMariaDBSlowLog(lines int) (string, string, error) {
 	mysqlLogs := filepath.Join(installer.ServerBaseDir, "mysql", "logs")
 	mysqlData := filepath.Join(installer.ServerBaseDir, "mysql", "data")
 	paths := []string{
+		filepath.Join(installer.LogsBaseDir, "mysql.slow.log"),
 		filepath.Join(mysqlLogs, "mariadb-slow.log"),
 		filepath.Join(mysqlLogs, "mysql-slow.log"),
 		filepath.Join(mysqlData, "slow.log"),

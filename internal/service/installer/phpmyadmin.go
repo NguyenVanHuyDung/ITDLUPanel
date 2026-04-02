@@ -48,10 +48,6 @@ func (i *PhpMyAdminInstaller) Install(ctx context.Context, version string, progr
 	// Ensure parent server dir exists
 	os.MkdirAll("/ITDLUPanel/server/phpmyadmin", 0755)
 
-	SetupServerDir("phpmyadmin", []SymlinkDef{
-		{Name: "ssl", Target: "/ITDLUPanel/server/data/ssl"},
-	})
-
 	progress(40)
 	// Download phpMyAdmin
 	url := fmt.Sprintf("https://files.phpmyadmin.net/phpMyAdmin/%s/phpMyAdmin-%s-all-languages.zip", version, version)

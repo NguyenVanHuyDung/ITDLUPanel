@@ -101,13 +101,23 @@ func (i *MySQLInstaller) Install(ctx context.Context, version string, progress f
 		{Name: "logs", Target: "/var/log/mysql"},
 	})
 
+	SetupLogLinks([]LogSymlink{
+		{Name: "mysql.error.log", Target: "/var/log/mysql/error.log"},
+		{Name: "mysql.slow.log", Target: "/var/log/mysql/mariadb-slow.log"},
+	})
+
 	progress(100)
 	logger.Info().Str("package", pkg).Msg("mysql/mariadb installed successfully")
 	return nil
 }
 
 func (i *MySQLInstaller) Uninstall(ctx context.Context) error {
-	CleanupServerDir("mysql")
+	CleanupServerDir("mysql",
+		SymlinkDef{Name: "conf", Target: "/etc/mysql"},
+		SymlinkDef{Name: "data", Target: "/var/lib/mysql"},
+		SymlinkDef{Name: "logs", Target: "/var/log/mysql"},
+	)
+	CleanupLogLinks("mysql")
 
 	osInfo := system.GetOSInfo()
 

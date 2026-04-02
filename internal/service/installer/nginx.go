@@ -32,9 +32,19 @@ type NginxVersion struct {
 	Branch string `json:"branch"` // "mainline" or "stable"
 }
 
-// SupportsQUIC returns true if this version supports HTTP/3 QUIC (>= 1.25.0).
+// SupportsQUIC returns true if this version supports HTTP/3 QUIC (>= 1.25.0)
+// AND nginx was compiled with the http_v3_module.
 func (v NginxVersion) SupportsQUIC() bool {
-	return v.Major > 1 || (v.Major == 1 && v.Minor >= 25)
+	if v.Major < 1 || (v.Major == 1 && v.Minor < 25) {
+		return false
+	}
+	// Check if nginx binary actually has QUIC/HTTP3 support compiled in
+	out, err := system.ExecWithTimeout(5*time.Second, "nginx", "-V")
+	if err != nil {
+		return false
+	}
+	combined := out.Stdout + out.Stderr
+	return strings.Contains(combined, "http_v3_module") || strings.Contains(combined, "quic")
 }
 
 // UsesHTTP2Directive returns true if http2 should be a separate directive (>= 1.25.1).
@@ -216,6 +226,15 @@ func (i *NginxInstaller) Install(ctx context.Context, version string, progress f
 		{Name: "logs", Target: "/var/log/nginx"},
 	})
 
+	// Ensure sites-available and sites-enabled directories exist
+	os.MkdirAll(filepath.Join(ServerBaseDir, "nginx", "conf", "sites-available"), 0755)
+	os.MkdirAll(filepath.Join(ServerBaseDir, "nginx", "conf", "sites-enabled"), 0755)
+
+	SetupLogLinks([]LogSymlink{
+		{Name: "nginx.error.log", Target: "/var/log/nginx/error.log"},
+		{Name: "nginx.access.log", Target: "/var/log/nginx/access.log"},
+	})
+
 	progress(100)
 	logger.Info().Str("version", version).Msg("nginx installed successfully")
 	return nil
@@ -252,7 +271,11 @@ func resolveNginxVersion(version string) (repoType string, aptPin string) {
 }
 
 func (i *NginxInstaller) Uninstall(ctx context.Context) error {
-	CleanupServerDir("nginx")
+	CleanupServerDir("nginx",
+		SymlinkDef{Name: "conf", Target: "/etc/nginx"},
+		SymlinkDef{Name: "logs", Target: "/var/log/nginx"},
+	)
+	CleanupLogLinks("nginx")
 
 	// Stop and disable
 	_, _ = system.Exec(ctx, "systemctl", "stop", "nginx")
@@ -300,7 +323,7 @@ func (i *NginxInstaller) setupNginxRepo(ctx context.Context, repoType string, os
 
 	// Fetch and dearmor the signing key
 	if _, err := system.Exec(ctx, "bash", "-c",
-		fmt.Sprintf("curl -fsSL https://nginx.org/keys/nginx_signing.key | gpg --dearmor -o %s", nginxKeyringFile)); err != nil {
+		fmt.Sprintf("curl -fsSL https://nginx.org/keys/nginx_signing.key | gpg --batch --yes --dearmor -o %s", nginxKeyringFile)); err != nil {
 		return fmt.Errorf("failed to import nginx signing key: %w", err)
 	}
 

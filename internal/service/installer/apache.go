@@ -113,10 +113,18 @@ func (i *ApacheInstaller) Install(ctx context.Context, version string, progress 
 			{Name: "conf", Target: "/etc/apache2"},
 			{Name: "logs", Target: "/var/log/apache2"},
 		})
+		SetupLogLinks([]LogSymlink{
+			{Name: "apache.error.log", Target: "/var/log/apache2/error.log"},
+			{Name: "apache.access.log", Target: "/var/log/apache2/access.log"},
+		})
 	} else {
 		SetupServerDir("apache", []SymlinkDef{
 			{Name: "conf", Target: "/etc/httpd"},
 			{Name: "logs", Target: "/var/log/httpd"},
+		})
+		SetupLogLinks([]LogSymlink{
+			{Name: "apache.error.log", Target: "/var/log/httpd/error_log"},
+			{Name: "apache.access.log", Target: "/var/log/httpd/access_log"},
 		})
 	}
 
@@ -126,9 +134,20 @@ func (i *ApacheInstaller) Install(ctx context.Context, version string, progress 
 }
 
 func (i *ApacheInstaller) Uninstall(ctx context.Context) error {
-	CleanupServerDir("apache")
-
 	osInfo := system.GetOSInfo()
+
+	if osInfo.PkgManager == "apt" {
+		CleanupServerDir("apache",
+			SymlinkDef{Name: "conf", Target: "/etc/apache2"},
+			SymlinkDef{Name: "logs", Target: "/var/log/apache2"},
+		)
+	} else {
+		CleanupServerDir("apache",
+			SymlinkDef{Name: "conf", Target: "/etc/httpd"},
+			SymlinkDef{Name: "logs", Target: "/var/log/httpd"},
+		)
+	}
+	CleanupLogLinks("apache")
 
 	pkg := "apache2"
 	serviceName := "apache2"

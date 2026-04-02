@@ -76,7 +76,10 @@ func (i *PureFTPdInstaller) Install(ctx context.Context, version string, progres
 
 	SetupServerDir("pureftpd", []SymlinkDef{
 		{Name: "conf", Target: "/etc/pure-ftpd"},
-		{Name: "logs", Target: "/var/log"},
+	})
+
+	SetupLogLinks([]LogSymlink{
+		{Name: "pureftpd.log", Target: "/var/log/syslog"},
 	})
 
 	progress(100)
@@ -85,7 +88,10 @@ func (i *PureFTPdInstaller) Install(ctx context.Context, version string, progres
 }
 
 func (i *PureFTPdInstaller) Uninstall(ctx context.Context) error {
-	CleanupServerDir("pureftpd")
+	CleanupServerDir("pureftpd",
+		SymlinkDef{Name: "conf", Target: "/etc/pure-ftpd"},
+	)
+	CleanupLogLinks("pureftpd")
 
 	osInfo := system.GetOSInfo()
 

@@ -405,7 +405,11 @@ func (n *NginxGenerator) GetConfigPath(domain string) string {
 // EnableSite creates a symlink in sites-enabled to activate the site.
 func (n *NginxGenerator) EnableSite(domain string) error {
 	available := n.GetConfigPath(domain)
-	enabled := filepath.Join(nginxConfBase, "sites-enabled", domain+".conf")
+	enabledDir := filepath.Join(nginxConfBase, "sites-enabled")
+	enabled := filepath.Join(enabledDir, domain+".conf")
+
+	// Ensure sites-enabled directory exists
+	_ = os.MkdirAll(enabledDir, 0755)
 
 	// Remove existing symlink if present
 	_ = os.Remove(enabled)

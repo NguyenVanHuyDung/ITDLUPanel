@@ -60,11 +60,15 @@ func (i *RedisInstaller) Install(ctx context.Context, version string, progress f
 		})
 	} else {
 		SetupServerDir("redis", []SymlinkDef{
-			{Name: "conf", Target: "/etc"},
+			{Name: "conf", Target: "/etc/redis"},
 			{Name: "data", Target: "/var/lib/redis"},
 			{Name: "logs", Target: "/var/log/redis"},
 		})
 	}
+
+	SetupLogLinks([]LogSymlink{
+		{Name: "redis.log", Target: "/var/log/redis/redis-server.log"},
+	})
 
 	progress(100)
 	logger.Info().Msg("redis installed successfully")
@@ -72,9 +76,22 @@ func (i *RedisInstaller) Install(ctx context.Context, version string, progress f
 }
 
 func (i *RedisInstaller) Uninstall(ctx context.Context) error {
-	CleanupServerDir("redis")
-
 	osInfo := system.GetOSInfo()
+
+	if osInfo.PkgManager == "apt" {
+		CleanupServerDir("redis",
+			SymlinkDef{Name: "conf", Target: "/etc/redis"},
+			SymlinkDef{Name: "data", Target: "/var/lib/redis"},
+			SymlinkDef{Name: "logs", Target: "/var/log/redis"},
+		)
+	} else {
+		CleanupServerDir("redis",
+			SymlinkDef{Name: "conf", Target: "/etc/redis"},
+			SymlinkDef{Name: "data", Target: "/var/lib/redis"},
+			SymlinkDef{Name: "logs", Target: "/var/log/redis"},
+		)
+	}
+	CleanupLogLinks("redis")
 
 	for _, svc := range []string{"redis-server", "redis"} {
 		_, _ = system.Exec(ctx, "systemctl", "stop", svc)
