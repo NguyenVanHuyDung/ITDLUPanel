@@ -40,7 +40,17 @@ func (i *PhpMyAdminInstaller) Install(ctx context.Context, version string, progr
 	}
 
 	progress(20)
-	deps := []string{"install", "-y", "php", "php-mbstring", "php-zip", "php-gd", "php-json", "php-curl", "php-mysql", "unzip", "wget"}
+	// Use versioned PHP packages matching the installed PHP-FPM
+	phpVer := detectInstalledPHPVersion()
+	deps := []string{"install", "-y",
+		fmt.Sprintf("php%s-mbstring", phpVer),
+		fmt.Sprintf("php%s-zip", phpVer),
+		fmt.Sprintf("php%s-gd", phpVer),
+		fmt.Sprintf("php%s-curl", phpVer),
+		fmt.Sprintf("php%s-mysql", phpVer),
+		fmt.Sprintf("php%s-xml", phpVer),
+		"unzip", "wget",
+	}
 	if _, err := system.Exec(ctx, osInfo.PkgManager, deps...); err != nil {
 		logger.Warn().Err(err).Msg("some php deps may have failed, continuing")
 	}
@@ -72,7 +82,7 @@ func (i *PhpMyAdminInstaller) Install(ctx context.Context, version string, progr
 	}
 
 	progress(80)
-	// Create config
+	// Create config with secure session settings for HTTPS support
 	configContent := fmt.Sprintf(`<?php
 $cfg['blowfish_secret'] = '%s';
 $i = 0;
@@ -81,9 +91,16 @@ $cfg['Servers'][$i]['auth_type'] = 'cookie';
 $cfg['Servers'][$i]['host'] = 'localhost';
 $cfg['Servers'][$i]['compress'] = false;
 $cfg['Servers'][$i]['AllowNoPassword'] = false;
+$cfg['Servers'][$i]['SessionSavePath'] = '/var/lib/php/sessions';
 $cfg['UploadDir'] = '';
 $cfg['SaveDir'] = '';
 $cfg['TempDir'] = '/tmp';
+
+// Secure session cookies (required for HTTPS access on port 887)
+@ini_set('session.cookie_secure', '1');
+@ini_set('session.cookie_httponly', '1');
+@ini_set('session.cookie_samesite', 'Lax');
+@ini_set('session.use_strict_mode', '1');
 `, randomHex(32))
 
 	if err := os.WriteFile(installDir+"/config.inc.php", []byte(configContent), 0644); err != nil {
@@ -183,7 +200,84 @@ func setupPhpMyAdminNginx(ctx context.Context) {
 	logger.Info().Str("php_version", phpVer).Msg("configuring phpMyAdmin nginx with detected PHP version")
 
 	os.MkdirAll(filepath.Join(ServerBaseDir, "nginx", "conf", "conf.d"), 0755)
-	if err := os.WriteFile(phpMyAdminNginxConfPath, []byte(phpMyAdminNginxConf(phpVer)), 0644); err != nil {
+
+	// Generate initial config with both HTTP (888) and SSL (887)
+	nginxConf := phpMyAdminNginxConf(phpVer)
+
+	// Also generate SSL certs and add SSL block
+	sslDir := "/ITDLUPanel/server/phpmyadmin/ssl"
+	certPath := filepath.Join(sslDir, "phpmyadmin.crt")
+	keyPath := filepath.Join(sslDir, "phpmyadmin.key")
+	os.MkdirAll(sslDir, 0755)
+
+	_, certErr := os.Stat(certPath)
+	_, keyErr := os.Stat(keyPath)
+	if certErr != nil || keyErr != nil {
+		result, err := system.ExecWithTimeout(30*time.Second,
+			"openssl", "req", "-x509", "-nodes", "-days", "3650",
+			"-newkey", "rsa:2048",
+			"-keyout", keyPath,
+			"-out", certPath,
+			"-subj", "/CN=phpMyAdmin/O=ITDLUPanel",
+		)
+		if err == nil && result.ExitCode == 0 {
+			logger.Info().Msg("generated self-signed SSL cert for phpMyAdmin")
+		} else {
+			logger.Warn().Msg("failed to generate phpMyAdmin SSL cert, skipping SSL block")
+		}
+	}
+
+	// Add SSL block if certs exist
+	if _, err := os.Stat(certPath); err == nil {
+		nginxConf += fmt.Sprintf(`
+# SSL block
+server {
+    listen 887 ssl;
+    server_name _;
+    root /ITDLUPanel/server/phpmyadmin/www;
+    index index.php index.html;
+
+    ssl_certificate %s/phpmyadmin.crt;
+    ssl_certificate_key %s/phpmyadmin.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    location ~ \.php$ {
+        fastcgi_pass unix:/var/run/php/php%s-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+        fastcgi_param HTTPS on;
+    }
+
+    location ~ /tmp/ {
+        deny all;
+    }
+}
+`, sslDir, sslDir, phpVer)
+	}
+
+	// Save default config JSON with SSL enabled
+	configDir := "/ITDLUPanel/server/config"
+	os.MkdirAll(configDir, 0755)
+	defaultCfg := []byte(`{
+  "public_access": true,
+  "php_version": "` + phpVer + `",
+  "access_port": 888,
+  "ssl_enabled": true,
+  "ssl_port": 887,
+  "auth_enabled": false,
+  "auth_user": "",
+  "auth_password": ""
+}`)
+	configPath := filepath.Join(configDir, "phpmyadmin_config.json")
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		os.WriteFile(configPath, defaultCfg, 0644)
+	}
+
+	if err := os.WriteFile(phpMyAdminNginxConfPath, []byte(nginxConf), 0644); err != nil {
 		logger.Warn().Err(err).Msg("failed to write phpMyAdmin nginx config")
 		return
 	}

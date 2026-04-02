@@ -65,7 +65,7 @@ var softwarePortMap = map[string][]struct {
 	"redis":          {{Port: "6379", Protocol: "tcp", Desc: "Redis"}},
 	"pureftpd":       {{Port: "21", Protocol: "tcp", Desc: "FTP Control"}, {Port: "20", Protocol: "tcp", Desc: "FTP Data"}, {Port: "39000:40000", Protocol: "tcp", Desc: "FTP Passive"}},
 	"memcached":      {{Port: "11211", Protocol: "tcp", Desc: "Memcached"}},
-	"phpmyadmin":     {{Port: "888", Protocol: "tcp", Desc: "phpMyAdmin"}},
+	"phpmyadmin":     {{Port: "888", Protocol: "tcp", Desc: "phpMyAdmin"}, {Port: "887", Protocol: "tcp", Desc: "phpMyAdmin SSL"}},
 }
 
 // ---------------------------------------------------------------------------
