@@ -187,15 +187,19 @@ export default function TerminalPage() {
   tabsRef.current = tabs;
 
   const currentTheme = TERMINAL_THEMES[themeId]?.theme ?? TERMINAL_THEMES['github-dark'].theme;
+  // Store theme in ref so initTab doesn't change when theme switches
+  const currentThemeRef = useRef(currentTheme);
+  currentThemeRef.current = currentTheme;
 
   const applyTheme = useCallback((id: string) => {
     const t = TERMINAL_THEMES[id]?.theme;
     if (!t) return;
     setThemeId(id);
     localStorage.setItem(THEME_STORAGE_KEY, id);
-    // Apply to every live Terminal instance
+    // Apply to every live Terminal instance and force repaint
     termInstancesRef.current.forEach((term) => {
       term.options.theme = { ...t };
+      try { term.refresh(0, term.rows - 1); } catch { /* ignore */ }
     });
     setTimeout(() => {
       const active = tabsRef.current.find(tb => tb.id === activeTabId);
@@ -203,7 +207,7 @@ export default function TerminalPage() {
         try { active.fitAddon.fit(); } catch { /* ignore */ }
       }
       termInstancesRef.current.get(activeTabId)?.focus();
-    }, 100);
+    }, 50);
   }, [activeTabId]);
 
   const createSession = useCallback((): TabSession => {
@@ -230,7 +234,7 @@ export default function TerminalPage() {
       fontWeight: '400',
       letterSpacing: 0,
       lineHeight: 1.2,
-      theme: currentTheme,
+      theme: currentThemeRef.current,
       scrollback: 10000,
       convertEol: true,
       allowProposedApi: true,
@@ -291,7 +295,7 @@ export default function TerminalPage() {
     tab.ws = ws;
     termInstancesRef.current.set(tab.id, term);
     updateTab(tab.id, { term, fitAddon, ws, status: 'connecting' });
-  }, [accessToken, updateTab, currentTheme]);
+  }, [accessToken, updateTab]);
 
   // Initialize first tab
   useEffect(() => {
