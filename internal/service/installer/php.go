@@ -288,6 +288,88 @@ func listInstalledPHPPackages(ctx context.Context) []string {
 	return pkgs
 }
 
+// UninstallVersion removes a single PHP version without affecting other installed versions.
+func (i *PHPInstaller) UninstallVersion(ctx context.Context, version string) error {
+	svc := fmt.Sprintf("php%s-fpm", version)
+	_, _ = system.Exec(ctx, "systemctl", "stop", svc)
+	_, _ = system.Exec(ctx, "systemctl", "disable", svc)
+
+	osInfo := system.GetOSInfo()
+
+	if osInfo.PkgManager == "apt" {
+		FixDpkg(ctx)
+
+		pkgs := listInstalledPHPVersionPackages(ctx, version)
+		if len(pkgs) > 0 {
+			args := append([]string{"purge", "-y"}, pkgs...)
+			if _, err := system.Exec(ctx, "apt", args...); err != nil {
+				return fmt.Errorf("failed to uninstall php %s: %w", version, err)
+			}
+		}
+		_, _ = system.Exec(ctx, "apt", "autoremove", "-y")
+	} else {
+		remiVer := strings.ReplaceAll(version, ".", "")
+		result, err := system.Exec(ctx, "rpm", "-qa", "--queryformat", "%{NAME}\n")
+		if err != nil {
+			return fmt.Errorf("failed to list rpm packages: %w", err)
+		}
+		var pkgs []string
+		for _, line := range strings.Split(result.Stdout, "\n") {
+			pkg := strings.TrimSpace(line)
+			if pkg != "" && strings.HasPrefix(pkg, "php"+remiVer) {
+				pkgs = append(pkgs, pkg)
+			}
+		}
+		if len(pkgs) > 0 {
+			args := append([]string{"remove", "-y"}, pkgs...)
+			if _, err := system.Exec(ctx, "dnf", args...); err != nil {
+				return fmt.Errorf("failed to uninstall php %s: %w", version, err)
+			}
+		}
+	}
+
+	// Clean up server dir only if no other PHP version remains
+	remaining := 0
+	for _, v := range i.GetVersions() {
+		if v != version {
+			bin := fmt.Sprintf("/usr/sbin/php-fpm%s", v)
+			if _, err := os.Stat(bin); err == nil {
+				remaining++
+			}
+		}
+	}
+	if remaining == 0 {
+		CleanupServerDir("php",
+			SymlinkDef{Name: "conf", Target: "/etc/php"},
+		)
+		CleanupLogLinks("php")
+	}
+
+	logger.Info().Str("version", version).Msg("php version uninstalled successfully")
+	return nil
+}
+
+// listInstalledPHPVersionPackages returns installed dpkg packages for a specific PHP version.
+func listInstalledPHPVersionPackages(ctx context.Context, version string) []string {
+	result, err := system.Exec(ctx, "dpkg-query", "-W", "-f", "${Package}\n")
+	if err != nil {
+		return nil
+	}
+	prefix := "php" + version
+	var pkgs []string
+	for _, line := range strings.Split(result.Stdout, "\n") {
+		pkg := strings.TrimSpace(line)
+		if pkg == "" {
+			continue
+		}
+		// Match packages like php8.3, php8.3-fpm, php8.3-common, etc.
+		if strings.HasPrefix(pkg, prefix) {
+			pkgs = append(pkgs, pkg)
+		}
+	}
+	return pkgs
+}
+
 func (i *PHPInstaller) IsInstalled() bool {
 	// Check for any php-fpm binary
 	for _, ver := range i.GetVersions() {

@@ -247,6 +247,12 @@ type Installer interface {
 	GetVersions() []string
 }
 
+// VersionedUninstaller is optionally implemented by installers that support
+// removing a single version without touching other installed versions.
+type VersionedUninstaller interface {
+	UninstallVersion(ctx context.Context, version string) error
+}
+
 // Registry holds all registered installers, keyed by name.
 type Registry struct {
 	mu         sync.RWMutex

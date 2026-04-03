@@ -290,27 +290,34 @@ export default function AppStore() {
   };
 
   const handleUninstall = useCallback(
-    (sw: Software | { name: string; display_name: string }) => {
+    (sw: Software | { name: string; display_name: string }, version?: string) => {
+      const label = version ? `${sw.display_name} ${version}` : sw.display_name;
+      const content = version
+        ? `This will remove PHP ${version} and its packages. Other PHP versions will not be affected.`
+        : `This will completely remove ${sw.display_name} and all its configuration. This action cannot be undone.`;
       Modal.confirm({
-        title: `Uninstall ${sw.display_name}?`,
+        title: `Uninstall ${label}?`,
         icon: <ExclamationCircleOutlined />,
-        content: `This will completely remove ${sw.display_name} and all its configuration. This action cannot be undone.`,
+        content,
         okText: 'Uninstall',
         okButtonProps: { danger: true },
         onOk: async () => {
           try {
-            const { data } = await api.delete<ApiResponse<{ task_id: number }>>(`/software/${sw.name}`);
+            const url = version
+              ? `/software/${sw.name}?version=${version}`
+              : `/software/${sw.name}`;
+            const { data } = await api.delete<ApiResponse<{ task_id: number }>>(url);
             const taskId = data.data?.task_id;
             if (taskId) {
-              trackTask(taskId, `Uninstall ${sw.display_name}`, 'uninstall');
-              message.info(`Uninstalling ${sw.display_name}…`);
+              trackTask(taskId, `Uninstall ${label}`, 'uninstall');
+              message.info(`Uninstalling ${label}…`);
               setManageModalOpen(false);
             } else {
-              message.success(`${sw.display_name} uninstalled`);
+              message.success(`${label} uninstalled`);
               fetchInstalled();
             }
           } catch {
-            message.error(`Failed to uninstall ${sw.display_name}`);
+            message.error(`Failed to uninstall ${label}`);
           }
         },
       });
@@ -562,10 +569,43 @@ export default function AppStore() {
                         disabled={busy}
                         onClick={() => handleServiceAction(sw.name, 'restart')}
                       >↻ Restart</button>
-                      <button
-                        style={{ ...actionBtn(p.red), marginLeft: 'auto' }}
-                        onClick={() => handleUninstall(sw)}
-                      >× Remove</button>
+                      {(() => {
+                        const avail = available.find(a => a.name === sw.name);
+                        const versions = avail?.installed_versions ?? [];
+                        if (avail?.multi_version && versions.length > 1) {
+                          return (
+                            <select
+                              style={{
+                                marginLeft: 'auto',
+                                padding: '4px 6px', borderRadius: 6,
+                                border: `1px solid ${p.red}50`,
+                                background: 'transparent', color: p.red,
+                                fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                                outline: 'none',
+                              }}
+                              defaultValue=""
+                              onChange={e => {
+                                const val = e.target.value;
+                                e.target.value = '';
+                                if (val === '__all__') handleUninstall(sw);
+                                else if (val) handleUninstall(sw, val);
+                              }}
+                            >
+                              <option value="" disabled>× Remove…</option>
+                              {versions.map(v => (
+                                <option key={v} value={v}>PHP {v}</option>
+                              ))}
+                              <option value="__all__">All versions</option>
+                            </select>
+                          );
+                        }
+                        return (
+                          <button
+                            style={{ ...actionBtn(p.red), marginLeft: 'auto' }}
+                            onClick={() => handleUninstall(sw)}
+                          >× Remove</button>
+                        );
+                      })()}
                     </div>
                   </div>
                 );
@@ -631,14 +671,30 @@ export default function AppStore() {
                       sw.multi_version ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                           <div style={{
-                            display: 'flex', alignItems: 'center', gap: 5,
+                            display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap',
                             fontSize: 12, fontWeight: 500, color: p.green,
                           }}>
                             <span style={{
                               width: 6, height: 6, borderRadius: 3,
                               background: p.green, display: 'inline-block',
                             }} />
-                            {(sw.installed_versions ?? []).join(', ')}
+                            {(sw.installed_versions ?? []).map(v => (
+                              <span
+                                key={v}
+                                style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                                  padding: '1px 8px', borderRadius: 4,
+                                  background: `${p.green}15`, fontSize: 11,
+                                }}
+                              >
+                                {v}
+                                <span
+                                  style={{ cursor: 'pointer', color: p.red, fontWeight: 700, fontSize: 13, lineHeight: 1 }}
+                                  title={`Remove PHP ${v}`}
+                                  onClick={e => { e.stopPropagation(); handleUninstall({ name: sw.name, display_name: sw.display_name }, v); }}
+                                >×</span>
+                              </span>
+                            ))}
                           </div>
                           {(sw.versions.filter(v => !(sw.installed_versions ?? []).includes(v)).length > 0) && (
                             <button
@@ -1076,7 +1132,50 @@ export default function AppStore() {
                       <Button
                         danger
                         icon={<DeleteOutlined />}
-                        onClick={() => handleUninstall(manageSW)}
+                        onClick={() => {
+                          const avail = available.find(a => a.name === manageSW.name);
+                          const versions = avail?.installed_versions ?? [];
+                          if (avail?.multi_version && versions.length > 1) {
+                            Modal.confirm({
+                              title: `Uninstall ${manageSW.display_name}`,
+                              icon: <ExclamationCircleOutlined />,
+                              content: (
+                                <div>
+                                  <p style={{ marginBottom: 12 }}>Select which version(s) to remove:</p>
+                                  <Space direction="vertical" style={{ width: '100%' }}>
+                                    {versions.map(v => (
+                                      <Button
+                                        key={v}
+                                        danger
+                                        block
+                                        onClick={() => {
+                                          Modal.destroyAll();
+                                          handleUninstall(manageSW, v);
+                                        }}
+                                      >
+                                        Remove PHP {v} only
+                                      </Button>
+                                    ))}
+                                    <Button
+                                      danger
+                                      type="primary"
+                                      block
+                                      onClick={() => {
+                                        Modal.destroyAll();
+                                        handleUninstall(manageSW);
+                                      }}
+                                    >
+                                      Remove all versions
+                                    </Button>
+                                  </Space>
+                                </div>
+                              ),
+                              footer: null,
+                            });
+                          } else {
+                            handleUninstall(manageSW);
+                          }
+                        }}
                       >Uninstall</Button>
                     </Space>
                   </div>

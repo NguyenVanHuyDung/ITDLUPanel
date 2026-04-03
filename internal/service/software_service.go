@@ -270,24 +270,46 @@ func (s *SoftwareService) registerTaskHandlers() {
 
 	s.queue.RegisterHandler("software_uninstall", func(ctx context.Context, t *task.TaskInfo, progress func(int, string)) error {
 		name := t.Name
+		version := ""
+		// Parse "php@8.3" format for per-version uninstall
+		if idx := strings.Index(name, "@"); idx != -1 {
+			version = name[idx+1:]
+			name = name[:idx]
+		}
 
 		inst, ok := s.registry.Get(name)
 		if !ok {
 			return fmt.Errorf("unknown software: %s", name)
 		}
 
-		progress(0, fmt.Sprintf("Starting uninstallation of %s", name))
-
-		if err := inst.Uninstall(ctx); err != nil {
-			return err
+		if version != "" {
+			// Per-version uninstall
+			vu, ok := inst.(installer.VersionedUninstaller)
+			if !ok {
+				return fmt.Errorf("%s does not support per-version uninstall", name)
+			}
+			progress(0, fmt.Sprintf("Uninstalling %s %s", name, version))
+			if err := vu.UninstallVersion(ctx, version); err != nil {
+				return err
+			}
+			// Only remove DB record if no versions remain installed
+			if !inst.IsInstalled() {
+				if _, err := s.db.Exec("DELETE FROM software WHERE name = ?", name); err != nil {
+					logger.Error().Err(err).Str("software", name).Msg("failed to remove software record from DB")
+				}
+			}
+			progress(100, fmt.Sprintf("%s %s uninstalled successfully", name, version))
+		} else {
+			// Full uninstall — remove all versions
+			progress(0, fmt.Sprintf("Starting uninstallation of %s", name))
+			if err := inst.Uninstall(ctx); err != nil {
+				return err
+			}
+			if _, err := s.db.Exec("DELETE FROM software WHERE name = ?", name); err != nil {
+				logger.Error().Err(err).Str("software", name).Msg("failed to remove software record from DB")
+			}
+			progress(100, fmt.Sprintf("%s uninstalled successfully", name))
 		}
-
-		// Remove from database
-		if _, err := s.db.Exec("DELETE FROM software WHERE name = ?", name); err != nil {
-			logger.Error().Err(err).Str("software", name).Msg("failed to remove software record from DB")
-		}
-
-		progress(100, fmt.Sprintf("%s uninstalled successfully", name))
 
 		// Auto-close firewall ports for this software
 		if s.firewallService != nil {
@@ -688,11 +710,17 @@ func (s *SoftwareService) GetInstalledWebServer() (string, error) {
 }
 
 // UninstallSoftware enqueues a background uninstall task. Returns the task ID.
-func (s *SoftwareService) UninstallSoftware(name string, createdBy int64) (int64, error) {
+// When version is non-empty and the software supports per-version removal,
+// only that single version is removed.
+func (s *SoftwareService) UninstallSoftware(name, version string, createdBy int64) (int64, error) {
 	if _, ok := s.registry.Get(name); !ok {
 		return 0, fmt.Errorf("unknown software: %s", name)
 	}
-	return s.queue.Enqueue("software_uninstall", name, createdBy)
+	taskName := name
+	if version != "" {
+		taskName = name + "@" + version
+	}
+	return s.queue.Enqueue("software_uninstall", taskName, createdBy)
 }
 
 // InstallExtension enqueues a background extension install task.

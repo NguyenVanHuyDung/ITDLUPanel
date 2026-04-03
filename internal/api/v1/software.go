@@ -188,10 +188,12 @@ func (h *SoftwareHandler) uninstall(c *gin.Context) {
 		return
 	}
 
+	version := c.Query("version")
+
 	userID, _ := c.Get("user_id")
 	uid, _ := userID.(int64)
 
-	taskID, err := h.softwareService.UninstallSoftware(name, uid)
+	taskID, err := h.softwareService.UninstallSoftware(name, version, uid)
 	if err != nil {
 		response.Error(c, apperrors.Wrap(err, apperrors.ErrValidation, err.Error()))
 		return
