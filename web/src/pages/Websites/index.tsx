@@ -595,18 +595,18 @@ function ComposerPanel({ siteId }: { siteId: number }) {
             <div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
                 <button style={actionBtnStyle} disabled={running} onClick={() => runCommand('install')}>
-                  📦 Install
+                  <DownloadOutlined style={{ fontSize: 12 }} /> Install
                 </button>
                 <button style={actionBtnStyle} disabled={running} onClick={() => runCommand('update')}>
-                  🔄 Update
+                  <SyncOutlined style={{ fontSize: 12 }} /> Update
                 </button>
                 <button style={actionBtnStyle} disabled={running} onClick={() => runCommand('dump-autoload')}>
-                  ⚙️ Dump Autoload
+                  <SettingOutlined style={{ fontSize: 12 }} /> Dump Autoload
                 </button>
               </div>
               {!status.has_composer_json && (
                 <div style={{ padding: 10, borderRadius: 6, background: `${p.amber}15`, color: p.amber, fontSize: 11, marginBottom: 12 }}>
-                  ⚠ No composer.json found in site directory. Commands may fail.
+                  <ExclamationCircleOutlined style={{ fontSize: 12 }} /> No composer.json found in site directory. Commands may fail.
                 </div>
               )}
             </div>
@@ -1540,7 +1540,7 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
 
           {/* Method selector tabs */}
           <div style={{ display: 'flex', gap: 0, borderRadius: 6, overflow: 'hidden', border: `1px solid ${p.cardBorder}`, alignSelf: 'flex-start' }}>
-            {([['file', '📄 File Verification'], ['dns', '🌐 DNS (Wildcard)']] as const).map(([key, label]) => (
+            {([['file', 'File Verification'], ['dns', 'DNS (Wildcard)']] as const).map(([key, label]) => (
               <button key={key} onClick={() => setDnsMethod(key)}
                 style={{
                   padding: '7px 16px', border: 'none', cursor: 'pointer',
@@ -1738,8 +1738,8 @@ function ResponseLogPanel({ site }: { site: Site }) {
           onChange={(v: 'access' | 'error') => { setLogType(v); setLines([]); }}
           style={{ width: 140 }}
           options={[
-            { label: '📥 Access Log', value: 'access' },
-            { label: '⚠️ Error Log', value: 'error' },
+            { label: 'Access Log', value: 'access' },
+            { label: 'Error Log', value: 'error' },
           ]}
         />
         <Select
@@ -1747,8 +1747,8 @@ function ResponseLogPanel({ site }: { site: Site }) {
           onChange={(v: string) => { setLogDate(v); setLines([]); }}
           style={{ width: 140 }}
           options={[
-            { label: '📅 Today', value: '' },
-            ...availableDates.map(d => ({ label: `📅 ${d}`, value: d })),
+            { label: 'Today', value: '' },
+            ...availableDates.map(d => ({ label: d, value: d })),
           ]}
         />
         <Select
@@ -1770,7 +1770,7 @@ function ResponseLogPanel({ site }: { site: Site }) {
             display: 'inline-flex', alignItems: 'center', gap: 4,
           }}
         >
-          ↻ Refresh
+          <ReloadOutlined style={{ fontSize: 11 }} /> Refresh
         </button>
         <a
           href={`/logs`}
@@ -3028,13 +3028,13 @@ function HotlinkPanel({ siteId }: { siteId: number }) {
 // ---------------------------------------------------------------------------
 // Maintenance Mode Panel
 // ---------------------------------------------------------------------------
-const MAINTENANCE_TEMPLATES: { key: string; label: string; desc: string; emoji: string }[] = [
-  { key: 'default', label: 'Default', desc: 'Dark theme with wrench icon', emoji: '🔧' },
-  { key: 'minimal', label: 'Minimal', desc: 'Clean white, serif typography', emoji: '📝' },
-  { key: 'colorful', label: 'Colorful', desc: 'Purple gradient with card', emoji: '🚀' },
-  { key: 'construction', label: 'Construction', desc: 'Dark with animated progress bar', emoji: '🏗' },
-  { key: 'countdown', label: 'Countdown', desc: 'Dark with pulsing status indicator', emoji: '⏱' },
-  { key: 'custom', label: 'Custom HTML', desc: 'Write your own maintenance page', emoji: '✏️' },
+const MAINTENANCE_TEMPLATES: { key: string; label: string; desc: string; icon: React.ReactNode }[] = [
+  { key: 'default', label: 'Default', desc: 'Dark theme with wrench icon', icon: <ToolOutlined /> },
+  { key: 'minimal', label: 'Minimal', desc: 'Clean white, serif typography', icon: <EditOutlined /> },
+  { key: 'colorful', label: 'Colorful', desc: 'Purple gradient with card', icon: <CloudOutlined /> },
+  { key: 'construction', label: 'Construction', desc: 'Dark with animated progress bar', icon: <SettingOutlined /> },
+  { key: 'countdown', label: 'Countdown', desc: 'Dark with pulsing status indicator', icon: <LoadingOutlined /> },
+  { key: 'custom', label: 'Custom HTML', desc: 'Write your own maintenance page', icon: <CodeOutlined /> },
 ];
 
 function MaintenancePanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }) {
@@ -3136,7 +3136,7 @@ function MaintenancePanel({ siteId, siteDomain }: { siteId: number; siteDomain: 
                 background: active ? `${p.accent}10` : 'transparent',
                 transition: 'all 0.15s',
               }}>
-                <div style={{ fontSize: 24, marginBottom: 4 }}>{t.emoji}</div>
+                <div style={{ fontSize: 24, marginBottom: 4 }}>{t.icon}</div>
                 <div style={{ fontSize: 12, fontWeight: active ? 700 : 500, color: active ? p.accent : p.text }}>{t.label}</div>
                 <div style={{ fontSize: 10, color: p.textMuted, marginTop: 2 }}>{t.desc}</div>
               </div>
@@ -3165,7 +3165,7 @@ function MaintenancePanel({ siteId, siteDomain }: { siteId: number; siteDomain: 
           padding: '10px 14px', borderRadius: 6, marginBottom: 14,
           background: p.codeBg, fontSize: 11, color: p.textMuted,
         }}>
-          💡 The <strong>{MAINTENANCE_TEMPLATES.find(t => t.key === template)?.label}</strong> template will display a styled maintenance page with your domain name <code style={{ background: p.cardBorder, padding: '1px 4px', borderRadius: 3 }}>{siteDomain}</code>. Visitors receive HTTP 503 status.
+          The <strong>{MAINTENANCE_TEMPLATES.find(t => t.key === template)?.label}</strong> template will display a styled maintenance page with your domain name <code style={{ background: p.cardBorder, padding: '1px 4px', borderRadius: 3 }}>{siteDomain}</code>. Visitors receive HTTP 503 status.
         </div>
       )}
 
@@ -4501,7 +4501,7 @@ function WebsitesContent() {
                 background: s.ssl_enabled ? `${p.green}12` : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
                 color: s.ssl_enabled ? p.green : p.textMuted,
               }}>
-                {s.ssl_enabled ? '🔒' : '🔓'} {s.domain}
+                {s.ssl_enabled ? <LockOutlined style={{ fontSize: 10 }} /> : <EyeInvisibleOutlined style={{ fontSize: 10 }} />} {s.domain}
               </span>
             ))}
           </div>
