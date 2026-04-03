@@ -173,6 +173,13 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		databaseHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
 
 		// -------------------------------------------------------
+		// Redis management
+		// -------------------------------------------------------
+		redisService := service.NewRedisService()
+		redisHandler := v1.NewRedisHandler(redisService)
+		redisHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
+
+		// -------------------------------------------------------
 		// FTP management
 		// -------------------------------------------------------
 		ftpHandler := v1.NewFTPHandler(ftpService)
