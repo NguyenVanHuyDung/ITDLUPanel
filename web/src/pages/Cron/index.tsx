@@ -124,15 +124,12 @@ function parseCronToState(expr: string): ScheduleState | null {
   return null;
 }
 
-const PANEL_BIN = '/ITDLUPanel/server/bin/itdlupanel';
-const PANEL_CFG = '-config=/ITDLUPanel/server/config/panel.json';
-
 const CRON_TEMPLATES: CronTemplate[] = [
   {
     name: 'Backup All Databases',
     description: 'Backup every MySQL/MariaDB database (registered in panel DB)',
     schedule: '0 2 * * *',
-    command: `${PANEL_BIN} backup -type=database -all ${PANEL_CFG}`,
+    command: 'itdlupanel backup -type=database -all',
     type: 'shell', icon: <DatabaseOutlined />, color: '#4479A1',
     cliBackupType: 'database', backupAll: true, defaultMaxKeep: 10,
   },
@@ -140,15 +137,15 @@ const CRON_TEMPLATES: CronTemplate[] = [
     name: 'Backup Single Database',
     description: 'Backup a specific database — select below',
     schedule: '0 3 * * *',
-    command: `${PANEL_BIN} backup -type=database -target=mydb ${PANEL_CFG}`,
+    command: 'itdlupanel backup -type=database -target=mydb',
     type: 'shell', icon: <DatabaseOutlined />, color: '#2E7D32',
     cliBackupType: 'database', needsDbPicker: true, defaultMaxKeep: 10,
   },
   {
     name: 'Backup All Sites',
     description: 'Backup every website registered in panel',
-    schedule: '0 3 * * 0',
-    command: `${PANEL_BIN} backup -type=site -all ${PANEL_CFG}`,
+    schedule: '0 3 * * *',
+    command: 'itdlupanel backup -type=site -all',
     type: 'shell', icon: <CloudServerOutlined />, color: '#1565C0',
     cliBackupType: 'site', backupAll: true, defaultMaxKeep: 5,
   },
@@ -156,7 +153,7 @@ const CRON_TEMPLATES: CronTemplate[] = [
     name: 'Backup Single Site',
     description: 'Backup a specific website — select below',
     schedule: '0 4 * * *',
-    command: `${PANEL_BIN} backup -type=site -target=example.com ${PANEL_CFG}`,
+    command: 'itdlupanel backup -type=site -target=example.com',
     type: 'shell', icon: <FolderOutlined />, color: '#FF9800',
     cliBackupType: 'site', needsSitePicker: true, defaultMaxKeep: 10,
   },
@@ -164,7 +161,7 @@ const CRON_TEMPLATES: CronTemplate[] = [
     name: 'Full Panel Backup',
     description: 'Backup panel config + database (configs, data)',
     schedule: '0 1 * * 0',
-    command: `${PANEL_BIN} backup -type=panel ${PANEL_CFG}`,
+    command: 'itdlupanel backup -type=panel',
     type: 'shell', icon: <SafetyCertificateOutlined />, color: '#9C27B0',
     cliBackupType: 'panel', defaultMaxKeep: 4,
   },
@@ -212,6 +209,8 @@ export default function Cron() {
   const [sitesList, setSitesList] = useState<{ id: number; domain: string }[]>([]);
   const [dbsList, setDbsList] = useState<{ id: number; name: string }[]>([]);
   const [selectedTarget, setSelectedTarget] = useState<string>('');
+  const [panelBin, setPanelBin] = useState('/ITDLUPanel/server/bin/itdlupanel');
+  const [panelCfg, setPanelCfg] = useState('-config=/ITDLUPanel/server/config/panel.json');
 
   const fetchJobs = useCallback(async () => {
     setLoading(true);
@@ -223,6 +222,16 @@ export default function Cron() {
   }, [t]);
 
   useEffect(() => { fetchJobs(); }, [fetchJobs]);
+
+  // Fetch real binary/config paths from panel-info API
+  useEffect(() => {
+    api.get<ApiResponse<{ binary_path?: string; config_path?: string }>>('/settings/panel-info')
+      .then(({ data }) => {
+        if (data.data?.binary_path) setPanelBin(data.data.binary_path);
+        if (data.data?.config_path) setPanelCfg(`-config=${data.data.config_path}`);
+      })
+      .catch(() => { /* use defaults */ });
+  }, []);
 
   const filteredJobs = useMemo(() => {
     if (!searchText) return jobs;
@@ -243,7 +252,7 @@ export default function Cron() {
       let command = values.command;
       // For CLI-based backup templates, inject -max-keep and -target flags
       if (currentTemplate?.cliBackupType) {
-        let cmd = `${PANEL_BIN} backup -type=${currentTemplate.cliBackupType}`;
+        let cmd = `${panelBin} backup -type=${currentTemplate.cliBackupType}`;
         if (currentTemplate.backupAll) {
           cmd += ' -all';
         } else if (selectedTarget) {
@@ -252,7 +261,7 @@ export default function Cron() {
         if (maxKeep > 0) {
           cmd += ` -max-keep=${maxKeep}`;
         }
-        cmd += ` ${PANEL_CFG}`;
+        cmd += ` ${panelCfg}`;
         command = cmd;
       }
       const payload = { ...values, schedule, command };

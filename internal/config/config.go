@@ -143,6 +143,18 @@ func Get() *Config {
 	return globalConfig
 }
 
+// GetConfigPath returns the absolute path to the loaded config file.
+func (c *Config) GetConfigPath() string {
+	if filepath.IsAbs(c.filePath) {
+		return c.filePath
+	}
+	abs, err := filepath.Abs(c.filePath)
+	if err != nil {
+		return c.filePath
+	}
+	return abs
+}
+
 func (c *Config) ensureJWTSecret() error {
 	if c.Auth.JWTSecret == "" {
 		secret, err := crypto.GenerateJWTSecret()

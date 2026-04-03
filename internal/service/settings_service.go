@@ -3,6 +3,7 @@ package service
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -24,6 +25,8 @@ type PanelInfo struct {
 	Port       int    `json:"port"`
 	SSLEnabled bool   `json:"ssl_enabled"`
 	AdminPath  string `json:"admin_path"`
+	BinaryPath string `json:"binary_path"`
+	ConfigPath string `json:"config_path"`
 }
 
 var panelStartedAt = time.Now()
@@ -149,6 +152,8 @@ func (s *SettingsService) GetPanelInfo() (*PanelInfo, error) {
 
 	uptime := time.Since(panelStartedAt).Round(time.Second)
 
+	binaryPath, _ := os.Executable()
+
 	return &PanelInfo{
 		Version:    cfg.Panel.Version,
 		Uptime:     uptime.String(),
@@ -158,6 +163,8 @@ func (s *SettingsService) GetPanelInfo() (*PanelInfo, error) {
 		Port:       cfg.Server.Port,
 		SSLEnabled: cfg.Server.SSL,
 		AdminPath:  cfg.Panel.AdminPath,
+		BinaryPath: binaryPath,
+		ConfigPath: cfg.GetConfigPath(),
 	}, nil
 }
 
