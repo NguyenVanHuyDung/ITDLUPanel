@@ -94,6 +94,7 @@
     "docker": "Docker",
     "monitor": "Monitor",
     "security": "Security",
+    "fail2ban": "Fail2ban",
     "logs": "Logs",
     "terminal": "Terminal",
     "cron": "Cron Jobs",

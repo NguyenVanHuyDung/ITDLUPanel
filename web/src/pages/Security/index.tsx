@@ -68,13 +68,6 @@ interface SSHConfig {
   max_auth_tries: number;
 }
 
-interface Fail2banConfig {
-  enabled: boolean;
-  max_retry: number;
-  ban_time: number;
-  find_time: number;
-}
-
 interface SSHKeyEntry {
   index: number;
   type: string;
@@ -632,75 +625,6 @@ function SSHKeysTab() {
 }
 
 // ---------------------------------------------------------------------------
-// Fail2ban Tab
-// ---------------------------------------------------------------------------
-
-function Fail2banTab() {
-  const { t } = useTranslation();
-  const { sectionBox, btnPrimary, p } = useStyles();
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [form] = Form.useForm();
-
-  const fetchConfig = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { data } = await api.get<ApiResponse<Fail2banConfig>>('/security/fail2ban');
-      if (data.data) form.setFieldsValue(data.data);
-    } catch {
-      message.error(t('common.error'));
-    } finally {
-      setLoading(false);
-    }
-  }, [form, t]);
-
-  useEffect(() => { fetchConfig(); }, [fetchConfig]);
-
-  const handleSave = async (values: Fail2banConfig) => {
-    setSaving(true);
-    try {
-      await api.put('/security/fail2ban', values);
-      message.success(t('common.success'));
-    } catch {
-      message.error(t('common.error'));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (loading) return <div style={{ textAlign: 'center', padding: 48 }}><Spin size="large" /></div>;
-
-  return (
-    <div style={sectionBox}>
-      <SectionTitle icon={<SecIcon.Ban size={20} color={p.accent} />} title="Brute Force Protection (Fail2ban)" />
-      <Form form={form} layout="vertical" onFinish={handleSave}
-        initialValues={{ enabled: false, max_retry: 5, ban_time: 600, find_time: 600 }}>
-        <Form.Item name="enabled" label={<span style={{ fontWeight: 500 }}>{t('common.enabled')}</span>} valuePropName="checked">
-          <Switch />
-        </Form.Item>
-        <Form.Item name="max_retry" label={<span style={{ fontWeight: 500 }}>Max Retry</span>} rules={[{ required: true }]}
-          extra={<span style={{ fontSize: 11, color: p.textMuted }}>Number of failures before a host gets banned</span>}>
-          <InputNumber min={1} max={100} style={{ width: '100%' }} />
-        </Form.Item>
-        <Form.Item name="ban_time" label={<span style={{ fontWeight: 500 }}>Ban Time (seconds)</span>} rules={[{ required: true }]}
-          extra={<span style={{ fontSize: 11, color: p.textMuted }}>Duration to ban an IP. Default: 600 (10 min)</span>}>
-          <InputNumber min={60} max={86400} style={{ width: '100%' }} />
-        </Form.Item>
-        <Form.Item name="find_time" label={<span style={{ fontWeight: 500 }}>Find Time (seconds)</span>} rules={[{ required: true }]}
-          extra={<span style={{ fontSize: 11, color: p.textMuted }}>Window in which max_retry failures must occur</span>}>
-          <InputNumber min={60} max={86400} style={{ width: '100%' }} />
-        </Form.Item>
-        <Form.Item style={{ marginBottom: 0 }}>
-          <button type="submit" disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}>
-            {saving ? <Spin size="small" /> : null} {t('common.save')}
-          </button>
-        </Form.Item>
-      </Form>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // SSH Log Tab
 // ---------------------------------------------------------------------------
 
@@ -884,7 +808,7 @@ function SSHLogTab() {
 // Main Security Page
 // ---------------------------------------------------------------------------
 
-type TabKey = 'ssh' | 'root' | 'keys' | 'fail2ban' | 'log';
+type TabKey = 'ssh' | 'root' | 'keys' | 'log';
 
 export default function Security() {
   const { t } = useTranslation();
@@ -895,7 +819,6 @@ export default function Security() {
     { key: 'ssh', icon: <SecIcon.Terminal size={14} color="currentColor" />, label: 'SSH Config' },
     { key: 'root', icon: <SecIcon.User size={14} color="currentColor" />, label: 'Root Account' },
     { key: 'keys', icon: <SecIcon.Key size={14} color="currentColor" />, label: 'SSH Keys' },
-    { key: 'fail2ban', icon: <SecIcon.Ban size={14} color="currentColor" />, label: 'Fail2ban' },
     { key: 'log', icon: <SecIcon.Log size={14} color="currentColor" />, label: 'SSH Log' },
   ];
 
@@ -945,7 +868,6 @@ export default function Security() {
         {activeTab === 'ssh' && <SSHConfigTab />}
         {activeTab === 'root' && <RootAccountTab />}
         {activeTab === 'keys' && <SSHKeysTab />}
-        {activeTab === 'fail2ban' && <Fail2banTab />}
         {activeTab === 'log' && <SSHLogTab />}
       </div>
     </div>

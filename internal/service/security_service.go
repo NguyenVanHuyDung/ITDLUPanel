@@ -75,18 +75,34 @@ type SystemUser struct {
 
 // Fail2banStatus holds the current fail2ban status.
 type Fail2banStatus struct {
-	Enabled bool       `json:"enabled"`
-	Jails   []JailInfo `json:"jails"`
+	Installed bool       `json:"installed"`
+	Enabled   bool       `json:"enabled"`
+	Version   string     `json:"version"`
+	Jails     []JailInfo `json:"jails"`
 }
 
 // JailInfo describes a single fail2ban jail.
 type JailInfo struct {
-	Name          string `json:"name"`
-	Status        string `json:"status"`
-	CurrentlyBan  int    `json:"currently_banned"`
-	TotalBanned   int    `json:"total_banned"`
-	CurrentlyFail int    `json:"currently_failed"`
-	TotalFailed   int    `json:"total_failed"`
+	Name          string   `json:"name"`
+	Enabled       bool     `json:"enabled"`
+	Status        string   `json:"status"`
+	Port          string   `json:"port"`
+	Filter        string   `json:"filter"`
+	LogPath       string   `json:"logpath"`
+	MaxRetry      int      `json:"max_retry"`
+	BanTime       int      `json:"ban_time"`
+	FindTime      int      `json:"find_time"`
+	CurrentlyBan  int      `json:"currently_banned"`
+	TotalBanned   int      `json:"total_banned"`
+	CurrentlyFail int      `json:"currently_failed"`
+	TotalFailed   int      `json:"total_failed"`
+	BannedIPs     []string `json:"banned_ips"`
+}
+
+// BannedIP holds info about a banned IP.
+type BannedIP struct {
+	IP   string `json:"ip"`
+	Jail string `json:"jail"`
 }
 
 // Fail2banConfig is used to configure fail2ban settings.
@@ -95,6 +111,26 @@ type Fail2banConfig struct {
 	MaxRetry *int  `json:"max_retry" validate:"omitempty,min=1,max=100"`
 	BanTime  *int  `json:"ban_time" validate:"omitempty,min=60"`
 	FindTime *int  `json:"find_time" validate:"omitempty,min=60"`
+}
+
+// JailConfig is used to add/update a jail.
+type JailConfig struct {
+	Name     string `json:"name" validate:"required"`
+	Enabled  bool   `json:"enabled"`
+	Port     string `json:"port" validate:"required"`
+	Filter   string `json:"filter" validate:"required"`
+	LogPath  string `json:"logpath" validate:"required"`
+	MaxRetry int    `json:"max_retry" validate:"min=1,max=100"`
+	BanTime  int    `json:"ban_time" validate:"min=60"`
+	FindTime int    `json:"find_time" validate:"min=60"`
+}
+
+// Fail2banGlobalConfig holds global defaults and whitelist.
+type Fail2banGlobalConfig struct {
+	MaxRetry  int      `json:"max_retry"`
+	BanTime   int      `json:"ban_time"`
+	FindTime  int      `json:"find_time"`
+	IgnoreIPs []string `json:"ignore_ips"`
 }
 
 // ---------------------------------------------------------------------------
@@ -202,37 +238,52 @@ func (s *SecurityService) UpdateSSHConfig(req UpdateSSHRequest) error {
 // ---------------------------------------------------------------------------
 
 const fail2banJailPath = "/etc/fail2ban/jail.local"
+const fail2banLogPath = "/var/log/fail2ban.log"
 
-// GetFail2banStatus returns the current fail2ban status.
+// isFail2banInstalled checks if fail2ban is installed.
+func isFail2banInstalled() bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, err := system.Exec(ctx, "which", "fail2ban-client")
+	return err == nil
+}
+
+// GetFail2banStatus returns the current fail2ban status with detailed jail info.
 func (s *SecurityService) GetFail2banStatus() (*Fail2banStatus, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	status := &Fail2banStatus{
-		Enabled: false,
-		Jails:   []JailInfo{},
+		Installed: isFail2banInstalled(),
+		Enabled:   false,
+		Jails:     []JailInfo{},
 	}
 
-	// Check if fail2ban is running.
-	result, err := system.Exec(ctx, "systemctl", "is-active", "fail2ban")
-	if err != nil {
+	if !status.Installed {
 		return status, nil
 	}
-	if strings.TrimSpace(result.Stdout) != "active" {
+
+	// Get version
+	if result, err := system.Exec(ctx, "fail2ban-client", "version"); err == nil {
+		status.Version = strings.TrimSpace(result.Stdout)
+	}
+
+	// Check if running
+	result, err := system.Exec(ctx, "systemctl", "is-active", "fail2ban")
+	if err != nil || strings.TrimSpace(result.Stdout) != "active" {
 		return status, nil
 	}
 	status.Enabled = true
 
-	// Get jail list.
+	// Get jail list
 	result, err = system.Exec(ctx, "fail2ban-client", "status")
 	if err != nil {
 		return status, nil
 	}
 
-	// Parse jail names from output.
 	jailNames := parseJailNames(result.Stdout)
 	for _, name := range jailNames {
-		jail := JailInfo{Name: name, Status: "active"}
+		jail := JailInfo{Name: name, Enabled: true, Status: "active"}
 
 		jailResult, err := system.Exec(ctx, "fail2ban-client", "status", name)
 		if err != nil {
@@ -244,13 +295,75 @@ func (s *SecurityService) GetFail2banStatus() (*Fail2banStatus, error) {
 		jail.TotalBanned = parseF2bInt(jailResult.Stdout, "Total banned")
 		jail.CurrentlyFail = parseF2bInt(jailResult.Stdout, "Currently failed")
 		jail.TotalFailed = parseF2bInt(jailResult.Stdout, "Total failed")
+
+		// Parse banned IP list
+		jail.BannedIPs = parseBannedIPs(jailResult.Stdout)
+
+		// Get jail config details
+		if r, err := system.Exec(ctx, "fail2ban-client", "get", name, "bantime"); err == nil {
+			jail.BanTime, _ = strconv.Atoi(strings.TrimSpace(r.Stdout))
+		}
+		if r, err := system.Exec(ctx, "fail2ban-client", "get", name, "findtime"); err == nil {
+			jail.FindTime, _ = strconv.Atoi(strings.TrimSpace(r.Stdout))
+		}
+		if r, err := system.Exec(ctx, "fail2ban-client", "get", name, "maxretry"); err == nil {
+			jail.MaxRetry, _ = strconv.Atoi(strings.TrimSpace(r.Stdout))
+		}
+
 		status.Jails = append(status.Jails, jail)
 	}
+
+	// Also add configured-but-inactive jails from jail.local
+	s.enrichJailsFromConfig(status)
 
 	return status, nil
 }
 
-// ConfigureFail2ban updates the fail2ban configuration.
+// enrichJailsFromConfig adds jails from config that aren't running.
+func (s *SecurityService) enrichJailsFromConfig(status *Fail2banStatus) {
+	data, err := os.ReadFile(fail2banJailPath)
+	if err != nil {
+		return
+	}
+
+	activeNames := make(map[string]bool)
+	for _, j := range status.Jails {
+		activeNames[j.Name] = true
+	}
+
+	var currentJail string
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			name := line[1 : len(line)-1]
+			if name != "DEFAULT" && !activeNames[name] {
+				currentJail = name
+			} else {
+				currentJail = ""
+			}
+			continue
+		}
+
+		if currentJail == "" {
+			continue
+		}
+
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		val := strings.TrimSpace(parts[1])
+
+		if key == "enabled" && (val == "true" || val == "yes") {
+			// Jail configured but not running
+			jail := JailInfo{Name: currentJail, Enabled: true, Status: "stopped"}
+			status.Jails = append(status.Jails, jail)
+		}
+	}
+}
+
+// ConfigureFail2ban updates the fail2ban global configuration.
 func (s *SecurityService) ConfigureFail2ban(req Fail2banConfig) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -268,61 +381,319 @@ func (s *SecurityService) ConfigureFail2ban(req Fail2banConfig) error {
 		}
 	}
 
-	// Build jail.local content.
-	maxRetry := 5
-	banTime := 3600
-	findTime := 600
-
-	// Try to read existing values first.
-	if existing, err := os.ReadFile(fail2banJailPath); err == nil {
-		existingContent := string(existing)
-		if v := parseF2bConfigInt(existingContent, "maxretry"); v > 0 {
-			maxRetry = v
-		}
-		if v := parseF2bConfigInt(existingContent, "bantime"); v > 0 {
-			banTime = v
-		}
-		if v := parseF2bConfigInt(existingContent, "findtime"); v > 0 {
-			findTime = v
-		}
-	}
+	cfg := s.readGlobalConfig()
 
 	if req.MaxRetry != nil {
-		maxRetry = *req.MaxRetry
+		cfg.MaxRetry = *req.MaxRetry
 	}
 	if req.BanTime != nil {
-		banTime = *req.BanTime
+		cfg.BanTime = *req.BanTime
 	}
 	if req.FindTime != nil {
-		findTime = *req.FindTime
+		cfg.FindTime = *req.FindTime
 	}
 
-	jailConfig := fmt.Sprintf(`[DEFAULT]
-bantime = %d
-findtime = %d
-maxretry = %d
+	return s.writeJailConfig(cfg, nil)
+}
 
-[sshd]
-enabled = true
-port = ssh
-filter = sshd
-logpath = /var/log/auth.log
-maxretry = %d
-bantime = %d
-findtime = %d
-`, banTime, findTime, maxRetry, maxRetry, banTime, findTime)
+// GetGlobalConfig returns the global fail2ban defaults and whitelist.
+func (s *SecurityService) GetGlobalConfig() (*Fail2banGlobalConfig, error) {
+	cfg := s.readGlobalConfig()
+	return cfg, nil
+}
 
-	if err := os.WriteFile(fail2banJailPath, []byte(jailConfig), 0644); err != nil {
+// UpdateGlobalConfig updates global defaults and ignoreip whitelist.
+func (s *SecurityService) UpdateGlobalConfig(cfg Fail2banGlobalConfig) error {
+	return s.writeJailConfig(&cfg, nil)
+}
+
+// GetJails returns configured jails from jail.local.
+func (s *SecurityService) GetJails() ([]JailConfig, error) {
+	data, err := os.ReadFile(fail2banJailPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []JailConfig{}, nil
+		}
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read jail config")
+	}
+
+	return parseJailConfigs(string(data)), nil
+}
+
+// AddOrUpdateJail adds or updates a jail configuration.
+func (s *SecurityService) AddOrUpdateJail(jail JailConfig) error {
+	jails, _ := s.GetJails()
+
+	found := false
+	for i, j := range jails {
+		if j.Name == jail.Name {
+			jails[i] = jail
+			found = true
+			break
+		}
+	}
+	if !found {
+		jails = append(jails, jail)
+	}
+
+	cfg := s.readGlobalConfig()
+	if err := s.writeJailConfig(cfg, jails); err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	system.Exec(ctx, "systemctl", "restart", "fail2ban")
+
+	logger.Info().Str("jail", jail.Name).Msg("jail configured")
+	return nil
+}
+
+// RemoveJail removes a jail from configuration.
+func (s *SecurityService) RemoveJail(name string) error {
+	jails, _ := s.GetJails()
+
+	var kept []JailConfig
+	for _, j := range jails {
+		if j.Name != name {
+			kept = append(kept, j)
+		}
+	}
+
+	cfg := s.readGlobalConfig()
+	if err := s.writeJailConfig(cfg, kept); err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	system.Exec(ctx, "systemctl", "restart", "fail2ban")
+
+	logger.Info().Str("jail", name).Msg("jail removed")
+	return nil
+}
+
+// BanIP manually bans an IP in a jail.
+func (s *SecurityService) BanIP(jail, ip string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := system.Exec(ctx, "fail2ban-client", "set", jail, "banip", ip); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to ban IP")
+	}
+
+	logger.Info().Str("jail", jail).Str("ip", ip).Msg("IP banned manually")
+	return nil
+}
+
+// UnbanIP unbans an IP from a jail.
+func (s *SecurityService) UnbanIP(jail, ip string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := system.Exec(ctx, "fail2ban-client", "set", jail, "unbanip", ip); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to unban IP")
+	}
+
+	logger.Info().Str("jail", jail).Str("ip", ip).Msg("IP unbanned")
+	return nil
+}
+
+// GetFail2banLog returns the last N lines of the fail2ban log.
+func (s *SecurityService) GetFail2banLog(lines int) ([]string, error) {
+	if lines < 1 {
+		lines = 100
+	}
+	if lines > 5000 {
+		lines = 5000
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Try main log path, fallback
+	for _, path := range []string{fail2banLogPath, "/var/log/fail2ban.log"} {
+		result, err := system.Exec(ctx, "tail", "-n", strconv.Itoa(lines), path)
+		if err == nil {
+			return strings.Split(strings.TrimRight(result.Stdout, "\n"), "\n"), nil
+		}
+	}
+
+	return []string{}, nil
+}
+
+// readGlobalConfig reads DEFAULT section from jail.local.
+func (s *SecurityService) readGlobalConfig() *Fail2banGlobalConfig {
+	cfg := &Fail2banGlobalConfig{
+		MaxRetry:  5,
+		BanTime:   3600,
+		FindTime:  600,
+		IgnoreIPs: []string{"127.0.0.1/8", "::1"},
+	}
+
+	data, err := os.ReadFile(fail2banJailPath)
+	if err != nil {
+		return cfg
+	}
+
+	content := string(data)
+	if v := parseF2bConfigInt(content, "maxretry"); v > 0 {
+		cfg.MaxRetry = v
+	}
+	if v := parseF2bConfigInt(content, "bantime"); v > 0 {
+		cfg.BanTime = v
+	}
+	if v := parseF2bConfigInt(content, "findtime"); v > 0 {
+		cfg.FindTime = v
+	}
+
+	// Parse ignoreip
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "ignoreip") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				ips := strings.Fields(strings.TrimSpace(parts[1]))
+				if len(ips) > 0 {
+					cfg.IgnoreIPs = ips
+				}
+			}
+			break
+		}
+	}
+
+	return cfg
+}
+
+// writeJailConfig writes the complete jail.local file.
+func (s *SecurityService) writeJailConfig(cfg *Fail2banGlobalConfig, jails []JailConfig) error {
+	var sb strings.Builder
+
+	sb.WriteString("[DEFAULT]\n")
+	sb.WriteString(fmt.Sprintf("bantime = %d\n", cfg.BanTime))
+	sb.WriteString(fmt.Sprintf("findtime = %d\n", cfg.FindTime))
+	sb.WriteString(fmt.Sprintf("maxretry = %d\n", cfg.MaxRetry))
+	if len(cfg.IgnoreIPs) > 0 {
+		sb.WriteString(fmt.Sprintf("ignoreip = %s\n", strings.Join(cfg.IgnoreIPs, " ")))
+	}
+
+	// If jails nil, preserve existing ones
+	if jails == nil {
+		existing, _ := s.GetJails()
+		jails = existing
+	}
+
+	for _, j := range jails {
+		sb.WriteString(fmt.Sprintf("\n[%s]\n", j.Name))
+		if j.Enabled {
+			sb.WriteString("enabled = true\n")
+		} else {
+			sb.WriteString("enabled = false\n")
+		}
+		sb.WriteString(fmt.Sprintf("port = %s\n", j.Port))
+		sb.WriteString(fmt.Sprintf("filter = %s\n", j.Filter))
+		sb.WriteString(fmt.Sprintf("logpath = %s\n", j.LogPath))
+		if j.MaxRetry > 0 {
+			sb.WriteString(fmt.Sprintf("maxretry = %d\n", j.MaxRetry))
+		}
+		if j.BanTime > 0 {
+			sb.WriteString(fmt.Sprintf("bantime = %d\n", j.BanTime))
+		}
+		if j.FindTime > 0 {
+			sb.WriteString(fmt.Sprintf("findtime = %d\n", j.FindTime))
+		}
+	}
+
+	if err := os.WriteFile(fail2banJailPath, []byte(sb.String()), 0644); err != nil {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to write fail2ban config")
 	}
 
-	// Restart fail2ban to apply changes.
-	if _, err := system.Exec(ctx, "systemctl", "restart", "fail2ban"); err != nil {
-		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to restart fail2ban")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	system.Exec(ctx, "systemctl", "restart", "fail2ban")
+
+	logger.Info().Msg("fail2ban configuration updated")
+	return nil
+}
+
+// parseJailConfigs parses jail.local into JailConfig slices.
+func parseJailConfigs(content string) []JailConfig {
+	var jails []JailConfig
+	var current *JailConfig
+
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			name := line[1 : len(line)-1]
+			if current != nil {
+				jails = append(jails, *current)
+			}
+			if name == "DEFAULT" {
+				current = nil
+			} else {
+				current = &JailConfig{Name: name}
+			}
+			continue
+		}
+
+		if current == nil || strings.HasPrefix(line, "#") || line == "" {
+			continue
+		}
+
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		val := strings.TrimSpace(parts[1])
+
+		switch key {
+		case "enabled":
+			current.Enabled = val == "true" || val == "yes"
+		case "port":
+			current.Port = val
+		case "filter":
+			current.Filter = val
+		case "logpath":
+			current.LogPath = val
+		case "maxretry":
+			current.MaxRetry, _ = strconv.Atoi(val)
+		case "bantime":
+			current.BanTime, _ = strconv.Atoi(val)
+		case "findtime":
+			current.FindTime, _ = strconv.Atoi(val)
+		}
 	}
 
-	logger.Info().Int("maxretry", maxRetry).Int("bantime", banTime).Int("findtime", findTime).
-		Msg("fail2ban configuration updated")
+	if current != nil {
+		jails = append(jails, *current)
+	}
+
+	return jails
+}
+
+// parseBannedIPs extracts banned IPs from fail2ban-client status output.
+func parseBannedIPs(output string) []string {
+	for _, line := range strings.Split(output, "\n") {
+		if strings.Contains(line, "Banned IP list:") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) < 2 {
+				return nil
+			}
+			ipStr := strings.TrimSpace(parts[1])
+			if ipStr == "" {
+				return nil
+			}
+			var ips []string
+			for _, ip := range strings.Fields(ipStr) {
+				ip = strings.TrimSpace(ip)
+				if ip != "" {
+					ips = append(ips, ip)
+				}
+			}
+			return ips
+		}
+	}
 	return nil
 }
 

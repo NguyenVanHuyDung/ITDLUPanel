@@ -2,6 +2,7 @@ package v1
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -53,8 +54,6 @@ func (h *SecurityHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.Handler
 	{
 		security.GET("/ssh", rbac("security.manage"), h.GetSSHConfig)
 		security.PUT("/ssh", rbac("security.manage"), h.UpdateSSHConfig)
-		security.GET("/fail2ban", rbac("security.manage"), h.GetFail2banStatus)
-		security.PUT("/fail2ban", rbac("security.manage"), h.ConfigureFail2ban)
 		security.PUT("/root-password", rbac("security.manage"), h.ChangeRootPassword)
 		security.GET("/ssh/users", rbac("security.manage"), h.ListSSHUsers)
 		security.GET("/ssh/keys/:username", rbac("security.manage"), h.GetAuthorizedKeys)
@@ -63,6 +62,18 @@ func (h *SecurityHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.Handler
 		security.POST("/ssh/keys/:username/generate", rbac("security.manage"), h.GenerateSSHKeyPair)
 		security.GET("/ssh/keys/:username/public", rbac("security.manage"), h.GetUserPublicKeys)
 		security.GET("/ssh/keys/:username/download-private", rbac("security.manage"), h.DownloadPrivateKey)
+
+		// Fail2ban routes
+		security.GET("/fail2ban", rbac("security.manage"), h.GetFail2banStatus)
+		security.PUT("/fail2ban", rbac("security.manage"), h.ConfigureFail2ban)
+		security.GET("/fail2ban/config", rbac("security.manage"), h.GetFail2banGlobalConfig)
+		security.PUT("/fail2ban/config", rbac("security.manage"), h.UpdateFail2banGlobalConfig)
+		security.GET("/fail2ban/jails", rbac("security.manage"), h.GetJails)
+		security.POST("/fail2ban/jails", rbac("security.manage"), h.AddOrUpdateJail)
+		security.DELETE("/fail2ban/jails/:name", rbac("security.manage"), h.RemoveJail)
+		security.POST("/fail2ban/ban", rbac("security.manage"), h.BanIP)
+		security.POST("/fail2ban/unban", rbac("security.manage"), h.UnbanIP)
+		security.GET("/fail2ban/log", rbac("security.manage"), h.GetFail2banLog)
 	}
 }
 
@@ -346,6 +357,135 @@ func (h *SecurityHandler) ConfigureFail2ban(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"message": "fail2ban configuration updated successfully"})
+}
+
+// GetFail2banGlobalConfig returns global fail2ban defaults and whitelist.
+func (h *SecurityHandler) GetFail2banGlobalConfig(c *gin.Context) {
+	cfg, err := h.securityService.GetGlobalConfig()
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, cfg)
+}
+
+// UpdateFail2banGlobalConfig updates global fail2ban defaults and whitelist.
+func (h *SecurityHandler) UpdateFail2banGlobalConfig(c *gin.Context) {
+	var req service.Fail2banGlobalConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid request body"},
+		})
+		return
+	}
+	if err := h.securityService.UpdateGlobalConfig(req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "global config updated"})
+}
+
+// GetJails returns configured jails.
+func (h *SecurityHandler) GetJails(c *gin.Context) {
+	jails, err := h.securityService.GetJails()
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, jails)
+}
+
+// AddOrUpdateJail adds or updates a jail.
+func (h *SecurityHandler) AddOrUpdateJail(c *gin.Context) {
+	var req service.JailConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid request body"},
+		})
+		return
+	}
+	if req.Name == "" {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "name", Message: "jail name is required"},
+		})
+		return
+	}
+	if err := h.securityService.AddOrUpdateJail(req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "jail configured"})
+}
+
+// RemoveJail removes a jail by name.
+func (h *SecurityHandler) RemoveJail(c *gin.Context) {
+	name := c.Param("name")
+	if err := h.securityService.RemoveJail(name); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "jail removed"})
+}
+
+type banIPRequest struct {
+	Jail string `json:"jail" validate:"required"`
+	IP   string `json:"ip" validate:"required"`
+}
+
+// BanIP manually bans an IP.
+func (h *SecurityHandler) BanIP(c *gin.Context) {
+	var req banIPRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid request body"},
+		})
+		return
+	}
+	if errs := validator.Validate(req); errs != nil {
+		response.ValidationError(c, errs)
+		return
+	}
+	if err := h.securityService.BanIP(req.Jail, req.IP); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "IP banned"})
+}
+
+// UnbanIP unbans an IP.
+func (h *SecurityHandler) UnbanIP(c *gin.Context) {
+	var req banIPRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid request body"},
+		})
+		return
+	}
+	if errs := validator.Validate(req); errs != nil {
+		response.ValidationError(c, errs)
+		return
+	}
+	if err := h.securityService.UnbanIP(req.Jail, req.IP); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "IP unbanned"})
+}
+
+// GetFail2banLog returns the fail2ban log.
+func (h *SecurityHandler) GetFail2banLog(c *gin.Context) {
+	lines := 200
+	if v := c.Query("lines"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			lines = n
+		}
+	}
+	log, err := h.securityService.GetFail2banLog(lines)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, log)
 }
 
 // ---------------------------------------------------------------------------
