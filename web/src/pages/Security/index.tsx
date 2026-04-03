@@ -491,6 +491,17 @@ function SSHKeysTab() {
   const [addKey, setAddKey] = useState('');
   const [addLoading, setAddLoading] = useState(false);
 
+  // Create user state
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createForm] = Form.useForm();
+  const [createLoading, setCreateLoading] = useState(false);
+
+  // Generate key state
+  const [genLoading, setGenLoading] = useState(false);
+  const [keyResultModal, setKeyResultModal] = useState(false);
+  const [keyResult, setKeyResult] = useState<{ public_key: string; private_key: string; username: string } | null>(null);
+  const [genKeyType, setGenKeyType] = useState<'ed25519' | 'rsa'>('ed25519');
+
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
@@ -546,6 +557,85 @@ function SSHKeysTab() {
     }
   };
 
+  const handleCreateUser = async () => {
+    try {
+      const values = await createForm.validateFields();
+      setCreateLoading(true);
+      const { data } = await api.post<ApiResponse<{
+        username: string; home_dir: string;
+        key_pair?: { public_key: string; private_key: string };
+      }>>('/security/ssh/users', {
+        username: values.username,
+        password: values.password,
+        generate_key: values.generate_key ?? true,
+        key_type: values.key_type || 'ed25519',
+      });
+      message.success(`User ${values.username} created`);
+      setCreateModalOpen(false);
+      createForm.resetFields();
+      fetchUsers();
+
+      // If key pair was generated, show it for download
+      if (data.data?.key_pair) {
+        setKeyResult({ ...data.data.key_pair, username: values.username });
+        setKeyResultModal(true);
+        setSelectedUser(values.username);
+      }
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { message?: string } } };
+      message.error(err?.response?.data?.message || 'Failed to create user');
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async (username: string) => {
+    try {
+      await api.delete(`/security/ssh/users/${username}`);
+      message.success(`User ${username} deleted`);
+      if (selectedUser === username) setSelectedUser('root');
+      fetchUsers();
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { message?: string } } };
+      message.error(err?.response?.data?.message || 'Failed to delete user');
+    }
+  };
+
+  const handleGenerateKey = async () => {
+    setGenLoading(true);
+    try {
+      const { data } = await api.post<ApiResponse<{ public_key: string; private_key: string }>>(
+        `/security/ssh/keys/${selectedUser}/generate`, { key_type: genKeyType }
+      );
+      if (data.data) {
+        // Auto-authorize the generated key
+        try { await api.post(`/security/ssh/keys/${selectedUser}`, { public_key: data.data.public_key }); } catch {}
+        setKeyResult({ ...data.data, username: selectedUser });
+        setKeyResultModal(true);
+        fetchKeys(selectedUser);
+        fetchUsers();
+      }
+      message.success('Key pair generated');
+    } catch {
+      message.error('Failed to generate key');
+    } finally {
+      setGenLoading(false);
+    }
+  };
+
+  const handleDownloadPrivateKey = (privateKey: string, username: string) => {
+    const blob = new Blob([privateKey], { type: 'application/x-pem-file' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `id_${genKeyType}_${username}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    message.success('Private key downloaded');
+  };
+
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text).then(() => message.success('Copied!')).catch(() => message.error('Copy failed'));
   };
@@ -591,27 +681,36 @@ function SSHKeysTab() {
     },
   ];
 
+  const selectedUserObj = users.find(u => u.username === selectedUser);
+
   return (
     <div style={wideBox}>
       <SectionTitle icon={<SecIcon.Key size={20} color={p.accent} />} title="SSH Key Management"
         extra={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <button onClick={() => { fetchKeys(selectedUser); fetchUsers(); }} style={btnOutline}><ReloadOutlined /> Refresh</button>
-            <button onClick={() => setAddModalOpen(true)} style={btnPrimary}><PlusOutlined /> Add Key</button>
+            <button onClick={() => setCreateModalOpen(true)} style={{ ...btnPrimary, background: p.green }}>
+              <UserOutlined /> Create User
+            </button>
           </div>
         }
       />
 
-      {/* User selector */}
-      <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      {/* User selector + actions */}
+      <div style={{
+        marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+        padding: '12px 16px', borderRadius: 8, background: isDark ? p.codeBg : `${p.accent}04`,
+        border: `1px solid ${p.cardBorder}`,
+      }}>
         <span style={{ fontSize: 12, fontWeight: 500, color: p.textMuted }}>User:</span>
-        <Select value={selectedUser} onChange={setSelectedUser} style={{ minWidth: 180 }} loading={loading}
+        <Select value={selectedUser} onChange={setSelectedUser} style={{ minWidth: 200 }} loading={loading}
           options={users.map(u => ({
             value: u.username,
             label: (
               <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <UserOutlined style={{ fontSize: 12 }} />
                 {u.username}
+                {u.uid === 0 && <span style={{ fontSize: 9, color: p.amber, fontWeight: 600 }}>root</span>}
                 {u.key_count > 0 && (
                   <span style={{
                     fontSize: 10, padding: '0 6px', borderRadius: 99,
@@ -622,7 +721,51 @@ function SSHKeysTab() {
             ),
           }))}
         />
+        <div style={{ display: 'flex', gap: 6, marginLeft: 'auto', flexWrap: 'wrap' }}>
+          <Select value={genKeyType} onChange={setGenKeyType} style={{ width: 120 }} size="small"
+            options={[
+              { value: 'ed25519', label: 'Ed25519' },
+              { value: 'rsa', label: 'RSA 4096' },
+            ]}
+          />
+          <button onClick={handleGenerateKey} disabled={genLoading} style={{
+            ...btnPrimary, padding: '4px 12px', opacity: genLoading ? 0.6 : 1,
+          }}>
+            {genLoading ? <Spin size="small" /> : <SecIcon.Key size={12} color="#fff" />}
+            Generate Key
+          </button>
+          <button onClick={() => setAddModalOpen(true)} style={{ ...btnOutline, padding: '4px 12px' }}>
+            <PlusOutlined /> Add Key
+          </button>
+          {selectedUser !== 'root' && selectedUserObj && selectedUserObj.uid >= 1000 && (
+            <Popconfirm
+              title={`Delete user ${selectedUser} and all their files?`}
+              onConfirm={() => handleDeleteUser(selectedUser)}
+              okText="Delete" okButtonProps={{ danger: true }}
+            >
+              <button style={{ ...btnDanger, padding: '4px 12px' }}>
+                <DeleteOutlined /> Delete User
+              </button>
+            </Popconfirm>
+          )}
+        </div>
       </div>
+
+      {/* Download existing private key */}
+      {selectedUser && (
+        <div style={{ marginBottom: 12, display: 'flex', gap: 8 }}>
+          <button onClick={() => {
+            window.open(`/api/v1/security/ssh/keys/${selectedUser}/download-private?type=ed25519`, '_blank');
+          }} style={{ ...btnOutline, fontSize: 11, padding: '4px 10px' }}>
+            <DownloadOutlined /> Download Private Key (Ed25519)
+          </button>
+          <button onClick={() => {
+            window.open(`/api/v1/security/ssh/keys/${selectedUser}/download-private?type=rsa`, '_blank');
+          }} style={{ ...btnOutline, fontSize: 11, padding: '4px 10px' }}>
+            <DownloadOutlined /> Download Private Key (RSA)
+          </button>
+        </div>
+      )}
 
       {/* Keys table */}
       <Spin spinning={keysLoading}>
@@ -646,9 +789,14 @@ function SSHKeysTab() {
             <div style={{ fontSize: 13, color: p.textMuted, marginTop: 8 }}>
               No authorized keys for <b>{selectedUser}</b>
             </div>
-            <button onClick={() => setAddModalOpen(true)} style={{ ...btnPrimary, marginTop: 12 }}>
-              <PlusOutlined /> Add Key
-            </button>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 12 }}>
+              <button onClick={handleGenerateKey} disabled={genLoading} style={btnPrimary}>
+                <SecIcon.Key size={12} color="#fff" /> Generate Key Pair
+              </button>
+              <button onClick={() => setAddModalOpen(true)} style={btnOutline}>
+                <PlusOutlined /> Add Existing Key
+              </button>
+            </div>
           </div>
         )}
       </Spin>
@@ -675,6 +823,126 @@ function SSHKeysTab() {
           placeholder="ssh-ed25519 AAAA... user@host"
           style={{ fontFamily: 'monospace', fontSize: 12 }}
         />
+      </Modal>
+
+      {/* Create user modal */}
+      <Modal title="Create SSH User" open={createModalOpen}
+        onCancel={() => { setCreateModalOpen(false); createForm.resetFields(); }}
+        footer={
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button onClick={() => { setCreateModalOpen(false); createForm.resetFields(); }} style={btnOutline}>Cancel</button>
+            <button onClick={handleCreateUser} disabled={createLoading} style={{ ...btnPrimary, background: p.green, opacity: createLoading ? 0.6 : 1 }}>
+              {createLoading ? <Spin size="small" /> : <UserOutlined />} Create User
+            </button>
+          </div>
+        }
+        styles={{ body: { padding: '16px 24px' } }}
+      >
+        <Form form={createForm} layout="vertical" initialValues={{ generate_key: true, key_type: 'ed25519' }}>
+          <Form.Item name="username" label="Username" rules={[
+            { required: true, message: 'Username is required' },
+            { min: 2, message: 'Min 2 characters' },
+            { pattern: /^[a-z][a-z0-9_-]*$/, message: 'Lowercase letters, digits, hyphens, underscores only. Must start with a letter.' },
+          ]}>
+            <Input placeholder="e.g. developer" style={{ fontSize: 13 }} />
+          </Form.Item>
+          <Form.Item name="password" label="Password" rules={[
+            { required: true, message: 'Password is required' },
+            { min: 8, message: 'Min 8 characters' },
+          ]}>
+            <Input.Password placeholder="Min 8 characters" style={{ fontSize: 13 }} />
+          </Form.Item>
+          <Form.Item name="generate_key" label="Generate SSH Key" valuePropName="checked"
+            extra={<span style={{ fontSize: 11, color: p.textMuted }}>
+              Generate a key pair and authorize it so the user can SSH with the private key
+            </span>}
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.generate_key !== cur.generate_key}>
+            {({ getFieldValue }) => getFieldValue('generate_key') ? (
+              <Form.Item name="key_type" label="Key Type">
+                <Select options={[
+                  { value: 'ed25519', label: 'Ed25519 (Recommended)' },
+                  { value: 'rsa', label: 'RSA 4096' },
+                ]} />
+              </Form.Item>
+            ) : null}
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* Key result modal — shown after generate/create */}
+      <Modal
+        title={`SSH Key Pair — ${keyResult?.username || ''}`}
+        open={keyResultModal}
+        onCancel={() => setKeyResultModal(false)}
+        footer={
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button onClick={() => setKeyResultModal(false)} style={btnOutline}>Close</button>
+            {keyResult && (
+              <button onClick={() => handleDownloadPrivateKey(keyResult.private_key, keyResult.username)} style={btnPrimary}>
+                <DownloadOutlined /> Download Private Key
+              </button>
+            )}
+          </div>
+        }
+        width={640}
+        styles={{ body: { padding: '16px 24px' } }}
+      >
+        {keyResult && (
+          <div>
+            <div style={{
+              padding: '10px 14px', borderRadius: 8, marginBottom: 16,
+              background: `${p.amber}08`, border: `1px solid ${p.amber}20`,
+              fontSize: 12, color: p.text,
+            }}>
+              <b>⚠ Save the private key now!</b> It won't be shown again after closing this dialog.
+              <br />
+              <span style={{ color: p.textMuted, fontSize: 11 }}>
+                Use this private key in MobaXterm, PuTTY, or any SSH client to connect as <b>{keyResult.username}</b>.
+              </span>
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: p.text }}>Public Key</span>
+                <button onClick={() => copyToClipboard(keyResult.public_key)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: p.accent, fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <CopyOutlined /> Copy
+                </button>
+              </div>
+              <div style={{
+                padding: 10, borderRadius: 6, fontFamily: 'monospace', fontSize: 11,
+                background: p.codeBg, border: `1px solid ${p.cardBorder}`,
+                wordBreak: 'break-all', whiteSpace: 'pre-wrap', maxHeight: 60, overflow: 'auto',
+                color: p.text,
+              }}>{keyResult.public_key}</div>
+            </div>
+
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: p.red }}>Private Key</span>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => copyToClipboard(keyResult.private_key)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: p.accent, fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <CopyOutlined /> Copy
+                  </button>
+                  <button onClick={() => handleDownloadPrivateKey(keyResult.private_key, keyResult.username)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: p.green, fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <DownloadOutlined /> Download
+                  </button>
+                </div>
+              </div>
+              <div style={{
+                padding: 10, borderRadius: 6, fontFamily: 'monospace', fontSize: 11,
+                background: p.codeBg, border: `1px solid ${p.red}20`,
+                whiteSpace: 'pre-wrap', maxHeight: 200, overflow: 'auto',
+                color: p.text,
+              }}>{keyResult.private_key}</div>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

@@ -56,6 +56,8 @@ func (h *SecurityHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.Handler
 		security.PUT("/ssh", rbac("security.manage"), h.UpdateSSHConfig)
 		security.PUT("/root-password", rbac("security.manage"), h.ChangeRootPassword)
 		security.GET("/ssh/users", rbac("security.manage"), h.ListSSHUsers)
+		security.POST("/ssh/users", rbac("security.manage"), h.CreateSSHUser)
+		security.DELETE("/ssh/users/:username", rbac("security.manage"), h.DeleteSSHUser)
 		security.GET("/ssh/keys/:username", rbac("security.manage"), h.GetAuthorizedKeys)
 		security.POST("/ssh/keys/:username", rbac("security.manage"), h.AddAuthorizedKey)
 		security.DELETE("/ssh/keys/:username/:fingerprint", rbac("security.manage"), h.RemoveAuthorizedKey)
@@ -547,6 +549,38 @@ func (h *SecurityHandler) ListSSHUsers(c *gin.Context) {
 		return
 	}
 	response.Success(c, users)
+}
+
+// CreateSSHUser creates a new system user with optional SSH key generation.
+func (h *SecurityHandler) CreateSSHUser(c *gin.Context) {
+	var req service.CreateUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	if errs := validator.Validate(req); errs != nil {
+		response.ValidationError(c, errs)
+		return
+	}
+
+	result, err := h.securityService.CreateSystemUser(req)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, result)
+}
+
+// DeleteSSHUser removes a system user.
+func (h *SecurityHandler) DeleteSSHUser(c *gin.Context) {
+	username := c.Param("username")
+	if err := h.securityService.DeleteSystemUser(username); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "user deleted successfully"})
 }
 
 // GetAuthorizedKeys returns authorized_keys for a user.

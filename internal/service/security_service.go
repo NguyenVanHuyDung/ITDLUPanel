@@ -69,6 +69,22 @@ type SystemUser struct {
 	KeyCount int    `json:"key_count"`
 }
 
+// CreateUserRequest holds the data for creating a new system user.
+type CreateUserRequest struct {
+	Username     string `json:"username" validate:"required,min=2,max=32"`
+	Password     string `json:"password" validate:"required,min=8,max=128"`
+	Shell        string `json:"shell"`
+	GenerateKey  bool   `json:"generate_key"`
+	KeyType      string `json:"key_type"`
+}
+
+// CreateUserResult is the response after creating a user with optional key generation.
+type CreateUserResult struct {
+	Username   string      `json:"username"`
+	HomeDir    string      `json:"home_dir"`
+	KeyPair    *SSHKeyPair `json:"key_pair,omitempty"`
+}
+
 // ---------------------------------------------------------------------------
 // Fail2ban types
 // ---------------------------------------------------------------------------
@@ -826,6 +842,105 @@ func (s *SecurityService) ListSystemUsers() ([]SystemUser, error) {
 	}
 
 	return users, nil
+}
+
+// CreateSystemUser creates a new system user with optional SSH key generation.
+func (s *SecurityService) CreateSystemUser(req CreateUserRequest) (*CreateUserResult, error) {
+	username := req.Username
+
+	// Validate username: only lowercase letters, digits, hyphens, underscores
+	for _, c := range username {
+		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_') {
+			return nil, apperrors.New(apperrors.ErrValidation, "username may only contain lowercase letters, digits, hyphens, and underscores")
+		}
+	}
+
+	// Check if user already exists
+	if _, err := userHomeDir(username); err == nil {
+		return nil, apperrors.New(apperrors.ErrConflict, fmt.Sprintf("user %s already exists", username))
+	}
+
+	shell := req.Shell
+	if shell == "" {
+		shell = "/bin/bash"
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	// Create user with home directory
+	if _, err := system.Exec(ctx, "useradd", "-m", "-s", shell, username); err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create user")
+	}
+
+	// Set password
+	if _, err := system.ExecWithStdin(ctx, req.Password+"\n"+req.Password+"\n", "passwd", username); err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to set password")
+	}
+
+	homeDir, _ := userHomeDir(username)
+	result := &CreateUserResult{
+		Username: username,
+		HomeDir:  homeDir,
+	}
+
+	// Generate SSH key and auto-authorize if requested
+	if req.GenerateKey {
+		keyType := req.KeyType
+		if keyType == "" {
+			keyType = "ed25519"
+		}
+
+		pair, err := s.GenerateSSHKeyPair(username, keyType)
+		if err != nil {
+			logger.Warn().Err(err).Str("user", username).Msg("user created but key generation failed")
+		} else {
+			result.KeyPair = pair
+			// Auto-add public key to authorized_keys so the user can SSH in
+			if err := s.AddAuthorizedKey(username, pair.PublicKey); err != nil {
+				logger.Warn().Err(err).Str("user", username).Msg("user created but failed to authorize key")
+			}
+		}
+	}
+
+	logger.Info().Str("user", username).Bool("key_generated", req.GenerateKey).Msg("system user created")
+	return result, nil
+}
+
+// DeleteSystemUser removes a system user and their home directory.
+func (s *SecurityService) DeleteSystemUser(username string) error {
+	// Prevent deleting root or system accounts
+	if username == "root" {
+		return apperrors.New(apperrors.ErrValidation, "cannot delete root user")
+	}
+
+	// Check user exists
+	if _, err := userHomeDir(username); err != nil {
+		return apperrors.New(apperrors.ErrNotFound, fmt.Sprintf("user %s not found", username))
+	}
+
+	// Check UID — refuse to delete system users (UID < 1000)
+	data, _ := os.ReadFile("/etc/passwd")
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Split(line, ":")
+		if len(fields) >= 4 && fields[0] == username {
+			uid, _ := strconv.Atoi(fields[2])
+			if uid < 1000 {
+				return apperrors.New(apperrors.ErrValidation, "cannot delete system users (UID < 1000)")
+			}
+			break
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if _, err := system.Exec(ctx, "userdel", "-r", username); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to delete user")
+	}
+
+	logger.Info().Str("user", username).Msg("system user deleted")
+	return nil
 }
 
 // GetAuthorizedKeys returns parsed authorized_keys for a user.
