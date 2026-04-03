@@ -8,6 +8,30 @@ import type { ApiResponse } from '@/types';
 import api from '@/services/api';
 
 // ---------------------------------------------------------------------------
+// SVG Icons
+// ---------------------------------------------------------------------------
+
+const SecIcon = {
+  Shield: ({ size = 20, color = '#64748B' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </svg>
+  ),
+  Terminal: ({ size = 20, color = '#64748B' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="4 17 10 11 4 5" />
+      <line x1="12" y1="19" x2="20" y2="19" />
+    </svg>
+  ),
+  Ban: ({ size = 20, color = '#64748B' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <path d="m4.93 4.93 14.14 14.14" />
+    </svg>
+  ),
+};
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -67,20 +91,19 @@ function SSHTab() {
 
   return (
     <div style={{
-      maxWidth: 640,
-      borderRadius: 10,
+      maxWidth: 640, borderRadius: 10,
       background: isDark ? p.rowAlt : p.headerBg,
       border: `1px solid ${p.cardBorder}`,
       padding: isMobile ? 16 : 28,
     }}>
       <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <LockOutlined style={{ fontSize: 20, color: p.accent }} />
+        <SecIcon.Terminal size={20} color={p.accent} />
         <span style={{ fontSize: 16, fontWeight: 600, color: p.text }}>SSH Configuration</span>
       </div>
       <Form form={form} layout="vertical" onFinish={handleSave}
         initialValues={{ port: 22, permit_root_login: false, password_auth: true, max_auth_tries: 6 }}>
         <Form.Item name="port" label="SSH Port" rules={[{ required: true }]}
-          extra="Default: 22. Changing this requires a service restart.">
+          extra={<span style={{ fontSize: 11, color: p.textMuted }}>Default: 22. Changing this requires a service restart.</span>}>
           <InputNumber min={1} max={65535} style={{ width: '100%' }} />
         </Form.Item>
         <Form.Item name="permit_root_login" label="Permit Root Login" valuePropName="checked">
@@ -95,8 +118,9 @@ function SSHTab() {
         <Form.Item style={{ marginBottom: 0 }}>
           <button type="submit" disabled={saving} style={{
             padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
-            background: p.accent, color: '#fff', fontSize: 13, fontWeight: 500,
+            background: p.accent, color: '#fff', fontSize: 12, fontWeight: 500,
             opacity: saving ? 0.6 : 1, transition: 'opacity 0.15s',
+            display: 'inline-flex', alignItems: 'center', gap: 6,
           }}>{saving ? '...' : t('common.save')}</button>
         </Form.Item>
       </Form>
@@ -146,14 +170,13 @@ function Fail2banTab() {
 
   return (
     <div style={{
-      maxWidth: 640,
-      borderRadius: 10,
+      maxWidth: 640, borderRadius: 10,
       background: isDark ? p.rowAlt : p.headerBg,
       border: `1px solid ${p.cardBorder}`,
       padding: isMobile ? 16 : 28,
     }}>
       <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <SecurityScanOutlined style={{ fontSize: 20, color: p.accent }} />
+        <SecIcon.Ban size={20} color={p.accent} />
         <span style={{ fontSize: 16, fontWeight: 600, color: p.text }}>Brute Force Protection (Fail2ban)</span>
       </div>
       <Form form={form} layout="vertical" onFinish={handleSave}
@@ -162,22 +185,23 @@ function Fail2banTab() {
           <Switch />
         </Form.Item>
         <Form.Item name="max_retry" label="Max Retry" rules={[{ required: true }]}
-          extra="Number of failures before a host gets banned">
+          extra={<span style={{ fontSize: 11, color: p.textMuted }}>Number of failures before a host gets banned</span>}>
           <InputNumber min={1} max={100} style={{ width: '100%' }} />
         </Form.Item>
         <Form.Item name="ban_time" label="Ban Time (seconds)" rules={[{ required: true }]}
-          extra="Duration to ban an IP. Default: 600 (10 min)">
+          extra={<span style={{ fontSize: 11, color: p.textMuted }}>Duration to ban an IP. Default: 600 (10 min)</span>}>
           <InputNumber min={60} max={86400} style={{ width: '100%' }} />
         </Form.Item>
         <Form.Item name="find_time" label="Find Time (seconds)" rules={[{ required: true }]}
-          extra="Window in which max_retry failures must occur">
+          extra={<span style={{ fontSize: 11, color: p.textMuted }}>Window in which max_retry failures must occur</span>}>
           <InputNumber min={60} max={86400} style={{ width: '100%' }} />
         </Form.Item>
         <Form.Item style={{ marginBottom: 0 }}>
           <button type="submit" disabled={saving} style={{
             padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
-            background: p.accent, color: '#fff', fontSize: 13, fontWeight: 500,
+            background: p.accent, color: '#fff', fontSize: 12, fontWeight: 500,
             opacity: saving ? 0.6 : 1, transition: 'opacity 0.15s',
+            display: 'inline-flex', alignItems: 'center', gap: 6,
           }}>{saving ? '...' : t('common.save')}</button>
         </Form.Item>
       </Form>
@@ -190,6 +214,7 @@ function Fail2banTab() {
 // ---------------------------------------------------------------------------
 
 export default function Security() {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<'ssh' | 'fail2ban'>('ssh');
   const { p, isDark } = usePalette();
 
@@ -210,11 +235,13 @@ export default function Security() {
         padding: '14px 20px',
         borderBottom: `1px solid ${p.cardBorder}`,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        background: p.headerBg,
-        flexWrap: 'wrap', gap: 8,
+        background: p.headerBg, flexWrap: 'wrap', gap: 8,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 15, fontWeight: 600, color: p.text }}>Security</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <SecIcon.Shield size={22} color={p.accent} />
+          <span style={{ fontSize: 15, fontWeight: 600, color: p.text }}>
+            {t('menu.security', 'Security')}
+          </span>
         </div>
       </div>
 
@@ -222,7 +249,7 @@ export default function Security() {
       <div style={{
         padding: '8px 20px',
         borderBottom: `1px solid ${p.cardBorder}`,
-        display: 'flex', gap: 4,
+        display: 'flex', gap: 4, flexWrap: 'wrap',
       }}>
         {tabs.map(tab => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
