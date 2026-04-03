@@ -943,7 +943,7 @@ export default function Logs() {
           rowKey="key"
           loading={loading}
           size="small"
-          pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (t) => `${t} entries` }}
+          pagination={{ defaultPageSize: 50, showSizeChanger: true, pageSizeOptions: [20, 50, 100, 200], showTotal: (t) => `${t} entries` }}
           scroll={{ x: 600, y: 'calc(100vh - 480px)' }}
           rowClassName={(r) => r.level === 'error' || r.level === 'fatal' ? 'log-row-error' : ''}
         />
@@ -998,7 +998,7 @@ export default function Logs() {
             rowKey="key"
             loading={loading}
             size="small"
-            pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (t) => `${t} entries` }}
+            pagination={{ defaultPageSize: 50, showSizeChanger: true, pageSizeOptions: [20, 50, 100, 200], showTotal: (t) => `${t} entries` }}
             scroll={{ x: 600, y: 'calc(100vh - 480px)' }}
           />
         ) : (
@@ -1008,7 +1008,7 @@ export default function Logs() {
             rowKey="key"
             loading={loading}
             size="small"
-            pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (t) => `${t} entries` }}
+            pagination={{ defaultPageSize: 50, showSizeChanger: true, pageSizeOptions: [20, 50, 100, 200], showTotal: (t) => `${t} entries` }}
             scroll={{ x: 600, y: 'calc(100vh - 480px)' }}
             rowClassName={(r) => {
               const raw = r.raw.toLowerCase();
@@ -1158,7 +1158,7 @@ export default function Logs() {
               rowKey="key"
               loading={loading}
               size="small"
-              pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (t) => `${t} entries` }}
+              pagination={{ defaultPageSize: 50, showSizeChanger: true, pageSizeOptions: [20, 50, 100, 200], showTotal: (t) => `${t} entries` }}
               scroll={{ x: 600, y: 'calc(100vh - 560px)' }}
               rowClassName={(r) => {
                 if (websiteLogType === 'access' && r.status >= 400) return 'log-row-error';
@@ -1278,7 +1278,7 @@ export default function Logs() {
           rowKey="id"
           loading={loading}
           size="small"
-          pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `${t} entries` }}
+          pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: [20, 50, 100, 200], showTotal: (t) => `${t} entries` }}
           scroll={{ x: 600, y: 'calc(100vh - 480px)' }}
         />
       </div>

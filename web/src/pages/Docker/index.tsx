@@ -425,7 +425,7 @@ export default function Docker() {
       <div style={{ padding: 16 }}>
         {activeTab === 'containers' && (
           <Table columns={containerColumns} dataSource={containers} rowKey="id"
-            loading={loadingContainers} pagination={{ pageSize: 10, showSizeChanger: true }} />
+            loading={loadingContainers} pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50] }} />
         )}
         {activeTab === 'images' && (
           <>
@@ -439,7 +439,7 @@ export default function Docker() {
               </button>
             </div>
             <Table columns={imageColumns} dataSource={images} rowKey="id"
-              loading={loadingImages} pagination={{ pageSize: 10, showSizeChanger: true }} />
+              loading={loadingImages} pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50] }} />
           </>
         )}
       </div>
