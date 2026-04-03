@@ -61,6 +61,41 @@ func ExecWithTimeout(timeout time.Duration, name string, args ...string) (*ExecR
 	return Exec(ctx, name, args...)
 }
 
+// ExecWithStdin runs a command with stdin input and returns its result.
+func ExecWithStdin(ctx context.Context, stdin string, name string, args ...string) (*ExecResult, error) {
+	logger.Debug().Str("cmd", name).Strs("args", args).Msg("executing command with stdin")
+
+	start := time.Now()
+	cmd := exec.CommandContext(ctx, name, args...)
+
+	cmd.Stdin = strings.NewReader(stdin)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	duration := time.Since(start)
+
+	result := &ExecResult{
+		Stdout:   stdout.String(),
+		Stderr:   stderr.String(),
+		ExitCode: cmd.ProcessState.ExitCode(),
+		Duration: duration,
+	}
+
+	if err != nil {
+		logger.Error().
+			Err(err).
+			Str("cmd", name).
+			Int("exit_code", result.ExitCode).
+			Str("stderr", result.Stderr).
+			Msg("command failed")
+		return result, err
+	}
+
+	return result, nil
+}
+
 // ExecShell runs a command string via /bin/bash -c after basic validation.
 func ExecShell(ctx context.Context, command string) (*ExecResult, error) {
 	if err := ValidateCommand(command); err != nil {

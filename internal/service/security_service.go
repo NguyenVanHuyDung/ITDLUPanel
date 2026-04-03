@@ -1,9 +1,13 @@
 package service
 
 import (
+	"bufio"
 	"context"
+	"crypto/md5"
+	"encoding/base64"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -19,20 +23,50 @@ import (
 
 // SSHConfig holds SSH server configuration values.
 type SSHConfig struct {
-	Port            int  `json:"port"`
-	PermitRootLogin bool `json:"permit_root_login"`
-	PasswordAuth    bool `json:"password_auth"`
-	PubkeyAuth      bool `json:"pubkey_auth"`
-	MaxAuthTries    int  `json:"max_auth_tries"`
+	Port            int    `json:"port"`
+	PermitRootLogin string `json:"permit_root_login"`
+	PasswordAuth    bool   `json:"password_auth"`
+	PubkeyAuth      bool   `json:"pubkey_auth"`
+	MaxAuthTries    int    `json:"max_auth_tries"`
 }
 
 // UpdateSSHRequest is used to update SSH configuration.
 type UpdateSSHRequest struct {
-	Port            *int  `json:"port" validate:"omitempty,min=1,max=65535"`
-	PermitRootLogin *bool `json:"permit_root_login"`
-	PasswordAuth    *bool `json:"password_auth"`
-	PubkeyAuth      *bool `json:"pubkey_auth"`
-	MaxAuthTries    *int  `json:"max_auth_tries" validate:"omitempty,min=1,max=100"`
+	Port            *int    `json:"port" validate:"omitempty,min=1,max=65535"`
+	PermitRootLogin *string `json:"permit_root_login" validate:"omitempty,oneof=yes no without-password forced-commands-only"`
+	PasswordAuth    *bool   `json:"password_auth"`
+	PubkeyAuth      *bool   `json:"pubkey_auth"`
+	MaxAuthTries    *int    `json:"max_auth_tries" validate:"omitempty,min=1,max=100"`
+}
+
+// ChangeRootPasswordRequest holds the new root password.
+type ChangeRootPasswordRequest struct {
+	Password string `json:"password" validate:"required,min=8,max=128"`
+}
+
+// SSHKeyEntry represents a single authorized key.
+type SSHKeyEntry struct {
+	Index       int    `json:"index"`
+	Type        string `json:"type"`
+	Fingerprint string `json:"fingerprint"`
+	Comment     string `json:"comment"`
+	PublicKey   string `json:"public_key"`
+}
+
+// SSHKeyPair holds generated key pair data.
+type SSHKeyPair struct {
+	PublicKey  string `json:"public_key"`
+	PrivateKey string `json:"private_key"`
+}
+
+// SystemUser represents a user that can have SSH keys.
+type SystemUser struct {
+	Username string `json:"username"`
+	UID      int    `json:"uid"`
+	HomeDir  string `json:"home_dir"`
+	Shell    string `json:"shell"`
+	HasKeys  bool   `json:"has_keys"`
+	KeyCount int    `json:"key_count"`
 }
 
 // ---------------------------------------------------------------------------
@@ -90,7 +124,7 @@ func (s *SecurityService) GetSSHConfig() (*SSHConfig, error) {
 
 	config := &SSHConfig{
 		Port:            22,
-		PermitRootLogin: true,
+		PermitRootLogin: "yes",
 		PasswordAuth:    true,
 		PubkeyAuth:      true,
 		MaxAuthTries:    6,
@@ -116,7 +150,7 @@ func (s *SecurityService) GetSSHConfig() (*SSHConfig, error) {
 				config.Port = p
 			}
 		case "permitrootlogin":
-			config.PermitRootLogin = sshBoolValue(value)
+			config.PermitRootLogin = normalizeRootLogin(value)
 		case "passwordauthentication":
 			config.PasswordAuth = sshBoolValue(value)
 		case "pubkeyauthentication":
@@ -144,7 +178,7 @@ func (s *SecurityService) UpdateSSHConfig(req UpdateSSHRequest) error {
 		content = setSSHDirective(content, "Port", strconv.Itoa(*req.Port))
 	}
 	if req.PermitRootLogin != nil {
-		content = setSSHDirective(content, "PermitRootLogin", sshBoolString(*req.PermitRootLogin))
+		content = setSSHDirective(content, "PermitRootLogin", *req.PermitRootLogin)
 	}
 	if req.PasswordAuth != nil {
 		content = setSSHDirective(content, "PasswordAuthentication", sshBoolString(*req.PasswordAuth))
@@ -160,19 +194,7 @@ func (s *SecurityService) UpdateSSHConfig(req UpdateSSHRequest) error {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to write sshd_config")
 	}
 
-	// Restart sshd to apply changes.
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	if _, err := system.Exec(ctx, "systemctl", "restart", "sshd"); err != nil {
-		// Try alternative service name.
-		if _, err2 := system.Exec(ctx, "systemctl", "restart", "ssh"); err2 != nil {
-			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to restart SSH service")
-		}
-	}
-
-	logger.Info().Msg("SSH configuration updated")
-	return nil
+	return restartSSHD()
 }
 
 // ---------------------------------------------------------------------------
@@ -305,8 +327,397 @@ findtime = %d
 }
 
 // ---------------------------------------------------------------------------
+// Root password
+// ---------------------------------------------------------------------------
+
+// ChangeRootPassword changes the root password using chpasswd.
+func (s *SecurityService) ChangeRootPassword(password string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	input := fmt.Sprintf("root:%s", password)
+	if _, err := system.ExecWithStdin(ctx, input, "chpasswd"); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to change root password")
+	}
+
+	logger.Info().Msg("root password changed")
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// SSH key management
+// ---------------------------------------------------------------------------
+
+// ListSystemUsers returns users from /etc/passwd that have a login shell.
+func (s *SecurityService) ListSystemUsers() ([]SystemUser, error) {
+	f, err := os.Open("/etc/passwd")
+	if err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read /etc/passwd")
+	}
+	defer f.Close()
+
+	loginShells := map[string]bool{
+		"/bin/bash": true, "/bin/sh": true, "/bin/zsh": true,
+		"/usr/bin/bash": true, "/usr/bin/zsh": true, "/usr/bin/fish": true,
+	}
+
+	var users []SystemUser
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		fields := strings.Split(scanner.Text(), ":")
+		if len(fields) < 7 {
+			continue
+		}
+		shell := fields[6]
+		if !loginShells[shell] {
+			continue
+		}
+		uid, _ := strconv.Atoi(fields[2])
+		homeDir := fields[5]
+
+		u := SystemUser{
+			Username: fields[0],
+			UID:      uid,
+			HomeDir:  homeDir,
+			Shell:    shell,
+		}
+
+		akPath := filepath.Join(homeDir, ".ssh", "authorized_keys")
+		if data, err := os.ReadFile(akPath); err == nil {
+			lines := nonEmptyLines(string(data))
+			u.HasKeys = len(lines) > 0
+			u.KeyCount = len(lines)
+		}
+
+		users = append(users, u)
+	}
+
+	return users, nil
+}
+
+// GetAuthorizedKeys returns parsed authorized_keys for a user.
+func (s *SecurityService) GetAuthorizedKeys(username string) ([]SSHKeyEntry, error) {
+	homeDir, err := userHomeDir(username)
+	if err != nil {
+		return nil, err
+	}
+
+	akPath := filepath.Join(homeDir, ".ssh", "authorized_keys")
+	data, err := os.ReadFile(akPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []SSHKeyEntry{}, nil
+		}
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read authorized_keys")
+	}
+
+	var keys []SSHKeyEntry
+	for i, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		entry := parseAuthorizedKeyLine(line, i)
+		keys = append(keys, entry)
+	}
+
+	return keys, nil
+}
+
+// AddAuthorizedKey appends a public key to the user's authorized_keys.
+func (s *SecurityService) AddAuthorizedKey(username, publicKey string) error {
+	homeDir, err := userHomeDir(username)
+	if err != nil {
+		return err
+	}
+
+	sshDir := filepath.Join(homeDir, ".ssh")
+	if err := os.MkdirAll(sshDir, 0700); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to create .ssh directory")
+	}
+
+	akPath := filepath.Join(sshDir, "authorized_keys")
+
+	// Ensure newline before appending
+	existing, _ := os.ReadFile(akPath)
+	content := string(existing)
+	if len(content) > 0 && !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	content += strings.TrimSpace(publicKey) + "\n"
+
+	if err := os.WriteFile(akPath, []byte(content), 0600); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to write authorized_keys")
+	}
+
+	// Fix ownership
+	fixSSHOwnership(username, sshDir)
+
+	logger.Info().Str("user", username).Msg("authorized key added")
+	return nil
+}
+
+// RemoveAuthorizedKey removes a key by its fingerprint from authorized_keys.
+func (s *SecurityService) RemoveAuthorizedKey(username, fingerprint string) error {
+	homeDir, err := userHomeDir(username)
+	if err != nil {
+		return err
+	}
+
+	akPath := filepath.Join(homeDir, ".ssh", "authorized_keys")
+	data, err := os.ReadFile(akPath)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to read authorized_keys")
+	}
+
+	var kept []string
+	removed := false
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			kept = append(kept, line)
+			continue
+		}
+		entry := parseAuthorizedKeyLine(trimmed, 0)
+		if entry.Fingerprint == fingerprint {
+			removed = true
+			continue
+		}
+		kept = append(kept, line)
+	}
+
+	if !removed {
+		return apperrors.New(apperrors.ErrNotFound, "key not found")
+	}
+
+	result := strings.Join(kept, "\n")
+	if !strings.HasSuffix(result, "\n") {
+		result += "\n"
+	}
+
+	if err := os.WriteFile(akPath, []byte(result), 0600); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to write authorized_keys")
+	}
+
+	logger.Info().Str("user", username).Str("fingerprint", fingerprint).Msg("authorized key removed")
+	return nil
+}
+
+// GenerateSSHKeyPair generates a new ed25519 key pair for a user.
+func (s *SecurityService) GenerateSSHKeyPair(username, keyType string) (*SSHKeyPair, error) {
+	if keyType == "" {
+		keyType = "ed25519"
+	}
+	if keyType != "ed25519" && keyType != "rsa" {
+		return nil, apperrors.New(apperrors.ErrValidation, "key type must be ed25519 or rsa")
+	}
+
+	homeDir, err := userHomeDir(username)
+	if err != nil {
+		return nil, err
+	}
+
+	sshDir := filepath.Join(homeDir, ".ssh")
+	if err := os.MkdirAll(sshDir, 0700); err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create .ssh directory")
+	}
+
+	keyFile := filepath.Join(sshDir, "id_"+keyType)
+
+	// Remove old key if exists
+	os.Remove(keyFile)
+	os.Remove(keyFile + ".pub")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	args := []string{"-t", keyType, "-f", keyFile, "-N", "", "-C", fmt.Sprintf("%s@panel-generated", username)}
+	if keyType == "rsa" {
+		args = append(args, "-b", "4096")
+	}
+
+	if _, err := system.Exec(ctx, "ssh-keygen", args...); err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to generate SSH key")
+	}
+
+	pubData, err := os.ReadFile(keyFile + ".pub")
+	if err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read public key")
+	}
+
+	privData, err := os.ReadFile(keyFile)
+	if err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read private key")
+	}
+
+	fixSSHOwnership(username, sshDir)
+
+	logger.Info().Str("user", username).Str("type", keyType).Msg("SSH key pair generated")
+
+	return &SSHKeyPair{
+		PublicKey:  strings.TrimSpace(string(pubData)),
+		PrivateKey: string(privData),
+	}, nil
+}
+
+// GetUserPublicKeys returns the user's own public keys (id_*.pub).
+func (s *SecurityService) GetUserPublicKeys(username string) ([]SSHKeyEntry, error) {
+	homeDir, err := userHomeDir(username)
+	if err != nil {
+		return nil, err
+	}
+
+	sshDir := filepath.Join(homeDir, ".ssh")
+	entries, err := os.ReadDir(sshDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []SSHKeyEntry{}, nil
+		}
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read .ssh directory")
+	}
+
+	var keys []SSHKeyEntry
+	for i, e := range entries {
+		if !strings.HasPrefix(e.Name(), "id_") || !strings.HasSuffix(e.Name(), ".pub") {
+			continue
+		}
+
+		data, err := os.ReadFile(filepath.Join(sshDir, e.Name()))
+		if err != nil {
+			continue
+		}
+
+		entry := parseAuthorizedKeyLine(strings.TrimSpace(string(data)), i)
+		keys = append(keys, entry)
+	}
+
+	return keys, nil
+}
+
+// GetPrivateKey returns the private key content for download.
+func (s *SecurityService) GetPrivateKey(username, keyType string) (string, error) {
+	if keyType == "" {
+		keyType = "ed25519"
+	}
+
+	homeDir, err := userHomeDir(username)
+	if err != nil {
+		return "", err
+	}
+
+	keyFile := filepath.Join(homeDir, ".ssh", "id_"+keyType)
+	data, err := os.ReadFile(keyFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", apperrors.New(apperrors.ErrNotFound, "private key not found")
+		}
+		return "", apperrors.Wrap(err, apperrors.ErrInternal, "failed to read private key")
+	}
+
+	return string(data), nil
+}
+
+// ---------------------------------------------------------------------------
 // SSH helpers
 // ---------------------------------------------------------------------------
+
+// restartSSHD restarts the SSH daemon.
+func restartSSHD() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if _, err := system.Exec(ctx, "systemctl", "restart", "sshd"); err != nil {
+		if _, err2 := system.Exec(ctx, "systemctl", "restart", "ssh"); err2 != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to restart SSH service")
+		}
+	}
+
+	logger.Info().Msg("SSH configuration updated")
+	return nil
+}
+
+// normalizeRootLogin normalizes PermitRootLogin values.
+func normalizeRootLogin(val string) string {
+	v := strings.ToLower(strings.TrimSpace(val))
+	switch v {
+	case "yes":
+		return "yes"
+	case "no":
+		return "no"
+	case "without-password", "prohibit-password":
+		return "without-password"
+	case "forced-commands-only":
+		return "forced-commands-only"
+	default:
+		if sshBoolValue(val) {
+			return "yes"
+		}
+		return "no"
+	}
+}
+
+// userHomeDir resolves the home directory for a system user.
+func userHomeDir(username string) (string, error) {
+	data, err := os.ReadFile("/etc/passwd")
+	if err != nil {
+		return "", apperrors.Wrap(err, apperrors.ErrInternal, "failed to read /etc/passwd")
+	}
+
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Split(line, ":")
+		if len(fields) >= 6 && fields[0] == username {
+			return fields[5], nil
+		}
+	}
+
+	return "", apperrors.New(apperrors.ErrNotFound, fmt.Sprintf("user %s not found", username))
+}
+
+// parseAuthorizedKeyLine parses a single authorized_keys line.
+func parseAuthorizedKeyLine(line string, index int) SSHKeyEntry {
+	parts := strings.Fields(line)
+	entry := SSHKeyEntry{Index: index, PublicKey: line}
+
+	if len(parts) >= 2 {
+		entry.Type = parts[0]
+
+		// Compute MD5 fingerprint from base64 key data
+		keyData, err := base64.StdEncoding.DecodeString(parts[1])
+		if err == nil {
+			hash := md5.Sum(keyData)
+			fp := make([]string, len(hash))
+			for i, b := range hash {
+				fp[i] = fmt.Sprintf("%02x", b)
+			}
+			entry.Fingerprint = strings.Join(fp, ":")
+		}
+	}
+	if len(parts) >= 3 {
+		entry.Comment = strings.Join(parts[2:], " ")
+	}
+
+	return entry
+}
+
+// nonEmptyLines returns non-empty, non-comment lines.
+func nonEmptyLines(s string) []string {
+	var result []string
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "#") {
+			result = append(result, line)
+		}
+	}
+	return result
+}
+
+// fixSSHOwnership sets proper ownership for .ssh directory.
+func fixSSHOwnership(username, sshDir string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	system.Exec(ctx, "chown", "-R", username+":"+username, sshDir)
+}
 
 // sshBoolValue parses SSH boolean values (yes/no).
 func sshBoolValue(val string) bool {

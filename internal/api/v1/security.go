@@ -1,6 +1,8 @@
 package v1
 
 import (
+	"fmt"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/ITDLUPanel/panel/internal/pkg/response"
@@ -53,6 +55,14 @@ func (h *SecurityHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.Handler
 		security.PUT("/ssh", rbac("security.manage"), h.UpdateSSHConfig)
 		security.GET("/fail2ban", rbac("security.manage"), h.GetFail2banStatus)
 		security.PUT("/fail2ban", rbac("security.manage"), h.ConfigureFail2ban)
+		security.PUT("/root-password", rbac("security.manage"), h.ChangeRootPassword)
+		security.GET("/ssh/users", rbac("security.manage"), h.ListSSHUsers)
+		security.GET("/ssh/keys/:username", rbac("security.manage"), h.GetAuthorizedKeys)
+		security.POST("/ssh/keys/:username", rbac("security.manage"), h.AddAuthorizedKey)
+		security.DELETE("/ssh/keys/:username/:fingerprint", rbac("security.manage"), h.RemoveAuthorizedKey)
+		security.POST("/ssh/keys/:username/generate", rbac("security.manage"), h.GenerateSSHKeyPair)
+		security.GET("/ssh/keys/:username/public", rbac("security.manage"), h.GetUserPublicKeys)
+		security.GET("/ssh/keys/:username/download-private", rbac("security.manage"), h.DownloadPrivateKey)
 	}
 }
 
@@ -336,6 +346,143 @@ func (h *SecurityHandler) ConfigureFail2ban(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"message": "fail2ban configuration updated successfully"})
+}
+
+// ---------------------------------------------------------------------------
+// Root password
+// ---------------------------------------------------------------------------
+
+// ChangeRootPassword changes the system root password.
+func (h *SecurityHandler) ChangeRootPassword(c *gin.Context) {
+	var req service.ChangeRootPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid request body"},
+		})
+		return
+	}
+
+	if errs := validator.Validate(req); errs != nil {
+		response.ValidationError(c, errs)
+		return
+	}
+
+	if err := h.securityService.ChangeRootPassword(req.Password); err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"message": "root password changed successfully"})
+}
+
+// ---------------------------------------------------------------------------
+// SSH key management
+// ---------------------------------------------------------------------------
+
+// ListSSHUsers returns system users that can have SSH keys.
+func (h *SecurityHandler) ListSSHUsers(c *gin.Context) {
+	users, err := h.securityService.ListSystemUsers()
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, users)
+}
+
+// GetAuthorizedKeys returns authorized_keys for a user.
+func (h *SecurityHandler) GetAuthorizedKeys(c *gin.Context) {
+	username := c.Param("username")
+	keys, err := h.securityService.GetAuthorizedKeys(username)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, keys)
+}
+
+type addKeyRequest struct {
+	PublicKey string `json:"public_key" validate:"required"`
+}
+
+// AddAuthorizedKey adds a public key for a user.
+func (h *SecurityHandler) AddAuthorizedKey(c *gin.Context) {
+	username := c.Param("username")
+	var req addKeyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid request body"},
+		})
+		return
+	}
+
+	if errs := validator.Validate(req); errs != nil {
+		response.ValidationError(c, errs)
+		return
+	}
+
+	if err := h.securityService.AddAuthorizedKey(username, req.PublicKey); err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"message": "key added successfully"})
+}
+
+// RemoveAuthorizedKey removes a key by fingerprint.
+func (h *SecurityHandler) RemoveAuthorizedKey(c *gin.Context) {
+	username := c.Param("username")
+	fingerprint := c.Param("fingerprint")
+	if err := h.securityService.RemoveAuthorizedKey(username, fingerprint); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "key removed successfully"})
+}
+
+type generateKeyRequest struct {
+	KeyType string `json:"key_type"`
+}
+
+// GenerateSSHKeyPair generates a new key pair for a user.
+func (h *SecurityHandler) GenerateSSHKeyPair(c *gin.Context) {
+	username := c.Param("username")
+	var req generateKeyRequest
+	c.ShouldBindJSON(&req)
+
+	pair, err := h.securityService.GenerateSSHKeyPair(username, req.KeyType)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, pair)
+}
+
+// GetUserPublicKeys returns the user's own public key files.
+func (h *SecurityHandler) GetUserPublicKeys(c *gin.Context) {
+	username := c.Param("username")
+	keys, err := h.securityService.GetUserPublicKeys(username)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, keys)
+}
+
+// DownloadPrivateKey returns the private key content for download.
+func (h *SecurityHandler) DownloadPrivateKey(c *gin.Context) {
+	username := c.Param("username")
+	keyType := c.DefaultQuery("type", "ed25519")
+
+	content, err := h.securityService.GetPrivateKey(username, keyType)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=id_%s_%s", keyType, username))
+	c.Header("Content-Type", "application/x-pem-file")
+	c.String(200, content)
 }
 
 // GetFirewallStatus returns whether UFW is installed and active.
