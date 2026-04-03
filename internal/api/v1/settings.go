@@ -27,8 +27,13 @@ func (h *SettingsHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gi
 		settings.PUT("/panel-port", h.ChangePanelPort)
 		settings.PUT("/panel-ssl", h.ConfigurePanelSSL)
 		settings.GET("/panel-info", h.GetPanelInfo)
+		settings.GET("/server-info", h.GetServerInfo)
 		settings.PUT("/admin-path", h.SetAdminPath)
 		settings.PUT("/language", h.SetLanguage)
+		settings.PUT("/panel-name", h.SetPanelName)
+		settings.PUT("/timezone", h.SetTimezone)
+		settings.PUT("/session-timeout", h.SetSessionTimeout)
+		settings.GET("/timezones", h.GetTimezones)
 	}
 }
 
@@ -170,4 +175,85 @@ func (h *SettingsHandler) SetLanguage(c *gin.Context) {
 	})
 }
 
+// GetServerInfo returns server network and system information.
+func (h *SettingsHandler) GetServerInfo(c *gin.Context) {
+	info, err := h.settingsService.GetServerInfo()
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, info)
+}
+
+type setPanelNameRequest struct {
+	Name string `json:"name" binding:"required"`
+}
+
+// SetPanelName updates the panel display name.
+func (h *SettingsHandler) SetPanelName(c *gin.Context) {
+	var req setPanelNameRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "name", Message: "name is required"},
+		})
+		return
+	}
+
+	if err := h.settingsService.SetPanelName(req.Name); err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"message": "panel name updated", "name": req.Name})
+}
+
+type setTimezoneRequest struct {
+	Timezone string `json:"timezone" binding:"required"`
+}
+
+// SetTimezone updates the server timezone setting.
+func (h *SettingsHandler) SetTimezone(c *gin.Context) {
+	var req setTimezoneRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "timezone", Message: "timezone is required"},
+		})
+		return
+	}
+
+	if err := h.settingsService.SetTimezone(req.Timezone); err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"message": "timezone updated", "timezone": req.Timezone})
+}
+
+type setSessionTimeoutRequest struct {
+	Timeout int `json:"timeout" binding:"required,min=300,max=604800"`
+}
+
+// SetSessionTimeout updates the session timeout.
+func (h *SettingsHandler) SetSessionTimeout(c *gin.Context) {
+	var req setSessionTimeoutRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "timeout", Message: "timeout must be between 300 and 604800 seconds"},
+		})
+		return
+	}
+
+	if err := h.settingsService.SetSessionTimeout(req.Timeout); err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"message": "session timeout updated", "timeout": req.Timeout})
+}
+
+// GetTimezones returns available timezone options.
+func (h *SettingsHandler) GetTimezones(c *gin.Context) {
+	zones := h.settingsService.GetTimezones()
+	response.Success(c, zones)
+}
 

@@ -4,6 +4,8 @@ import {
   SettingOutlined, SafetyCertificateOutlined, InfoCircleOutlined,
   WarningOutlined, UploadOutlined, ReloadOutlined,
   CheckCircleOutlined, CloseCircleOutlined, GlobalOutlined,
+  LockOutlined, CloudServerOutlined, CopyOutlined,
+  EditOutlined, ClockCircleOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -12,9 +14,13 @@ import api from '@/services/api';
 import type { ApiResponse } from '@/types';
 
 interface PanelSettings {
-  port: number;
+  panel_name: string;
+  panel_port: number;
   admin_path: string;
-  language: string;
+  panel_language: string;
+  timezone: string;
+  session_timeout: number;
+  [key: string]: string | number | boolean;
 }
 
 interface SSLInfo {
@@ -29,8 +35,20 @@ interface PanelInfo {
   uptime: string;
   go_version: string;
   os: string;
-  arch: string;
   started_at: string;
+  port: number;
+  ssl_enabled: boolean;
+  admin_path: string;
+  panel_name: string;
+}
+
+interface ServerInfo {
+  hostname: string;
+  local_ips: string[];
+  public_ip: string;
+  os: string;
+  arch: string;
+  go_version: string;
 }
 
 export default function Settings() {
@@ -43,22 +61,38 @@ export default function Settings() {
   const [sslInfo, setSSLInfo] = useState<SSLInfo | null>(null);
   const [sslLoading, setSSLLoading] = useState(false);
   const [panelInfo, setPanelInfo] = useState<PanelInfo | null>(null);
+  const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
   const [infoLoading, setInfoLoading] = useState(false);
+  const [serverInfoLoading, setServerInfoLoading] = useState(false);
   const [portForm] = Form.useForm();
   const [portLoading, setPortLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'general' | 'ssl' | 'info' | 'danger'>('general');
+  const [securityForm] = Form.useForm();
+  const [securityLoading, setSecurityLoading] = useState(false);
+  const [timezones, setTimezones] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState<'general' | 'server' | 'ssl' | 'security' | 'danger'>('general');
 
   const fetchSettings = useCallback(async () => {
     setLoading(true);
     try {
       const { data } = await api.get<ApiResponse<PanelSettings>>('/settings');
-      generalForm.setFieldsValue(data.data);
+      const s = data.data;
+      generalForm.setFieldsValue({
+        panel_name: s.panel_name || 'ITDLUPanel',
+        language: s.panel_language || 'en',
+        timezone: s.timezone || 'UTC',
+        session_timeout: typeof s.session_timeout === 'number'
+          ? Math.floor(s.session_timeout / 60)
+          : Math.floor(Number(s.session_timeout || 86400) / 60),
+      });
+      securityForm.setFieldsValue({
+        admin_path: s.admin_path || '/',
+      });
     } catch {
       message.error('Failed to load settings');
     } finally {
       setLoading(false);
     }
-  }, [generalForm]);
+  }, [generalForm, securityForm]);
 
   const fetchSSLInfo = useCallback(async () => {
     setSSLLoading(true);
@@ -84,24 +118,65 @@ export default function Settings() {
     }
   }, []);
 
+  const fetchServerInfo = useCallback(async () => {
+    setServerInfoLoading(true);
+    try {
+      const { data } = await api.get<ApiResponse<ServerInfo>>('/settings/server-info');
+      setServerInfo(data.data);
+    } catch {
+      message.error('Failed to load server info');
+    } finally {
+      setServerInfoLoading(false);
+    }
+  }, []);
+
+  const fetchTimezones = useCallback(async () => {
+    try {
+      const { data } = await api.get<ApiResponse<string[]>>('/settings/timezones');
+      setTimezones(data.data || []);
+    } catch {
+      setTimezones(['UTC', 'Asia/Ho_Chi_Minh', 'Asia/Tokyo', 'US/Eastern', 'US/Pacific', 'Europe/London']);
+    }
+  }, []);
+
   useEffect(() => {
     fetchSettings();
     fetchSSLInfo();
     fetchPanelInfo();
+    fetchServerInfo();
+    fetchTimezones();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleSaveGeneral = async (values: PanelSettings) => {
+  const handleSaveGeneral = async (values: { panel_name: string; language: string; timezone: string; session_timeout: number }) => {
     setSaveLoading(true);
     try {
-      await api.put('/settings', values);
-      message.success(t('common.success'));
+      const promises: Promise<unknown>[] = [];
+      promises.push(api.put('/settings/panel-name', { name: values.panel_name }));
+      promises.push(api.put('/settings/timezone', { timezone: values.timezone }));
+      promises.push(api.put('/settings/session-timeout', { timeout: values.session_timeout * 60 }));
       if (values.language && values.language !== i18n.language) {
+        promises.push(api.put('/settings/language', { lang: values.language }));
         i18n.changeLanguage(values.language);
       }
+      await Promise.all(promises);
+      message.success(t('common.success'));
+      fetchPanelInfo();
     } catch {
       message.error(t('common.error'));
     } finally {
       setSaveLoading(false);
+    }
+  };
+
+  const handleSaveSecurity = async (values: { admin_path: string }) => {
+    setSecurityLoading(true);
+    try {
+      await api.put('/settings/admin-path', { path: values.admin_path });
+      message.success(t('common.success'));
+    } catch {
+      message.error(t('common.error'));
+    } finally {
+      setSecurityLoading(false);
     }
   };
 
@@ -130,10 +205,19 @@ export default function Settings() {
     }
   };
 
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      message.success('Copied!');
+    }).catch(() => {
+      message.error('Copy failed');
+    });
+  };
+
   const tabs = [
     { key: 'general' as const, icon: <SettingOutlined />, label: t('settings.general') },
+    { key: 'server' as const, icon: <CloudServerOutlined />, label: 'Server' },
     { key: 'ssl' as const, icon: <SafetyCertificateOutlined />, label: 'SSL' },
-    { key: 'info' as const, icon: <InfoCircleOutlined />, label: 'Panel Info' },
+    { key: 'security' as const, icon: <LockOutlined />, label: t('settings.security', 'Security') },
     { key: 'danger' as const, icon: <WarningOutlined />, label: 'Danger Zone' },
   ];
 
@@ -168,32 +252,77 @@ export default function Settings() {
     padding: '10px 0', borderBottom: `1px solid ${p.cardBorder}`,
   };
 
+  const sectionTitle = (icon: React.ReactNode, title: string, extra?: React.ReactNode) => (
+    <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 20, color: p.accent, display: 'flex' }}>{icon}</span>
+        <span style={{ fontSize: 16, fontWeight: 600, color: p.text }}>{title}</span>
+      </div>
+      {extra}
+    </div>
+  );
+
+  const ipBadge = (ip: string, label?: string) => (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px',
+      borderRadius: 8, background: isDark ? 'rgba(56,189,248,0.08)' : 'rgba(37,99,235,0.06)',
+      border: `1px solid ${isDark ? 'rgba(56,189,248,0.15)' : 'rgba(37,99,235,0.12)'}`,
+    }}>
+      <span style={{ fontSize: 12, color: p.textMuted, minWidth: label ? 50 : 0 }}>{label}</span>
+      <code style={{
+        fontSize: 13, fontWeight: 600, color: p.accent, fontFamily: 'monospace',
+        background: 'transparent', letterSpacing: 0.3,
+      }}>{ip}</code>
+      <button
+        onClick={() => copyToClipboard(ip)}
+        style={{
+          background: 'none', border: 'none', cursor: 'pointer', padding: 2,
+          color: p.textMuted, display: 'flex', alignItems: 'center',
+        }}
+        title="Copy"
+      >
+        <CopyOutlined style={{ fontSize: 12 }} />
+      </button>
+    </div>
+  );
+
+  /* ─── General Tab ─── */
   const renderGeneralTab = () => (
     <Spin spinning={loading}>
       <div style={sectionBox}>
-        <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
-          <SettingOutlined style={{ fontSize: 20, color: p.accent }} />
-          <span style={{ fontSize: 16, fontWeight: 600, color: p.text }}>
-            {t('settings.general')}
-          </span>
-        </div>
+        {sectionTitle(<EditOutlined />, t('settings.general'))}
         <Form form={generalForm} layout="vertical" onFinish={handleSaveGeneral}>
-          <Form.Item label="Panel Port" name="port">
-            <InputNumber min={1} max={65535} style={{ width: '100%' }} />
+          <Form.Item
+            label={<span style={{ fontWeight: 500 }}>Panel Name</span>}
+            name="panel_name"
+            rules={[{ required: true, message: 'Panel name is required' }]}
+          >
+            <Input placeholder="My Server Panel" maxLength={100} />
           </Form.Item>
-          <Form.Item label="Admin Path" name="admin_path">
-            <Input placeholder="/admin" addonBefore="/" />
-          </Form.Item>
-          <Form.Item label={t('settings.language')} name="language">
+          <Form.Item label={<span style={{ fontWeight: 500 }}>{t('settings.language')}</span>} name="language">
             <Select options={[
               { value: 'en', label: '🇺🇸 English' },
               { value: 'vi', label: '🇻🇳 Tiếng Việt' },
             ]} />
           </Form.Item>
+          <Form.Item label={<span style={{ fontWeight: 500 }}>Timezone</span>} name="timezone">
+            <Select
+              showSearch
+              optionFilterProp="label"
+              options={timezones.map(tz => ({ value: tz, label: tz }))}
+              placeholder="Select timezone"
+            />
+          </Form.Item>
+          <Form.Item
+            label={<span style={{ fontWeight: 500 }}>Session Timeout (minutes)</span>}
+            name="session_timeout"
+            rules={[{ required: true, message: 'Session timeout is required' }]}
+          >
+            <InputNumber min={5} max={10080} style={{ width: '100%' }} addonAfter="min" />
+          </Form.Item>
           <Form.Item style={{ marginBottom: 0 }}>
             <button type="submit" disabled={saveLoading} style={{
-              ...btnPrimary,
-              opacity: saveLoading ? 0.6 : 1,
+              ...btnPrimary, opacity: saveLoading ? 0.6 : 1,
             }}>
               {saveLoading && <Spin size="small" />}
               {t('common.save')}
@@ -204,13 +333,113 @@ export default function Settings() {
     </Spin>
   );
 
+  /* ─── Server Info Tab ─── */
+  const renderServerTab = () => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* Server Network Info */}
+      <Spin spinning={serverInfoLoading}>
+        <div style={sectionBox}>
+          {sectionTitle(<GlobalOutlined />, 'Server Network', (
+            <button onClick={() => { fetchServerInfo(); fetchPanelInfo(); }} style={btnOutline}>
+              <ReloadOutlined /> {t('common.refresh')}
+            </button>
+          ))}
+          {serverInfo ? (
+            <div>
+              <div style={infoRow}>
+                <span style={{ fontSize: 13, color: p.textMuted }}>Hostname</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: p.text }}>{serverInfo.hostname}</span>
+              </div>
+              <div style={{ ...infoRow, flexDirection: 'column', alignItems: 'flex-start', gap: 8 }}>
+                <span style={{ fontSize: 13, color: p.textMuted }}>Local IP</span>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {serverInfo.local_ips?.map((ip, i) => (
+                    <span key={i}>{ipBadge(ip)}</span>
+                  ))}
+                  {(!serverInfo.local_ips || serverInfo.local_ips.length === 0) && (
+                    <span style={{ fontSize: 13, color: p.textMuted }}>—</span>
+                  )}
+                </div>
+              </div>
+              <div style={{ ...infoRow, borderBottom: 'none' }}>
+                <span style={{ fontSize: 13, color: p.textMuted }}>Public IP</span>
+                {serverInfo.public_ip ? ipBadge(serverInfo.public_ip) : (
+                  <span style={{ fontSize: 13, color: p.textMuted }}>—</span>
+                )}
+              </div>
+            </div>
+          ) : (
+            <span style={{ fontSize: 13, color: p.textMuted }}>{t('common.no_data')}</span>
+          )}
+        </div>
+      </Spin>
+
+      {/* Panel Runtime Info */}
+      <Spin spinning={infoLoading}>
+        <div style={sectionBox}>
+          {sectionTitle(<InfoCircleOutlined />, 'Panel Information')}
+          {panelInfo ? (
+            <div>
+              <div style={infoRow}>
+                <span style={{ fontSize: 13, color: p.textMuted }}>Panel Name</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: p.accent }}>{panelInfo.panel_name || 'ITDLUPanel'}</span>
+              </div>
+              <div style={infoRow}>
+                <span style={{ fontSize: 13, color: p.textMuted }}>Version</span>
+                <span style={{
+                  fontSize: 12, fontWeight: 500, padding: '2px 10px', borderRadius: 99,
+                  background: `${p.accent}15`, color: p.accent,
+                }}>{panelInfo.version || '0.1.0'}</span>
+              </div>
+              <div style={infoRow}>
+                <span style={{ fontSize: 13, color: p.textMuted }}>
+                  <ClockCircleOutlined style={{ marginRight: 4 }} />Uptime
+                </span>
+                <span style={{ fontSize: 13, fontWeight: 500, color: p.green }}>{panelInfo.uptime}</span>
+              </div>
+              <div style={infoRow}>
+                <span style={{ fontSize: 13, color: p.textMuted }}>Port</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <code style={{ fontSize: 13, fontWeight: 600, color: p.text, fontFamily: 'monospace' }}>{panelInfo.port}</code>
+                  <span style={{
+                    fontSize: 11, fontWeight: 500, padding: '1px 8px', borderRadius: 99,
+                    background: panelInfo.ssl_enabled ? `${p.green}15` : `${p.amber}15`,
+                    color: panelInfo.ssl_enabled ? p.green : p.amber,
+                  }}>
+                    {panelInfo.ssl_enabled ? 'HTTPS' : 'HTTP'}
+                  </span>
+                </span>
+              </div>
+              <div style={infoRow}>
+                <span style={{ fontSize: 13, color: p.textMuted }}>Go Version</span>
+                <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>{panelInfo.go_version}</span>
+              </div>
+              <div style={infoRow}>
+                <span style={{ fontSize: 13, color: p.textMuted }}>
+                  <GlobalOutlined style={{ marginRight: 4 }} />OS
+                </span>
+                <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>{panelInfo.os}</span>
+              </div>
+              <div style={{ ...infoRow, borderBottom: 'none' }}>
+                <span style={{ fontSize: 13, color: p.textMuted }}>Started At</span>
+                <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>
+                  {panelInfo.started_at ? new Date(panelInfo.started_at).toLocaleString() : '—'}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <span style={{ fontSize: 13, color: p.textMuted }}>{t('common.no_data')}</span>
+          )}
+        </div>
+      </Spin>
+    </div>
+  );
+
+  /* ─── SSL Tab ─── */
   const renderSSLTab = () => (
     <Spin spinning={sslLoading}>
       <div style={sectionBox}>
-        <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
-          <SafetyCertificateOutlined style={{ fontSize: 20, color: p.accent }} />
-          <span style={{ fontSize: 16, fontWeight: 600, color: p.text }}>Panel SSL</span>
-        </div>
+        {sectionTitle(<SafetyCertificateOutlined />, 'Panel SSL')}
 
         <div style={{ marginBottom: 20 }}>
           <div style={infoRow}>
@@ -221,10 +450,7 @@ export default function Settings() {
               background: sslInfo?.enabled ? `${p.green}15` : `${p.red}15`,
               color: sslInfo?.enabled ? p.green : p.red,
             }}>
-              <span style={{
-                width: 6, height: 6, borderRadius: 3,
-                background: sslInfo?.enabled ? p.green : p.red,
-              }} />
+              {sslInfo?.enabled ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
               {sslInfo?.enabled ? 'Enabled' : 'Disabled'}
             </span>
           </div>
@@ -282,59 +508,36 @@ export default function Settings() {
     </Spin>
   );
 
-  const renderInfoTab = () => (
-    <Spin spinning={infoLoading}>
+  /* ─── Security Tab ─── */
+  const renderSecurityTab = () => (
+    <Spin spinning={loading}>
       <div style={sectionBox}>
-        <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <InfoCircleOutlined style={{ fontSize: 20, color: p.accent }} />
-            <span style={{ fontSize: 16, fontWeight: 600, color: p.text }}>Panel Information</span>
-          </div>
-          <button onClick={fetchPanelInfo} style={btnOutline}>
-            <ReloadOutlined /> {t('common.refresh')}
-          </button>
-        </div>
-
-        {panelInfo ? (
-          <div>
-            <div style={infoRow}>
-              <span style={{ fontSize: 13, color: p.textMuted }}>Version</span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: p.text }}>{panelInfo.version}</span>
-            </div>
-            <div style={infoRow}>
-              <span style={{ fontSize: 13, color: p.textMuted }}>Uptime</span>
-              <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>{panelInfo.uptime}</span>
-            </div>
-            <div style={infoRow}>
-              <span style={{ fontSize: 13, color: p.textMuted }}>Go Version</span>
-              <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>{panelInfo.go_version}</span>
-            </div>
-            <div style={infoRow}>
-              <span style={{ fontSize: 13, color: p.textMuted }}>
-                <GlobalOutlined style={{ marginRight: 4 }} />OS
-              </span>
-              <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>
-                {panelInfo.os} ({panelInfo.arch})
-              </span>
-            </div>
-            <div style={{ ...infoRow, borderBottom: 'none' }}>
-              <span style={{ fontSize: 13, color: p.textMuted }}>Started At</span>
-              <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>{panelInfo.started_at}</span>
-            </div>
-          </div>
-        ) : (
-          <span style={{ fontSize: 13, color: p.textMuted }}>{t('common.no_data')}</span>
-        )}
+        {sectionTitle(<LockOutlined />, t('settings.security', 'Security'))}
+        <Form form={securityForm} layout="vertical" onFinish={handleSaveSecurity}>
+          <Form.Item
+            label={<span style={{ fontWeight: 500 }}>Admin Path</span>}
+            name="admin_path"
+            extra={<span style={{ fontSize: 12, color: p.textMuted }}>Custom URL path to access the panel (e.g. /admin)</span>}
+          >
+            <Input placeholder="/" addonBefore="/" />
+          </Form.Item>
+          <Form.Item style={{ marginBottom: 0 }}>
+            <button type="submit" disabled={securityLoading} style={{
+              ...btnPrimary, opacity: securityLoading ? 0.6 : 1,
+            }}>
+              {securityLoading && <Spin size="small" />}
+              {t('common.save')}
+            </button>
+          </Form.Item>
+        </Form>
       </div>
     </Spin>
   );
 
+  /* ─── Danger Zone Tab ─── */
   const renderDangerTab = () => (
     <div style={sectionBox}>
-      <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <WarningOutlined style={{ fontSize: 20, color: p.red }} />
-        <span style={{ fontSize: 16, fontWeight: 600, color: p.text }}>Danger Zone</span>
-      </div>
+      {sectionTitle(<WarningOutlined style={{ color: p.red }} />, 'Danger Zone')}
 
       <div style={{
         padding: '12px 16px', borderRadius: 8,
@@ -410,11 +613,13 @@ export default function Settings() {
         {/* Content */}
         <div style={{ padding: 20 }}>
           {activeTab === 'general' && renderGeneralTab()}
+          {activeTab === 'server' && renderServerTab()}
           {activeTab === 'ssl' && renderSSLTab()}
-          {activeTab === 'info' && renderInfoTab()}
+          {activeTab === 'security' && renderSecurityTab()}
           {activeTab === 'danger' && renderDangerTab()}
         </div>
       </div>
     </div>
   );
 }
+

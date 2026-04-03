@@ -48,6 +48,7 @@ type PathsConfig struct {
 }
 
 type PanelConfig struct {
+	Name           string `json:"name"`
 	Language       string `json:"language"`
 	AdminPath      string `json:"admin_path"`
 	SetupCompleted bool   `json:"setup_completed"`
@@ -82,6 +83,7 @@ func defaults() *Config {
 			Vhost:   "/ITDLUPanel/server/vhost",
 		},
 		Panel: PanelConfig{
+			Name:      "ITDLUPanel",
 			Language:  "en",
 			AdminPath: "/",
 		},

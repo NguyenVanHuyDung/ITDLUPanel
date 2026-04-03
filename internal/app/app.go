@@ -1,12 +1,15 @@
 package app
 
 import (
+	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 
 	"github.com/gin-gonic/gin"
+	"github.com/soheilhy/cmux"
 
 	"github.com/ITDLUPanel/panel/internal/config"
 	"github.com/ITDLUPanel/panel/internal/database"
@@ -168,53 +171,60 @@ func New(configPath string) (*App, error) {
 }
 
 // Run starts the HTTP(S) server. It blocks until the server exits.
+// When SSL is enabled, both HTTP and HTTPS are served on the same port
+// using connection multiplexing. Plain HTTP requests are redirected to HTTPS.
 func (a *App) Run() error {
 	addr := fmt.Sprintf("%s:%d", a.Config.Server.Host, a.Config.Server.Port)
 	logger.Info().Str("address", addr).Bool("ssl", a.Config.Server.SSL).Msg("Starting ITDLUPanel server")
 
-	if a.Config.Server.SSL {
-		// Start HTTP→HTTPS redirect listener on a separate port
-		go a.startHTTPRedirect()
-		return a.Router.RunTLS(addr, a.Config.Server.SSLCert, a.Config.Server.SSLKey)
+	if !a.Config.Server.SSL {
+		return a.Router.Run(addr)
 	}
-	return a.Router.Run(addr)
-}
 
-// startHTTPRedirect runs a lightweight HTTP server that redirects all requests
-// to the HTTPS equivalent. It listens on port (panel_port - 1) e.g. 8887.
-func (a *App) startHTTPRedirect() {
-	httpPort := a.Config.Server.Port - 1
-	if httpPort < 1 {
-		httpPort = 80
+	// Listen on a single TCP port for both HTTP and HTTPS.
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", addr, err)
 	}
-	httpAddr := fmt.Sprintf("%s:%d", a.Config.Server.Host, httpPort)
 
-	redirectHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		target := fmt.Sprintf("https://%s:%d%s", r.Host, a.Config.Server.Port, r.URL.RequestURI())
-		// Strip the HTTP redirect port from Host if present
-		if host := r.Host; host != "" {
-			// Remove port from host, use panel HTTPS port
-			hostOnly := host
-			if idx := len(host) - 1; idx > 0 {
-				for i := idx; i >= 0; i-- {
-					if host[i] == ':' {
-						hostOnly = host[:i]
-						break
-					}
-					if host[i] == ']' {
-						break // IPv6 without port
-					}
-				}
-			}
-			target = fmt.Sprintf("https://%s:%d%s", hostOnly, a.Config.Server.Port, r.URL.RequestURI())
+	m := cmux.New(ln)
+	tlsL := m.Match(cmux.TLS())
+	httpL := m.Match(cmux.Any())
+
+	cert, err := tls.LoadX509KeyPair(a.Config.Server.SSLCert, a.Config.Server.SSLKey)
+	if err != nil {
+		return fmt.Errorf("load TLS certificate: %w", err)
+	}
+	tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}} //nolint:gosec
+
+	// HTTPS — serve the Gin router over TLS.
+	httpsServer := &http.Server{Handler: a.Router, TLSConfig: tlsCfg}
+	go func() {
+		tlsLn := tls.NewListener(tlsL, tlsCfg)
+		if err := httpsServer.Serve(tlsLn); err != nil && err != http.ErrServerClosed {
+			logger.Error().Err(err).Msg("HTTPS server error")
 		}
+	}()
+
+	// HTTP — redirect every request to the HTTPS equivalent on the same port.
+	port := a.Config.Server.Port
+	redirectHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		if h, _, splitErr := net.SplitHostPort(host); splitErr == nil {
+			host = h
+		}
+		target := fmt.Sprintf("https://%s:%d%s", host, port, r.URL.RequestURI())
 		http.Redirect(w, r, target, http.StatusMovedPermanently)
 	})
+	httpServer := &http.Server{Handler: redirectHandler}
+	go func() {
+		if err := httpServer.Serve(httpL); err != nil && err != http.ErrServerClosed {
+			logger.Error().Err(err).Msg("HTTP redirect server error")
+		}
+	}()
 
-	logger.Info().Str("address", httpAddr).Msg("HTTP→HTTPS redirect listener started")
-	if err := http.ListenAndServe(httpAddr, redirectHandler); err != nil {
-		logger.Warn().Err(err).Msg("HTTP redirect listener stopped")
-	}
+	logger.Info().Str("address", addr).Msg("HTTP+HTTPS multiplexed on same port")
+	return m.Serve()
 }
 
 // Shutdown performs a graceful shutdown of all resources.

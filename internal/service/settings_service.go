@@ -3,6 +3,8 @@ package service
 import (
 	"database/sql"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"runtime"
 	"strconv"
@@ -27,6 +29,17 @@ type PanelInfo struct {
 	AdminPath  string `json:"admin_path"`
 	BinaryPath string `json:"binary_path"`
 	ConfigPath string `json:"config_path"`
+	PanelName  string `json:"panel_name"`
+}
+
+// ServerInfo holds server network information.
+type ServerInfo struct {
+	Hostname  string   `json:"hostname"`
+	LocalIPs  []string `json:"local_ips"`
+	PublicIP  string   `json:"public_ip"`
+	OS        string   `json:"os"`
+	Arch      string   `json:"arch"`
+	GoVersion string   `json:"go_version"`
 }
 
 var panelStartedAt = time.Now()
@@ -154,6 +167,11 @@ func (s *SettingsService) GetPanelInfo() (*PanelInfo, error) {
 
 	binaryPath, _ := os.Executable()
 
+	panelName, _ := s.Get("panel_name")
+	if panelName == "" {
+		panelName = cfg.Panel.Name
+	}
+
 	return &PanelInfo{
 		Version:    cfg.Panel.Version,
 		Uptime:     uptime.String(),
@@ -165,6 +183,7 @@ func (s *SettingsService) GetPanelInfo() (*PanelInfo, error) {
 		AdminPath:  cfg.Panel.AdminPath,
 		BinaryPath: binaryPath,
 		ConfigPath: cfg.GetConfigPath(),
+		PanelName:  panelName,
 	}, nil
 }
 
@@ -214,4 +233,196 @@ func (s *SettingsService) SetLanguage(lang string) error {
 
 	logger.Info().Str("lang", lang).Msg("panel language updated")
 	return nil
+}
+
+// GetServerInfo returns server network and system information.
+func (s *SettingsService) GetServerInfo() (*ServerInfo, error) {
+	hostname, _ := os.Hostname()
+
+	localIPs := getLocalIPs()
+	publicIP := getPublicIP()
+
+	return &ServerInfo{
+		Hostname:  hostname,
+		LocalIPs:  localIPs,
+		PublicIP:   publicIP,
+		OS:        runtime.GOOS,
+		Arch:      runtime.GOARCH,
+		GoVersion: runtime.Version(),
+	}, nil
+}
+
+// SetPanelName updates the panel display name.
+func (s *SettingsService) SetPanelName(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return apperrors.New(apperrors.ErrValidation, "panel name cannot be empty")
+	}
+	if len(name) > 100 {
+		return apperrors.New(apperrors.ErrValidation, "panel name must be 100 characters or less")
+	}
+
+	if err := s.settings.Set("panel_name", name); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to update panel name")
+	}
+
+	cfg := config.Get()
+	cfg.Panel.Name = name
+	if err := cfg.Save(); err != nil {
+		logger.Error().Err(err).Msg("failed to persist panel name to config file")
+	}
+
+	logger.Info().Str("name", name).Msg("panel name updated")
+	return nil
+}
+
+// SetTimezone updates the server timezone setting.
+func (s *SettingsService) SetTimezone(tz string) error {
+	tz = strings.TrimSpace(tz)
+	if tz == "" {
+		return apperrors.New(apperrors.ErrValidation, "timezone cannot be empty")
+	}
+	if _, err := time.LoadLocation(tz); err != nil {
+		return apperrors.New(apperrors.ErrValidation, fmt.Sprintf("invalid timezone: %s", tz))
+	}
+
+	if err := s.settings.Set("timezone", tz); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to update timezone")
+	}
+
+	logger.Info().Str("timezone", tz).Msg("timezone updated")
+	return nil
+}
+
+// SetSessionTimeout updates the session timeout setting.
+func (s *SettingsService) SetSessionTimeout(seconds int) error {
+	if seconds < 300 {
+		return apperrors.New(apperrors.ErrValidation, "session timeout must be at least 300 seconds (5 minutes)")
+	}
+	if seconds > 604800 {
+		return apperrors.New(apperrors.ErrValidation, "session timeout must be at most 604800 seconds (7 days)")
+	}
+
+	if err := s.settings.Set("session_timeout", strconv.Itoa(seconds)); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to update session timeout")
+	}
+
+	logger.Info().Int("seconds", seconds).Msg("session timeout updated")
+	return nil
+}
+
+// getLocalIPs returns all non-loopback IPv4 addresses.
+func getLocalIPs() []string {
+	var ips []string
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ips
+	}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip == nil || ip.IsLoopback() {
+				continue
+			}
+			if ip4 := ip.To4(); ip4 != nil {
+				ips = append(ips, ip4.String())
+			}
+		}
+	}
+	return ips
+}
+
+// getPublicIP fetches the server's public IP address.
+func getPublicIP() string {
+	services := []string{
+		"https://api.ipify.org",
+		"https://ifconfig.me/ip",
+		"https://icanhazip.com",
+	}
+
+	client := &http.Client{Timeout: 3 * time.Second}
+	for _, svc := range services {
+		resp, err := client.Get(svc)
+		if err != nil {
+			continue
+		}
+		defer resp.Body.Close()
+
+		var buf [64]byte
+		n, _ := resp.Body.Read(buf[:])
+		if n > 0 {
+			ip := strings.TrimSpace(string(buf[:n]))
+			if parsed := net.ParseIP(ip); parsed != nil {
+				return ip
+			}
+		}
+	}
+	return ""
+}
+
+// getTimezones returns a list of common timezone names (for validation/display).
+func getTimezones() []string {
+	raw, err := os.ReadFile("/usr/share/zoneinfo/zone.tab")
+	if err != nil {
+		return []string{"UTC", "Asia/Ho_Chi_Minh", "Asia/Tokyo", "US/Eastern", "US/Pacific", "Europe/London"}
+	}
+	var zones []string
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) >= 3 {
+			zones = append(zones, parts[2])
+		}
+	}
+	if len(zones) == 0 {
+		return []string{"UTC"}
+	}
+	return zones
+}
+
+// GetTimezones returns available timezones (exported for API use).
+func (s *SettingsService) GetTimezones() []string {
+	return getTimezones()
+}
+
+// GetFormattedSettings returns settings formatted for the frontend.
+func (s *SettingsService) GetFormattedSettings() (map[string]interface{}, error) {
+	all, err := s.settings.GetAll()
+	if err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get settings")
+	}
+
+	result := make(map[string]interface{}, len(all))
+	for _, setting := range all {
+		// Convert numeric values
+		switch setting.Key {
+		case "panel_port", "session_timeout":
+			if v, err := strconv.Atoi(setting.Value); err == nil {
+				result[setting.Key] = v
+			} else {
+				result[setting.Key] = setting.Value
+			}
+		case "panel_ssl", "setup_completed":
+			result[setting.Key] = setting.Value == "1"
+		default:
+			result[setting.Key] = setting.Value
+		}
+	}
+	return result, nil
 }
