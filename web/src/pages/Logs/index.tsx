@@ -1,11 +1,18 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Table, Input, Select, Popconfirm, Tooltip, message } from 'antd';
-import { ReloadOutlined, SearchOutlined, ClearOutlined, InfoCircleOutlined, WarningOutlined, BugOutlined, CloseCircleOutlined, GlobalOutlined } from '@ant-design/icons';
+import { Table, Input, Select, Popconfirm, Tooltip, message, Tag } from 'antd';
+import {
+  ReloadOutlined, SearchOutlined, ClearOutlined, InfoCircleOutlined,
+  WarningOutlined, BugOutlined, CloseCircleOutlined, GlobalOutlined,
+  RightOutlined, LeftOutlined, BarChartOutlined,
+} from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { usePalette } from '@/hooks/usePalette';
+import type { Palette } from '@/hooks/usePalette';
 import type { ApiResponse } from '@/types';
 import api from '@/services/api';
+
+/* ─── Types ─── */
 
 interface AuditEntry {
   id: number;
@@ -44,6 +51,10 @@ interface ParsedAccessLog {
   userAgent: string;
 }
 
+interface SiteMinimal { id: number; domain: string; }
+
+/* ─── Parsers ─── */
+
 // Parse nginx combined log format:
 // 192.168.1.1 - - [24/Mar/2026:12:00:00 +0700] "GET /path HTTP/1.1" 200 1234 "referer" "user-agent"
 function parseAccessLogLine(raw: string, idx: number): ParsedAccessLog {
@@ -58,8 +69,6 @@ function parseAccessLogLine(raw: string, idx: number): ParsedAccessLog {
   }
   return { key: idx, raw, ip: '', time: '', method: '', path: '', status: 0, size: 0, referer: '', userAgent: '' };
 }
-
-interface SiteMinimal { id: number; domain: string; }
 
 const LEVEL_COLOR: Record<string, { color: string; icon: React.ReactNode }> = {
   debug: { color: '#8b949e', icon: <BugOutlined /> },
@@ -79,18 +88,13 @@ function parseLogLine(raw: string, idx: number): ParsedLog {
       if (!HIDDEN_KEYS.has(k)) extra[k] = v;
     }
     return {
-      key: idx,
-      raw,
+      key: idx, raw,
       level: obj.level || 'info',
       time: obj.time || '',
       message: obj.message || '',
-      method: obj.method,
-      path: obj.path,
-      status: obj.status,
-      duration: obj.duration,
-      ip: obj.ip,
-      error: obj.error,
-      extra,
+      method: obj.method, path: obj.path,
+      status: obj.status, duration: obj.duration,
+      ip: obj.ip, error: obj.error, extra,
     };
   } catch {
     return { key: idx, raw, level: 'info', time: '', message: raw, extra: {} };
@@ -107,7 +111,37 @@ function formatTime(iso: string): string {
   }
 }
 
-function StatusBadge({ status, p }: { status?: number; p: { green: string; amber: string; red: string; accent: string } }) {
+/* ─── Helpers ─── */
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1073741824) return `${(bytes / 1073741824).toFixed(1)} GB`;
+  if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
+
+function statusGroup(s: number): string {
+  if (s >= 500) return '5xx';
+  if (s >= 400) return '4xx';
+  if (s >= 300) return '3xx';
+  return '2xx';
+}
+
+function topN<T>(items: T[], key: (item: T) => string, n: number): { value: string; count: number }[] {
+  const map = new Map<string, number>();
+  for (const item of items) {
+    const k = key(item);
+    if (k) map.set(k, (map.get(k) || 0) + 1);
+  }
+  return [...map.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, n)
+    .map(([value, count]) => ({ value, count }));
+}
+
+/* ─── Shared Components ─── */
+
+function StatusBadge({ status, p }: { status?: number; p: Palette }) {
   if (status == null) return null;
   const color = status >= 500 ? p.red : status >= 400 ? p.amber : status >= 300 ? p.accent : p.green;
   return (
@@ -118,10 +152,108 @@ function StatusBadge({ status, p }: { status?: number; p: { green: string; amber
   );
 }
 
+function MetricCard({ value, label, color, p, isDark }: {
+  value: React.ReactNode; label: string; color?: string; p: Palette; isDark: boolean;
+}) {
+  return (
+    <div style={{
+      padding: '12px 16px', borderRadius: 8,
+      background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+      border: `1px solid ${p.cardBorder}`,
+      flex: 1, minWidth: 120,
+    }}>
+      <div style={{ fontSize: 20, fontWeight: 700, color: color || p.text }}>{value}</div>
+      <div style={{ fontSize: 11, color: p.textMuted }}>{label}</div>
+    </div>
+  );
+}
+
+function ToggleBtn({ active, color, label, onClick, p }: {
+  active: boolean; color: string; label: string; onClick: () => void; p: Palette;
+}) {
+  return (
+    <button onClick={onClick} style={{
+      padding: '4px 12px', borderRadius: 6, fontSize: 11, fontWeight: 500,
+      border: `1px solid ${active ? color : p.cardBorder}`,
+      background: active ? `${color}12` : 'transparent',
+      color: active ? color : p.textMuted,
+      cursor: 'pointer', transition: 'all 0.15s',
+    }}>{label}</button>
+  );
+}
+
+function DistributionBar({ segments, p }: {
+  segments: { color: string; pct: number; label: string }[]; p: Palette;
+}) {
+  return (
+    <Tooltip title={
+      <div>{segments.map((s, i) => (
+        <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 11 }}>
+          <span style={{ width: 8, height: 8, borderRadius: 2, background: s.color, display: 'inline-block' }} />
+          {s.label}: {s.pct.toFixed(1)}%
+        </div>
+      ))}</div>
+    }>
+      <div style={{
+        display: 'flex', height: 6, borderRadius: 3, overflow: 'hidden',
+        background: p.barTrack, width: '100%',
+      }}>
+        {segments.filter(s => s.pct > 0).map((s, i) => (
+          <div key={i} style={{ width: `${s.pct}%`, background: s.color, minWidth: s.pct > 0 ? 2 : 0 }} />
+        ))}
+      </div>
+    </Tooltip>
+  );
+}
+
+function RankList({ items, maxCount, color, p, onClickItem }: {
+  items: { value: string; count: number }[]; maxCount: number; color: string;
+  p: Palette; onClickItem?: (v: string) => void;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {items.map((item, i) => (
+        <div key={i}
+          onClick={() => onClickItem?.(item.value)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8, fontSize: 11,
+            cursor: onClickItem ? 'pointer' : 'default',
+            padding: '3px 6px', borderRadius: 4,
+          }}
+        >
+          <span style={{ color: p.textDim, width: 14, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+              <span style={{
+                color: p.text, fontFamily: 'monospace', fontSize: 11,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>{item.value}</span>
+              <span style={{ color: p.textMuted, flexShrink: 0, marginLeft: 8 }}>{item.count}</span>
+            </div>
+            <div style={{
+              height: 3, borderRadius: 2, background: p.barTrack, overflow: 'hidden',
+            }}>
+              <div style={{
+                height: '100%', borderRadius: 2, background: color,
+                width: `${maxCount > 0 ? (item.count / maxCount) * 100 : 0}%`,
+                transition: 'width 0.3s',
+              }} />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ─── Main Component ─── */
+
 export default function Logs() {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
   const { p, isDark } = usePalette();
+
+  // Core state
   const [panelLines, setPanelLines] = useState<string[]>([]);
   const [sshLines, setSshLines] = useState<string[]>([]);
   const [auditData, setAuditData] = useState<AuditEntry[]>([]);
@@ -131,13 +263,26 @@ export default function Logs() {
   const [activeTab, setActiveTab] = useState('panel');
   const [levelFilter, setLevelFilter] = useState<string>('all');
 
+  // Panel log filters
+  const [durationFilter, setDurationFilter] = useState<number>(0);
+
   // Website logs state
   const [sites, setSites] = useState<SiteMinimal[]>([]);
   const [selectedSiteId, setSelectedSiteId] = useState<number | null>(null);
   const [websiteLogType, setWebsiteLogType] = useState<'access' | 'error'>('access');
   const [websiteLines, setWebsiteLines] = useState<string[]>([]);
-  const [logDate, setLogDate] = useState<string>('');  // '' = today, 'YYYY-MM-DD' = rotated
+  const [logDate, setLogDate] = useState<string>('');
   const [availableDates, setAvailableDates] = useState<string[]>([]);
+
+  // Website log filters
+  const [wsStatusFilters, setWsStatusFilters] = useState<Set<string>>(new Set(['2xx', '3xx', '4xx', '5xx']));
+  const [wsMethodFilters, setWsMethodFilters] = useState<Set<string>>(new Set());
+  const [wsIpFilter, setWsIpFilter] = useState('');
+  const [wsPathFilter, setWsPathFilter] = useState('');
+  const [wsSidePanelOpen, setWsSidePanelOpen] = useState(false);
+  const [wsExpandedRows, setWsExpandedRows] = useState<Set<number>>(new Set());
+
+  /* ─── API Calls (unchanged) ─── */
 
   const fetchPanelLog = useCallback(async (numLines: number) => {
     setLoading(true);
@@ -181,7 +326,6 @@ export default function Logs() {
     }
   }, [t]);
 
-  // Fetch sites list for website logs dropdown
   const fetchSites = useCallback(async () => {
     try {
       const { data } = await api.get<ApiResponse<SiteMinimal[]>>('/logs/sites');
@@ -191,7 +335,6 @@ export default function Logs() {
     } catch { /* ignore */ }
   }, [selectedSiteId]);
 
-  // Fetch available log dates when site changes
   const fetchLogDates = useCallback(async (siteId: number) => {
     try {
       const { data } = await api.get<ApiResponse<string[]>>(`/logs/website/${siteId}/dates`);
@@ -231,7 +374,6 @@ export default function Logs() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  // Load sites when switching to website tab
   useEffect(() => {
     if (activeTab === 'website' && sites.length === 0) fetchSites();
   }, [activeTab, sites.length, fetchSites]);
@@ -258,6 +400,8 @@ export default function Logs() {
     }
   };
 
+  /* ─── Parsed & Filtered Data ─── */
+
   const currentLines = activeTab === 'panel' ? panelLines : sshLines;
   const parsed = useMemo(() => currentLines.map((l, i) => parseLogLine(l, i)), [currentLines]);
 
@@ -265,6 +409,9 @@ export default function Logs() {
     let data = parsed;
     if (levelFilter !== 'all') {
       data = data.filter((l) => l.level === levelFilter);
+    }
+    if (durationFilter > 0 && activeTab === 'panel') {
+      data = data.filter((l) => l.duration != null && l.duration > durationFilter);
     }
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -277,21 +424,139 @@ export default function Logs() {
       );
     }
     return data;
-  }, [parsed, levelFilter, search]);
+  }, [parsed, levelFilter, search, durationFilter, activeTab]);
+
+  // Panel stats
+  const panelStats = useMemo(() => {
+    const total = parsed.length;
+    let errors = 0, warns = 0, infos = 0, debugs = 0;
+    let durationSum = 0, durationCount = 0;
+    for (const log of parsed) {
+      if (log.level === 'error' || log.level === 'fatal') errors++;
+      else if (log.level === 'warn') warns++;
+      else if (log.level === 'info') infos++;
+      else if (log.level === 'debug') debugs++;
+      if (log.duration != null) { durationSum += log.duration; durationCount++; }
+    }
+    const avgDuration = durationCount > 0 ? durationSum / durationCount : 0;
+    return { total, errors, warns, infos, debugs, avgDuration, durationCount };
+  }, [parsed]);
+
+  // SSH stats
+  const sshStats = useMemo(() => {
+    let total = 0, failed = 0, accepted = 0;
+    const ipSet = new Set<string>();
+    const failedIps = new Map<string, number>();
+    for (const log of parsed) {
+      total++;
+      const raw = log.raw.toLowerCase();
+      const ipMatch = log.raw.match(/(?:from|for)\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+      if (ipMatch) ipSet.add(ipMatch[1]);
+      if (raw.includes('failed') || raw.includes('invalid') || raw.includes('error')) {
+        failed++;
+        if (ipMatch) failedIps.set(ipMatch[1], (failedIps.get(ipMatch[1]) || 0) + 1);
+      }
+      if (raw.includes('accepted') || raw.includes('opened')) accepted++;
+    }
+    const topAttackers = [...failedIps.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([ip, count]) => ({ value: ip, count }));
+    return { total, failed, accepted, uniqueIps: ipSet.size, topAttackers };
+  }, [parsed]);
+
+  // Website parsed data
+  const parsedWebsite = useMemo(() => websiteLines.map((l, i) => parseAccessLogLine(l, i)), [websiteLines]);
+
+  // Website stats (from full parsed data, before filters)
+  const wsStats = useMemo(() => {
+    const valid = parsedWebsite.filter(l => l.status > 0);
+    const total = valid.length;
+    const ipSet = new Set<string>();
+    let totalSize = 0;
+    let s2xx = 0, s3xx = 0, s4xx = 0, s5xx = 0;
+    const statusCounts = new Map<number, number>();
+    for (const l of valid) {
+      if (l.ip) ipSet.add(l.ip);
+      totalSize += l.size;
+      const g = statusGroup(l.status);
+      if (g === '2xx') s2xx++; else if (g === '3xx') s3xx++; else if (g === '4xx') s4xx++; else s5xx++;
+      statusCounts.set(l.status, (statusCounts.get(l.status) || 0) + 1);
+    }
+    const errorRate = total > 0 ? ((s4xx + s5xx) / total) * 100 : 0;
+    let topStatus = 0, topStatusCount = 0;
+    for (const [code, cnt] of statusCounts) {
+      if (cnt > topStatusCount) { topStatus = code; topStatusCount = cnt; }
+    }
+    return { total, uniqueIps: ipSet.size, totalSize, errorRate, topStatus, s2xx, s3xx, s4xx, s5xx };
+  }, [parsedWebsite]);
+
+  // Website filtered data
+  const filteredWebsite = useMemo(() => {
+    let data = parsedWebsite;
+    if (websiteLogType === 'access') {
+      // Status filter
+      if (wsStatusFilters.size < 4) {
+        data = data.filter(l => l.status === 0 || wsStatusFilters.has(statusGroup(l.status)));
+      }
+      // Method filter
+      if (wsMethodFilters.size > 0) {
+        data = data.filter(l => !l.method || wsMethodFilters.has(l.method));
+      }
+      // IP filter
+      if (wsIpFilter.trim()) {
+        const q = wsIpFilter.trim().toLowerCase();
+        data = data.filter(l => l.ip.toLowerCase().includes(q));
+      }
+      // Path filter
+      if (wsPathFilter.trim()) {
+        const q = wsPathFilter.trim().toLowerCase();
+        data = data.filter(l => l.path.toLowerCase().includes(q));
+      }
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      data = data.filter(l =>
+        l.ip.toLowerCase().includes(q) ||
+        l.path.toLowerCase().includes(q) ||
+        l.method.toLowerCase().includes(q) ||
+        l.userAgent.toLowerCase().includes(q) ||
+        l.raw.toLowerCase().includes(q)
+      );
+    }
+    return data;
+  }, [parsedWebsite, search, websiteLogType, wsStatusFilters, wsMethodFilters, wsIpFilter, wsPathFilter]);
+
+  // Website side panel data
+  const wsTopIps = useMemo(() => topN(filteredWebsite, l => l.ip, 10), [filteredWebsite]);
+  const wsTopPaths = useMemo(() => topN(filteredWebsite, l => l.path, 10), [filteredWebsite]);
+
+  // Audit stats
+  const auditStats = useMemo(() => {
+    const actionCounts = new Map<string, number>();
+    for (const entry of auditData) {
+      const a = entry.action || 'unknown';
+      actionCounts.set(a, (actionCounts.get(a) || 0) + 1);
+    }
+    return {
+      total: auditData.length,
+      actions: [...actionCounts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([action, count]) => ({ action, count })),
+    };
+  }, [auditData]);
+
+  const isJsonLog = currentLines.length > 0 && currentLines[0]?.startsWith('{');
+
+  /* ─── Column Definitions ─── */
 
   const logColumns = [
     {
-      title: 'Time',
-      dataIndex: 'time',
-      key: 'time',
-      width: isMobile ? 80 : 110,
+      title: 'Time', dataIndex: 'time', key: 'time', width: isMobile ? 80 : 110,
       render: (v: string) => <span style={{ fontSize: 12, color: p.textMuted }}>{formatTime(v)}</span>,
     },
     {
-      title: 'Level',
-      dataIndex: 'level',
-      key: 'level',
-      width: 80,
+      title: 'Level', dataIndex: 'level', key: 'level', width: 80,
       render: (v: string) => {
         const cfg = LEVEL_COLOR[v] || LEVEL_COLOR.info;
         return (
@@ -307,9 +572,7 @@ export default function Logs() {
       },
     },
     {
-      title: 'Message',
-      key: 'message',
-      ellipsis: true,
+      title: 'Message', key: 'message', ellipsis: true,
       render: (_: unknown, r: ParsedLog) => (
         <div>
           <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>{r.message}</span>
@@ -342,29 +605,21 @@ export default function Logs() {
       ),
     },
     {
-      title: 'IP',
-      dataIndex: 'ip',
-      key: 'ip',
-      width: isMobile ? 90 : 120,
+      title: 'IP', dataIndex: 'ip', key: 'ip', width: isMobile ? 90 : 120,
       render: (v?: string) => v ? <span style={{ fontSize: 12, color: p.textMuted }}>{v}</span> : null,
     },
   ];
 
   const sshPlainColumns = [
     {
-      title: 'Time',
-      key: 'time',
-      width: isMobile ? 80 : 140,
+      title: 'Time', key: 'time', width: isMobile ? 80 : 140,
       render: (_: unknown, record: ParsedLog) => {
-        // Try to extract timestamp from common syslog formats: "Mon DD HH:MM:SS" or ISO
         const m = record.raw.match(/^(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})/);
         return <span style={{ fontSize: 11, color: p.textMuted, whiteSpace: 'nowrap' }}>{m ? m[1] : ''}</span>;
       },
     },
     {
-      title: 'Source',
-      key: 'source',
-      width: isMobile ? 80 : 120,
+      title: 'Source', key: 'source', width: isMobile ? 80 : 120,
       render: (_: unknown, record: ParsedLog) => {
         const m = record.raw.match(/^\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\S+\s+(\S+?)[\[:]/);
         const src = m ? m[1] : '';
@@ -377,9 +632,7 @@ export default function Logs() {
       },
     },
     {
-      title: 'Event',
-      key: 'event',
-      width: isMobile ? 60 : 90,
+      title: 'Event', key: 'event', width: isMobile ? 60 : 90,
       render: (_: unknown, record: ParsedLog) => {
         const raw = record.raw.toLowerCase();
         let label = '';
@@ -398,11 +651,8 @@ export default function Logs() {
       },
     },
     {
-      title: 'Message',
-      dataIndex: 'raw',
-      key: 'raw',
+      title: 'Message', dataIndex: 'raw', key: 'raw',
       render: (v: string) => {
-        // Strip the syslog prefix to show just the message
         const stripped = v.replace(/^\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\S+\s+\S+?\[\d+\]:\s*/, '')
                           .replace(/^\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\S+\s+\S+:\s*/, '');
         const text = stripped || v;
@@ -420,17 +670,13 @@ export default function Logs() {
       },
     },
     {
-      title: 'IP',
-      key: 'ip_addr',
-      width: isMobile ? 90 : 120,
+      title: 'IP', key: 'ip_addr', width: isMobile ? 90 : 120,
       render: (_: unknown, record: ParsedLog) => {
         const m = record.raw.match(/(?:from|for)\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
         return m ? <span style={{ fontSize: 11, color: p.textMuted }}>{m[1]}</span> : null;
       },
     },
   ];
-
-  const isJsonLog = currentLines.length > 0 && currentLines[0]?.startsWith('{');
 
   const auditColumns = [
     {
@@ -473,17 +719,14 @@ export default function Logs() {
         return (
           <span style={{
             fontSize: 11, padding: '3px 10px', borderRadius: 5, fontWeight: 600,
-            background: `${color}15`, color,
-            display: 'inline-block',
+            background: `${color}15`, color, display: 'inline-block',
           }}>{val}</span>
         );
       },
     },
     {
       title: 'Resource', dataIndex: 'resource', key: 'resource', ellipsis: true,
-      render: (val: string) => (
-        <span style={{ fontSize: 12, color: p.text }}>{val || '—'}</span>
-      ),
+      render: (val: string) => <span style={{ fontSize: 12, color: p.text }}>{val || '—'}</span>,
     },
     {
       title: 'IP', dataIndex: 'ip', key: 'ip', width: isMobile ? 90 : 130,
@@ -498,27 +741,19 @@ export default function Logs() {
   ];
 
   // Website access log columns
-  const parsedWebsite = useMemo(() => websiteLines.map((l, i) => parseAccessLogLine(l, i)), [websiteLines]);
-  const filteredWebsite = useMemo(() => {
-    if (!search.trim()) return parsedWebsite;
-    const q = search.toLowerCase();
-    return parsedWebsite.filter(l =>
-      l.ip.toLowerCase().includes(q) ||
-      l.path.toLowerCase().includes(q) ||
-      l.method.toLowerCase().includes(q) ||
-      l.userAgent.toLowerCase().includes(q) ||
-      l.raw.toLowerCase().includes(q)
-    );
-  }, [parsedWebsite, search]);
-
-  const websiteAccessColumns = [
+  const websiteAccessColumns = useMemo(() => [
     {
       title: 'Time', dataIndex: 'time', key: 'time', width: isMobile ? 100 : 180,
       render: (v: string) => <span style={{ fontSize: 11, color: p.textMuted, whiteSpace: 'nowrap' }}>{v}</span>,
     },
     {
       title: 'IP', dataIndex: 'ip', key: 'ip', width: isMobile ? 90 : 130,
-      render: (v: string) => v ? <span style={{ fontSize: 11, color: p.textMuted }}>{v}</span> : null,
+      render: (v: string) => v ? (
+        <span
+          onClick={(e) => { e.stopPropagation(); setWsIpFilter(v); }}
+          style={{ fontSize: 11, color: p.textMuted, cursor: 'pointer', borderBottom: `1px dashed ${p.textDim}` }}
+        >{v}</span>
+      ) : null,
     },
     {
       title: 'Method', dataIndex: 'method', key: 'method', width: 70,
@@ -534,9 +769,7 @@ export default function Logs() {
     },
     {
       title: 'Path', dataIndex: 'path', key: 'path', ellipsis: true,
-      render: (v: string) => (
-        <span style={{ fontSize: 12, color: p.text }}>{v}</span>
-      ),
+      render: (v: string) => <span style={{ fontSize: 12, color: p.text }}>{v}</span>,
     },
     {
       title: 'Status', dataIndex: 'status', key: 'status', width: 70,
@@ -546,17 +779,16 @@ export default function Logs() {
       title: 'Size', dataIndex: 'size', key: 'size', width: 80,
       render: (v: number) => {
         if (!v) return <span style={{ color: p.textDim }}>—</span>;
-        const s = v >= 1048576 ? `${(v / 1048576).toFixed(1)} MB` : v >= 1024 ? `${(v / 1024).toFixed(1)} KB` : `${v} B`;
-        return <span style={{ fontSize: 11, color: p.textMuted }}>{s}</span>;
+        return <span style={{ fontSize: 11, color: p.textMuted }}>{formatBytes(v)}</span>;
       },
     },
     ...(!isMobile ? [{
       title: 'User-Agent', dataIndex: 'userAgent', key: 'ua', ellipsis: true, width: 200,
       render: (v: string) => <span style={{ fontSize: 11, color: p.textDim }}>{v === '-' ? '' : v}</span>,
     }] : []),
-  ];
+  ], [isMobile, p]);
 
-  // Website error log: plain lines
+  // Website error log columns
   const websiteErrorColumns = [
     {
       title: 'Time', key: 'time', width: isMobile ? 100 : 180,
@@ -584,12 +816,13 @@ export default function Logs() {
     {
       title: 'Message', key: 'message', ellipsis: true,
       render: (_: unknown, r: ParsedAccessLog) => {
-        // Strip timestamp and level prefix
         const cleaned = r.raw.replace(/^\d{4}\/\d{2}\/\d{2}\s+\d{2}:\d{2}:\d{2}\s+\[\w+\]\s+\d+#\d+:\s*(\*\d+\s+)?/, '');
         return <span style={{ fontSize: 12, color: p.text }}>{cleaned || r.raw}</span>;
       },
     },
   ];
+
+  /* ─── Tab setup ─── */
 
   const tabCounts: Record<string, number> = {
     panel: panelLines.length,
@@ -604,6 +837,452 @@ export default function Logs() {
     { key: 'website', label: 'Website Logs', icon: <GlobalOutlined /> },
     { key: 'audit', label: 'Audit Log' },
   ];
+
+  /* ─── Toggle helpers ─── */
+
+  const toggleStatusFilter = (group: string) => {
+    setWsStatusFilters(prev => {
+      const next = new Set(prev);
+      if (next.has(group)) next.delete(group); else next.add(group);
+      if (next.size === 0) return new Set(['2xx', '3xx', '4xx', '5xx']);
+      return next;
+    });
+  };
+
+  const toggleMethodFilter = (method: string) => {
+    setWsMethodFilters(prev => {
+      const next = new Set(prev);
+      if (next.has(method)) next.delete(method); else next.add(method);
+      return next;
+    });
+  };
+
+  const methodColor = (m: string) => {
+    if (m === 'GET') return p.green;
+    if (m === 'POST') return p.accent;
+    if (m === 'PUT') return p.amber;
+    if (m === 'DELETE') return p.red;
+    if (m === 'PATCH') return p.purple;
+    return p.textMuted;
+  };
+
+  const statusGroupColor = (g: string) => {
+    if (g === '2xx') return p.green;
+    if (g === '3xx') return p.accent;
+    if (g === '4xx') return p.amber;
+    if (g === '5xx') return p.red;
+    return p.textMuted;
+  };
+
+  const auditActionColor = (action: string) => {
+    const lower = action.toLowerCase();
+    if (lower.includes('create') || lower.includes('add') || lower.includes('install')) return p.green;
+    if (lower.includes('delete') || lower.includes('remove') || lower.includes('uninstall')) return p.red;
+    if (lower.includes('update') || lower.includes('edit') || lower.includes('change') || lower.includes('reset')) return p.amber;
+    if (lower.includes('login') || lower.includes('logout') || lower.includes('auth')) return p.purple;
+    if (lower.includes('start') || lower.includes('stop') || lower.includes('restart')) return p.cyan;
+    return p.accent;
+  };
+
+  /* ─── Render ─── */
+
+  const sectionGap = 12;
+
+  const renderPanelTab = () => {
+    const { total, errors, warns, avgDuration, durationCount, infos, debugs } = panelStats;
+    const levelTotal = errors + warns + infos + debugs || 1;
+    const segments = [
+      { color: p.red, pct: (errors / levelTotal) * 100, label: `Error (${errors})` },
+      { color: p.amber, pct: (warns / levelTotal) * 100, label: `Warn (${warns})` },
+      { color: '#58a6ff', pct: (infos / levelTotal) * 100, label: `Info (${infos})` },
+      { color: '#8b949e', pct: (debugs / levelTotal) * 100, label: `Debug (${debugs})` },
+    ];
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: sectionGap }}>
+        {/* Stats */}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <MetricCard value={total} label="Total Entries" p={p} isDark={isDark} />
+          <MetricCard value={errors} label="Errors" color={errors > 0 ? p.red : undefined} p={p} isDark={isDark} />
+          <MetricCard value={warns} label="Warnings" color={warns > 0 ? p.amber : undefined} p={p} isDark={isDark} />
+          {durationCount > 0 && (
+            <MetricCard value={`${avgDuration.toFixed(0)}ms`} label="Avg Duration" p={p} isDark={isDark} />
+          )}
+        </div>
+
+        {/* Level distribution */}
+        {total > 0 && (
+          <div style={{ padding: '0 4px' }}>
+            <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4 }}>Level Distribution</div>
+            <DistributionBar segments={segments} p={p} />
+          </div>
+        )}
+
+        {/* Filter bar */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: p.textDim, marginRight: 4 }}>Level:</span>
+          {['all', 'error', 'warn', 'info', 'debug'].map(lvl => {
+            const c = lvl === 'error' ? p.red : lvl === 'warn' ? p.amber : lvl === 'info' ? '#58a6ff' : lvl === 'debug' ? '#8b949e' : p.accent;
+            return (
+              <ToggleBtn key={lvl} active={levelFilter === lvl} color={c}
+                label={lvl === 'all' ? 'ALL' : lvl.toUpperCase()} onClick={() => setLevelFilter(lvl)} p={p} />
+            );
+          })}
+          <span style={{ fontSize: 11, color: p.textDim, marginLeft: 12, marginRight: 4 }}>Duration &gt;</span>
+          {[0, 100, 500, 1000].map(ms => (
+            <ToggleBtn key={ms} active={durationFilter === ms} color={p.accent}
+              label={ms === 0 ? 'ALL' : `${ms}ms`} onClick={() => setDurationFilter(ms)} p={p} />
+          ))}
+        </div>
+
+        {/* Table */}
+        <Table
+          columns={logColumns}
+          dataSource={filtered}
+          rowKey="key"
+          loading={loading}
+          size="small"
+          pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (t) => `${t} entries` }}
+          scroll={{ x: 600, y: 'calc(100vh - 480px)' }}
+          rowClassName={(r) => r.level === 'error' || r.level === 'fatal' ? 'log-row-error' : ''}
+        />
+      </div>
+    );
+  };
+
+  const renderSshTab = () => {
+    const { total, failed, accepted, uniqueIps, topAttackers } = sshStats;
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: sectionGap }}>
+        {/* Stats */}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <MetricCard value={total} label="Total Events" p={p} isDark={isDark} />
+          <MetricCard value={failed} label="Failed Attempts" color={failed > 0 ? p.red : undefined} p={p} isDark={isDark} />
+          <MetricCard value={accepted} label="Accepted" color={accepted > 0 ? p.green : undefined} p={p} isDark={isDark} />
+          <MetricCard value={uniqueIps} label="Unique IPs" p={p} isDark={isDark} />
+        </div>
+
+        {/* Top Attackers mini-list */}
+        {topAttackers.length > 0 && (
+          <div style={{
+            padding: '10px 14px', borderRadius: 8,
+            background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)',
+            border: `1px solid ${p.cardBorder}`,
+          }}>
+            <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 6, fontWeight: 600 }}>
+              Top Attackers (Failed Attempts)
+            </div>
+            <RankList items={topAttackers} maxCount={topAttackers[0]?.count || 1} color={p.red} p={p} />
+          </div>
+        )}
+
+        {/* Filter bar */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: p.textDim, marginRight: 4 }}>Level:</span>
+          {['all', 'error', 'warn', 'info', 'debug'].map(lvl => {
+            const c = lvl === 'error' ? p.red : lvl === 'warn' ? p.amber : lvl === 'info' ? '#58a6ff' : lvl === 'debug' ? '#8b949e' : p.accent;
+            return (
+              <ToggleBtn key={lvl} active={levelFilter === lvl} color={c}
+                label={lvl === 'all' ? 'ALL' : lvl.toUpperCase()} onClick={() => setLevelFilter(lvl)} p={p} />
+            );
+          })}
+        </div>
+
+        {/* Table */}
+        {isJsonLog ? (
+          <Table
+            columns={logColumns}
+            dataSource={filtered}
+            rowKey="key"
+            loading={loading}
+            size="small"
+            pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (t) => `${t} entries` }}
+            scroll={{ x: 600, y: 'calc(100vh - 480px)' }}
+          />
+        ) : (
+          <Table
+            columns={sshPlainColumns}
+            dataSource={filtered}
+            rowKey="key"
+            loading={loading}
+            size="small"
+            pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (t) => `${t} entries` }}
+            scroll={{ x: 600, y: 'calc(100vh - 480px)' }}
+            rowClassName={(r) => {
+              const raw = r.raw.toLowerCase();
+              if (raw.includes('failed') || raw.includes('invalid') || raw.includes('error')) return 'log-row-error';
+              return '';
+            }}
+          />
+        )}
+      </div>
+    );
+  };
+
+  const renderWebsiteTab = () => {
+    if (!selectedSiteId) {
+      return (
+        <div style={{ textAlign: 'center', padding: 60, color: p.textMuted }}>
+          <GlobalOutlined style={{ fontSize: 36, marginBottom: 12, opacity: 0.3 }} />
+          <div style={{ fontSize: 14 }}>Select a website to view logs</div>
+        </div>
+      );
+    }
+
+    const { total: wsTotal, uniqueIps: wsUniqueIps, totalSize, errorRate, topStatus, s2xx, s3xx, s4xx, s5xx } = wsStats;
+    const statusTotal = s2xx + s3xx + s4xx + s5xx || 1;
+    const statusSegments = [
+      { color: p.green, pct: (s2xx / statusTotal) * 100, label: `2xx (${s2xx})` },
+      { color: p.accent, pct: (s3xx / statusTotal) * 100, label: `3xx (${s3xx})` },
+      { color: p.amber, pct: (s4xx / statusTotal) * 100, label: `4xx (${s4xx})` },
+      { color: p.red, pct: (s5xx / statusTotal) * 100, label: `5xx (${s5xx})` },
+    ];
+
+    const showSidePanel = wsSidePanelOpen && !isMobile && websiteLogType === 'access';
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: sectionGap }}>
+        {/* Stats Dashboard */}
+        {websiteLogType === 'access' && (
+          <>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <MetricCard value={wsTotal.toLocaleString()} label="Total Requests" p={p} isDark={isDark} />
+              <MetricCard value={`${errorRate.toFixed(1)}%`} label="Error Rate" color={errorRate > 5 ? p.red : errorRate > 0 ? p.amber : undefined} p={p} isDark={isDark} />
+              <MetricCard value={wsUniqueIps} label="Unique IPs" p={p} isDark={isDark} />
+              <MetricCard value={formatBytes(totalSize)} label="Total Bandwidth" p={p} isDark={isDark} />
+              {topStatus > 0 && (
+                <MetricCard value={<StatusBadge status={topStatus} p={p} />} label="Top Status Code" p={p} isDark={isDark} />
+              )}
+            </div>
+
+            {/* Status distribution bar */}
+            {wsTotal > 0 && (
+              <div style={{ padding: '0 4px' }}>
+                <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4 }}>Status Distribution</div>
+                <DistributionBar segments={statusSegments} p={p} />
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Filter bar */}
+        {websiteLogType === 'access' && (
+          <div style={{
+            display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center',
+            padding: '8px 12px', borderRadius: 8,
+            background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)',
+            border: `1px solid ${p.cardBorder}`,
+          }}>
+            {/* Status groups */}
+            <span style={{ fontSize: 11, color: p.textDim }}>Status:</span>
+            <ToggleBtn active={wsStatusFilters.size === 4} color={p.accent} label="ALL"
+              onClick={() => setWsStatusFilters(new Set(['2xx', '3xx', '4xx', '5xx']))} p={p} />
+            {(['2xx', '3xx', '4xx', '5xx'] as const).map(g => (
+              <ToggleBtn key={g} active={wsStatusFilters.has(g)} color={statusGroupColor(g)}
+                label={g} onClick={() => toggleStatusFilter(g)} p={p} />
+            ))}
+
+            <span style={{ width: 1, height: 20, background: p.cardBorder, margin: '0 4px' }} />
+
+            {/* Method toggles */}
+            <span style={{ fontSize: 11, color: p.textDim }}>Method:</span>
+            <ToggleBtn active={wsMethodFilters.size === 0} color={p.accent} label="ALL"
+              onClick={() => setWsMethodFilters(new Set())} p={p} />
+            {['GET', 'POST', 'PUT', 'DELETE', 'PATCH'].map(m => (
+              <ToggleBtn key={m} active={wsMethodFilters.has(m)} color={methodColor(m)}
+                label={m} onClick={() => toggleMethodFilter(m)} p={p} />
+            ))}
+
+            <span style={{ width: 1, height: 20, background: p.cardBorder, margin: '0 4px' }} />
+
+            {/* IP / Path filters */}
+            <Input
+              placeholder="Filter by IP"
+              value={wsIpFilter}
+              onChange={(e) => setWsIpFilter(e.target.value)}
+              allowClear
+              size="small"
+              style={{ width: 130 }}
+              prefix={<SearchOutlined style={{ color: p.textDim, fontSize: 10 }} />}
+            />
+            <Input
+              placeholder="Filter by path"
+              value={wsPathFilter}
+              onChange={(e) => setWsPathFilter(e.target.value)}
+              allowClear
+              size="small"
+              style={{ width: 150 }}
+              prefix={<SearchOutlined style={{ color: p.textDim, fontSize: 10 }} />}
+            />
+
+            {/* Side panel toggle */}
+            {!isMobile && (
+              <Tooltip title={wsSidePanelOpen ? 'Hide analytics' : 'Show analytics'}>
+                <button onClick={() => setWsSidePanelOpen(!wsSidePanelOpen)} style={{
+                  padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 500,
+                  border: `1px solid ${wsSidePanelOpen ? p.accent : p.cardBorder}`,
+                  background: wsSidePanelOpen ? `${p.accent}12` : 'transparent',
+                  color: wsSidePanelOpen ? p.accent : p.textMuted,
+                  cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4,
+                }}>
+                  <BarChartOutlined /> {wsSidePanelOpen ? <LeftOutlined style={{ fontSize: 9 }} /> : <RightOutlined style={{ fontSize: 9 }} />}
+                </button>
+              </Tooltip>
+            )}
+
+            {/* Active filter count */}
+            {(wsStatusFilters.size < 4 || wsMethodFilters.size > 0 || wsIpFilter || wsPathFilter) && (
+              <Tag color="blue" style={{ fontSize: 10, margin: 0, cursor: 'pointer' }}
+                closable onClose={() => {
+                  setWsStatusFilters(new Set(['2xx', '3xx', '4xx', '5xx']));
+                  setWsMethodFilters(new Set());
+                  setWsIpFilter('');
+                  setWsPathFilter('');
+                }}
+              >
+                {filteredWebsite.length} / {parsedWebsite.length} shown
+              </Tag>
+            )}
+          </div>
+        )}
+
+        {/* Table + Side Panel layout */}
+        <div style={{ display: 'flex', gap: 12 }}>
+          {/* Table */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <Table
+              columns={websiteLogType === 'access' ? websiteAccessColumns : websiteErrorColumns}
+              dataSource={filteredWebsite}
+              rowKey="key"
+              loading={loading}
+              size="small"
+              pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (t) => `${t} entries` }}
+              scroll={{ x: 600, y: 'calc(100vh - 560px)' }}
+              rowClassName={(r) => {
+                if (websiteLogType === 'access' && r.status >= 400) return 'log-row-error';
+                if (websiteLogType === 'error') return 'log-row-error';
+                return '';
+              }}
+              expandable={websiteLogType === 'access' ? {
+                expandedRowKeys: [...wsExpandedRows],
+                onExpand: (expanded, record) => {
+                  setWsExpandedRows(prev => {
+                    const next = new Set(prev);
+                    if (expanded) next.add(record.key); else next.delete(record.key);
+                    return next;
+                  });
+                },
+                expandedRowRender: (record: ParsedAccessLog) => (
+                  <div style={{
+                    padding: '8px 12px', background: p.expandBg, borderRadius: 6,
+                    fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4,
+                  }}>
+                    {record.referer && record.referer !== '-' && (
+                      <div><span style={{ color: p.textDim, marginRight: 8 }}>Referer:</span><span style={{ color: p.text }}>{record.referer}</span></div>
+                    )}
+                    <div><span style={{ color: p.textDim, marginRight: 8 }}>User-Agent:</span><span style={{ color: p.text }}>{record.userAgent}</span></div>
+                    <div style={{ marginTop: 4 }}>
+                      <span style={{ color: p.textDim, marginRight: 8 }}>Raw:</span>
+                      <code style={{
+                        fontSize: 11, color: p.textMuted, background: p.codeBg,
+                        padding: '2px 6px', borderRadius: 4, wordBreak: 'break-all',
+                      }}>{record.raw}</code>
+                    </div>
+                  </div>
+                ),
+              } : undefined}
+            />
+          </div>
+
+          {/* Side Panel */}
+          {showSidePanel && (
+            <div style={{
+              width: 280, flexShrink: 0,
+              padding: 14, borderRadius: 8,
+              background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)',
+              border: `1px solid ${p.cardBorder}`,
+              display: 'flex', flexDirection: 'column', gap: 16,
+              maxHeight: 'calc(100vh - 560px)', overflowY: 'auto',
+            }}>
+              {/* Top IPs */}
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: p.text, marginBottom: 8 }}>Top 10 IPs</div>
+                {wsTopIps.length > 0 ? (
+                  <RankList items={wsTopIps} maxCount={wsTopIps[0].count} color={p.accent} p={p}
+                    onClickItem={(ip) => setWsIpFilter(ip)} />
+                ) : (
+                  <div style={{ fontSize: 11, color: p.textDim }}>No data</div>
+                )}
+              </div>
+
+              {/* Top Paths */}
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: p.text, marginBottom: 8 }}>Top 10 Paths</div>
+                {wsTopPaths.length > 0 ? (
+                  <RankList items={wsTopPaths} maxCount={wsTopPaths[0].count} color={p.green} p={p}
+                    onClickItem={(path) => setWsPathFilter(path)} />
+                ) : (
+                  <div style={{ fontSize: 11, color: p.textDim }}>No data</div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Audit filtered data (must be at top level, not inside render function)
+  const filteredAudit = useMemo(() =>
+    auditData.filter((row) =>
+      !search.trim() || Object.values(row).some((v) => String(v).toLowerCase().includes(search.toLowerCase()))
+    ), [auditData, search]);
+
+  const renderAuditTab = () => {
+    const { total, actions } = auditStats;
+    const actionTotal = actions.reduce((s, a) => s + a.count, 0) || 1;
+    const segments = actions.slice(0, 6).map((a) => ({
+      color: auditActionColor(a.action),
+      pct: (a.count / actionTotal) * 100,
+      label: `${a.action} (${a.count})`,
+    }));
+    const remaining = actions.slice(6).reduce((s, a) => s + a.count, 0);
+    if (remaining > 0) {
+      segments.push({ color: p.textDim, pct: (remaining / actionTotal) * 100, label: `Other (${remaining})` });
+    }
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: sectionGap }}>
+        {/* Stats */}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <MetricCard value={total} label="Total Actions" p={p} isDark={isDark} />
+          {actions.slice(0, 3).map(a => (
+            <MetricCard key={a.action} value={a.count} label={a.action} color={auditActionColor(a.action)} p={p} isDark={isDark} />
+          ))}
+        </div>
+
+        {/* Action distribution */}
+        {total > 0 && (
+          <div style={{ padding: '0 4px' }}>
+            <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4 }}>Action Distribution</div>
+            <DistributionBar segments={segments} p={p} />
+          </div>
+        )}
+
+        {/* Table */}
+        <Table
+          columns={auditColumns}
+          dataSource={filteredAudit}
+          rowKey="id"
+          loading={loading}
+          size="small"
+          pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `${t} entries` }}
+          scroll={{ x: 600, y: 'calc(100vh - 480px)' }}
+        />
+      </div>
+    );
+  };
 
   return (
     <div style={{
@@ -658,20 +1337,6 @@ export default function Logs() {
               />
             </>
           )}
-          {(activeTab === 'panel' || activeTab === 'ssh') && (
-            <Select
-              value={levelFilter}
-              onChange={setLevelFilter}
-              style={{ width: isMobile ? 80 : 110 }}
-              options={[
-                { label: 'All Levels', value: 'all' },
-                { label: '🔴 Error', value: 'error' },
-                { label: '🟡 Warn', value: 'warn' },
-                { label: '🔵 Info', value: 'info' },
-                { label: '⚪ Debug', value: 'debug' },
-              ]}
-            />
-          )}
           <Select
             value={lines}
             onChange={(val: number) => setLines(val)}
@@ -716,12 +1381,17 @@ export default function Logs() {
       <div style={{
         padding: '8px 20px',
         borderBottom: `1px solid ${p.cardBorder}`,
-        display: 'flex', gap: 4,
+        display: 'flex', gap: 4, flexWrap: 'wrap',
       }}>
         {tabs.map(tab => (
           <button
             key={tab.key}
-            onClick={() => { setActiveTab(tab.key); setSearch(''); setLevelFilter('all'); }}
+            onClick={() => {
+              setActiveTab(tab.key);
+              setSearch('');
+              setLevelFilter('all');
+              setDurationFilter(0);
+            }}
             style={{
               padding: '6px 16px', borderRadius: 6,
               border: 'none', cursor: 'pointer',
@@ -744,82 +1414,10 @@ export default function Logs() {
 
       {/* Content */}
       <div style={{ padding: 16 }}>
-        {activeTab === 'panel' && (
-          <Table
-            columns={logColumns}
-            dataSource={filtered}
-            rowKey="key"
-            loading={loading}
-            size="small"
-            pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (total) => `${total} entries` }}
-            scroll={{ x: 600, y: 'calc(100vh - 380px)' }}
-            rowClassName={(r) => r.level === 'error' || r.level === 'fatal' ? 'log-row-error' : ''}
-          />
-        )}
-        {activeTab === 'ssh' && (
-          isJsonLog ? (
-            <Table
-              columns={logColumns}
-              dataSource={filtered}
-              rowKey="key"
-              loading={loading}
-              size="small"
-              pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (total) => `${total} entries` }}
-              scroll={{ x: 600, y: 'calc(100vh - 380px)' }}
-            />
-          ) : (
-            <Table
-              columns={sshPlainColumns}
-              dataSource={filtered}
-              rowKey="key"
-              loading={loading}
-              size="small"
-              pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (total) => `${total} entries` }}
-              scroll={{ x: 600, y: 'calc(100vh - 380px)' }}
-              rowClassName={(r) => {
-                const raw = r.raw.toLowerCase();
-                if (raw.includes('failed') || raw.includes('invalid') || raw.includes('error')) return 'log-row-error';
-                return '';
-              }}
-            />
-          )
-        )}
-        {activeTab === 'website' && (
-          selectedSiteId ? (
-            <Table
-              columns={websiteLogType === 'access' ? websiteAccessColumns : websiteErrorColumns}
-              dataSource={websiteLogType === 'access' ? filteredWebsite : filteredWebsite}
-              rowKey="key"
-              loading={loading}
-              size="small"
-              pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (total) => `${total} entries` }}
-              scroll={{ x: 600, y: 'calc(100vh - 380px)' }}
-              rowClassName={(r) => {
-                if (websiteLogType === 'access' && r.status >= 400) return 'log-row-error';
-                if (websiteLogType === 'error') return 'log-row-error';
-                return '';
-              }}
-            />
-          ) : (
-            <div style={{ textAlign: 'center', padding: 60, color: p.textMuted }}>
-              <GlobalOutlined style={{ fontSize: 36, marginBottom: 12, opacity: 0.3 }} />
-              <div style={{ fontSize: 14 }}>Select a website to view logs</div>
-            </div>
-          )
-        )}
-        {activeTab === 'audit' && (
-          <Table
-            columns={auditColumns}
-            dataSource={auditData.filter((row) =>
-              !search.trim() || Object.values(row).some((v) => String(v).toLowerCase().includes(search.toLowerCase()))
-            )}
-            rowKey="id"
-            loading={loading}
-            size="small"
-            pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `${total} entries` }}
-            scroll={{ x: 600, y: 'calc(100vh - 380px)' }}
-          />
-        )}
+        {activeTab === 'panel' && renderPanelTab()}
+        {activeTab === 'ssh' && renderSshTab()}
+        {activeTab === 'website' && renderWebsiteTab()}
+        {activeTab === 'audit' && renderAuditTab()}
       </div>
 
       <style>{`
