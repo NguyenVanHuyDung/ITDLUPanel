@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Modal, Spin, message } from 'antd';
-import { ReloadOutlined } from '@ant-design/icons';
 import {
   AreaChart,
   Area,
@@ -10,10 +9,53 @@ import {
   Tooltip as RTooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { usePalette } from '@/hooks/usePalette';
+import { usePalette, type Palette } from '@/hooks/usePalette';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import type { ApiResponse } from '@/types';
 import api from '@/services/api';
+
+// ---------------------------------------------------------------------------
+// SVG icons – consistent with SecIcon / SetIcon / FwIcon pattern
+// ---------------------------------------------------------------------------
+const StatsIcon = {
+  Chart: ({ size = 20, color = '#64748B' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 3v18h18" /><path d="M7 16l4-8 4 4 4-6" />
+    </svg>
+  ),
+  Traffic: ({ size = 20, color = '#64748B' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2v20M2 12h20" /><path d="M17 7l-5 5-5-5" /><path d="M7 17l5-5 5 5" />
+    </svg>
+  ),
+  Requests: ({ size = 20, color = '#64748B' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /><path d="M9 12l2 2 4-4" />
+    </svg>
+  ),
+  IP: ({ size = 20, color = '#64748B' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="2" width="20" height="20" rx="4" /><circle cx="12" cy="12" r="3" /><path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+    </svg>
+  ),
+  UV: ({ size = 20, color = '#64748B' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 00-3-3.87" /><path d="M16 3.13a4 4 0 010 7.75" />
+    </svg>
+  ),
+  PV: ({ size = 20, color = '#64748B' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z" /><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z" />
+    </svg>
+  ),
+  Refresh: ({ size = 20, color = '#64748B' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0115.4-6.4L21 8" /><path d="M3 22v-6h6" /><path d="M21 12a9 9 0 01-15.4 6.4L3 16" />
+    </svg>
+  ),
+};
+
+type MetricIconKey = 'Traffic' | 'Requests' | 'IP' | 'UV' | 'PV';
 
 interface DayStats {
   date: string;
@@ -33,12 +75,19 @@ interface WebsiteStatisticsData {
 
 type MetricKey = 'traffic' | 'requests' | 'ip' | 'uv' | 'pv';
 
-const METRICS: { key: MetricKey; label: string; color: string }[] = [
-  { key: 'traffic', label: 'Traffic', color: '#16A34A' },
-  { key: 'requests', label: 'Requests', color: '#2563EB' },
-  { key: 'ip', label: 'IP', color: '#D97706' },
-  { key: 'uv', label: 'UV', color: '#7C3AED' },
-  { key: 'pv', label: 'PV', color: '#0891B2' },
+interface MetricDef {
+  key: MetricKey;
+  label: string;
+  icon: MetricIconKey;
+  paletteKey: (p: Palette) => string;
+}
+
+const METRICS: MetricDef[] = [
+  { key: 'traffic', label: 'Traffic', icon: 'Traffic', paletteKey: p => p.green },
+  { key: 'requests', label: 'Requests', icon: 'Requests', paletteKey: p => p.accent },
+  { key: 'ip', label: 'IP', icon: 'IP', paletteKey: p => p.amber },
+  { key: 'uv', label: 'UV', icon: 'UV', paletteKey: p => p.purple },
+  { key: 'pv', label: 'PV', icon: 'PV', paletteKey: p => p.cyan },
 ];
 
 function formatBytes(b: number): string {
@@ -186,7 +235,7 @@ export function WebsiteStatisticsModal({ siteId, open, onClose, domain }: ModalP
   const dayBefore = stats?.day_before ?? { date: '', traffic: 0, requests: 0, ip: 0, uv: 0, pv: 0 };
   const chartData = stats?.chart_data ?? [];
 
-  const activeColor = METRICS.find(m => m.key === activeMetric)?.color ?? p.accent;
+  const activeColor = METRICS.find(m => m.key === activeMetric)?.paletteKey(p) ?? p.accent;
 
   // Format chart data dates
   const formattedChart = chartData.map(d => ({
@@ -217,9 +266,7 @@ export function WebsiteStatisticsModal({ siteId, open, onClose, domain }: ModalP
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={p.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 3v18h18" /><path d="M7 16l4-8 4 4 4-6" />
-          </svg>
+          <StatsIcon.Chart size={20} color={p.accent} />
           <span style={{ fontSize: 14, fontWeight: 600, color: p.text }}>
             [{siteDomain}] Website Statistics
           </span>
@@ -235,7 +282,7 @@ export function WebsiteStatisticsModal({ siteId, open, onClose, domain }: ModalP
             fontSize: 12, fontWeight: 500, cursor: 'pointer',
           }}
         >
-          <ReloadOutlined spin={loading} style={{ fontSize: 11 }} />
+          <StatsIcon.Refresh size={12} color={p.green} />
           Refresh
         </button>
       </div>
@@ -251,20 +298,26 @@ export function WebsiteStatisticsModal({ siteId, open, onClose, domain }: ModalP
             gap: isMobile ? 10 : 14,
             marginBottom: 28,
           }}>
-            {METRICS.map(m => (
+            {METRICS.map(m => {
+              const color = m.paletteKey(p);
+              const IconComp = StatsIcon[m.icon];
+              return (
               <div key={m.key} style={{
                 padding: '14px 16px', borderRadius: 10,
-                border: `1px solid ${m.color}20`,
-                background: `${m.color}06`,
+                border: `1px solid ${color}20`,
+                background: `${color}06`,
               }}>
                 <div style={{
-                  display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8,
+                  display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10,
                 }}>
                   <div style={{
-                    width: 8, height: 8, borderRadius: '50%',
-                    background: m.color,
-                  }} />
-                  <span style={{ fontSize: 11, fontWeight: 500, color: p.textMuted }}>
+                    width: 28, height: 28, borderRadius: 7,
+                    background: `${color}15`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <IconComp size={15} color={color} />
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: p.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 }}>
                     {m.label}
                   </span>
                 </div>
@@ -278,7 +331,8 @@ export function WebsiteStatisticsModal({ siteId, open, onClose, domain }: ModalP
                   Day Before {getMetricValue(dayBefore, m.key)}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Chart Section */}
@@ -301,14 +355,16 @@ export function WebsiteStatisticsModal({ siteId, open, onClose, domain }: ModalP
                 display: 'flex', gap: 0, borderRadius: 8, overflow: 'hidden',
                 border: `1px solid ${p.cardBorder}`,
               }}>
-                {METRICS.map((m, i) => (
+                {METRICS.map((m, i) => {
+                  const color = m.paletteKey(p);
+                  return (
                   <button
                     key={m.key}
                     onClick={() => setActiveMetric(m.key)}
                     style={{
                       padding: '5px 14px', border: 'none', cursor: 'pointer',
                       fontSize: 11, fontWeight: 600,
-                      background: activeMetric === m.key ? m.color : 'transparent',
+                      background: activeMetric === m.key ? color : 'transparent',
                       color: activeMetric === m.key ? '#fff' : p.textMuted,
                       transition: 'all 0.15s',
                       borderRight: i < METRICS.length - 1 ? `1px solid ${p.cardBorder}` : 'none',
@@ -316,7 +372,8 @@ export function WebsiteStatisticsModal({ siteId, open, onClose, domain }: ModalP
                   >
                     {m.label}
                   </button>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
