@@ -9,6 +9,7 @@ import {
   CloudUploadOutlined, DownloadOutlined, UndoOutlined,
   ApiOutlined, EditOutlined, SafetyOutlined, ToolOutlined,
   DatabaseOutlined, SyncOutlined, PoweroffOutlined, LoadingOutlined,
+  CalendarOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import Editor from '@monaco-editor/react';
@@ -676,7 +677,7 @@ function ComposerPanel({ siteId }: { siteId: number }) {
               fontFamily: 'monospace', fontSize: 11, color: p.text,
               maxHeight: 250, overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all',
             }}>
-              {running && <span style={{ color: p.accent }}>⏳ Running...</span>}
+              {running && <span style={{ color: p.accent }}><LoadingOutlined style={{ fontSize: 11 }} /> Running...</span>}
               {output}
             </div>
           )}
@@ -1574,7 +1575,7 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
                 <span style={{ fontSize: 13, fontWeight: 600, color: p.accent }}>{siteDomain}</span>
               </div>
               <button style={{ ...primaryBtn }} onClick={handleLetsEncrypt} disabled={submitting}>
-                {submitting ? '⏳ Issuing…' : '▶ Apply Certificate'}
+                {submitting ? <><LoadingOutlined style={{ fontSize: 11 }} /> Issuing…</> : <><SafetyCertificateOutlined style={{ fontSize: 11 }} /> Apply Certificate</>}
               </button>
             </div>
           )}
@@ -1601,7 +1602,7 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
 
               {!dnsChallenge ? (
                 <button style={{ ...primaryBtn }} onClick={handleInitDNS} disabled={submitting}>
-                  {submitting ? '⏳ Generating…' : '1️⃣ Get DNS Record'}
+                  {submitting ? <><LoadingOutlined style={{ fontSize: 11 }} /> Generating…</> : <><GlobalOutlined style={{ fontSize: 11 }} /> Get DNS Record</>}
                 </button>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1630,7 +1631,7 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button style={{ ...primaryBtn }} onClick={handleVerifyDNS} disabled={dnsVerifying}>
-                      {dnsVerifying ? '⏳ Verifying…' : '2️⃣ Verify & Issue'}
+                      {dnsVerifying ? <><LoadingOutlined style={{ fontSize: 11 }} /> Verifying…</> : <><SafetyCertificateOutlined style={{ fontSize: 11 }} /> Verify &amp; Issue</>}
                     </button>
                     <button style={{ ...dangerBtn, borderColor: p.textMuted, color: p.textMuted }} onClick={() => setDnsChallenge(null)}>
                       Cancel
@@ -1748,8 +1749,8 @@ function ResponseLogPanel({ site }: { site: Site }) {
           onChange={(v: string) => { setLogDate(v); setLines([]); }}
           style={{ width: 140 }}
           options={[
-            { label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><CloudOutlined style={{ fontSize: 12 }} /> Today</span>, value: '' },
-            ...availableDates.map(d => ({ label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><CloudOutlined style={{ fontSize: 12 }} /> {d}</span>, value: d })),
+            { label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><CalendarOutlined style={{ fontSize: 12 }} /> Today</span>, value: '' },
+            ...availableDates.map(d => ({ label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><CalendarOutlined style={{ fontSize: 12 }} /> {d}</span>, value: d })),
           ]}
         />
         <Select

@@ -4,6 +4,7 @@ import {
   ReloadOutlined, SearchOutlined, ClearOutlined, InfoCircleOutlined,
   WarningOutlined, BugOutlined, CloseCircleOutlined, GlobalOutlined,
   RightOutlined, LeftOutlined, BarChartOutlined,
+  FileTextOutlined, ExclamationCircleOutlined, CalendarOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -1322,8 +1323,8 @@ export default function Logs() {
                 onChange={(val: 'access' | 'error') => { setWebsiteLogType(val); setWebsiteLines([]); }}
                 style={{ width: isMobile ? 100 : 130 }}
                 options={[
-                  { label: '📥 Access Log', value: 'access' },
-                  { label: '⚠️ Error Log', value: 'error' },
+                  { label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><FileTextOutlined style={{ fontSize: 12 }} /> Access Log</span>, value: 'access' },
+                  { label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ExclamationCircleOutlined style={{ fontSize: 12 }} /> Error Log</span>, value: 'error' },
                 ]}
               />
               <Select
@@ -1331,8 +1332,8 @@ export default function Logs() {
                 onChange={(val: string) => { setLogDate(val); setWebsiteLines([]); }}
                 style={{ width: isMobile ? 110 : 140 }}
                 options={[
-                  { label: '📅 Today', value: '' },
-                  ...availableDates.map(d => ({ label: `📅 ${d}`, value: d })),
+                  { label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><CalendarOutlined style={{ fontSize: 12 }} /> Today</span>, value: '' },
+                  ...availableDates.map(d => ({ label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><CalendarOutlined style={{ fontSize: 12 }} /> {d}</span>, value: d })),
                 ]}
               />
             </>

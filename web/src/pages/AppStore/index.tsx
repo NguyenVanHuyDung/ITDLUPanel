@@ -3,6 +3,7 @@ import { Modal, message, Select, Input, Spin, Descriptions, Tag, Tabs, Space, Bu
 import {
   ExclamationCircleOutlined, PlayCircleOutlined, PauseCircleOutlined,
   ReloadOutlined, SettingOutlined, FileTextOutlined, DeleteOutlined, LinkOutlined,
+  ThunderboltOutlined, RocketOutlined, BankOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -90,21 +91,21 @@ export default function AppStore() {
       desc: 'Linux + Nginx + MySQL + PHP — The modern, high-performance stack for most web apps.',
       components: ['nginx', 'mysql', 'php'],
       color: '#009639',
-      icon: '⚡',
+      icon: <ThunderboltOutlined />,
     },
     {
       id: 'lomp', name: 'LOMP Stack',
       desc: 'Linux + OpenLiteSpeed + MySQL + PHP — Lightweight, fast, built-in cache & GUI.',
       components: ['openlitespeed', 'mysql', 'php'],
       color: '#3A7BD5',
-      icon: '🚀',
+      icon: <RocketOutlined />,
     },
     {
       id: 'lamp', name: 'LAMP Stack',
       desc: 'Linux + Apache + MySQL + PHP — Classic, stable, widely supported stack.',
       components: ['apache', 'mysql', 'php'],
       color: '#D22128',
-      icon: '🏛',
+      icon: <BankOutlined />,
     },
   ] as const;
 
@@ -446,7 +447,7 @@ export default function AppStore() {
           onMouseEnter={e => { e.currentTarget.style.borderColor = p.accent; e.currentTarget.style.color = p.accent; }}
           onMouseLeave={e => { e.currentTarget.style.borderColor = p.cardBorder; e.currentTarget.style.color = p.textMuted; }}
         >
-          ↻ Refresh
+          <ReloadOutlined style={{ fontSize: 12 }} /> Refresh
         </button>
       </div>
 
@@ -457,9 +458,9 @@ export default function AppStore() {
         display: 'flex', gap: 4,
       }}>
         {([
-          { key: 'installed' as const, label: `✓ Installed (${installed.length})` },
-          { key: 'available' as const, label: `↓ Available (${available.length})` },
-          { key: 'stacks' as const, label: '⚡ Stacks' },
+          { key: 'installed' as const, label: `Installed (${installed.length})` },
+          { key: 'available' as const, label: `Available (${available.length})` },
+          { key: 'stacks' as const, label: 'Stacks' },
         ]).map(tab => {
           const active = activeTab === tab.key;
           return (
@@ -558,17 +559,17 @@ export default function AppStore() {
                         style={actionBtn(p.green, running, busy)}
                         disabled={running || busy}
                         onClick={() => handleServiceAction(sw.name, 'start')}
-                      >▶ Start</button>
+                      ><PlayCircleOutlined style={{ fontSize: 10 }} /> Start</button>
                       <button
                         style={actionBtn(p.red, !running, busy)}
                         disabled={!running || busy}
                         onClick={() => handleServiceAction(sw.name, 'stop')}
-                      >■ Stop</button>
+                      ><PauseCircleOutlined style={{ fontSize: 10 }} /> Stop</button>
                       <button
                         style={actionBtn(p.accent, false, busy)}
                         disabled={busy}
                         onClick={() => handleServiceAction(sw.name, 'restart')}
-                      >↻ Restart</button>
+                      ><ReloadOutlined style={{ fontSize: 10 }} /> Restart</button>
                       {(() => {
                         const avail = available.find(a => a.name === sw.name);
                         const versions = avail?.installed_versions ?? [];
@@ -950,8 +951,8 @@ export default function AppStore() {
                         onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
                       >
                         {stackBatchInstalling === stack.id
-                          ? '⏳ Installing…'
-                          : `▶ Install All (${remaining.length} remaining)`
+                          ? <><ReloadOutlined spin style={{ fontSize: 11 }} /> Installing…</>
+                          : <><PlayCircleOutlined style={{ fontSize: 11 }} /> Install All ({remaining.length} remaining)</>
                         }
                       </button>
                     )}

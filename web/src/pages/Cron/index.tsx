@@ -4,7 +4,8 @@ import {
   PlusOutlined, DeleteOutlined, ReloadOutlined,
   ThunderboltOutlined, DatabaseOutlined, SearchOutlined,
   CloudServerOutlined, SafetyCertificateOutlined, FolderOutlined,
-  ClockCircleOutlined, CheckCircleOutlined, StopOutlined,
+  ClockCircleOutlined, CheckCircleOutlined, StopOutlined, SettingOutlined,
+  InfoCircleOutlined, PlayCircleOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import type { ApiResponse } from '@/types';
@@ -516,7 +517,7 @@ export default function Cron() {
                 background: p.accent, color: '#fff', fontSize: 11, fontWeight: 600,
                 opacity: runningIds.has(record.id) ? 0.5 : 1, transition: 'opacity 0.15s',
               }}
-            >▶ Run</button>
+            ><PlayCircleOutlined style={{ fontSize: 10 }} /> Run</button>
           </Tooltip>
           <span style={{ color: p.cardBorder, margin: '0 2px', fontSize: 12 }}>|</span>
           <button onClick={() => handleViewLog(record.id, record.name)} style={{
@@ -850,8 +851,8 @@ export default function Cron() {
           <Form.Item label="Schedule" required>
             <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
               {([
-                { key: 'builder' as const, label: '🕐 Visual Builder' },
-                { key: 'custom' as const, label: '✏️ Cron Expression' },
+                { key: 'builder' as const, label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><ClockCircleOutlined style={{ fontSize: 11 }} /> Visual Builder</span> },
+                { key: 'custom' as const, label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><SettingOutlined style={{ fontSize: 11 }} /> Cron Expression</span> },
               ]).map(tab => (
                 <button
                   key={tab.key}
@@ -964,7 +965,7 @@ export default function Cron() {
                 padding: '6px 10px', borderRadius: 6, background: `${p.accent}08`,
                 border: `1px solid ${p.accent}20`,
               }}>
-                💡 Backups are created via panel CLI and registered in the panel database — they will appear on the Websites/Databases page backup counts.
+                <InfoCircleOutlined style={{ fontSize: 12, color: p.accent, flexShrink: 0 }} /> Backups are created via panel CLI and registered in the panel database — they will appear on the Websites/Databases page backup counts.
               </div>
             </div>
           )}

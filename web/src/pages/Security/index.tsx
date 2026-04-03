@@ -1956,7 +1956,7 @@ export default function Security() {
               fontSize: 12, color: p.text, textAlign: 'left',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                <span style={{ fontSize: 14 }}>📦</span>
+                <span style={{ fontSize: 14, display: 'flex' }}><SecIcon.Shield size={16} color={p.amber} /></span>
                 <span style={{ fontWeight: 600 }}>Not installed</span>
               </div>
               <span style={{ color: p.textMuted }}>
