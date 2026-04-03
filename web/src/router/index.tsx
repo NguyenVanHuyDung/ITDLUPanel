@@ -14,7 +14,6 @@ const Docker = lazy(() => import('@/pages/Docker'));
 const Monitor = lazy(() => import('@/pages/Monitor'));
 const Security = lazy(() => import('@/pages/Security'));
 const Firewall = lazy(() => import('@/pages/Firewall'));
-const Fail2ban = lazy(() => import('@/pages/Fail2ban'));
 const Logs = lazy(() => import('@/pages/Logs'));
 const Terminal = lazy(() => import('@/pages/Terminal'));
 const Cron = lazy(() => import('@/pages/Cron'));
@@ -60,7 +59,6 @@ const router = createBrowserRouter([
       { path: 'docker', element: <Docker /> },
       { path: 'monitor', element: <Monitor /> },
       { path: 'security', element: <Security /> },
-      { path: 'fail2ban', element: <Fail2ban /> },
       { path: 'firewall', element: <Firewall /> },
       { path: 'logs', element: <Logs /> },
       { path: 'terminal', element: <Terminal /> },
