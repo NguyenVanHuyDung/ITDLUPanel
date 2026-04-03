@@ -1540,7 +1540,7 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
 
           {/* Method selector tabs */}
           <div style={{ display: 'flex', gap: 0, borderRadius: 6, overflow: 'hidden', border: `1px solid ${p.cardBorder}`, alignSelf: 'flex-start' }}>
-            {([['file', 'File Verification'], ['dns', 'DNS (Wildcard)']] as const).map(([key, label]) => (
+            {([['file', 'File Verification', <SafetyCertificateOutlined key="f" style={{ fontSize: 12 }} />], ['dns', 'DNS (Wildcard)', <GlobalOutlined key="d" style={{ fontSize: 12 }} />]] as const).map(([key, label, icon]) => (
               <button key={key} onClick={() => setDnsMethod(key)}
                 style={{
                   padding: '7px 16px', border: 'none', cursor: 'pointer',
@@ -1548,7 +1548,8 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
                   background: dnsMethod === key ? p.accent : 'transparent',
                   color: dnsMethod === key ? '#fff' : p.textMuted,
                   transition: 'all 0.15s',
-                }}>{label}</button>
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                }}>{icon} {label}</button>
             ))}
           </div>
 
@@ -1738,8 +1739,8 @@ function ResponseLogPanel({ site }: { site: Site }) {
           onChange={(v: 'access' | 'error') => { setLogType(v); setLines([]); }}
           style={{ width: 140 }}
           options={[
-            { label: 'Access Log', value: 'access' },
-            { label: 'Error Log', value: 'error' },
+            { label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><FileTextOutlined style={{ fontSize: 12 }} /> Access Log</span>, value: 'access' },
+            { label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ExclamationCircleOutlined style={{ fontSize: 12 }} /> Error Log</span>, value: 'error' },
           ]}
         />
         <Select
@@ -1747,8 +1748,8 @@ function ResponseLogPanel({ site }: { site: Site }) {
           onChange={(v: string) => { setLogDate(v); setLines([]); }}
           style={{ width: 140 }}
           options={[
-            { label: 'Today', value: '' },
-            ...availableDates.map(d => ({ label: d, value: d })),
+            { label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><CloudOutlined style={{ fontSize: 12 }} /> Today</span>, value: '' },
+            ...availableDates.map(d => ({ label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><CloudOutlined style={{ fontSize: 12 }} /> {d}</span>, value: d })),
           ]}
         />
         <Select
@@ -3164,8 +3165,10 @@ function MaintenancePanel({ siteId, siteDomain }: { siteId: number; siteDomain: 
         <div style={{
           padding: '10px 14px', borderRadius: 6, marginBottom: 14,
           background: p.codeBg, fontSize: 11, color: p.textMuted,
+          display: 'flex', alignItems: 'flex-start', gap: 8,
         }}>
-          The <strong>{MAINTENANCE_TEMPLATES.find(t => t.key === template)?.label}</strong> template will display a styled maintenance page with your domain name <code style={{ background: p.cardBorder, padding: '1px 4px', borderRadius: 3 }}>{siteDomain}</code>. Visitors receive HTTP 503 status.
+          <ExclamationCircleOutlined style={{ fontSize: 13, color: p.accent, marginTop: 1, flexShrink: 0 }} />
+          <span>The <strong>{MAINTENANCE_TEMPLATES.find(t => t.key === template)?.label}</strong> template will display a styled maintenance page with your domain name <code style={{ background: p.cardBorder, padding: '1px 4px', borderRadius: 3 }}>{siteDomain}</code>. Visitors receive HTTP 503 status.</span>
         </div>
       )}
 
