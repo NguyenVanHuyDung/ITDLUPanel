@@ -18,6 +18,7 @@ import type { Site, ApiResponse } from '@/types';
 import RequireSoftware from '@/components/RequireSoftware';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { usePalette } from '@/hooks/usePalette';
+import { SiteStatsCell, WebsiteStatisticsModal } from './WebsiteStatistics';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -3933,6 +3934,12 @@ function WebsitesContent() {
       },
     },
     {
+      title: 'Stats',
+      key: 'stats',
+      width: 100,
+      render: (_: unknown, r: Site) => <SiteStatsCell siteId={r.id} />,
+    },
+    {
       title: 'SSL',
       key: 'ssl',
       width: 130,
@@ -4216,7 +4223,7 @@ function WebsitesContent() {
         {/* Table */}
         <div>
           <Table
-            columns={isMobile ? columns.filter(c => !['expiry', 'ssl'].includes(c.key as string)) : columns}
+            columns={isMobile ? columns.filter(c => !['expiry', 'ssl', 'stats'].includes(c.key as string)) : columns}
             scroll={{ x: 750 }}
             dataSource={filteredSites}
             rowKey="id"

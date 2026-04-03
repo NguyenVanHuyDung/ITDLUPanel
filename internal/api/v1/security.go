@@ -66,6 +66,8 @@ func (h *SecurityHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.Handler
 		// Fail2ban routes
 		security.GET("/fail2ban", rbac("security.manage"), h.GetFail2banStatus)
 		security.PUT("/fail2ban", rbac("security.manage"), h.ConfigureFail2ban)
+		security.POST("/fail2ban/install", rbac("security.manage"), h.InstallFail2ban)
+		security.POST("/fail2ban/uninstall", rbac("security.manage"), h.UninstallFail2ban)
 		security.GET("/fail2ban/config", rbac("security.manage"), h.GetFail2banGlobalConfig)
 		security.PUT("/fail2ban/config", rbac("security.manage"), h.UpdateFail2banGlobalConfig)
 		security.GET("/fail2ban/jails", rbac("security.manage"), h.GetJails)
@@ -357,6 +359,24 @@ func (h *SecurityHandler) ConfigureFail2ban(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"message": "fail2ban configuration updated successfully"})
+}
+
+// InstallFail2ban installs fail2ban on the system.
+func (h *SecurityHandler) InstallFail2ban(c *gin.Context) {
+	if err := h.securityService.InstallFail2ban(); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "fail2ban installed successfully"})
+}
+
+// UninstallFail2ban removes fail2ban from the system.
+func (h *SecurityHandler) UninstallFail2ban(c *gin.Context) {
+	if err := h.securityService.UninstallFail2ban(); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "fail2ban removed successfully"})
 }
 
 // GetFail2banGlobalConfig returns global fail2ban defaults and whitelist.

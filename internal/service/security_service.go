@@ -248,6 +248,68 @@ func isFail2banInstalled() bool {
 	return err == nil
 }
 
+// InstallFail2ban installs fail2ban and enables the service.
+func (s *SecurityService) InstallFail2ban() error {
+	if isFail2banInstalled() {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	if _, err := system.Exec(ctx, "apt-get", "update", "-qq"); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to update package list")
+	}
+
+	if _, err := system.Exec(ctx, "apt-get", "install", "-y", "-qq", "fail2ban"); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to install fail2ban")
+	}
+
+	// Enable and start the service
+	system.Exec(ctx, "systemctl", "enable", "--now", "fail2ban")
+
+	// Create default jail.local with sshd jail
+	defaultConfig := `[DEFAULT]
+bantime = 3600
+findtime = 600
+maxretry = 5
+ignoreip = 127.0.0.1/8 ::1
+
+[sshd]
+enabled = true
+port = ssh
+filter = sshd
+logpath = /var/log/auth.log
+maxretry = 5
+bantime = 3600
+findtime = 600
+`
+	os.WriteFile(fail2banJailPath, []byte(defaultConfig), 0644)
+	system.Exec(ctx, "systemctl", "restart", "fail2ban")
+
+	logger.Info().Msg("fail2ban installed and configured")
+	return nil
+}
+
+// UninstallFail2ban stops and removes fail2ban.
+func (s *SecurityService) UninstallFail2ban() error {
+	if !isFail2banInstalled() {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	system.Exec(ctx, "systemctl", "disable", "--now", "fail2ban")
+
+	if _, err := system.Exec(ctx, "apt-get", "remove", "-y", "-qq", "fail2ban"); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to remove fail2ban")
+	}
+
+	logger.Info().Msg("fail2ban removed")
+	return nil
+}
+
 // GetFail2banStatus returns the current fail2ban status with detailed jail info.
 func (s *SecurityService) GetFail2banStatus() (*Fail2banStatus, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

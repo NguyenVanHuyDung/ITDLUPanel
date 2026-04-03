@@ -14,12 +14,13 @@ import (
 
 // SiteHandler handles website management API endpoints.
 type SiteHandler struct {
-	siteService *service.SiteService
+	siteService      *service.SiteService
+	statsService     *service.SiteStatisticsService
 }
 
 // NewSiteHandler creates a new SiteHandler.
-func NewSiteHandler(siteService *service.SiteService) *SiteHandler {
-	return &SiteHandler{siteService: siteService}
+func NewSiteHandler(siteService *service.SiteService, statsService *service.SiteStatisticsService) *SiteHandler {
+	return &SiteHandler{siteService: siteService, statsService: statsService}
 }
 
 // RegisterRoutes registers all site management routes.
@@ -131,6 +132,9 @@ func (h *SiteHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc
 		sites.POST("/:id/composer/run", rbac("sites.config"), h.RunComposer)
 		sites.GET("/:id/composer/json", rbac("sites.config"), h.GetComposerJSON)
 		sites.PUT("/:id/composer/json", rbac("sites.config"), h.UpdateComposerJSON)
+
+		// Statistics
+		sites.GET("/:id/statistics", rbac("sites.read"), h.GetStatistics)
 	}
 }
 
@@ -1512,4 +1516,31 @@ func (h *SiteHandler) UpdateComposerJSON(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"message": "composer.json updated"})
+}
+
+// ---------------------------------------------------------------------------
+// Statistics
+// ---------------------------------------------------------------------------
+
+// GetStatistics returns access log statistics for a website.
+func (h *SiteHandler) GetStatistics(c *gin.Context) {
+id, err := parseID(c, "id")
+if err != nil {
+return
+}
+
+days := 7
+if d := c.Query("days"); d != "" {
+if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 {
+days = parsed
+}
+}
+
+stats, err := h.statsService.GetStatistics(id, days)
+if err != nil {
+response.Error(c, err)
+return
+}
+
+response.Success(c, stats)
 }

@@ -1520,7 +1520,50 @@ export default function Security() {
   const [section, setSection] = useState<Section>('ssh');
   const [sshTab, setSSHTab] = useState<SSHTab>('config');
   const [f2bTab, setF2bTab] = useState<F2bTab>('overview');
+  const [f2bInstalled, setF2bInstalled] = useState<boolean | null>(null);
+  const [installing, setInstalling] = useState(false);
+  const [uninstalling, setUninstalling] = useState(false);
   const { p, isDark } = usePalette();
+
+  // Check install status when switching to fail2ban
+  const checkF2bInstalled = useCallback(async () => {
+    try {
+      const { data } = await api.get<ApiResponse<Fail2banStatus>>('/security/fail2ban');
+      setF2bInstalled(data.data?.installed ?? false);
+    } catch {
+      setF2bInstalled(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (section === 'fail2ban') checkF2bInstalled();
+  }, [section, checkF2bInstalled]);
+
+  const handleInstall = async () => {
+    setInstalling(true);
+    try {
+      await api.post('/security/fail2ban/install');
+      message.success('Fail2ban installed successfully');
+      setF2bInstalled(true);
+    } catch {
+      message.error('Failed to install fail2ban');
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  const handleUninstall = async () => {
+    setUninstalling(true);
+    try {
+      await api.post('/security/fail2ban/uninstall');
+      message.success('Fail2ban removed');
+      setF2bInstalled(false);
+    } catch {
+      message.error('Failed to remove fail2ban');
+    } finally {
+      setUninstalling(false);
+    }
+  };
 
   const sshTabs: { key: SSHTab; icon: React.ReactNode; label: string }[] = [
     { key: 'config', icon: <SecIcon.Terminal size={14} color="currentColor" />, label: 'SSH Config' },
@@ -1537,6 +1580,7 @@ export default function Security() {
     { key: 'log', icon: <SecIcon.Log size={14} color="currentColor" />, label: 'Log' },
   ];
 
+  const showF2bTabs = section === 'fail2ban' && f2bInstalled === true;
   const tabs = section === 'ssh' ? sshTabs : f2bTabs;
   const activeTab = section === 'ssh' ? sshTab : f2bTab;
   const setActiveTab = section === 'ssh'
@@ -1586,24 +1630,26 @@ export default function Security() {
         </div>
       </div>
 
-      {/* Sub-tab bar */}
-      <div style={{
-        padding: '8px 20px',
-        borderBottom: `1px solid ${p.cardBorder}`,
-        display: 'flex', gap: 4, flexWrap: 'wrap',
-      }}>
-        {tabs.map(tab => (
-          <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
-            padding: '6px 16px', borderRadius: 6,
-            border: 'none', cursor: 'pointer',
-            fontSize: 12, fontWeight: 500,
-            background: activeTab === tab.key ? `${p.accent}15` : 'transparent',
-            color: activeTab === tab.key ? p.accent : p.textMuted,
-            transition: 'all 0.15s',
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-          }}>{tab.icon} {tab.label}</button>
-        ))}
-      </div>
+      {/* Sub-tab bar — only show for SSH or if Fail2ban is installed */}
+      {(section === 'ssh' || showF2bTabs) && (
+        <div style={{
+          padding: '8px 20px',
+          borderBottom: `1px solid ${p.cardBorder}`,
+          display: 'flex', gap: 4, flexWrap: 'wrap',
+        }}>
+          {tabs.map(tab => (
+            <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
+              padding: '6px 16px', borderRadius: 6,
+              border: 'none', cursor: 'pointer',
+              fontSize: 12, fontWeight: 500,
+              background: activeTab === tab.key ? `${p.accent}15` : 'transparent',
+              color: activeTab === tab.key ? p.accent : p.textMuted,
+              transition: 'all 0.15s',
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+            }}>{tab.icon} {tab.label}</button>
+          ))}
+        </div>
+      )}
 
       {/* Content */}
       <div style={{ padding: 20 }}>
@@ -1611,12 +1657,92 @@ export default function Security() {
         {section === 'ssh' && sshTab === 'root' && <RootAccountTab />}
         {section === 'ssh' && sshTab === 'keys' && <SSHKeysTab />}
         {section === 'ssh' && sshTab === 'log' && <SSHLogTab />}
-        {section === 'fail2ban' && f2bTab === 'overview' && <F2bOverviewTab />}
-        {section === 'fail2ban' && f2bTab === 'banned' && <F2bBannedIPsTab />}
-        {section === 'fail2ban' && f2bTab === 'jails' && <F2bJailsTab />}
-        {section === 'fail2ban' && f2bTab === 'settings' && <F2bSettingsTab />}
-        {section === 'fail2ban' && f2bTab === 'log' && <F2bLogTab />}
+
+        {/* Fail2ban: loading state */}
+        {section === 'fail2ban' && f2bInstalled === null && (
+          <div style={{ textAlign: 'center', padding: 48 }}><Spin size="large" /></div>
+        )}
+
+        {/* Fail2ban: not installed — enable screen */}
+        {section === 'fail2ban' && f2bInstalled === false && (
+          <div style={{
+            maxWidth: 520, margin: '0 auto', textAlign: 'center', padding: '40px 20px',
+          }}>
+            <div style={{
+              width: 64, height: 64, borderRadius: 16, margin: '0 auto 20px',
+              background: `${p.accent}10`, border: `1px solid ${p.accent}20`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <SecIcon.Ban size={32} color={p.accent} />
+            </div>
+            <h3 style={{ fontSize: 18, fontWeight: 600, color: p.text, margin: '0 0 8px' }}>
+              Fail2ban
+            </h3>
+            <p style={{ fontSize: 13, color: p.textMuted, marginBottom: 24, lineHeight: 1.6 }}>
+              Fail2ban scans log files and bans IPs that show malicious signs — too many password failures,
+              seeking for exploits, etc. It protects your server from brute-force attacks.
+            </p>
+            <div style={{
+              padding: '14px 20px', borderRadius: 10, marginBottom: 24,
+              background: `${p.amber}08`, border: `1px solid ${p.amber}20`,
+              fontSize: 12, color: p.text, textAlign: 'left',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <span style={{ fontSize: 14 }}>📦</span>
+                <span style={{ fontWeight: 600 }}>Not installed</span>
+              </div>
+              <span style={{ color: p.textMuted }}>
+                Click Enable to automatically install and configure Fail2ban with default SSH protection.
+              </span>
+            </div>
+            <Popconfirm title="Install Fail2ban on this server?" onConfirm={handleInstall} okText="Install">
+              <button disabled={installing} style={{
+                padding: '10px 32px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                fontSize: 13, fontWeight: 600,
+                background: p.green, color: '#fff',
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                opacity: installing ? 0.6 : 1,
+              }}>
+                {installing ? <Spin size="small" /> : <SecIcon.Shield size={16} color="#fff" />}
+                {installing ? 'Installing...' : 'Enable Fail2ban'}
+              </button>
+            </Popconfirm>
+          </div>
+        )}
+
+        {/* Fail2ban: installed — show tabs */}
+        {section === 'fail2ban' && f2bInstalled === true && (
+          <>
+            {f2bTab === 'overview' && <F2bOverviewTab />}
+            {f2bTab === 'banned' && <F2bBannedIPsTab />}
+            {f2bTab === 'jails' && <F2bJailsTab />}
+            {f2bTab === 'settings' && <F2bSettingsTab />}
+            {f2bTab === 'log' && <F2bLogTab />}
+          </>
+        )}
       </div>
+
+      {/* Uninstall option when Fail2ban is installed — bottom bar */}
+      {section === 'fail2ban' && f2bInstalled === true && f2bTab === 'settings' && (
+        <div style={{
+          padding: '12px 20px', borderTop: `1px solid ${p.cardBorder}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+        }}>
+          <Popconfirm title="Remove Fail2ban? This will disable all protections." onConfirm={handleUninstall}
+            okText="Remove" okButtonProps={{ danger: true }}>
+            <button disabled={uninstalling} style={{
+              padding: '6px 16px', borderRadius: 6,
+              border: `1px solid ${p.red}30`, background: `${p.red}08`,
+              color: p.red, fontSize: 12, fontWeight: 500, cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              opacity: uninstalling ? 0.6 : 1,
+            }}>
+              {uninstalling ? <Spin size="small" /> : <DeleteOutlined style={{ fontSize: 11 }} />}
+              {uninstalling ? 'Removing...' : 'Disable & Remove Fail2ban'}
+            </button>
+          </Popconfirm>
+        </div>
+      )}
     </div>
   );
 }

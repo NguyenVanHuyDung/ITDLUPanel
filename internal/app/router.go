@@ -156,7 +156,8 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		// -------------------------------------------------------
 		// Site management
 		// -------------------------------------------------------
-		siteHandler := v1.NewSiteHandler(siteService)
+		statsService := service.NewSiteStatisticsService(db)
+		siteHandler := v1.NewSiteHandler(siteService, statsService)
 		siteHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
 
 		// -------------------------------------------------------
