@@ -1011,30 +1011,33 @@ export default function Cron() {
                 </div>
               )}
 
-              {storageOptions.length > 1 && (
-                <div style={{ marginTop: 12 }}>
-                  <div style={{ fontSize: 12, color: p.text, marginBottom: 6 }}>Storage destination:</div>
-                  <Select
-                    value={storageType}
-                    onChange={(v: string) => {
-                      setStorageType(v);
-                      if (v === 'local') {
-                        setStorageId(null);
-                      } else {
-                        const parts = v.split(':');
-                        setStorageId(parseInt(parts[1]));
-                      }
-                    }}
-                    style={{ width: '100%' }}
-                    options={storageOptions}
-                  />
-                  {storageType !== 'local' && (
-                    <div style={{ fontSize: 11, color: p.amber, marginTop: 6 }}>
-                      ⬆ Backup will be stored locally and uploaded to remote storage
-                    </div>
-                  )}
-                </div>
-              )}
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 12, color: p.text, marginBottom: 6 }}>Storage destination:</div>
+                <Select
+                  value={storageType}
+                  onChange={(v: string) => {
+                    setStorageType(v);
+                    if (v === 'local') {
+                      setStorageId(null);
+                    } else {
+                      const parts = v.split(':');
+                      setStorageId(parseInt(parts[1]));
+                    }
+                  }}
+                  style={{ width: '100%' }}
+                  options={storageOptions}
+                />
+                {storageType !== 'local' && (
+                  <div style={{ fontSize: 11, color: p.amber, marginTop: 6 }}>
+                    ⬆ Backup will be stored locally and uploaded to remote storage
+                  </div>
+                )}
+                {storageOptions.length <= 1 && (
+                  <div style={{ fontSize: 11, color: p.textDim, marginTop: 6 }}>
+                    Install and configure storage providers in Storage page to enable remote backup
+                  </div>
+                )}
+              </div>
 
               <div style={{
                 fontSize: 11, color: p.textMuted, marginTop: 10,
