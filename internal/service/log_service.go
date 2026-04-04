@@ -139,7 +139,7 @@ func (s *LogService) ListSitesMinimal() ([]map[string]interface{}, error) {
 }
 
 // ListWebsiteLogDates returns available log dates for a website.
-// Scans /ITDLUPanel/logs/ for rotated files matching {domain}.access.log.YYYY-MM-DD
+// Scans /ITDLUPanel/logs/ for rotated files matching {domain}.access.log.YYYY-MM-DD[.gz]
 func (s *LogService) ListWebsiteLogDates(siteID int64) ([]string, error) {
 	domain, err := s.getSiteDomain(siteID)
 	if err != nil {
@@ -155,19 +155,23 @@ func (s *LogService) ListWebsiteLogDates(siteID int64) ([]string, error) {
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read log directory")
 	}
 
-	var dates []string
+	seen := make(map[string]bool)
 	for _, e := range entries {
 		name := e.Name()
-		if strings.HasPrefix(name, prefix) && !strings.HasSuffix(name, ".gz") {
-			date := strings.TrimPrefix(name, prefix)
-			// Validate date format YYYY-MM-DD
-			if len(date) == 10 && date[4] == '-' && date[7] == '-' {
-				dates = append(dates, date)
-			}
+		if !strings.HasPrefix(name, prefix) {
+			continue
+		}
+		date := strings.TrimPrefix(name, prefix)
+		date = strings.TrimSuffix(date, ".gz")
+		if len(date) == 10 && date[4] == '-' && date[7] == '-' {
+			seen[date] = true
 		}
 	}
 
-	// Sort descending (newest first)
+	dates := make([]string, 0, len(seen))
+	for d := range seen {
+		dates = append(dates, d)
+	}
 	sort.Sort(sort.Reverse(sort.StringSlice(dates)))
 
 	return dates, nil
@@ -175,13 +179,21 @@ func (s *LogService) ListWebsiteLogDates(siteID int64) ([]string, error) {
 
 // websiteLogPath returns the log file path for a domain.
 // If date is empty, returns the current (today) log.
-// If date is YYYY-MM-DD, returns the rotated log for that date.
+// If date is YYYY-MM-DD, returns the rotated log for that date (plain or .gz).
 func (s *LogService) websiteLogPath(domain, logType, date string) string {
 	base := fmt.Sprintf("%s/%s.%s.log", websiteLogDir, domain, logType)
 	if date == "" {
 		return base
 	}
-	return base + "." + date
+	plain := base + "." + date
+	if _, err := os.Stat(plain); err == nil {
+		return plain
+	}
+	gz := plain + ".gz"
+	if _, err := os.Stat(gz); err == nil {
+		return gz
+	}
+	return plain
 }
 
 // EnsureLogDir creates /ITDLUPanel/logs if it doesn't exist.
@@ -357,7 +369,17 @@ func readLogFile(filePath string, lines int) ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), logCmdTimeout)
 	defer cancel()
 
-	result, err := system.Exec(ctx, "tail", "-n", strconv.Itoa(lines), filePath)
+	var result *system.ExecResult
+	var err error
+
+	if strings.HasSuffix(filePath, ".gz") {
+		// Use zcat piped to tail for compressed logs
+		result, err = system.Exec(ctx, "bash", "-c",
+			fmt.Sprintf("zcat %s | tail -n %d", filePath, lines))
+	} else {
+		result, err = system.Exec(ctx, "tail", "-n", strconv.Itoa(lines), filePath)
+	}
+
 	if err != nil {
 		logger.Error().Err(err).Str("path", filePath).Msg("failed to read log file")
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read log file")
