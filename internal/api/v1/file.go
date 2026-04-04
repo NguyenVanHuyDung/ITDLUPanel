@@ -244,7 +244,21 @@ func (h *FileHandler) download(c *gin.Context) {
 		return
 	}
 
+	// Security: check for path traversal BEFORE Clean resolves ".."
+	if strings.Contains(path, "..") {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "path", Message: "path traversal is not allowed"},
+		})
+		return
+	}
 	cleanPath := filepath.Clean(path)
+	if !filepath.IsAbs(cleanPath) {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "path", Message: "path must be absolute"},
+		})
+		return
+	}
+
 	fi, err := os.Stat(cleanPath)
 	if err != nil {
 		if os.IsNotExist(err) {
