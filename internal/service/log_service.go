@@ -70,25 +70,92 @@ func (s *LogService) GetPanelLog(lines int) ([]string, error) {
 const websiteLogDir = "/ITDLUPanel/logs"
 
 // GetWebsiteAccessLog reads the last N lines of a website's access log.
-// If date is provided (YYYY-MM-DD), reads the rotated log for that date.
-func (s *LogService) GetWebsiteAccessLog(siteID int64, lines int, date string) ([]string, error) {
+// Supports single date or date range (start_date, end_date in YYYY-MM-DD).
+func (s *LogService) GetWebsiteAccessLog(siteID int64, lines int, date, startDate, endDate string) ([]string, error) {
 	domain, err := s.getSiteDomain(siteID)
 	if err != nil {
 		return nil, err
+	}
+	if startDate != "" && endDate != "" {
+		return s.readWebsiteLogRange(domain, "access", startDate, endDate, clampLines(lines))
 	}
 	logPath := s.websiteLogPath(domain, "access", date)
 	return readLogFile(logPath, clampLines(lines))
 }
 
 // GetWebsiteErrorLog reads the last N lines of a website's error log.
-// If date is provided (YYYY-MM-DD), reads the rotated log for that date.
-func (s *LogService) GetWebsiteErrorLog(siteID int64, lines int, date string) ([]string, error) {
+// Supports single date or date range (start_date, end_date in YYYY-MM-DD).
+func (s *LogService) GetWebsiteErrorLog(siteID int64, lines int, date, startDate, endDate string) ([]string, error) {
 	domain, err := s.getSiteDomain(siteID)
 	if err != nil {
 		return nil, err
 	}
+	if startDate != "" && endDate != "" {
+		return s.readWebsiteLogRange(domain, "error", startDate, endDate, clampLines(lines))
+	}
 	logPath := s.websiteLogPath(domain, "error", date)
 	return readLogFile(logPath, clampLines(lines))
+}
+
+// readWebsiteLogRange reads and merges logs across a date range, returning the last N lines.
+func (s *LogService) readWebsiteLogRange(domain, logType, startDate, endDate string, lines int) ([]string, error) {
+	start, err := time.Parse("2006-01-02", startDate)
+	if err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrValidation, "invalid start_date format")
+	}
+	end, err := time.Parse("2006-01-02", endDate)
+	if err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrValidation, "invalid end_date format")
+	}
+	if end.Before(start) {
+		start, end = end, start
+	}
+
+	today := time.Now().Format("2006-01-02")
+	var paths []string
+	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+		ds := d.Format("2006-01-02")
+		var datePart string
+		if ds == today {
+			datePart = ""
+		} else {
+			datePart = ds
+		}
+		p := s.websiteLogPath(domain, logType, datePart)
+		if _, err := os.Stat(p); err == nil {
+			paths = append(paths, p)
+		}
+	}
+
+	if len(paths) == 0 {
+		return []string{}, nil
+	}
+	if len(paths) == 1 {
+		return readLogFile(paths[0], lines)
+	}
+
+	// Build a shell command that cats/zcats all files and pipes to tail
+	var parts []string
+	for _, p := range paths {
+		if strings.HasSuffix(p, ".gz") {
+			parts = append(parts, fmt.Sprintf("zcat '%s'", p))
+		} else {
+			parts = append(parts, fmt.Sprintf("cat '%s'", p))
+		}
+	}
+	cmd := fmt.Sprintf("{ %s; } | tail -n %d", strings.Join(parts, "; "), lines)
+
+	ctx, cancel := context.WithTimeout(context.Background(), logCmdTimeout)
+	defer cancel()
+	result, err := system.Exec(ctx, "bash", "-c", cmd)
+	if err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read log range")
+	}
+	output := strings.TrimSpace(result.Stdout)
+	if output == "" {
+		return []string{}, nil
+	}
+	return strings.Split(output, "\n"), nil
 }
 
 // ClearWebsiteLog clears a website's access or error log.

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Table, Input, Select, Popconfirm, Tooltip, message, Tag } from 'antd';
+import { Table, Input, Select, Popconfirm, Tooltip, message, Tag, DatePicker } from 'antd';
 import {
   ReloadOutlined, SearchOutlined, ClearOutlined, InfoCircleOutlined,
   WarningOutlined, BugOutlined, CloseCircleOutlined, GlobalOutlined,
@@ -12,6 +12,7 @@ import { usePalette } from '@/hooks/usePalette';
 import type { Palette } from '@/hooks/usePalette';
 import type { ApiResponse } from '@/types';
 import api from '@/services/api';
+import dayjs from 'dayjs';
 
 /* ─── Types ─── */
 
@@ -272,8 +273,7 @@ export default function Logs() {
   const [selectedSiteId, setSelectedSiteId] = useState<number | null>(null);
   const [websiteLogType, setWebsiteLogType] = useState<'access' | 'error'>('access');
   const [websiteLines, setWebsiteLines] = useState<string[]>([]);
-  const [logDate, setLogDate] = useState<string>('');
-  const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [logDateRange, setLogDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
 
   // Website log filters
   const [wsStatusFilters, setWsStatusFilters] = useState<Set<string>>(new Set(['2xx', '3xx', '4xx', '5xx']));
@@ -336,22 +336,14 @@ export default function Logs() {
     } catch { /* ignore */ }
   }, [selectedSiteId]);
 
-  const fetchLogDates = useCallback(async (siteId: number) => {
-    try {
-      const { data } = await api.get<ApiResponse<string[]>>(`/logs/website/${siteId}/dates`);
-      setAvailableDates(data.data ?? []);
-    } catch { setAvailableDates([]); }
-  }, []);
-
-  useEffect(() => {
-    if (selectedSiteId && activeTab === 'website') fetchLogDates(selectedSiteId);
-  }, [selectedSiteId, activeTab, fetchLogDates]);
-
-  const fetchWebsiteLog = useCallback(async (siteId: number, logType: 'access' | 'error', numLines: number, date: string) => {
+  const fetchWebsiteLog = useCallback(async (siteId: number, logType: 'access' | 'error', numLines: number, dateRange: [dayjs.Dayjs, dayjs.Dayjs] | null) => {
     setLoading(true);
     try {
       const params: Record<string, string | number> = { lines: numLines };
-      if (date) params.date = date;
+      if (dateRange) {
+        params.start_date = dateRange[0].format('YYYY-MM-DD');
+        params.end_date = dateRange[1].format('YYYY-MM-DD');
+      }
       const { data } = await api.get<ApiResponse<{ lines: string | string[] }>>(`/logs/website/${siteId}/${logType}`, { params });
       const raw = data.data?.lines;
       if (Array.isArray(raw)) setWebsiteLines(raw);
@@ -368,10 +360,10 @@ export default function Logs() {
     if (activeTab === 'panel') fetchPanelLog(lines);
     else if (activeTab === 'ssh') fetchSshLog(lines);
     else if (activeTab === 'website') {
-      if (selectedSiteId) fetchWebsiteLog(selectedSiteId, websiteLogType, lines, logDate);
+      if (selectedSiteId) fetchWebsiteLog(selectedSiteId, websiteLogType, lines, logDateRange);
     }
     else fetchAuditLog();
-  }, [activeTab, lines, fetchPanelLog, fetchSshLog, fetchAuditLog, fetchWebsiteLog, selectedSiteId, websiteLogType, logDate]);
+  }, [activeTab, lines, fetchPanelLog, fetchSshLog, fetchAuditLog, fetchWebsiteLog, selectedSiteId, websiteLogType, logDateRange]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -1313,7 +1305,7 @@ export default function Logs() {
             <>
               <Select
                 value={selectedSiteId}
-                onChange={(val: number) => { setSelectedSiteId(val); setWebsiteLines([]); setLogDate(''); }}
+                onChange={(val: number) => { setSelectedSiteId(val); setWebsiteLines([]); setLogDateRange(null); }}
                 placeholder="Select website"
                 style={{ width: isMobile ? 160 : 220 }}
                 options={sites.map(s => ({ label: s.domain, value: s.id }))}
@@ -1327,13 +1319,20 @@ export default function Logs() {
                   { label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ExclamationCircleOutlined style={{ fontSize: 12 }} /> Error Log</span>, value: 'error' },
                 ]}
               />
-              <Select
-                value={logDate}
-                onChange={(val: string) => { setLogDate(val); setWebsiteLines([]); }}
-                style={{ width: isMobile ? 110 : 140 }}
-                options={[
-                  { label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><CalendarOutlined style={{ fontSize: 12 }} /> Today</span>, value: '' },
-                  ...availableDates.map(d => ({ label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><CalendarOutlined style={{ fontSize: 12 }} /> {d}</span>, value: d })),
+              <DatePicker.RangePicker
+                value={logDateRange}
+                onChange={(dates) => { setLogDateRange(dates as [dayjs.Dayjs, dayjs.Dayjs] | null); setWebsiteLines([]); }}
+                allowClear
+                placeholder={['Start date', 'End date']}
+                style={{ width: isMobile ? 220 : 260 }}
+                size="middle"
+                disabledDate={(current) => current && current.isAfter(dayjs(), 'day')}
+                presets={[
+                  { label: 'Today', value: [dayjs(), dayjs()] },
+                  { label: 'Yesterday', value: [dayjs().subtract(1, 'day'), dayjs().subtract(1, 'day')] },
+                  { label: 'Last 3 days', value: [dayjs().subtract(2, 'day'), dayjs()] },
+                  { label: 'Last 7 days', value: [dayjs().subtract(6, 'day'), dayjs()] },
+                  { label: 'Last 30 days', value: [dayjs().subtract(29, 'day'), dayjs()] },
                 ]}
               />
             </>

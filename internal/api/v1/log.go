@@ -66,7 +66,9 @@ func (h *LogHandler) GetWebsiteAccessLog(c *gin.Context) {
 		return
 	}
 	date := c.DefaultQuery("date", "")
-	data, err := h.logService.GetWebsiteAccessLog(id, getLines(c), date)
+	startDate := c.DefaultQuery("start_date", "")
+	endDate := c.DefaultQuery("end_date", "")
+	data, err := h.logService.GetWebsiteAccessLog(id, getLines(c), date, startDate, endDate)
 	if err != nil {
 		response.Error(c, err)
 		return
@@ -81,7 +83,9 @@ func (h *LogHandler) GetWebsiteErrorLog(c *gin.Context) {
 		return
 	}
 	date := c.DefaultQuery("date", "")
-	data, err := h.logService.GetWebsiteErrorLog(id, getLines(c), date)
+	startDate := c.DefaultQuery("start_date", "")
+	endDate := c.DefaultQuery("end_date", "")
+	data, err := h.logService.GetWebsiteErrorLog(id, getLines(c), date, startDate, endDate)
 	if err != nil {
 		response.Error(c, err)
 		return
