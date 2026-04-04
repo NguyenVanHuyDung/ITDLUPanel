@@ -2,12 +2,15 @@ import { useState, useEffect, useCallback } from 'react';
 import { Spin } from 'antd';
 import {
   CloudServerOutlined, CloudOutlined, HddOutlined,
-  CheckCircleOutlined, ClockCircleOutlined, AppstoreOutlined,
+  CheckCircleOutlined, AppstoreOutlined,
 } from '@ant-design/icons';
 import api from '@/services/api';
 import { usePalette } from '@/hooks/usePalette';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import FTPStorageManageModal from '@/components/FTPStorageManageModal';
+import S3StorageManageModal from '@/components/S3StorageManageModal';
+import GoogleDriveManageModal from '@/components/GoogleDriveManageModal';
+import OneDriveManageModal from '@/components/OneDriveManageModal';
 
 interface Software {
   name: string;
@@ -21,13 +24,19 @@ interface FTPStorageConfig {
   name: string;
 }
 
+interface CloudStorage {
+  id: number;
+  name: string;
+  type: string;
+}
+
 interface ProviderCard {
   key: string;
   name: string;
   description: string;
   icon: React.ReactNode;
   color: string;
-  status: 'installed' | 'not_installed' | 'coming_soon';
+  status: 'installed' | 'not_installed';
   count?: number;
   onManage?: () => void;
 }
@@ -39,25 +48,45 @@ export default function Storage() {
   const [ftpInstalled, setFtpInstalled] = useState(false);
   const [ftpCount, setFtpCount] = useState(0);
   const [ftpModalOpen, setFtpModalOpen] = useState(false);
+  const [s3Installed, setS3Installed] = useState(false);
+  const [s3Count, setS3Count] = useState(0);
+  const [s3ModalOpen, setS3ModalOpen] = useState(false);
+  const [gdInstalled, setGdInstalled] = useState(false);
+  const [gdCount, setGdCount] = useState(0);
+  const [gdModalOpen, setGdModalOpen] = useState(false);
+  const [odInstalled, setOdInstalled] = useState(false);
+  const [odCount, setOdCount] = useState(0);
+  const [odModalOpen, setOdModalOpen] = useState(false);
 
   void isDark;
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [swRes, storageRes] = await Promise.allSettled([
+      const [swRes, storageRes, cloudRes] = await Promise.allSettled([
         api.get('/software'),
         api.get('/ftp-storages'),
+        api.get('/cloud-storages'),
       ]);
 
       if (swRes.status === 'fulfilled') {
         const list: Software[] = swRes.value.data?.data ?? [];
         setFtpInstalled(list.some((s) => s.name === 'ftp_storage' && s.installed));
+        setS3Installed(list.some((s) => s.name === 's3_storage' && s.installed));
+        setGdInstalled(list.some((s) => s.name === 'google_drive' && s.installed));
+        setOdInstalled(list.some((s) => s.name === 'onedrive' && s.installed));
       }
 
       if (storageRes.status === 'fulfilled') {
         const storages: FTPStorageConfig[] = storageRes.value.data?.data ?? [];
         setFtpCount(storages.length);
+      }
+
+      if (cloudRes.status === 'fulfilled') {
+        const storages: CloudStorage[] = cloudRes.value.data?.data ?? [];
+        setS3Count(storages.filter((s) => s.type === 's3').length);
+        setGdCount(storages.filter((s) => s.type === 'google_drive').length);
+        setOdCount(storages.filter((s) => s.type === 'onedrive').length);
       }
     } finally {
       setLoading(false);
@@ -78,12 +107,24 @@ export default function Storage() {
       onManage: () => setFtpModalOpen(true),
     },
     {
+      key: 's3',
+      name: 'Amazon S3',
+      description: 'Connect Amazon S3 or S3-compatible storage for scalable backups',
+      icon: <CloudOutlined style={{ fontSize: 28 }} />,
+      color: '#FF9900',
+      status: s3Installed ? 'installed' : 'not_installed',
+      count: s3Count,
+      onManage: () => setS3ModalOpen(true),
+    },
+    {
       key: 'google_drive',
       name: 'Google Drive',
-      description: 'Connect Google Drive for cloud backup storage',
+      description: 'Connect Google Drive for cloud backup storage with OAuth',
       icon: <CloudOutlined style={{ fontSize: 28 }} />,
       color: '#4285F4',
-      status: 'coming_soon',
+      status: gdInstalled ? 'installed' : 'not_installed',
+      count: gdCount,
+      onManage: () => setGdModalOpen(true),
     },
     {
       key: 'onedrive',
@@ -91,15 +132,9 @@ export default function Storage() {
       description: 'Connect Microsoft OneDrive for cloud backup storage',
       icon: <HddOutlined style={{ fontSize: 28 }} />,
       color: '#0078D4',
-      status: 'coming_soon',
-    },
-    {
-      key: 's3',
-      name: 'Amazon S3',
-      description: 'Connect Amazon S3 for scalable backup storage',
-      icon: <CloudOutlined style={{ fontSize: 28 }} />,
-      color: '#FF9900',
-      status: 'coming_soon',
+      status: odInstalled ? 'installed' : 'not_installed',
+      count: odCount,
+      onManage: () => setOdModalOpen(true),
     },
   ];
 
@@ -113,22 +148,13 @@ export default function Storage() {
         <CheckCircleOutlined /> Installed
       </span>
     );
-    if (status === 'not_installed') return (
+    return (
       <span style={{
         fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4,
         background: `${p.amber}15`, color: p.amber,
         display: 'inline-flex', alignItems: 'center', gap: 4,
       }}>
         <AppstoreOutlined /> Not Installed
-      </span>
-    );
-    return (
-      <span style={{
-        fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4,
-        background: `${p.purple}15`, color: p.purple,
-        display: 'inline-flex', alignItems: 'center', gap: 4,
-      }}>
-        <ClockCircleOutlined /> Coming Soon
       </span>
     );
   };
@@ -155,7 +181,6 @@ export default function Storage() {
           gap: 16,
         }}>
           {providers.map((prov) => {
-            const isComingSoon = prov.status === 'coming_soon';
             return (
               <div key={prov.key} style={{
                 background: p.card,
@@ -163,9 +188,8 @@ export default function Storage() {
                 borderRadius: 12,
                 padding: 20,
                 position: 'relative',
-                opacity: isComingSoon ? 0.55 : 1,
                 transition: 'all 0.2s',
-                cursor: isComingSoon ? 'default' : 'pointer',
+                cursor: 'pointer',
               }}>
                 {/* Icon + status row */}
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
@@ -190,8 +214,8 @@ export default function Storage() {
                   {prov.description}
                 </div>
 
-                {/* Count (for FTP) */}
-                {prov.status !== 'coming_soon' && prov.count !== undefined && (
+                {/* Count */}
+                {prov.count !== undefined && (
                   <div style={{ fontSize: 11, color: p.textDim, marginBottom: 12 }}>
                     {prov.count} connection{prov.count !== 1 ? 's' : ''} configured
                   </div>
@@ -219,17 +243,6 @@ export default function Storage() {
                     Install from AppStore
                   </button>
                 )}
-
-                {isComingSoon && (
-                  <div style={{
-                    width: '100%', padding: '8px 0', borderRadius: 7,
-                    border: `1px solid ${p.cardBorder}`,
-                    background: p.card, color: p.textDim, fontSize: 12, fontWeight: 500,
-                    textAlign: 'center',
-                  }}>
-                    Coming Soon
-                  </div>
-                )}
               </div>
             );
           })}
@@ -237,6 +250,9 @@ export default function Storage() {
       )}
 
       <FTPStorageManageModal open={ftpModalOpen} onClose={() => { setFtpModalOpen(false); fetchData(); }} />
+      <S3StorageManageModal open={s3ModalOpen} onClose={() => { setS3ModalOpen(false); fetchData(); }} />
+      <GoogleDriveManageModal open={gdModalOpen} onClose={() => { setGdModalOpen(false); fetchData(); }} />
+      <OneDriveManageModal open={odModalOpen} onClose={() => { setOdModalOpen(false); fetchData(); }} />
     </div>
   );
 }

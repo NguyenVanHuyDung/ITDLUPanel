@@ -20,6 +20,9 @@ import FTPManageModal from '@/components/FTPManageModal';
 import MariadbManageModal from '@/components/MariadbManageModal';
 import RedisManageModal from '@/components/RedisManageModal';
 import FTPStorageManageModal from '@/components/FTPStorageManageModal';
+import S3StorageManageModal from '@/components/S3StorageManageModal';
+import GoogleDriveManageModal from '@/components/GoogleDriveManageModal';
+import OneDriveManageModal from '@/components/OneDriveManageModal';
 import { getSoftwareIcon } from './SoftwareIcons';
 
 const { Text } = Typography;
@@ -43,13 +46,14 @@ const SOFTWARE_COLORS: Record<string, string> = {
   redis: '#DC382D', memcached: '#3C7E31', python: '#3776AB', docker: '#2496ED',
   mongodb: '#47A248', openlitespeed: '#3A7BD5', pureftpd: '#6C757D',
   ftp_storage: '#1890FF',
+  s3_storage: '#FF9900', google_drive: '#4285F4', onedrive: '#0078D4',
 };
 
 export default function AppStore() {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
   const { p, isDark } = usePalette();
-  const [activeTab, setActiveTab] = useState<'installed' | 'available' | 'stacks'>('installed');
+  const [activeTab, setActiveTab] = useState<'installed' | 'available' | 'other' | 'stacks'>('installed');
   const [installed, setInstalled] = useState<Software[]>([]);
   const [available, setAvailable] = useState<AvailableSoftware[]>([]);
   const [installedLoading, setInstalledLoading] = useState(false);
@@ -73,6 +77,9 @@ export default function AppStore() {
   const [mariadbModalOpen, setMariadbModalOpen] = useState(false);
   const [redisModalOpen, setRedisModalOpen] = useState(false);
   const [ftpStorageModalOpen, setFtpStorageModalOpen] = useState(false);
+  const [s3ModalOpen, setS3ModalOpen] = useState(false);
+  const [googleDriveModalOpen, setGoogleDriveModalOpen] = useState(false);
+  const [oneDriveModalOpen, setOneDriveModalOpen] = useState(false);
   const [swStatus, setSwStatus] = useState<Record<string, string> | null>(null);
   const [swConfig, setSwConfig] = useState('');
   const [configLoading, setConfigLoading] = useState(false);
@@ -343,6 +350,9 @@ export default function AppStore() {
     if (sw.name === 'mysql') { setMariadbModalOpen(true); return; }
     if (sw.name === 'redis') { setRedisModalOpen(true); return; }
     if (sw.name === 'ftp_storage') { setFtpStorageModalOpen(true); return; }
+    if (sw.name === 's3_storage') { setS3ModalOpen(true); return; }
+    if (sw.name === 'google_drive') { setGoogleDriveModalOpen(true); return; }
+    if (sw.name === 'onedrive') { setOneDriveModalOpen(true); return; }
     setManageSW(sw);
     setManageTab('status');
     setSwStatus(null);
@@ -389,6 +399,9 @@ export default function AppStore() {
   const isWebServerBlocked = (name: string) =>
     WEB_SERVERS.includes(name) && installedWebServer && installedWebServer !== name;
   const runningCount = installed.filter(s => s.status === 1).length;
+
+  const otherSoftware = available.filter(sw => sw.type === 'tool' || sw.type === 'storage');
+  const mainSoftware = available.filter(sw => sw.type !== 'tool' && sw.type !== 'storage');
 
   const actionBtn = (color: string, disabled?: boolean, busy?: boolean): React.CSSProperties => ({
     padding: '4px 10px', borderRadius: 5,
@@ -466,7 +479,8 @@ export default function AppStore() {
       }}>
         {([
           { key: 'installed' as const, label: `Installed (${installed.length})` },
-          { key: 'available' as const, label: `Available (${available.length})` },
+          { key: 'available' as const, label: `Available (${mainSoftware.length})` },
+          { key: 'other' as const, label: `Other Software (${otherSoftware.length})` },
           { key: 'stacks' as const, label: 'Stacks' },
         ]).map(tab => {
           const active = activeTab === tab.key;
@@ -622,7 +636,7 @@ export default function AppStore() {
           )
         ) : activeTab === 'available' ? (
           /* ── AVAILABLE TAB ── */
-          available.length === 0 ? (
+          mainSoftware.length === 0 ? (
             <div style={{ textAlign: 'center', padding: 48, color: p.textMuted, fontSize: 13 }}>
               No additional software available.
             </div>
@@ -632,7 +646,7 @@ export default function AppStore() {
               gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '100%' : '260px'}, 1fr))`,
               gap: 10,
             }}>
-              {available.map(sw => {
+              {mainSoftware.map(sw => {
                 const done = isInstalled(sw.name);
                 const blocked = isWebServerBlocked(sw.name);
                 const wsName = installed.find(s => s.name === installedWebServer)?.display_name || installedWebServer;
@@ -699,6 +713,153 @@ export default function AppStore() {
                                 <span
                                   style={{ cursor: 'pointer', color: p.red, fontWeight: 700, fontSize: 13, lineHeight: 1 }}
                                   title={`Remove PHP ${v}`}
+                                  onClick={e => { e.stopPropagation(); handleUninstall({ name: sw.name, display_name: sw.display_name }, v); }}
+                                >×</span>
+                              </span>
+                            ))}
+                          </div>
+                          {(sw.versions.filter(v => !(sw.installed_versions ?? []).includes(v)).length > 0) && (
+                            <button
+                              onClick={() => openInstallModal(sw)}
+                              style={{
+                                width: '100%', padding: '6px 0',
+                                borderRadius: 7, border: `1px solid ${p.accent}`,
+                                background: 'transparent', color: p.accent,
+                                fontSize: 12, fontWeight: 500,
+                                cursor: 'pointer', transition: 'opacity 0.15s',
+                              }}
+                              onMouseEnter={e => { e.currentTarget.style.background = `${p.accent}10`; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                            >
+                              + Add Version
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: 5,
+                        fontSize: 12, fontWeight: 500, color: p.green,
+                        padding: '6px 0',
+                      }}>
+                        <span style={{
+                          width: 6, height: 6, borderRadius: 3,
+                          background: p.green, display: 'inline-block',
+                        }} />
+                        Installed
+                      </div>
+                      )
+                    ) : blocked ? (
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: 5,
+                        fontSize: 11, fontWeight: 500, color: p.amber || p.textMuted,
+                        padding: '6px 0',
+                      }}>
+                        <span style={{
+                          width: 6, height: 6, borderRadius: 3,
+                          background: p.amber || p.textMuted, display: 'inline-block',
+                        }} />
+                        {wsName} is installed — uninstall it first
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => openInstallModal(sw)}
+                        style={{
+                          width: '100%', padding: '8px 0',
+                          borderRadius: 7, border: 'none',
+                          background: p.accent, color: '#fff',
+                          fontSize: 13, fontWeight: 500,
+                          cursor: 'pointer', transition: 'opacity 0.15s',
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.opacity = '0.85'; }}
+                        onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+                      >
+                        Install
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )
+        ) : activeTab === 'other' ? (
+          /* ── OTHER SOFTWARE TAB ── */
+          otherSoftware.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 48, color: p.textMuted, fontSize: 13 }}>
+              No other software available.
+            </div>
+          ) : (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '100%' : '260px'}, 1fr))`,
+              gap: 10,
+            }}>
+              {otherSoftware.map(sw => {
+                const done = isInstalled(sw.name);
+                const blocked = isWebServerBlocked(sw.name);
+                const wsName = installed.find(s => s.name === installedWebServer)?.display_name || installedWebServer;
+                return (
+                  <div
+                    key={sw.name}
+                    style={{
+                      padding: 16, borderRadius: 10,
+                      border: `1px solid ${p.cardBorder}`,
+                      background: isDark ? p.rowAlt : p.card,
+                      transition: 'all 0.15s',
+                      opacity: (done && !sw.multi_version) || blocked ? 0.6 : 1,
+                      display: 'flex', flexDirection: 'column',
+                    }}
+                    onMouseEnter={e => { if ((!done || sw.multi_version) && !blocked) e.currentTarget.style.borderColor = `${p.accent}60`; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = p.cardBorder; }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+                      {getSoftwareIcon(sw.name)}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, color: p.text, fontSize: 14 }}>
+                          {sw.display_name}
+                        </div>
+                        <span style={{
+                          fontSize: 10, padding: '2px 7px', borderRadius: 4,
+                          background: `${p.accent}12`, color: p.accent,
+                          fontWeight: 500,
+                        }}>
+                          {sw.type || sw.category}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div style={{
+                      fontSize: 12, color: p.textMuted, marginBottom: 14,
+                      lineHeight: 1.5, flex: 1,
+                      display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const,
+                      overflow: 'hidden',
+                    }}>
+                      {sw.description || `${sw.display_name} — ${sw.type || sw.category || 'software'}`}
+                    </div>
+
+                    {done ? (
+                      sw.multi_version ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <div style={{
+                            display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap',
+                            fontSize: 12, fontWeight: 500, color: p.green,
+                          }}>
+                            <span style={{
+                              width: 6, height: 6, borderRadius: 3,
+                              background: p.green, display: 'inline-block',
+                            }} />
+                            {(sw.installed_versions ?? []).map(v => (
+                              <span
+                                key={v}
+                                style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                                  padding: '1px 8px', borderRadius: 4,
+                                  background: `${p.green}15`, fontSize: 11,
+                                }}
+                              >
+                                {v}
+                                <span
+                                  style={{ cursor: 'pointer', color: p.red, fontWeight: 700, fontSize: 13, lineHeight: 1 }}
+                                  title={`Remove ${sw.display_name} ${v}`}
                                   onClick={e => { e.stopPropagation(); handleUninstall({ name: sw.name, display_name: sw.display_name }, v); }}
                                 >×</span>
                               </span>
@@ -1222,6 +1383,9 @@ export default function AppStore() {
       <MariadbManageModal open={mariadbModalOpen} onClose={() => setMariadbModalOpen(false)} />
       <RedisManageModal open={redisModalOpen} onClose={() => setRedisModalOpen(false)} />
       <FTPStorageManageModal open={ftpStorageModalOpen} onClose={() => setFtpStorageModalOpen(false)} />
+      <S3StorageManageModal open={s3ModalOpen} onClose={() => setS3ModalOpen(false)} />
+      <GoogleDriveManageModal open={googleDriveModalOpen} onClose={() => setGoogleDriveModalOpen(false)} />
+      <OneDriveManageModal open={oneDriveModalOpen} onClose={() => setOneDriveModalOpen(false)} />
     </div>
   );
 }

@@ -3506,6 +3506,7 @@ function WebsitesContent() {
   const [backupCreating, setBackupCreating] = useState(false);
   const [backupActionId, setBackupActionId] = useState<number | null>(null);
   const [ftpStorages, setFtpStorages] = useState<{ id: number; name: string; is_default: boolean }[]>([]);
+  const [cloudStorages, setCloudStorages] = useState<{ id: number; name: string; type: string; is_default: boolean }[]>([]);
   const [backupStorage, setBackupStorage] = useState<string>('local');
   const [backupStorageId, setBackupStorageId] = useState<number | null>(null);
   const [detectedWebServer, setDetectedWebServer] = useState<string>('');
@@ -3690,6 +3691,9 @@ function WebsitesContent() {
       if (backupStorage === 'ftp' && backupStorageId) {
         payload.storage = 'ftp';
         payload.storage_id = backupStorageId;
+      } else if (['s3', 'google_drive', 'onedrive'].includes(backupStorage) && backupStorageId) {
+        payload.storage = backupStorage;
+        payload.storage_id = backupStorageId;
       }
       await api.post('/backups', payload);
       message.success(`Backup created for ${site.domain}`);
@@ -3717,10 +3721,15 @@ function WebsitesContent() {
   const openBackupModal = (site: Site) => {
     setBackupSite(site);
     fetchSiteBackups(site.id);
-    api.get('/ftp-storages').then(({ data }) => {
-      const list = (data.data ?? []).filter((s: any) => s.is_active);
-      setFtpStorages(list);
-      const defaultFtp = list.find((s: any) => s.is_default);
+    Promise.allSettled([
+      api.get('/ftp-storages'),
+      api.get('/cloud-storages'),
+    ]).then(([ftpRes, cloudRes]) => {
+      const ftpList = ftpRes.status === 'fulfilled' ? (ftpRes.value.data?.data ?? []).filter((s: any) => s.is_active) : [];
+      setFtpStorages(ftpList);
+      const cloudList = cloudRes.status === 'fulfilled' ? (cloudRes.value.data?.data ?? []) : [];
+      setCloudStorages(cloudList);
+      const defaultFtp = ftpList.find((s: any) => s.is_default);
       if (defaultFtp) {
         setBackupStorage('ftp');
         setBackupStorageId(defaultFtp.id);
@@ -3728,7 +3737,7 @@ function WebsitesContent() {
         setBackupStorage('local');
         setBackupStorageId(null);
       }
-    }).catch(() => {});
+    });
   };
 
   const handleBackupDelete = async (backupId: number) => {
@@ -4564,9 +4573,16 @@ function WebsitesContent() {
                 <select
                   value={backupStorage}
                   onChange={(e) => {
-                    setBackupStorage(e.target.value);
-                    if (e.target.value === 'local') setBackupStorageId(null);
-                    else if (ftpStorages.length > 0) setBackupStorageId(ftpStorages[0].id);
+                    const val = e.target.value;
+                    setBackupStorage(val);
+                    if (val === 'local') {
+                      setBackupStorageId(null);
+                    } else if (val === 'ftp') {
+                      setBackupStorageId(ftpStorages.length > 0 ? ftpStorages[0].id : null);
+                    } else {
+                      const filtered = cloudStorages.filter(s => s.type === val);
+                      setBackupStorageId(filtered.length > 0 ? filtered[0].id : null);
+                    }
                   }}
                   style={{
                     padding: '6px 10px', borderRadius: 6, fontSize: 11,
@@ -4575,9 +4591,10 @@ function WebsitesContent() {
                   }}
                 >
                   <option value="local">💾 Local</option>
-                  {ftpStorages.map(s => (
-                    <option key={s.id} value="ftp">{`☁️ ${s.name}`}</option>
-                  ))}
+                  {ftpStorages.length > 0 && <option value="ftp">📁 FTP Storage</option>}
+                  {cloudStorages.filter(s => s.type === 's3').length > 0 && <option value="s3">☁️ Amazon S3</option>}
+                  {cloudStorages.filter(s => s.type === 'google_drive').length > 0 && <option value="google_drive">☁️ Google Drive</option>}
+                  {cloudStorages.filter(s => s.type === 'onedrive').length > 0 && <option value="onedrive">☁️ OneDrive</option>}
                 </select>
                 {backupStorage === 'ftp' && ftpStorages.length > 1 && (
                   <select
@@ -4590,6 +4607,21 @@ function WebsitesContent() {
                     }}
                   >
                     {ftpStorages.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                )}
+                {['s3', 'google_drive', 'onedrive'].includes(backupStorage) && cloudStorages.filter(s => s.type === backupStorage).length > 1 && (
+                  <select
+                    value={backupStorageId ?? ''}
+                    onChange={(e) => setBackupStorageId(Number(e.target.value))}
+                    style={{
+                      padding: '6px 10px', borderRadius: 6, fontSize: 11,
+                      border: `1px solid ${p.cardBorder}`, background: p.card, color: p.text,
+                      cursor: 'pointer', outline: 'none',
+                    }}
+                  >
+                    {cloudStorages.filter(s => s.type === backupStorage).map(s => (
                       <option key={s.id} value={s.id}>{s.name}</option>
                     ))}
                   </select>
