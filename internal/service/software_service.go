@@ -100,6 +100,14 @@ var knownSoftware = map[string]softwareMeta{
 		InstallPath:    "/ITDLUPanel/server/phpmyadmin",
 		DefaultVersion: "5.2.1",
 	},
+	"ftp_storage": {
+		DisplayName:    "FTP Storage",
+		Type:           "tool",
+		ServiceName:    "",
+		ConfigPath:     "",
+		InstallPath:    "/ITDLUPanel/server/ftp_storage",
+		DefaultVersion: "stable",
+	},
 }
 
 func init() {

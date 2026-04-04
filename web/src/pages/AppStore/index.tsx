@@ -19,6 +19,7 @@ import OLSManageModal from '@/components/OLSManageModal';
 import FTPManageModal from '@/components/FTPManageModal';
 import MariadbManageModal from '@/components/MariadbManageModal';
 import RedisManageModal from '@/components/RedisManageModal';
+import FTPStorageManageModal from '@/components/FTPStorageManageModal';
 import { getSoftwareIcon } from './SoftwareIcons';
 
 const { Text } = Typography;
@@ -41,6 +42,7 @@ const SOFTWARE_COLORS: Record<string, string> = {
   postgresql: '#336791', php: '#777BB4', phpmyadmin: '#F89C0E', nodejs: '#339933',
   redis: '#DC382D', memcached: '#3C7E31', python: '#3776AB', docker: '#2496ED',
   mongodb: '#47A248', openlitespeed: '#3A7BD5', pureftpd: '#6C757D',
+  ftp_storage: '#1890FF',
 };
 
 export default function AppStore() {
@@ -70,6 +72,7 @@ export default function AppStore() {
   const [ftpModalOpen, setFtpModalOpen] = useState(false);
   const [mariadbModalOpen, setMariadbModalOpen] = useState(false);
   const [redisModalOpen, setRedisModalOpen] = useState(false);
+  const [ftpStorageModalOpen, setFtpStorageModalOpen] = useState(false);
   const [swStatus, setSwStatus] = useState<Record<string, string> | null>(null);
   const [swConfig, setSwConfig] = useState('');
   const [configLoading, setConfigLoading] = useState(false);
@@ -339,6 +342,7 @@ export default function AppStore() {
     if (sw.name === 'pureftpd') { setFtpModalOpen(true); return; }
     if (sw.name === 'mysql') { setMariadbModalOpen(true); return; }
     if (sw.name === 'redis') { setRedisModalOpen(true); return; }
+    if (sw.name === 'ftp_storage') { setFtpStorageModalOpen(true); return; }
     setManageSW(sw);
     setManageTab('status');
     setSwStatus(null);
@@ -1217,6 +1221,7 @@ export default function AppStore() {
       <FTPManageModal open={ftpModalOpen} onClose={() => setFtpModalOpen(false)} />
       <MariadbManageModal open={mariadbModalOpen} onClose={() => setMariadbModalOpen(false)} />
       <RedisManageModal open={redisModalOpen} onClose={() => setRedisModalOpen(false)} />
+      <FTPStorageManageModal open={ftpStorageModalOpen} onClose={() => setFtpStorageModalOpen(false)} />
     </div>
   );
 }

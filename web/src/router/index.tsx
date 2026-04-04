@@ -10,6 +10,7 @@ const Websites = lazy(() => import('@/pages/Websites'));
 const Databases = lazy(() => import('@/pages/Databases'));
 const FTP = lazy(() => import('@/pages/FTP'));
 const FTPStorage = lazy(() => import('@/pages/FTPStorage'));
+const Storage = lazy(() => import('@/pages/Storage'));
 const Files = lazy(() => import('@/pages/Files'));
 const Docker = lazy(() => import('@/pages/Docker'));
 const Monitor = lazy(() => import('@/pages/Monitor'));
@@ -57,6 +58,7 @@ const router = createBrowserRouter([
       { path: 'databases', element: <Databases /> },
       { path: 'ftp', element: <FTP /> },
       { path: 'ftp-storage', element: <FTPStorage /> },
+      { path: 'storage', element: <Storage /> },
       { path: 'files', element: <Files /> },
       { path: 'docker', element: <Docker /> },
       { path: 'monitor', element: <Monitor /> },

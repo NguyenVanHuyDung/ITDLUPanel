@@ -305,5 +305,6 @@ func DefaultRegistry() *Registry {
 	r.Register(NewPureFTPdInstaller())
 	r.Register(NewOLSInstaller())
 	r.Register(NewPhpMyAdminInstaller())
+	r.Register(NewFTPStorageInstaller())
 	return r
 }

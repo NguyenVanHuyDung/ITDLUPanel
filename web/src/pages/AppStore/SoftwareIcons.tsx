@@ -112,6 +112,12 @@ const icons: Record<string, React.ReactNode> = {
       <path d="M21 13v6h3l-6 7-6-7h3v-6h6z" fill="white" opacity="0.45" />
     </Icon>
   ),
+  ftp_storage: (
+    <Icon bg="#1890FF">
+      <path d="M8 10h16v2H8zM8 15h16v2H8zM8 20h16v2H8z" fill="white" opacity="0.6" />
+      <path d="M16 7v18M12 9l4-3 4 3M12 23l4 3 4-3" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </Icon>
+  ),
 };
 
 export function getSoftwareIcon(name: string): React.ReactNode {
