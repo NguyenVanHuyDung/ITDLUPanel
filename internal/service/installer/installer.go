@@ -306,5 +306,8 @@ func DefaultRegistry() *Registry {
 	r.Register(NewOLSInstaller())
 	r.Register(NewPhpMyAdminInstaller())
 	r.Register(NewFTPStorageInstaller())
+	r.Register(NewS3StorageInstaller())
+	r.Register(NewGoogleDriveInstaller())
+	r.Register(NewOneDriveInstaller())
 	return r
 }

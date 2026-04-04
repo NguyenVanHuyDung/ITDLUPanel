@@ -174,7 +174,8 @@ func runBackupCommand() {
 	defer db.Close()
 
 	ftpStorageSvc := service.NewFTPStorageService(db.GetDB())
-	backupSvc := service.NewBackupService(db.GetDB(), ftpStorageSvc)
+	cloudStorageSvc := service.NewCloudStorageService(db.GetDB())
+	backupSvc := service.NewBackupService(db.GetDB(), ftpStorageSvc, cloudStorageSvc)
 	const systemUserID int64 = 1 // system/admin user
 
 	type result struct {

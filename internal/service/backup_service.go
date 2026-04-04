@@ -44,13 +44,14 @@ const backupCmdTimeout = 5 * time.Minute
 
 // BackupService manages backup creation, listing, deletion, and restore.
 type BackupService struct {
-	db                *sql.DB
-	ftpStorageService *FTPStorageService
+	db                  *sql.DB
+	ftpStorageService   *FTPStorageService
+	cloudStorageService *CloudStorageService
 }
 
 // NewBackupService creates a new BackupService.
-func NewBackupService(db *sql.DB, ftpStorageService *FTPStorageService) *BackupService {
-	return &BackupService{db: db, ftpStorageService: ftpStorageService}
+func NewBackupService(db *sql.DB, ftpStorageService *FTPStorageService, cloudStorageService *CloudStorageService) *BackupService {
+	return &BackupService{db: db, ftpStorageService: ftpStorageService, cloudStorageService: cloudStorageService}
 }
 
 // ---------------------------------------------------------------------------
@@ -308,6 +309,14 @@ func (s *BackupService) Delete(id int64) error {
 		}
 	}
 
+	// Delete from cloud storage if applicable
+	if (b.Storage == "s3" || b.Storage == "google_drive" || b.Storage == "onedrive") && b.StorageID != nil && s.cloudStorageService != nil {
+		remoteFileName := filepath.Base(b.FilePath)
+		if err := s.cloudStorageService.DeleteFile(*b.StorageID, remoteFileName, ""); err != nil {
+			logger.Warn().Err(err).Int64("id", id).Str("storage", b.Storage).Msg("failed to delete backup from cloud storage")
+		}
+	}
+
 	if _, err := s.db.Exec("DELETE FROM backups WHERE id = ?", id); err != nil {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to delete backup record")
 	}
@@ -337,6 +346,17 @@ func (s *BackupService) Restore(id int64) error {
 
 			remoteFileName := filepath.Base(b.FilePath)
 			if err := s.ftpStorageService.DownloadFile(*b.StorageID, remoteFileName, localPath); err != nil {
+				return err
+			}
+			b.FilePath = localPath
+		} else if (b.Storage == "s3" || b.Storage == "google_drive" || b.Storage == "onedrive") && b.StorageID != nil && s.cloudStorageService != nil {
+			cfg := config.Get()
+			tmpDir := filepath.Join(cfg.Paths.Backup, "tmp")
+			os.MkdirAll(tmpDir, 0755)
+			localPath := filepath.Join(tmpDir, filepath.Base(b.FilePath))
+
+			remoteFileName := filepath.Base(b.FilePath)
+			if err := s.cloudStorageService.DownloadFile(*b.StorageID, remoteFileName, localPath, ""); err != nil {
 				return err
 			}
 			b.FilePath = localPath
@@ -453,6 +473,20 @@ func (s *BackupService) GetDownloadPath(id int64) (string, error) {
 		return localPath, nil
 	}
 
+	// If stored on cloud storage, download to temp first
+	if (b.Storage == "s3" || b.Storage == "google_drive" || b.Storage == "onedrive") && b.StorageID != nil && s.cloudStorageService != nil {
+		cfg := config.Get()
+		tmpDir := filepath.Join(cfg.Paths.Backup, "tmp")
+		os.MkdirAll(tmpDir, 0755)
+		localPath := filepath.Join(tmpDir, filepath.Base(b.FilePath))
+
+		remoteFileName := filepath.Base(b.FilePath)
+		if err := s.cloudStorageService.DownloadFile(*b.StorageID, remoteFileName, localPath, ""); err != nil {
+			return "", err
+		}
+		return localPath, nil
+	}
+
 	return "", apperrors.New(apperrors.ErrNotFound, "backup file not found")
 }
 
@@ -486,6 +520,39 @@ func (s *BackupService) UploadBackupToFTP(backupID, storageID int64) error {
 	}
 
 	logger.Info().Int64("backup_id", backupID).Int64("storage_id", storageID).Msg("backup uploaded to FTP storage")
+	return nil
+}
+
+// UploadBackupToCloud uploads an existing backup to a cloud storage.
+func (s *BackupService) UploadBackupToCloud(backupID, storageID int64, storageType string) error {
+	if s.cloudStorageService == nil {
+		return apperrors.New(apperrors.ErrInternal, "cloud storage service not available")
+	}
+
+	b, err := s.GetByID(backupID)
+	if err != nil {
+		return err
+	}
+
+	if _, err := os.Stat(b.FilePath); os.IsNotExist(err) {
+		return apperrors.New(apperrors.ErrNotFound, "backup file not found on disk")
+	}
+
+	remoteFileName := filepath.Base(b.FilePath)
+	if err := s.cloudStorageService.UploadFile(storageID, b.FilePath, remoteFileName, ""); err != nil {
+		return err
+	}
+
+	// Update backup record with cloud storage info
+	_, err = s.db.Exec(
+		"UPDATE backups SET storage = ?, storage_id = ? WHERE id = ?",
+		storageType, storageID, backupID,
+	)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to update backup storage info")
+	}
+
+	logger.Info().Int64("backup_id", backupID).Int64("storage_id", storageID).Str("type", storageType).Msg("backup uploaded to cloud storage")
 	return nil
 }
 

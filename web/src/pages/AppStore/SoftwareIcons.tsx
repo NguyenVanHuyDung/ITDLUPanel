@@ -118,6 +118,27 @@ const icons: Record<string, React.ReactNode> = {
       <path d="M16 7v18M12 9l4-3 4 3M12 23l4 3 4-3" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </Icon>
   ),
+  s3_storage: (
+    <Icon bg="#FF9900">
+      <path d="M9 18c0 1.1 3.1 2 7 2s7-.9 7-2" fill="none" stroke="white" strokeWidth="1.5" />
+      <path d="M9 14c0 1.1 3.1 2 7 2s7-.9 7-2" fill="none" stroke="white" strokeWidth="1.5" />
+      <path d="M9 10c0 1.1 3.1 2 7 2s7-.9 7-2" fill="none" stroke="white" strokeWidth="1.5" />
+      <ellipse cx="16" cy="10" rx="7" ry="2" fill="none" stroke="white" strokeWidth="1.5" />
+      <path d="M9 10v8M23 10v8" stroke="white" strokeWidth="1.5" />
+    </Icon>
+  ),
+  google_drive: (
+    <Icon bg="#4285F4">
+      <path d="M11.5 8L6 18h5l5.5-10H11.5z" fill="white" opacity="0.9" />
+      <path d="M16.5 8L11 18h10l5.5-10H16.5z" fill="white" opacity="0.6" />
+      <path d="M6 18h20v4H6z" fill="white" opacity="0.4" rx="1" />
+    </Icon>
+  ),
+  onedrive: (
+    <Icon bg="#0078D4">
+      <path d="M12 20c-2.8 0-5-2.2-5-5 0-2.1 1.3-3.9 3.1-4.6C10.7 8.4 12.7 7 15 7c2.8 0 5.1 2 5.7 4.5C22.5 12 24 13.8 24 16c0 2.2-1.8 4-4 4H12z" fill="white" />
+    </Icon>
+  ),
 };
 
 export function getSoftwareIcon(name: string): React.ReactNode {

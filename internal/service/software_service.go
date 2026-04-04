@@ -108,6 +108,30 @@ var knownSoftware = map[string]softwareMeta{
 		InstallPath:    "/ITDLUPanel/server/ftp_storage",
 		DefaultVersion: "stable",
 	},
+	"s3_storage": {
+		DisplayName:    "Amazon S3",
+		Type:           "storage",
+		ServiceName:    "",
+		ConfigPath:     "",
+		InstallPath:    "/ITDLUPanel/server/s3_storage",
+		DefaultVersion: "stable",
+	},
+	"google_drive": {
+		DisplayName:    "Google Drive",
+		Type:           "storage",
+		ServiceName:    "",
+		ConfigPath:     "",
+		InstallPath:    "/ITDLUPanel/server/google_drive",
+		DefaultVersion: "stable",
+	},
+	"onedrive": {
+		DisplayName:    "OneDrive",
+		Type:           "storage",
+		ServiceName:    "",
+		ConfigPath:     "",
+		InstallPath:    "/ITDLUPanel/server/onedrive",
+		DefaultVersion: "stable",
+	},
 }
 
 func init() {
