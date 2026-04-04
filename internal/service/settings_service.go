@@ -15,6 +15,7 @@ import (
 	"github.com/ITDLUPanel/panel/internal/database/models"
 	apperrors "github.com/ITDLUPanel/panel/internal/pkg/errors"
 	"github.com/ITDLUPanel/panel/internal/pkg/logger"
+	"github.com/ITDLUPanel/panel/internal/system"
 )
 
 // PanelInfo holds runtime information about the panel.
@@ -276,7 +277,7 @@ func (s *SettingsService) SetPanelName(name string) error {
 	return nil
 }
 
-// SetTimezone updates the server timezone setting and applies it to the process.
+// SetTimezone updates the server timezone setting and applies it to the process and system.
 func (s *SettingsService) SetTimezone(tz string) error {
 	tz = strings.TrimSpace(tz)
 	if tz == "" {
@@ -291,15 +292,20 @@ func (s *SettingsService) SetTimezone(tz string) error {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to update timezone")
 	}
 
-	// Apply timezone to the process immediately
+	// Apply timezone to the process
 	time.Local = loc
 	os.Setenv("TZ", tz)
+
+	// Apply timezone to the OS via timedatectl
+	if _, err := system.ExecWithTimeout(10*time.Second, "timedatectl", "set-timezone", tz); err != nil {
+		logger.Warn().Str("timezone", tz).Err(err).Msg("failed to set system timezone via timedatectl")
+	}
 
 	logger.Info().Str("timezone", tz).Msg("timezone updated and applied")
 	return nil
 }
 
-// ApplyTimezone loads the timezone setting from the database and sets it as the process timezone.
+// ApplyTimezone loads the timezone setting from the database and sets it as the process and system timezone.
 func (s *SettingsService) ApplyTimezone() {
 	tz, err := s.settings.Get("timezone")
 	if err != nil || tz == "" {
@@ -313,6 +319,12 @@ func (s *SettingsService) ApplyTimezone() {
 	}
 	time.Local = loc
 	os.Setenv("TZ", tz)
+
+	// Sync system timezone on startup
+	if _, err := system.ExecWithTimeout(10*time.Second, "timedatectl", "set-timezone", tz); err != nil {
+		logger.Warn().Str("timezone", tz).Err(err).Msg("failed to set system timezone via timedatectl")
+	}
+
 	logger.Info().Str("timezone", tz).Msg("timezone applied")
 }
 
