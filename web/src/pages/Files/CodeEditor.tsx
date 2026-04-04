@@ -453,6 +453,13 @@ export default function CodeEditor({ initialFiles, onClose, visible, initialDir 
   const handleTreeSelect = useCallback((_keys: React.Key[], info: { node: DirTreeNode }) => {
     if (info.node.isLeaf) {
       openFile(info.node.key);
+    } else {
+      // Toggle expand/collapse when clicking a directory
+      setExpandedKeys(prev =>
+        prev.includes(info.node.key)
+          ? prev.filter(k => k !== info.node.key)
+          : [...prev, info.node.key]
+      );
     }
   }, [openFile]);
 

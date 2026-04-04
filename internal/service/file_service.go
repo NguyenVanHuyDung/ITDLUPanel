@@ -88,13 +88,23 @@ func safePath(path string) (string, error) {
 
 // buildFileInfo creates a FileInfo from an os.FileInfo and its full path.
 func buildFileInfo(fi os.FileInfo, fullPath string) *FileInfo {
+	isDir := fi.IsDir()
+
+	// For symlinks, follow the target to determine if it's a directory.
+	isSymlink := fi.Mode()&os.ModeSymlink != 0
+	if isSymlink {
+		if target, err := os.Stat(fullPath); err == nil {
+			isDir = target.IsDir()
+		}
+	}
+
 	info := &FileInfo{
 		Name:      fi.Name(),
 		Path:      fullPath,
 		Size:      fi.Size(),
 		Mode:      fi.Mode().String(),
 		ModeOctal: fmt.Sprintf("0%o", fi.Mode().Perm()),
-		IsDir:     fi.IsDir(),
+		IsDir:     isDir,
 		ModTime:   fi.ModTime(),
 	}
 
@@ -111,7 +121,7 @@ func buildFileInfo(fi os.FileInfo, fullPath string) *FileInfo {
 	}
 
 	// Symlink detection.
-	if fi.Mode()&os.ModeSymlink != 0 {
+	if isSymlink {
 		info.IsSymlink = true
 		if target, err := os.Readlink(fullPath); err == nil {
 			info.LinkTarget = target
@@ -119,7 +129,7 @@ func buildFileInfo(fi os.FileInfo, fullPath string) *FileInfo {
 	}
 
 	// MIME type for regular files.
-	if !fi.IsDir() {
+	if !isDir {
 		ext := filepath.Ext(fi.Name())
 		if mt := mime.TypeByExtension(ext); mt != "" {
 			info.MimeType = mt
