@@ -19,6 +19,7 @@ const (
 	nginxRepoFile    = "/etc/apt/sources.list.d/nginx.list"
 	nginxPinFile     = "/etc/apt/preferences.d/99nginx"
 	nginxKeyringFile = "/usr/share/keyrings/nginx-archive-keyring.gpg"
+	nginxDNFRepoFile = "/etc/yum.repos.d/nginx.repo"
 	nginxConfPath    = "/etc/nginx/nginx.conf"
 	nginxConfBackup  = "/etc/nginx/nginx.conf.itdlu-bak"
 )
@@ -117,15 +118,14 @@ func (i *NginxInstaller) Install(ctx context.Context, version string, progress f
 	}
 
 	osInfo := system.GetOSInfo()
-	if osInfo.PkgManager != "apt" {
-		return fmt.Errorf("nginx installation only supports apt-based systems")
+	if osInfo.PkgManager != "apt" && osInfo.PkgManager != "dnf" {
+		return fmt.Errorf("nginx installation only supports apt and dnf-based systems")
 	}
 
 	progress(5)
-	logger.Info().Str("version", version).Msg("installing nginx")
+	logger.Info().Str("version", version).Str("pkg_manager", osInfo.PkgManager).Msg("installing nginx")
 
-	// Parse version to determine repo and pin
-	repoType, aptPin := resolveNginxVersion(version)
+	repoType, versionPin := resolveNginxVersion(version)
 
 	// Backup existing nginx config if present
 	if _, err := os.Stat(nginxConfPath); err == nil {
@@ -136,56 +136,14 @@ func (i *NginxInstaller) Install(ctx context.Context, version string, progress f
 		}
 	}
 
-	// If nginx is already installed, purge it first
-	if i.IsInstalled() {
-		progress(10)
-		logger.Info().Msg("purging existing nginx installation")
-		_, _ = system.Exec(ctx, "apt-mark", "unhold", "nginx")
-		_, _ = system.Exec(ctx, "systemctl", "stop", "nginx")
-		_, _ = system.Exec(ctx, "systemctl", "disable", "nginx")
-		_, _ = system.Exec(ctx, "apt", "purge", "-y", "nginx", "nginx-common", "nginx-core", "nginx-full")
-		_, _ = system.Exec(ctx, "apt", "autoremove", "-y")
-	}
-
-	// Install prerequisites
-	progress(15)
-	if _, err := system.Exec(ctx, "apt", "install", "-y",
-		"curl", "gnupg2", "ca-certificates", "lsb-release", "ubuntu-keyring"); err != nil {
-		logger.Warn().Err(err).Msg("some prerequisites may not have installed")
-	}
-
-	// Setup nginx.org repository
-	progress(25)
-	if err := i.setupNginxRepo(ctx, repoType, osInfo); err != nil {
-		return fmt.Errorf("failed to setup nginx repo: %w", err)
-	}
-
-	// Update package index
-	progress(35)
-	if _, err := system.Exec(ctx, "apt", "update", "-y"); err != nil {
-		logger.Warn().Err(err).Msg("apt update had warnings")
-	}
-
-	// Install nginx — with optional version pin
-	progress(50)
-	if aptPin != "" {
-		codename := getUbuntuCodename()
-		aptPkg := fmt.Sprintf("nginx=%s-1~%s", aptPin, codename)
-		logger.Info().Str("package", aptPkg).Msg("installing pinned nginx version")
-		if _, err := system.Exec(ctx, "apt", "install", "-y", "--allow-downgrades", aptPkg); err != nil {
-			aptPkg2 := fmt.Sprintf("nginx=%s-2~%s", aptPin, codename)
-			if _, err2 := system.Exec(ctx, "apt", "install", "-y", "--allow-downgrades", aptPkg2); err2 != nil {
-				return fmt.Errorf("failed to install nginx %s: %w", aptPin, err)
-			}
+	if osInfo.PkgManager == "dnf" {
+		if err := i.installDNF(ctx, osInfo, repoType, versionPin, progress); err != nil {
+			return err
 		}
-		// Hold version to prevent auto-upgrade
-		_, _ = system.Exec(ctx, "apt-mark", "hold", "nginx")
 	} else {
-		if _, err := system.Exec(ctx, "apt", "install", "-y", "nginx"); err != nil {
-			return fmt.Errorf("failed to install nginx: %w", err)
+		if err := i.installAPT(ctx, osInfo, repoType, versionPin, progress); err != nil {
+			return err
 		}
-		// Unhold to allow upgrades for latest channel
-		_, _ = system.Exec(ctx, "apt-mark", "unhold", "nginx")
 	}
 
 	progress(75)
@@ -240,6 +198,122 @@ func (i *NginxInstaller) Install(ctx context.Context, version string, progress f
 	return nil
 }
 
+// installAPT handles nginx installation on apt-based systems (Ubuntu/Debian).
+func (i *NginxInstaller) installAPT(ctx context.Context, osInfo *system.OSInfo, repoType, versionPin string, progress func(int)) error {
+	// If nginx is already installed, purge it first
+	if i.IsInstalled() {
+		progress(10)
+		logger.Info().Msg("purging existing nginx installation")
+		_, _ = system.Exec(ctx, "apt-mark", "unhold", "nginx")
+		_, _ = system.Exec(ctx, "systemctl", "stop", "nginx")
+		_, _ = system.Exec(ctx, "systemctl", "disable", "nginx")
+		_, _ = system.Exec(ctx, "apt", "purge", "-y", "nginx", "nginx-common", "nginx-core", "nginx-full")
+		_, _ = system.Exec(ctx, "apt", "autoremove", "-y")
+	}
+
+	// Install prerequisites
+	progress(15)
+	keyringPkg := "ubuntu-keyring"
+	if osInfo.ID == "debian" {
+		keyringPkg = "debian-keyring"
+	}
+	if _, err := system.Exec(ctx, "apt", "install", "-y",
+		"curl", "gnupg2", "ca-certificates", "lsb-release", keyringPkg); err != nil {
+		logger.Warn().Err(err).Msg("some prerequisites may not have installed")
+	}
+
+	// Setup nginx.org repository
+	progress(25)
+	if err := i.setupNginxRepo(ctx, repoType, osInfo); err != nil {
+		return fmt.Errorf("failed to setup nginx repo: %w", err)
+	}
+
+	// Update package index
+	progress(35)
+	if _, err := system.Exec(ctx, "apt", "update", "-y"); err != nil {
+		logger.Warn().Err(err).Msg("apt update had warnings")
+	}
+
+	// Install nginx — with optional version pin
+	progress(50)
+	if versionPin != "" {
+		codename := getDistroCodename()
+		aptPkg := fmt.Sprintf("nginx=%s-1~%s", versionPin, codename)
+		logger.Info().Str("package", aptPkg).Msg("installing pinned nginx version")
+		if _, err := system.Exec(ctx, "apt", "install", "-y", "--allow-downgrades", aptPkg); err != nil {
+			aptPkg2 := fmt.Sprintf("nginx=%s-2~%s", versionPin, codename)
+			if _, err2 := system.Exec(ctx, "apt", "install", "-y", "--allow-downgrades", aptPkg2); err2 != nil {
+				return fmt.Errorf("failed to install nginx %s: %w", versionPin, err)
+			}
+		}
+		// Hold version to prevent auto-upgrade
+		_, _ = system.Exec(ctx, "apt-mark", "hold", "nginx")
+	} else {
+		if _, err := system.Exec(ctx, "apt", "install", "-y", "nginx"); err != nil {
+			return fmt.Errorf("failed to install nginx: %w", err)
+		}
+		// Unhold to allow upgrades for latest channel
+		_, _ = system.Exec(ctx, "apt-mark", "unhold", "nginx")
+	}
+
+	return nil
+}
+
+// installDNF handles nginx installation on dnf-based systems (AlmaLinux/CentOS/Rocky).
+func (i *NginxInstaller) installDNF(ctx context.Context, osInfo *system.OSInfo, repoType, versionPin string, progress func(int)) error {
+	// If nginx is already installed, remove it first
+	if i.IsInstalled() {
+		progress(10)
+		logger.Info().Msg("removing existing nginx installation")
+		_, _ = system.Exec(ctx, "dnf", "versionlock", "delete", "nginx")
+		_, _ = system.Exec(ctx, "systemctl", "stop", "nginx")
+		_, _ = system.Exec(ctx, "systemctl", "disable", "nginx")
+		_, _ = system.Exec(ctx, "dnf", "remove", "-y", "nginx")
+	}
+
+	// Install prerequisites
+	progress(15)
+	if _, err := system.Exec(ctx, "dnf", "install", "-y", "yum-utils"); err != nil {
+		logger.Warn().Err(err).Msg("some prerequisites may not have installed")
+	}
+
+	// Setup nginx.org repository
+	progress(25)
+	if err := i.setupNginxRepoDNF(ctx, repoType); err != nil {
+		return fmt.Errorf("failed to setup nginx repo: %w", err)
+	}
+
+	// Enable mainline repo if requested
+	progress(35)
+	if repoType == "mainline" {
+		if _, err := system.Exec(ctx, "dnf", "config-manager", "--enable", "nginx-mainline"); err != nil {
+			logger.Warn().Err(err).Msg("failed to enable nginx-mainline repo")
+		}
+	}
+
+	// Install nginx — with optional version pin
+	progress(50)
+	if versionPin != "" {
+		dnfPkg := fmt.Sprintf("nginx-%s", versionPin)
+		logger.Info().Str("package", dnfPkg).Msg("installing pinned nginx version")
+		if _, err := system.Exec(ctx, "dnf", "install", "-y", dnfPkg); err != nil {
+			return fmt.Errorf("failed to install nginx %s: %w", versionPin, err)
+		}
+		// Lock version to prevent auto-upgrade
+		if _, err := system.Exec(ctx, "dnf", "versionlock", "add", "nginx"); err != nil {
+			logger.Warn().Err(err).Msg("failed to add nginx versionlock (dnf-plugin-versionlock may not be installed)")
+		}
+	} else {
+		if _, err := system.Exec(ctx, "dnf", "install", "-y", "nginx"); err != nil {
+			return fmt.Errorf("failed to install nginx: %w", err)
+		}
+		// Remove versionlock to allow upgrades for latest channel
+		_, _ = system.Exec(ctx, "dnf", "versionlock", "delete", "nginx")
+	}
+
+	return nil
+}
+
 // resolveNginxVersion parses a version request and returns the repo type and optional apt pin.
 // Examples:
 //
@@ -281,19 +355,35 @@ func (i *NginxInstaller) Uninstall(ctx context.Context) error {
 	_, _ = system.Exec(ctx, "systemctl", "stop", "nginx")
 	_, _ = system.Exec(ctx, "systemctl", "disable", "nginx")
 
-	// Fix any interrupted dpkg state
-	FixDpkg(ctx)
+	osInfo := system.GetOSInfo()
+	if osInfo.PkgManager == "dnf" {
+		// Remove versionlock if present
+		_, _ = system.Exec(ctx, "dnf", "versionlock", "delete", "nginx")
 
-	// Purge nginx packages
-	if _, err := system.Exec(ctx, "apt", "purge", "-y", "nginx", "nginx-common", "nginx-core", "nginx-full"); err != nil {
-		return fmt.Errorf("failed to uninstall nginx: %w", err)
+		// Remove nginx package
+		if _, err := system.Exec(ctx, "dnf", "remove", "-y", "nginx"); err != nil {
+			return fmt.Errorf("failed to uninstall nginx: %w", err)
+		}
+
+		// Remove nginx.org yum repo
+		if err := os.Remove(nginxDNFRepoFile); err != nil && !os.IsNotExist(err) {
+			logger.Warn().Err(err).Msg("failed to remove nginx yum repo file")
+		}
+	} else {
+		// Fix any interrupted dpkg state
+		FixDpkg(ctx)
+
+		// Purge nginx packages
+		if _, err := system.Exec(ctx, "apt", "purge", "-y", "nginx", "nginx-common", "nginx-core", "nginx-full"); err != nil {
+			return fmt.Errorf("failed to uninstall nginx: %w", err)
+		}
+
+		// Autoremove
+		_, _ = system.Exec(ctx, "apt", "autoremove", "-y")
+
+		// Remove nginx.org repo and keyring
+		i.removeNginxRepo()
 	}
-
-	// Autoremove
-	_, _ = system.Exec(ctx, "apt", "autoremove", "-y")
-
-	// Remove nginx.org repo and keyring
-	i.removeNginxRepo()
 
 	logger.Info().Msg("nginx uninstalled successfully")
 	return nil
@@ -310,9 +400,14 @@ func (i *NginxInstaller) GetVersions() []string {
 
 // setupNginxRepo configures the nginx.org apt repository for the given repo type.
 func (i *NginxInstaller) setupNginxRepo(ctx context.Context, repoType string, osInfo *system.OSInfo) error {
-	codename := getUbuntuCodename()
+	codename := getDistroCodename()
 	if codename == "" {
-		return fmt.Errorf("could not detect Ubuntu codename")
+		return fmt.Errorf("could not detect distro codename")
+	}
+
+	distroID := osInfo.ID
+	if distroID != "ubuntu" && distroID != "debian" {
+		distroID = "ubuntu"
 	}
 
 	// Download and install nginx signing key
@@ -327,14 +422,14 @@ func (i *NginxInstaller) setupNginxRepo(ctx context.Context, repoType string, os
 		return fmt.Errorf("failed to import nginx signing key: %w", err)
 	}
 
-	// Determine repo URL based on repo type
+	// Determine repo URL based on repo type and distro
 	var repoURL string
 	if repoType == "mainline" {
-		repoURL = fmt.Sprintf("deb [signed-by=%s] http://nginx.org/packages/mainline/ubuntu/ %s nginx",
-			nginxKeyringFile, codename)
+		repoURL = fmt.Sprintf("deb [signed-by=%s] http://nginx.org/packages/mainline/%s/ %s nginx",
+			nginxKeyringFile, distroID, codename)
 	} else {
-		repoURL = fmt.Sprintf("deb [signed-by=%s] http://nginx.org/packages/ubuntu/ %s nginx",
-			nginxKeyringFile, codename)
+		repoURL = fmt.Sprintf("deb [signed-by=%s] http://nginx.org/packages/%s/ %s nginx",
+			nginxKeyringFile, distroID, codename)
 	}
 
 	// Write apt source list
@@ -356,6 +451,35 @@ Pin-Priority: 1001
 	return nil
 }
 
+// setupNginxRepoDNF configures the nginx.org yum repository for dnf-based systems.
+func (i *NginxInstaller) setupNginxRepoDNF(ctx context.Context, repoType string) error {
+	logger.Info().Str("repoType", repoType).Msg("writing nginx yum repo")
+
+	repoContent := `[nginx-stable]
+name=nginx stable repo
+baseurl=http://nginx.org/packages/centos/$releasever/$basearch/
+gpgcheck=1
+enabled=1
+gpgkey=https://nginx.org/keys/nginx_signing.key
+module_hotfixes=true
+
+[nginx-mainline]
+name=nginx mainline repo
+baseurl=http://nginx.org/packages/mainline/centos/$releasever/$basearch/
+gpgcheck=1
+enabled=0
+gpgkey=https://nginx.org/keys/nginx_signing.key
+module_hotfixes=true
+`
+
+	_ = os.MkdirAll(filepath.Dir(nginxDNFRepoFile), 0755)
+	if err := os.WriteFile(nginxDNFRepoFile, []byte(repoContent), 0644); err != nil {
+		return fmt.Errorf("failed to write nginx yum repo file: %w", err)
+	}
+
+	return nil
+}
+
 // removeNginxRepo removes the nginx.org apt repository config and keyring.
 func (i *NginxInstaller) removeNginxRepo() {
 	for _, f := range []string{nginxRepoFile, nginxPinFile, nginxKeyringFile} {
@@ -365,8 +489,8 @@ func (i *NginxInstaller) removeNginxRepo() {
 	}
 }
 
-// getUbuntuCodename reads VERSION_CODENAME from /etc/os-release.
-func getUbuntuCodename() string {
+// getDistroCodename reads VERSION_CODENAME from /etc/os-release.
+func getDistroCodename() string {
 	f, err := os.Open("/etc/os-release")
 	if err != nil {
 		return ""
@@ -402,13 +526,26 @@ func DetectNginxVersion() NginxVersion {
 		}
 	}
 
-	// Detect branch from repo config
+	// Detect branch from repo config (apt)
 	if data, err := os.ReadFile(nginxRepoFile); err == nil {
 		content := string(data)
 		if strings.Contains(content, "/mainline/") {
 			ver.Branch = "mainline"
 		} else if strings.Contains(content, "nginx.org/packages") {
 			ver.Branch = "stable"
+		}
+	}
+
+	// Detect branch from repo config (dnf)
+	if ver.Branch == "" {
+		if data, err := os.ReadFile(nginxDNFRepoFile); err == nil {
+			content := string(data)
+			// Check if mainline repo is enabled
+			if strings.Contains(content, "[nginx-mainline]") && strings.Contains(content, "enabled=1") {
+				ver.Branch = "mainline"
+			} else if strings.Contains(content, "[nginx-stable]") {
+				ver.Branch = "stable"
+			}
 		}
 	}
 
@@ -458,32 +595,50 @@ func GetAvailableNginxVersions(ctx context.Context) (*NginxAvailableVersions, er
 		return nginxVersionCache, nil
 	}
 
-	codename := getUbuntuCodename()
-	if codename == "" {
-		return nil, fmt.Errorf("could not detect Ubuntu codename")
-	}
-
+	osInfo := system.GetOSInfo()
 	result := &NginxAvailableVersions{}
 
-	// Fetch both repos in parallel
-	var wg sync.WaitGroup
-	var stableVersions, mainlineVersions []NginxVersionInfo
+	if osInfo.PkgManager == "dnf" {
+		// On dnf-based systems, use dnf to list available versions
+		versions := fetchNginxDNFVersions(ctx)
+		for _, v := range versions {
+			if v.Branch == "stable" {
+				result.Stable = append(result.Stable, v)
+			} else {
+				result.Mainline = append(result.Mainline, v)
+			}
+		}
+	} else {
+		codename := getDistroCodename()
+		if codename == "" {
+			return nil, fmt.Errorf("could not detect distro codename")
+		}
 
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		url := fmt.Sprintf("http://nginx.org/packages/ubuntu/dists/%s/nginx/binary-amd64/Packages", codename)
-		stableVersions = fetchNginxRepoVersions(ctx, url, "stable")
-	}()
-	go func() {
-		defer wg.Done()
-		url := fmt.Sprintf("http://nginx.org/packages/mainline/ubuntu/dists/%s/nginx/binary-amd64/Packages", codename)
-		mainlineVersions = fetchNginxRepoVersions(ctx, url, "mainline")
-	}()
-	wg.Wait()
+		distroID := osInfo.ID
+		if distroID != "ubuntu" && distroID != "debian" {
+			distroID = "ubuntu"
+		}
 
-	result.Stable = stableVersions
-	result.Mainline = mainlineVersions
+		// Fetch both repos in parallel
+		var wg sync.WaitGroup
+		var stableVersions, mainlineVersions []NginxVersionInfo
+
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			url := fmt.Sprintf("http://nginx.org/packages/%s/dists/%s/nginx/binary-amd64/Packages", distroID, codename)
+			stableVersions = fetchNginxRepoVersions(ctx, url, "stable")
+		}()
+		go func() {
+			defer wg.Done()
+			url := fmt.Sprintf("http://nginx.org/packages/mainline/%s/dists/%s/nginx/binary-amd64/Packages", distroID, codename)
+			mainlineVersions = fetchNginxRepoVersions(ctx, url, "mainline")
+		}()
+		wg.Wait()
+
+		result.Stable = stableVersions
+		result.Mainline = mainlineVersions
+	}
 
 	cur := DetectNginxVersion()
 	if !cur.IsZero() {
@@ -495,6 +650,103 @@ func GetAvailableNginxVersions(ctx context.Context) (*NginxAvailableVersions, er
 	nginxVersionCacheAt = time.Now()
 
 	return result, nil
+}
+
+// fetchNginxDNFVersions fetches available nginx versions using dnf.
+func fetchNginxDNFVersions(ctx context.Context) []NginxVersionInfo {
+	res, err := system.Exec(ctx, "dnf", "list", "available", "nginx", "--showduplicates", "-q")
+	if err != nil || res.ExitCode != 0 {
+		logger.Warn().Err(err).Msg("failed to list available nginx versions via dnf")
+		return nil
+	}
+
+	type verEntry struct {
+		full  string
+		major int
+		minor int
+		patch int
+	}
+
+	seen := make(map[string]verEntry)
+	for _, line := range strings.Split(res.Stdout, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "Available") || strings.HasPrefix(line, "Last metadata") {
+			continue
+		}
+		// Format: "nginx.x86_64    1.26.3-1.el9.ngx    nginx-stable"
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		if !strings.HasPrefix(fields[0], "nginx") {
+			continue
+		}
+		rpmVer := fields[1]
+		// Extract version before the release part: "1.26.3-1.el9.ngx" → "1.26.3"
+		if idx := strings.Index(rpmVer, "-"); idx > 0 {
+			rpmVer = rpmVer[:idx]
+		}
+
+		v := ParseNginxVersion(rpmVer)
+		if v.Major == 0 && v.Minor == 0 {
+			continue
+		}
+
+		key := fmt.Sprintf("%d.%d", v.Major, v.Minor)
+		if existing, ok := seen[key]; !ok || v.Patch > existing.patch {
+			seen[key] = verEntry{full: rpmVer, major: v.Major, minor: v.Minor, patch: v.Patch}
+		}
+	}
+
+	var versions []NginxVersionInfo
+	for _, entry := range seen {
+		v := ParseNginxVersion(entry.full)
+		branch := "stable"
+		if v.Minor%2 == 1 {
+			branch = "mainline"
+		}
+
+		var features []string
+		if v.SupportsQUIC() {
+			features = append(features, "quic")
+		}
+		if v.UsesHTTP2Directive() {
+			features = append(features, "http2_directive")
+		} else {
+			features = append(features, "http2_listen")
+		}
+
+		versions = append(versions, NginxVersionInfo{
+			Version:  entry.full,
+			Branch:   branch,
+			Features: features,
+		})
+	}
+
+	sort.Slice(versions, func(i, j int) bool {
+		vi := ParseNginxVersion(versions[i].Version)
+		vj := ParseNginxVersion(versions[j].Version)
+		if vi.Major != vj.Major {
+			return vi.Major > vj.Major
+		}
+		if vi.Minor != vj.Minor {
+			return vi.Minor > vj.Minor
+		}
+		return vi.Patch > vj.Patch
+	})
+
+	for i := range versions {
+		switch i {
+		case 0:
+			versions[i].Status = "latest"
+		case 1:
+			versions[i].Status = "active"
+		default:
+			versions[i].Status = "legacy"
+		}
+	}
+
+	return versions
 }
 
 // fetchNginxRepoVersions fetches and parses version list from a nginx.org Packages file URL.
@@ -600,12 +852,23 @@ func optimizeNginxConf() {
 		return
 	}
 
-	const optimizedConf = `user www-data;
+	osInfo := system.GetOSInfo()
+
+	nginxUser := "www-data"
+	if osInfo.PkgManager == "dnf" {
+		nginxUser = "nginx"
+	}
+
+	modulesInclude := ""
+	if osInfo.PkgManager == "apt" {
+		modulesInclude = "include /etc/nginx/modules-enabled/*.conf;\n"
+	}
+
+	optimizedConf := fmt.Sprintf(`user %s;
 worker_processes auto;
 pid /run/nginx.pid;
 worker_rlimit_nofile 65535;
-include /etc/nginx/modules-enabled/*.conf;
-
+%s
 events {
     worker_connections 2048;
     multi_accept on;
@@ -653,7 +916,7 @@ http {
     include /etc/nginx/conf.d/*.conf;
     include /etc/nginx/sites-enabled/*;
 }
-`
+`, nginxUser, modulesInclude)
 
 	if err := os.WriteFile(nginxConfPath, []byte(optimizedConf), 0644); err != nil {
 		logger.Warn().Err(err).Msg("failed to write optimized nginx.conf")

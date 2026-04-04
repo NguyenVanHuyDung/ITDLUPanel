@@ -194,7 +194,7 @@ func (i *OLSInstaller) setupLSRepo(ctx context.Context, osInfo *system.OSInfo) e
 				"wget -qO - https://rpms.litespeedtech.com/debian/lst_debian_repo.gpg | apt-key add -")
 
 		// Detect codename
-		codename := getUbuntuCodename()
+		codename := getDistroCodename()
 		if codename == "" {
 			codename = "focal"
 		}
@@ -363,11 +363,17 @@ func GetLSPHPExtensions(version string) ([]PHPExtensionInfo, error) {
 // isLSPHPExtInstalled checks if a specific LSPHP extension package is installed.
 func isLSPHPExtInstalled(versionCode, ext string) bool {
 	pkg := fmt.Sprintf("lsphp%s-%s", versionCode, ext)
-	res, err := system.ExecWithTimeout(5*time.Second, "dpkg", "-s", pkg)
-	if err != nil || res.ExitCode != 0 {
-		return false
+	osInfo := system.GetOSInfo()
+	if osInfo.PkgManager == "apt" {
+		res, err := system.ExecWithTimeout(5*time.Second, "dpkg", "-s", pkg)
+		if err != nil || res.ExitCode != 0 {
+			return false
+		}
+		return strings.Contains(res.Stdout, "Status: install ok installed")
 	}
-	return strings.Contains(res.Stdout, "Status: install ok installed")
+	// RHEL: check via rpm
+	res, err := system.ExecWithTimeout(5*time.Second, "rpm", "-q", pkg)
+	return err == nil && res.ExitCode == 0
 }
 
 // InstallLSPHPExtensions installs additional LSPHP extensions.
