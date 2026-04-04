@@ -251,7 +251,7 @@ export function WebsiteStatisticsModal({ siteId, open, onClose, domain }: ModalP
       width={isMobile ? '100%' : 720}
       title={null}
       closable
-      destroyOnClose
+      destroyOnHidden
       styles={{
         body: {
           padding: 0, borderRadius: 12, overflow: 'hidden',

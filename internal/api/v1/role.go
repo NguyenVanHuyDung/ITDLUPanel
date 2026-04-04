@@ -1,7 +1,6 @@
 package v1
 
 import (
-	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -59,11 +58,15 @@ type createRoleRequest struct {
 func (h *RoleHandler) CreateRole(c *gin.Context) {
 	var req createRoleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "invalid request body"})
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid request body"},
+		})
 		return
 	}
 	if req.Name == "" || len(req.Permissions) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "name and permissions are required"})
+		response.ValidationError(c, []response.FieldError{
+			{Field: "name", Message: "name and permissions are required"},
+		})
 		return
 	}
 
@@ -85,13 +88,17 @@ type updateRoleRequest struct {
 func (h *RoleHandler) UpdateRole(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "invalid role ID"})
+		response.ValidationError(c, []response.FieldError{
+			{Field: "id", Message: "invalid role ID"},
+		})
 		return
 	}
 
 	var req updateRoleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "invalid request body"})
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid request body"},
+		})
 		return
 	}
 
@@ -107,7 +114,9 @@ func (h *RoleHandler) UpdateRole(c *gin.Context) {
 func (h *RoleHandler) DeleteRole(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "invalid role ID"})
+		response.ValidationError(c, []response.FieldError{
+			{Field: "id", Message: "invalid role ID"},
+		})
 		return
 	}
 

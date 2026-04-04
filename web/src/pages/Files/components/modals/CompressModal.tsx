@@ -49,7 +49,7 @@ export default function CompressModal({ open, paths, defaultDest, onOk, onCancel
         </Space>
       }
       okText="Compress"
-      destroyOnClose
+      destroyOnHidden
     >
       <div style={{ color: '#888', marginBottom: 12 }}>
         {paths.length} item(s) selected

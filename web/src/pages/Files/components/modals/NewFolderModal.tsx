@@ -35,7 +35,7 @@ export default function NewFolderModal({ open, currentPath, onOk, onCancel }: Pr
         </Space>
       }
       okText="OK"
-      destroyOnClose
+      destroyOnHidden
     >
       <div style={{ color: '#888', marginBottom: 12 }}>
         In: {currentPath}

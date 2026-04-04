@@ -407,7 +407,7 @@ func (i *NginxInstaller) setupNginxRepo(ctx context.Context, repoType string, os
 
 	distroID := osInfo.ID
 	if distroID != "ubuntu" && distroID != "debian" {
-		distroID = "ubuntu"
+		return fmt.Errorf("unsupported distro for nginx apt repo: %s", distroID)
 	}
 
 	// Download and install nginx signing key

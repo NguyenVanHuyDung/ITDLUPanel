@@ -39,7 +39,7 @@ export default function RemoteDownloadModal({ open, currentPath, onOk, onCancel 
         </Space>
       }
       okText="Download"
-      destroyOnClose
+      destroyOnHidden
     >
       <div style={{ marginBottom: 12 }}>
         <div style={{ marginBottom: 4 }}>URL</div>

@@ -229,13 +229,17 @@ func (h *CloudStorageHandler) OAuthCallback(c *gin.Context) {
 	code := c.Query("code")
 
 	if state == "" || code == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing state or code parameter"})
+		response.ValidationError(c, []response.FieldError{
+			{Field: "oauth", Message: "missing state or code parameter"},
+		})
 		return
 	}
 
 	storageID, err := strconv.ParseInt(state, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid state parameter"})
+		response.ValidationError(c, []response.FieldError{
+			{Field: "state", Message: "invalid state parameter"},
+		})
 		return
 	}
 
@@ -243,7 +247,9 @@ func (h *CloudStorageHandler) OAuthCallback(c *gin.Context) {
 	if provider == "" {
 		cs, err := h.cloudStorageService.GetByID(storageID)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "storage not found"})
+			response.ValidationError(c, []response.FieldError{
+				{Field: "storage", Message: "storage not found"},
+			})
 			return
 		}
 		provider = cs.Type
@@ -251,7 +257,7 @@ func (h *CloudStorageHandler) OAuthCallback(c *gin.Context) {
 
 	redirectURL := oauthCallbackURL(c)
 	if err := h.cloudStorageService.HandleOAuthCallback(provider, storageID, code, redirectURL); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("OAuth callback failed: %v", err)})
+		response.Error(c, fmt.Errorf("OAuth callback failed: %w", err))
 		return
 	}
 

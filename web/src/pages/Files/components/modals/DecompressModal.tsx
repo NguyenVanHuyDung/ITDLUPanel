@@ -38,7 +38,7 @@ export default function DecompressModal({ open, archivePath, defaultDest, onOk, 
         </Space>
       }
       okText="Decompress"
-      destroyOnClose
+      destroyOnHidden
     >
       <div style={{ color: '#888', marginBottom: 12 }}>
         File: {archivePath}

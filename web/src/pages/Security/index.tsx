@@ -1377,7 +1377,7 @@ function F2bBannedIPsTab() {
         </div>
       )}
 
-      <Modal title="Ban IP Address" open={banModalOpen} onCancel={() => setBanModalOpen(false)} footer={null} destroyOnClose>
+      <Modal title="Ban IP Address" open={banModalOpen} onCancel={() => setBanModalOpen(false)} footer={null} destroyOnHidden>
         <Form form={form} layout="vertical" onFinish={handleBan}>
           <Form.Item name="jail" label="Jail" rules={[{ required: true }]}>
             <Select placeholder="Select jail">
@@ -1518,7 +1518,7 @@ function F2bJailsTab() {
       )}
 
       <Modal title={editing ? `Edit Jail: ${editing.name}` : 'Add Jail'} open={modalOpen}
-        onCancel={() => setModalOpen(false)} footer={null} destroyOnClose width={520}>
+        onCancel={() => setModalOpen(false)} footer={null} destroyOnHidden width={520}>
         <Form form={form} layout="vertical" onFinish={handleSave} style={{ marginTop: 16 }}>
           {!editing && (
             <Form.Item name="name" label="Jail Name" rules={[{ required: true }]}

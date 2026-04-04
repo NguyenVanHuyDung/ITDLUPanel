@@ -67,7 +67,7 @@ export default function PermissionsModal({ open, file, onOk, onCancel }: Props) 
         </Space>
       }
       okText="Apply"
-      destroyOnClose
+      destroyOnHidden
     >
       <div style={{ marginBottom: 16 }}>
         <div style={{ marginBottom: 6, fontWeight: 500 }}>Permission Code (Octal)</div>

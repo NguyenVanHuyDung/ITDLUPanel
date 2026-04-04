@@ -38,7 +38,7 @@ export default function RenameModal({ open, file, onOk, onCancel }: Props) {
         </Space>
       }
       okText="Rename"
-      destroyOnClose
+      destroyOnHidden
     >
       <div style={{ color: '#888', marginBottom: 12 }}>
         Current: {file?.name}

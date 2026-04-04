@@ -35,7 +35,7 @@ export default function NewFileModal({ open, currentPath, onOk, onCancel }: Prop
         </Space>
       }
       okText="OK"
-      destroyOnClose
+      destroyOnHidden
     >
       <div style={{ color: '#888', marginBottom: 12 }}>
         In: {currentPath}

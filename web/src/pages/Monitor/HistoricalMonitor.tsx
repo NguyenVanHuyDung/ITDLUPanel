@@ -749,7 +749,7 @@ export default function HistoricalMonitor() {
         footer={null}
         width="90vw"
         centered
-        destroyOnClose
+        destroyOnHidden
         title={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>{fullscreenChart ? histChartTitles[fullscreenChart] + ' (Historical)' : ''}</span>

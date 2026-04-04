@@ -136,10 +136,16 @@ func (i *MySQLInstaller) Uninstall(ctx context.Context) error {
 	if osInfo.PkgManager == "dnf" {
 		confTarget = "/etc/my.cnf.d"
 	}
+	logDir := "/var/log/mysql"
+	if osInfo.PkgManager == "dnf" {
+		if _, err := os.Stat("/var/log/mariadb"); err == nil {
+			logDir = "/var/log/mariadb"
+		}
+	}
 	CleanupServerDir("mysql",
 		SymlinkDef{Name: "conf", Target: confTarget},
 		SymlinkDef{Name: "data", Target: "/var/lib/mysql"},
-		SymlinkDef{Name: "logs", Target: "/var/log/mysql"},
+		SymlinkDef{Name: "logs", Target: logDir},
 	)
 	CleanupLogLinks("mysql")
 

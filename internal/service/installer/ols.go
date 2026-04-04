@@ -209,8 +209,12 @@ func (i *OLSInstaller) setupLSRepo(ctx context.Context, osInfo *system.OSInfo) e
 			}
 		}
 	} else {
-		// RHEL-based
-		repoURL := "http://rpms.litespeedtech.com/centos/litespeed-repo-1.3-1.el8.noarch.rpm"
+		// RHEL-based: detect major version for correct repo RPM
+		majorVer := "8"
+		if v := osInfo.VersionID; len(v) > 0 {
+			majorVer = strings.Split(v, ".")[0]
+		}
+		repoURL := fmt.Sprintf("http://rpms.litespeedtech.com/centos/litespeed-repo-1.3-1.el%s.noarch.rpm", majorVer)
 		if _, err := system.Exec(ctx, "rpm", "-Uvh", repoURL); err != nil {
 			logger.Warn().Err(err).Msg("litespeed repo RPM may already be installed")
 		}

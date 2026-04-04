@@ -273,19 +273,34 @@ func (s *SecurityService) InstallFail2ban() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	if _, err := system.Exec(ctx, "apt-get", "update", "-qq"); err != nil {
-		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to update package list")
+	osInfo := system.GetOSInfo()
+
+	if osInfo.PkgManager == "apt" {
+		if _, err := system.Exec(ctx, "apt-get", "update", "-qq"); err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to update package list")
+		}
 	}
 
-	if _, err := system.Exec(ctx, "apt-get", "install", "-y", "-qq", "fail2ban"); err != nil {
+	if osInfo.PkgManager == "dnf" {
+		// EPEL repo is required for fail2ban on RHEL-based distros
+		system.Exec(ctx, "dnf", "install", "-y", "epel-release")
+	}
+
+	if _, err := system.Exec(ctx, osInfo.PkgManager, "install", "-y", "fail2ban"); err != nil {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to install fail2ban")
 	}
 
 	// Enable and start the service
 	system.Exec(ctx, "systemctl", "enable", "--now", "fail2ban")
 
+	// Auth log path differs between distros
+	authLogPath := "/var/log/auth.log"
+	if osInfo.PkgManager == "dnf" {
+		authLogPath = "/var/log/secure"
+	}
+
 	// Create default jail.local with sshd jail
-	defaultConfig := `[DEFAULT]
+	defaultConfig := fmt.Sprintf(`[DEFAULT]
 bantime = 3600
 findtime = 600
 maxretry = 5
@@ -295,11 +310,11 @@ ignoreip = 127.0.0.1/8 ::1
 enabled = true
 port = ssh
 filter = sshd
-logpath = /var/log/auth.log
+logpath = %s
 maxretry = 5
 bantime = 3600
 findtime = 600
-`
+`, authLogPath)
 	os.WriteFile(fail2banJailPath, []byte(defaultConfig), 0644)
 	system.Exec(ctx, "systemctl", "restart", "fail2ban")
 
@@ -318,7 +333,8 @@ func (s *SecurityService) UninstallFail2ban() error {
 
 	system.Exec(ctx, "systemctl", "disable", "--now", "fail2ban")
 
-	if _, err := system.Exec(ctx, "apt-get", "remove", "-y", "-qq", "fail2ban"); err != nil {
+	osInfo := system.GetOSInfo()
+	if _, err := system.Exec(ctx, osInfo.PkgManager, "remove", "-y", "fail2ban"); err != nil {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to remove fail2ban")
 	}
 
@@ -590,7 +606,7 @@ func (s *SecurityService) GetFail2banLog(lines int) ([]string, error) {
 	defer cancel()
 
 	// Try main log path, fallback
-	for _, path := range []string{fail2banLogPath, "/var/log/fail2ban.log"} {
+	for _, path := range []string{fail2banLogPath, "/var/log/fail2ban.log", "/var/log/fail2ban/fail2ban.log"} {
 		result, err := system.Exec(ctx, "tail", "-n", strconv.Itoa(lines), path)
 		if err == nil {
 			return strings.Split(strings.TrimRight(result.Stdout, "\n"), "\n"), nil

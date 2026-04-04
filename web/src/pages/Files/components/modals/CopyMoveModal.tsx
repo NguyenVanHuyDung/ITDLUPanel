@@ -41,7 +41,7 @@ export default function CopyMoveModal({ open, file, mode, onOk, onCancel }: Prop
         </Space>
       }
       okText={label}
-      destroyOnClose
+      destroyOnHidden
     >
       <div style={{ color: '#888', marginBottom: 12 }}>
         Source: {file?.path}

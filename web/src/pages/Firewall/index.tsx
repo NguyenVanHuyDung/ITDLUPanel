@@ -926,7 +926,7 @@ export default function Firewall() {
         onCancel={() => { setModalOpen(false); setEditingRule(null); }}
         onOk={() => form.submit()}
         confirmLoading={submitting}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={form} layout="vertical" onFinish={handleCreate}
           initialValues={{ protocol: 'tcp', action: 'allow', direction: 'in' }}
@@ -982,7 +982,7 @@ export default function Firewall() {
         onCancel={() => { setBlockIPModalOpen(false); blockIPForm.resetFields(); }}
         onOk={() => blockIPForm.submit()}
         confirmLoading={submitting}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={blockIPForm} layout="vertical" onFinish={handleBlockIP} preserve={false}>
           <Form.Item name="ip" label="IP Address" rules={[{ required: true, message: 'Enter an IP address' }]}

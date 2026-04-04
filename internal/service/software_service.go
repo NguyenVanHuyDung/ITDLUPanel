@@ -154,6 +154,11 @@ func init() {
 		m4 := knownSoftware["nginx"]
 		m4.ServiceName = "nginx" // same on both, but explicit
 		knownSoftware["nginx"] = m4
+
+		// PHP: service name needs version, set generic marker
+		m5 := knownSoftware["php"]
+		m5.ServiceName = "php-fpm" // Will be resolved dynamically by resolveServiceName
+		knownSoftware["php"] = m5
 	}
 }
 
@@ -599,7 +604,7 @@ func (s *SoftwareService) ListInstalled() ([]SoftwareListItem, error) {
 		if info.Name == "php" {
 			// PHP multi-version: check if any PHP-FPM version is running
 			for _, ver := range []string{"8.4", "8.3", "8.2", "8.1", "8.0", "7.4"} {
-				if s.isServiceRunning(fmt.Sprintf("php%s-fpm", ver)) {
+				if s.isServiceRunning(phpFPMServiceName(ver)) {
 					item.IsRunning = true
 					break
 				}
@@ -640,9 +645,24 @@ func (s *SoftwareService) ListAvailable() []AvailableSoftware {
 func (s *SoftwareService) detectInstalledPHPVersions() []string {
 	candidates := []string{"7.4", "8.0", "8.1", "8.2", "8.3", "8.4"}
 	var installed []string
+	osInfo := system.GetOSInfo()
 	for _, v := range candidates {
-		bin := fmt.Sprintf("/usr/sbin/php-fpm%s", v)
-		if _, err := os.Stat(bin); err == nil {
+		found := false
+		if osInfo.PkgManager == "dnf" {
+			// RHEL Remi path
+			remiVer := strings.ReplaceAll(v, ".", "")
+			bin := fmt.Sprintf("/opt/remi/php%s/root/usr/sbin/php-fpm", remiVer)
+			if _, err := os.Stat(bin); err == nil {
+				found = true
+			}
+		} else {
+			// Debian/Ubuntu path
+			bin := fmt.Sprintf("/usr/sbin/php-fpm%s", v)
+			if _, err := os.Stat(bin); err == nil {
+				found = true
+			}
+		}
+		if found {
 			installed = append(installed, v)
 		}
 	}
@@ -777,6 +797,18 @@ func (s *SoftwareService) GetInstaller(name string) (installer.Installer, bool) 
 // It symlinks to /etc/php so both paths resolve identically.
 const phpConfBase = "/ITDLUPanel/server/php/conf"
 
+// phpFPMServiceName returns the systemd service name for PHP-FPM on the current OS.
+// RHEL Remi uses "php{ver}-php-fpm" (e.g., php83-php-fpm), while
+// Debian/Ubuntu uses "php{ver}-fpm" (e.g., php8.3-fpm).
+func phpFPMServiceName(version string) string {
+	osInfo := system.GetOSInfo()
+	if osInfo.PkgManager == "dnf" {
+		ver := strings.ReplaceAll(version, ".", "")
+		return fmt.Sprintf("php%s-php-fpm", ver)
+	}
+	return fmt.Sprintf("php%s-fpm", version)
+}
+
 // phpFPMIni returns the path to the FPM php.ini for the given version.
 func phpFPMIni(version string) string {
 	return fmt.Sprintf("%s/%s/fpm/php.ini", phpConfBase, version)
@@ -850,7 +882,7 @@ func (s *SoftwareService) SetPHPConfig(version string, cfg PHPConfig) error {
 		}
 	}
 
-	svcName := fmt.Sprintf("php%s-fpm", version)
+	svcName := phpFPMServiceName(version)
 	if _, err := system.ExecWithTimeout(30*time.Second, "systemctl", "restart", svcName); err != nil {
 		logger.Warn().Err(err).Str("service", svcName).Msg("failed to restart php-fpm after config change")
 	}
@@ -922,7 +954,7 @@ func (s *SoftwareService) SetPHPOPcache(version string, cfg PHPOPcacheConfig) er
 		}
 	}
 
-	svcName := fmt.Sprintf("php%s-fpm", version)
+	svcName := phpFPMServiceName(version)
 	if _, err := system.ExecWithTimeout(30*time.Second, "systemctl", "restart", svcName); err != nil {
 		logger.Warn().Err(err).Str("service", svcName).Msg("failed to restart php-fpm after opcache config change")
 	}
@@ -1038,7 +1070,7 @@ func (s *SoftwareService) SetPHPDisableFunctions(version string, functions []str
 		}
 	}
 
-	svcName := fmt.Sprintf("php%s-fpm", version)
+	svcName := phpFPMServiceName(version)
 	if _, err := system.ExecWithTimeout(30*time.Second, "systemctl", "restart", svcName); err != nil {
 		logger.Warn().Err(err).Str("service", svcName).Msg("failed to restart php-fpm after disable_functions change")
 	}
@@ -1065,7 +1097,7 @@ func (s *SoftwareService) SetPHPConfigFile(version, content string) error {
 	if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to write php.ini: %w", err)
 	}
-	svcName := fmt.Sprintf("php%s-fpm", version)
+	svcName := phpFPMServiceName(version)
 	if _, err := system.ExecWithTimeout(30*time.Second, "systemctl", "restart", svcName); err != nil {
 		logger.Warn().Err(err).Str("service", svcName).Msg("failed to restart php-fpm after config file change")
 	}
@@ -1190,7 +1222,7 @@ func (s *SoftwareService) SetPHPFPMConfig(version string, cfg PHPFPMConfig) erro
 		return fmt.Errorf("failed to write FPM pool config: %w", err)
 	}
 
-	svcName := fmt.Sprintf("php%s-fpm", version)
+	svcName := phpFPMServiceName(version)
 	if _, err := system.ExecWithTimeout(30*time.Second, "systemctl", "restart", svcName); err != nil {
 		logger.Warn().Err(err).Str("service", svcName).Msg("failed to restart php-fpm after pool config change")
 	}
@@ -1409,9 +1441,9 @@ func (s *SoftwareService) resolveServiceName(name string) (string, error) {
 	if name == "php" {
 		versions := s.detectInstalledPHPVersions()
 		if len(versions) > 0 {
-			return fmt.Sprintf("php%s-fpm", versions[len(versions)-1]), nil
+			return phpFPMServiceName(versions[len(versions)-1]), nil
 		}
-		return "php8.3-fpm", nil // fallback
+		return phpFPMServiceName("8.3"), nil // fallback
 	}
 
 	// First try the database
@@ -2357,7 +2389,7 @@ func (s *SoftwareService) GetPHPFPMStatus(version string) (map[string]interface{
 	}
 
 	// Get master PID from systemctl for accurate process tree detection
-	svcName := fmt.Sprintf("php%s-fpm", version)
+	svcName := phpFPMServiceName(version)
 	pidRes, err := system.ExecWithTimeout(5*time.Second, "systemctl", "show", svcName, "--property=MainPID")
 	if err != nil {
 		return emptyResult, nil
@@ -2519,7 +2551,7 @@ func (s *SoftwareService) SetPHPSlowLogConfig(version string, enabled bool, time
 		return fmt.Errorf("failed to write FPM pool config: %w", err)
 	}
 
-	svcName := fmt.Sprintf("php%s-fpm", version)
+	svcName := phpFPMServiceName(version)
 	if _, err := system.ExecWithTimeout(30*time.Second, "systemctl", "restart", svcName); err != nil {
 		logger.Warn().Err(err).Str("service", svcName).Msg("failed to restart php-fpm after slow log config change")
 	}
