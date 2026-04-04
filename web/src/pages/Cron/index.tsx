@@ -311,6 +311,10 @@ export default function Cron() {
         }
         cmd += ` ${panelCfg}`;
         command = cmd;
+      } else if (storageType !== 'local' && storageId) {
+        // Manual cron: append storage flags if a backup command
+        const sType = storageType.split(':')[0];
+        command += ` -storage=${sType} -storage-id=${storageId}`;
       }
       const payload = { ...values, schedule, command };
       if (editingJob) await api.put(`/crons/${editingJob.id}`, payload);
@@ -1047,6 +1051,50 @@ export default function Cron() {
                 <InfoCircleOutlined style={{ fontSize: 12, color: p.accent, flexShrink: 0 }} /> Backups are created via panel CLI and registered in the panel database — they will appear on the Websites/Databases page backup counts.
               </div>
             </div>
+          )}
+
+          {/* Storage destination — shown for all shell crons (manual or template) */}
+          {!currentTemplate?.cliBackupType && (
+            <Form.Item
+              noStyle
+              shouldUpdate={(prev: Record<string, string>, cur: Record<string, string>) => prev.type !== cur.type}
+            >
+              {({ getFieldValue }: { getFieldValue: (name: string) => string }) =>
+                getFieldValue('type') !== 'url' ? (
+                  <div style={{
+                    padding: '12px 16px', borderRadius: 8, marginBottom: 16,
+                    border: `1px solid ${p.cardBorder}`,
+                    background: isDark ? p.rowAlt : p.headerBg,
+                  }}>
+                    <div style={{ fontSize: 12, color: p.text, marginBottom: 6 }}>Storage destination:</div>
+                    <Select
+                      value={storageType}
+                      onChange={(v: string) => {
+                        setStorageType(v);
+                        if (v === 'local') {
+                          setStorageId(null);
+                        } else {
+                          const parts = v.split(':');
+                          setStorageId(parseInt(parts[1]));
+                        }
+                      }}
+                      style={{ width: '100%' }}
+                      options={storageOptions}
+                    />
+                    {storageType !== 'local' && (
+                      <div style={{ fontSize: 11, color: p.amber, marginTop: 6 }}>
+                        ⬆ If this is a backup command, files will also be uploaded to remote storage
+                      </div>
+                    )}
+                    {storageOptions.length <= 1 && (
+                      <div style={{ fontSize: 11, color: p.textDim, marginTop: 6 }}>
+                        Install and configure storage providers in Storage page to enable remote backup
+                      </div>
+                    )}
+                  </div>
+                ) : null
+              }
+            </Form.Item>
           )}
         </Form>
       </Modal>
