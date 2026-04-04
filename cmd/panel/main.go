@@ -136,6 +136,20 @@ func resolveConfig(path string) string {
 	return "config/panel.json"
 }
 
+// uploadToRemote uploads a backup to remote storage. Logs errors but does not
+// terminate — the local backup is still valid.
+func uploadToRemote(backupSvc *service.BackupService, backupID int64, storageType string, storageIDVal int64) {
+	var err error
+	if storageType == "ftp" {
+		err = backupSvc.UploadBackupToFTP(backupID, storageIDVal)
+	} else {
+		err = backupSvc.UploadBackupToCloud(backupID, storageIDVal, storageType)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to upload backup %d to %s storage %d: %v\n", backupID, storageType, storageIDVal, err)
+	}
+}
+
 // runBackupCommand handles the "backup" sub-command.
 // Usage:
 //
@@ -144,6 +158,8 @@ func resolveConfig(path string) string {
 //	itdlupanel backup -type=database -target=mydb [-max-keep=10]
 //	itdlupanel backup -type=database -all [-max-keep=5]
 //	itdlupanel backup -type=panel [-max-keep=4]
+//	itdlupanel backup -type=site -target=example.com -storage=ftp -storage-id=1
+//	itdlupanel backup -type=database -all -storage=s3 -storage-id=2
 func runBackupCommand() {
 	cmd := flag.NewFlagSet("backup", flag.ExitOnError)
 	cfgPath := cmd.String("config", "", "Path to config file")
@@ -151,6 +167,8 @@ func runBackupCommand() {
 	target := cmd.String("target", "", "Target domain (site) or database name")
 	all := cmd.Bool("all", false, "Backup all sites or all databases")
 	maxKeep := cmd.Int("max-keep", 0, "Max backups to keep (0=unlimited)")
+	storage := cmd.String("storage", "", "Remote storage type: ftp, s3, google_drive, onedrive")
+	storageID := cmd.Int64("storage-id", 0, "Storage configuration ID for remote upload")
 	cmd.Parse(os.Args[2:])
 
 	if *backupType == "" {
@@ -201,6 +219,11 @@ func runBackupCommand() {
 				output(result{Status: "error", Type: "site", Error: err.Error()})
 				os.Exit(1)
 			}
+			if *storage != "" && *storageID > 0 {
+				for _, bk := range backups {
+					uploadToRemote(backupSvc, bk.ID, *storage, *storageID)
+				}
+			}
 			if *maxKeep > 0 {
 				sites, _ := backupSvc.ListAllSites()
 				for _, s := range sites {
@@ -220,6 +243,9 @@ func runBackupCommand() {
 				output(result{Status: "error", Type: "site", Error: err.Error()})
 				os.Exit(1)
 			}
+			if *storage != "" && *storageID > 0 {
+				uploadToRemote(backupSvc, b.ID, *storage, *storageID)
+			}
 			if *maxKeep > 0 {
 				backupSvc.EnforceRetention("site", &siteID, *maxKeep)
 			}
@@ -235,6 +261,11 @@ func runBackupCommand() {
 			if err != nil {
 				output(result{Status: "error", Type: "database", Error: err.Error()})
 				os.Exit(1)
+			}
+			if *storage != "" && *storageID > 0 {
+				for _, bk := range backups {
+					uploadToRemote(backupSvc, bk.ID, *storage, *storageID)
+				}
 			}
 			if *maxKeep > 0 {
 				dbs, _ := backupSvc.ListAllDatabases()
@@ -255,6 +286,9 @@ func runBackupCommand() {
 				output(result{Status: "error", Type: "database", Error: err.Error()})
 				os.Exit(1)
 			}
+			if *storage != "" && *storageID > 0 {
+				uploadToRemote(backupSvc, b.ID, *storage, *storageID)
+			}
 			if *maxKeep > 0 {
 				backupSvc.EnforceRetention("database", &dbID, *maxKeep)
 			}
@@ -269,6 +303,9 @@ func runBackupCommand() {
 		if err != nil {
 			output(result{Status: "error", Type: "panel", Error: err.Error()})
 			os.Exit(1)
+		}
+		if *storage != "" && *storageID > 0 {
+			uploadToRemote(backupSvc, b.ID, *storage, *storageID)
 		}
 		if *maxKeep > 0 {
 			backupSvc.EnforceRetention("panel", nil, *maxKeep)

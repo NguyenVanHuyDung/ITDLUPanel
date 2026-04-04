@@ -213,6 +213,9 @@ export default function Cron() {
   const [selectedTarget, setSelectedTarget] = useState<string>('');
   const [panelBin, setPanelBin] = useState('/ITDLUPanel/server/bin/itdlupanel');
   const [panelCfg, setPanelCfg] = useState('-config=/ITDLUPanel/server/config/panel.json');
+  const [storageType, setStorageType] = useState<string>('local');
+  const [storageId, setStorageId] = useState<number | null>(null);
+  const [storageOptions, setStorageOptions] = useState<{value: string; label: string}[]>([{ value: 'local', label: 'Local Only' }]);
 
   const fetchJobs = useCallback(async () => {
     setLoading(true);
@@ -233,6 +236,45 @@ export default function Cron() {
         if (data.data?.config_path) setPanelCfg(`-config=${data.data.config_path}`);
       })
       .catch(() => { /* use defaults */ });
+
+    // Fetch available storage destinations for backup templates
+    (async () => {
+      const opts: {value: string; label: string}[] = [{ value: 'local', label: 'Local Only' }];
+      try {
+        const { data: swData } = await api.get<ApiResponse<{ installed: unknown[]; available: { name: string; installed?: boolean }[] }>>('/software');
+        const available = swData.data?.available ?? [];
+        const isInstalled = (name: string) => available.some(s => s.name === name && s.installed);
+
+        if (isInstalled('ftp_storage')) {
+          try {
+            const { data: ftpData } = await api.get<ApiResponse<{ id: number; name: string }[]>>('/ftp-storages');
+            const ftpList = Array.isArray(ftpData.data) ? ftpData.data : [];
+            ftpList.forEach(s => opts.push({ value: `ftp:${s.id}`, label: `Local + FTP: ${s.name}` }));
+          } catch { /* ignore */ }
+        }
+
+        const cloudTypes: { sw: string; type: string; label: string }[] = [
+          { sw: 's3_storage', type: 's3', label: 'S3' },
+          { sw: 'google_drive', type: 'google_drive', label: 'Google Drive' },
+          { sw: 'onedrive', type: 'onedrive', label: 'OneDrive' },
+        ];
+        const hasCloud = cloudTypes.some(ct => isInstalled(ct.sw));
+        if (hasCloud) {
+          try {
+            const { data: cloudData } = await api.get<ApiResponse<{ id: number; name: string; type: string }[]>>('/cloud-storages');
+            const cloudList = Array.isArray(cloudData.data) ? cloudData.data : [];
+            for (const ct of cloudTypes) {
+              if (isInstalled(ct.sw)) {
+                cloudList.filter(s => s.type === ct.type).forEach(s =>
+                  opts.push({ value: `${ct.type}:${s.id}`, label: `Local + ${ct.label}: ${s.name}` })
+                );
+              }
+            }
+          } catch { /* ignore */ }
+        }
+      } catch { /* ignore — just keep "Local Only" */ }
+      setStorageOptions(opts);
+    })();
   }, []);
 
   const filteredJobs = useMemo(() => {
@@ -263,6 +305,10 @@ export default function Cron() {
         if (maxKeep > 0) {
           cmd += ` -max-keep=${maxKeep}`;
         }
+        if (storageType !== 'local' && storageId) {
+          const sType = storageType.split(':')[0];
+          cmd += ` -storage=${sType} -storage-id=${storageId}`;
+        }
         cmd += ` ${panelCfg}`;
         command = cmd;
       }
@@ -274,6 +320,8 @@ export default function Cron() {
       setEditingJob(null);
       setCurrentTemplate(null);
       setSelectedTarget('');
+      setStorageType('local');
+      setStorageId(null);
       form.resetFields();
       fetchJobs();
     } catch { message.error(t('common.error')); }
@@ -374,6 +422,8 @@ export default function Cron() {
     setSchedState({ mode: 'builder', preset: '', custom: '', freq: 'day', minute: 0, hour: 2, dom: 1, dow: 0, interval: 5 });
     setMaxKeep(template?.defaultMaxKeep || 10);
     setSelectedTarget('');
+    setStorageType('local');
+    setStorageId(null);
     if (template) {
       form.setFieldsValue({ name: template.name, command: template.command, type: template.type });
       const parsed = parseCronToState(template.schedule);
@@ -836,7 +886,7 @@ export default function Cron() {
       <Modal
         title={editingJob ? 'Edit Cron Job' : 'Add Cron Job'}
         open={modalOpen}
-        onCancel={() => { setModalOpen(false); setEditingJob(null); setCurrentTemplate(null); form.resetFields(); }}
+        onCancel={() => { setModalOpen(false); setEditingJob(null); setCurrentTemplate(null); setStorageType('local'); setStorageId(null); form.resetFields(); }}
         onOk={() => form.submit()}
         confirmLoading={submitting}
         width={isMobile ? '95%' : 600}
@@ -958,6 +1008,31 @@ export default function Cron() {
               {maxKeep > 0 && (
                 <div style={{ fontSize: 11, color: p.green, marginTop: 6 }}>
                   ✓ Will auto-delete oldest backups per target when count exceeds {maxKeep}
+                </div>
+              )}
+
+              {storageOptions.length > 1 && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: 12, color: p.text, marginBottom: 6 }}>Storage destination:</div>
+                  <Select
+                    value={storageType}
+                    onChange={(v: string) => {
+                      setStorageType(v);
+                      if (v === 'local') {
+                        setStorageId(null);
+                      } else {
+                        const parts = v.split(':');
+                        setStorageId(parseInt(parts[1]));
+                      }
+                    }}
+                    style={{ width: '100%' }}
+                    options={storageOptions}
+                  />
+                  {storageType !== 'local' && (
+                    <div style={{ fontSize: 11, color: p.amber, marginTop: 6 }}>
+                      ⬆ Backup will be stored locally and uploaded to remote storage
+                    </div>
+                  )}
                 </div>
               )}
 

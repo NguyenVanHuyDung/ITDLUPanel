@@ -127,14 +127,18 @@ func (h *BackupHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// After backup created, upload to FTP if requested
-	if req.Storage == "ftp" && req.StorageID != nil && backup != nil {
-		if err := h.backupService.UploadBackupToFTP(backup.ID, *req.StorageID); err != nil {
-			logger.Warn().Err(err).Msg("failed to upload backup to FTP storage")
+	// After backup created, upload to remote storage if requested
+	if req.Storage != "" && req.StorageID != nil && backup != nil {
+		if req.Storage == "ftp" {
+			if err := h.backupService.UploadBackupToFTP(backup.ID, *req.StorageID); err != nil {
+				logger.Warn().Err(err).Msg("failed to upload backup to FTP storage")
+			}
 		} else {
-			// Refresh backup info
-			backup, _ = h.backupService.GetByID(backup.ID)
+			if err := h.backupService.UploadBackupToCloud(backup.ID, *req.StorageID, req.Storage); err != nil {
+				logger.Warn().Err(err).Msg("failed to upload backup to cloud storage")
+			}
 		}
+		backup, _ = h.backupService.GetByID(backup.ID)
 	}
 
 	response.Created(c, backup)

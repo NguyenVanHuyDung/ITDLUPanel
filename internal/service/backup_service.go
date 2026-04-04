@@ -510,9 +510,9 @@ func (s *BackupService) UploadBackupToFTP(backupID, storageID int64) error {
 		return err
 	}
 
-	// Update backup record with FTP storage info
+	// Update backup record with FTP storage info (local copy is kept)
 	_, err = s.db.Exec(
-		"UPDATE backups SET storage = 'ftp', storage_id = ? WHERE id = ?",
+		"UPDATE backups SET storage = 'local+ftp', storage_id = ? WHERE id = ?",
 		storageID, backupID,
 	)
 	if err != nil {
@@ -543,10 +543,10 @@ func (s *BackupService) UploadBackupToCloud(backupID, storageID int64, storageTy
 		return err
 	}
 
-	// Update backup record with cloud storage info
+	// Update backup record with cloud storage info (local copy is kept)
 	_, err = s.db.Exec(
 		"UPDATE backups SET storage = ?, storage_id = ? WHERE id = ?",
-		storageType, storageID, backupID,
+		"local+"+storageType, storageID, backupID,
 	)
 	if err != nil {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to update backup storage info")
