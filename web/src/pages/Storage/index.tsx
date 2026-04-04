@@ -1,12 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Spin } from 'antd';
+import { Spin, message, Modal } from 'antd';
 import {
   CloudServerOutlined, CloudOutlined, HddOutlined,
-  CheckCircleOutlined, AppstoreOutlined,
+  CheckCircleOutlined, DownloadOutlined, SettingOutlined,
+  DeleteOutlined, ExclamationCircleOutlined, ReloadOutlined,
 } from '@ant-design/icons';
 import api from '@/services/api';
 import { usePalette } from '@/hooks/usePalette';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { useTaskStore } from '@/stores/task';
+import type { ApiResponse } from '@/types';
 import FTPStorageManageModal from '@/components/FTPStorageManageModal';
 import S3StorageManageModal from '@/components/S3StorageManageModal';
 import GoogleDriveManageModal from '@/components/GoogleDriveManageModal';
@@ -32,13 +35,14 @@ interface CloudStorage {
 
 interface ProviderCard {
   key: string;
+  softwareName: string;
   name: string;
   description: string;
   icon: React.ReactNode;
   color: string;
-  status: 'installed' | 'not_installed';
-  count?: number;
-  onManage?: () => void;
+  installed: boolean;
+  count: number;
+  onManage: () => void;
 }
 
 export default function Storage() {
@@ -57,6 +61,11 @@ export default function Storage() {
   const [odInstalled, setOdInstalled] = useState(false);
   const [odCount, setOdCount] = useState(0);
   const [odModalOpen, setOdModalOpen] = useState(false);
+  const [installingKey, setInstallingKey] = useState<string | null>(null);
+  const [uninstallingKey, setUninstallingKey] = useState<string | null>(null);
+
+  const { addTask, setModalOpen: openTaskModal, setActiveTab: setTaskTab } = useTaskStore();
+  const tasks = useTaskStore((s) => s.tasks);
 
   void isDark;
 
@@ -95,81 +104,134 @@ export default function Storage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Re-fetch when tasks complete (install/uninstall finishes)
+  useEffect(() => {
+    const doneCount = Object.values(tasks).filter(t =>
+      (t.type === 'software_install' || t.type === 'software_uninstall') && t.status === 'completed'
+    ).length;
+    if (doneCount > 0) {
+      const timer = setTimeout(() => fetchData(), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [tasks, fetchData]);
+
+  const trackTask = useCallback(
+    (taskId: number, name: string, type: 'install' | 'uninstall') => {
+      addTask({
+        id: taskId, name,
+        type: type === 'install' ? 'software_install' : 'software_uninstall',
+        status: 'running', progress: 0, created_at: new Date().toISOString(),
+      });
+      openTaskModal(true);
+      setTaskTab('tasks');
+    },
+    [addTask, openTaskModal, setTaskTab],
+  );
+
+  const handleInstall = async (prov: ProviderCard) => {
+    setInstallingKey(prov.key);
+    try {
+      const { data } = await api.post<ApiResponse<{ task_id: number }>>('/software/install', {
+        name: prov.softwareName,
+      });
+      const taskId = data.data?.task_id;
+      if (taskId) {
+        trackTask(taskId, `Install ${prov.name}`, 'install');
+        message.info(`Installing ${prov.name}…`);
+      }
+    } catch {
+      message.error(`Failed to install ${prov.name}`);
+    } finally {
+      setInstallingKey(null);
+    }
+  };
+
+  const handleUninstall = (prov: ProviderCard) => {
+    Modal.confirm({
+      title: `Uninstall ${prov.name}?`,
+      icon: <ExclamationCircleOutlined />,
+      content: `This will remove ${prov.name}. Your storage configurations will be preserved.`,
+      okText: 'Uninstall',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setUninstallingKey(prov.key);
+        try {
+          const { data } = await api.post<ApiResponse<{ task_id: number }>>('/software/uninstall', {
+            name: prov.softwareName,
+          });
+          const taskId = data.data?.task_id;
+          if (taskId) {
+            trackTask(taskId, `Uninstall ${prov.name}`, 'uninstall');
+            message.info(`Uninstalling ${prov.name}…`);
+          }
+        } catch {
+          message.error(`Failed to uninstall ${prov.name}`);
+        } finally {
+          setUninstallingKey(null);
+        }
+      },
+    });
+  };
+
   const providers: ProviderCard[] = [
     {
-      key: 'ftp',
+      key: 'ftp', softwareName: 'ftp_storage',
       name: 'FTP Storage',
       description: 'Connect remote FTP servers for off-site backup storage',
       icon: <CloudServerOutlined style={{ fontSize: 28 }} />,
       color: '#1890FF',
-      status: ftpInstalled ? 'installed' : 'not_installed',
-      count: ftpCount,
+      installed: ftpInstalled, count: ftpCount,
       onManage: () => setFtpModalOpen(true),
     },
     {
-      key: 's3',
+      key: 's3', softwareName: 's3_storage',
       name: 'Amazon S3',
       description: 'Connect Amazon S3 or S3-compatible storage for scalable backups',
       icon: <CloudOutlined style={{ fontSize: 28 }} />,
       color: '#FF9900',
-      status: s3Installed ? 'installed' : 'not_installed',
-      count: s3Count,
+      installed: s3Installed, count: s3Count,
       onManage: () => setS3ModalOpen(true),
     },
     {
-      key: 'google_drive',
+      key: 'google_drive', softwareName: 'google_drive',
       name: 'Google Drive',
       description: 'Connect Google Drive for cloud backup storage with OAuth',
       icon: <CloudOutlined style={{ fontSize: 28 }} />,
       color: '#4285F4',
-      status: gdInstalled ? 'installed' : 'not_installed',
-      count: gdCount,
+      installed: gdInstalled, count: gdCount,
       onManage: () => setGdModalOpen(true),
     },
     {
-      key: 'onedrive',
+      key: 'onedrive', softwareName: 'onedrive',
       name: 'OneDrive',
       description: 'Connect Microsoft OneDrive for cloud backup storage',
       icon: <HddOutlined style={{ fontSize: 28 }} />,
       color: '#0078D4',
-      status: odInstalled ? 'installed' : 'not_installed',
-      count: odCount,
+      installed: odInstalled, count: odCount,
       onManage: () => setOdModalOpen(true),
     },
   ];
 
-  const statusBadge = (status: ProviderCard['status']) => {
-    if (status === 'installed') return (
-      <span style={{
-        fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4,
-        background: `${p.green}15`, color: p.green,
-        display: 'inline-flex', alignItems: 'center', gap: 4,
-      }}>
-        <CheckCircleOutlined /> Installed
-      </span>
-    );
-    return (
-      <span style={{
-        fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4,
-        background: `${p.amber}15`, color: p.amber,
-        display: 'inline-flex', alignItems: 'center', gap: 4,
-      }}>
-        <AppstoreOutlined /> Not Installed
-      </span>
-    );
-  };
-
   return (
     <div style={{ maxWidth: 960, margin: '0 auto', padding: isMobile ? '12px' : '24px' }}>
       {/* Header */}
-      <div style={{ marginBottom: 24 }}>
-        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: p.text, display: 'flex', alignItems: 'center', gap: 10 }}>
-          <CloudServerOutlined style={{ color: p.accent }} />
-          Storage
-        </h2>
-        <p style={{ margin: '4px 0 0', fontSize: 12, color: p.textMuted }}>
-          Manage remote storage for backups
-        </p>
+      <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: p.text, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <CloudServerOutlined style={{ color: p.accent }} />
+            Storage
+          </h2>
+          <p style={{ margin: '4px 0 0', fontSize: 12, color: p.textMuted }}>
+            Manage remote storage providers for backups
+          </p>
+        </div>
+        <button onClick={fetchData} style={{
+          padding: '7px 14px', borderRadius: 7, border: `1px solid ${p.cardBorder}`,
+          background: p.card, color: p.textMuted, fontSize: 12, cursor: 'pointer',
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+        }}>
+          <ReloadOutlined /> Refresh
+        </button>
       </div>
 
       {loading ? (
@@ -181,6 +243,7 @@ export default function Storage() {
           gap: 16,
         }}>
           {providers.map((prov) => {
+            const busy = installingKey === prov.key || uninstallingKey === prov.key;
             return (
               <div key={prov.key} style={{
                 background: p.card,
@@ -189,7 +252,6 @@ export default function Storage() {
                 padding: 20,
                 position: 'relative',
                 transition: 'all 0.2s',
-                cursor: 'pointer',
               }}>
                 {/* Icon + status row */}
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
@@ -201,7 +263,14 @@ export default function Storage() {
                   }}>
                     {prov.icon}
                   </div>
-                  {statusBadge(prov.status)}
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4,
+                    background: prov.installed ? `${p.green}15` : `${p.textDim}12`,
+                    color: prov.installed ? p.green : p.textDim,
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                  }}>
+                    {prov.installed ? <><CheckCircleOutlined /> Installed</> : 'Not Installed'}
+                  </span>
                 </div>
 
                 {/* Name */}
@@ -214,33 +283,44 @@ export default function Storage() {
                   {prov.description}
                 </div>
 
-                {/* Count */}
-                {prov.count !== undefined && (
+                {/* Connection count (only when installed) */}
+                {prov.installed && (
                   <div style={{ fontSize: 11, color: p.textDim, marginBottom: 12 }}>
                     {prov.count} connection{prov.count !== 1 ? 's' : ''} configured
                   </div>
                 )}
 
-                {/* Action */}
-                {prov.status === 'installed' && prov.onManage && (
-                  <button onClick={prov.onManage} style={{
+                {/* Actions */}
+                {prov.installed ? (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={prov.onManage} style={{
+                      flex: 1, padding: '8px 0', borderRadius: 7, border: 'none',
+                      background: prov.color, color: '#fff', fontSize: 12, fontWeight: 600,
+                      cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    }}>
+                      <SettingOutlined /> Manage
+                    </button>
+                    <button onClick={() => handleUninstall(prov)} disabled={busy} style={{
+                      padding: '8px 12px', borderRadius: 7,
+                      border: `1px solid ${p.cardBorder}`,
+                      background: p.card, color: p.red, fontSize: 12,
+                      cursor: busy ? 'not-allowed' : 'pointer',
+                      display: 'inline-flex', alignItems: 'center',
+                      opacity: busy ? 0.5 : 1,
+                    }}>
+                      <DeleteOutlined />
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => handleInstall(prov)} disabled={busy} style={{
                     width: '100%', padding: '8px 0', borderRadius: 7, border: 'none',
-                    background: prov.color, color: '#fff', fontSize: 12, fontWeight: 600,
-                    cursor: 'pointer',
+                    background: p.accent, color: '#fff', fontSize: 12, fontWeight: 600,
+                    cursor: busy ? 'wait' : 'pointer',
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    opacity: busy ? 0.7 : 1,
                   }}>
-                    Manage
-                  </button>
-                )}
-
-                {prov.status === 'not_installed' && (
-                  <button onClick={() => window.location.hash = '#/appstore'} style={{
-                    width: '100%', padding: '8px 0', borderRadius: 7,
-                    border: `1px solid ${p.cardBorder}`,
-                    background: p.card, color: p.accent, fontSize: 12, fontWeight: 600,
-                    cursor: 'pointer',
-                  }}>
-                    <AppstoreOutlined style={{ marginRight: 6 }} />
-                    Install from AppStore
+                    {busy ? <Spin size="small" /> : <DownloadOutlined />}
+                    Install
                   </button>
                 )}
               </div>
