@@ -95,16 +95,35 @@ func (i *MySQLInstaller) Install(ctx context.Context, version string, progress f
 	// Write performance tuning config and restart
 	writeDefaultMySQLTuning(ctx, isMariaDB, serviceName)
 
-	SetupServerDir("mysql", []SymlinkDef{
-		{Name: "conf", Target: "/etc/mysql"},
-		{Name: "data", Target: "/var/lib/mysql"},
-		{Name: "logs", Target: "/var/log/mysql"},
-	})
-
-	SetupLogLinks([]LogSymlink{
-		{Name: "mysql.error.log", Target: "/var/log/mysql/error.log"},
-		{Name: "mysql.slow.log", Target: "/var/log/mysql/mariadb-slow.log"},
-	})
+	// Setup server directory and log links (OS-aware paths)
+	if osInfo.PkgManager == "apt" {
+		SetupServerDir("mysql", []SymlinkDef{
+			{Name: "conf", Target: "/etc/mysql"},
+			{Name: "data", Target: "/var/lib/mysql"},
+			{Name: "logs", Target: "/var/log/mysql"},
+		})
+		SetupLogLinks([]LogSymlink{
+			{Name: "mysql.error.log", Target: "/var/log/mysql/error.log"},
+			{Name: "mysql.slow.log", Target: "/var/log/mysql/mariadb-slow.log"},
+		})
+	} else {
+		// RHEL: config at /etc/my.cnf.d/, logs at /var/log/mysql or /var/log/mariadb
+		os.MkdirAll("/var/log/mysql", 0755)
+		SetupServerDir("mysql", []SymlinkDef{
+			{Name: "conf", Target: "/etc/my.cnf.d"},
+			{Name: "data", Target: "/var/lib/mysql"},
+			{Name: "logs", Target: "/var/log/mysql"},
+		})
+		logDir := "/var/log/mysql"
+		if isMariaDB {
+			logDir = "/var/log/mariadb"
+			os.MkdirAll(logDir, 0755)
+		}
+		SetupLogLinks([]LogSymlink{
+			{Name: "mysql.error.log", Target: logDir + "/error.log"},
+			{Name: "mysql.slow.log", Target: logDir + "/slow.log"},
+		})
+	}
 
 	progress(100)
 	logger.Info().Str("package", pkg).Msg("mysql/mariadb installed successfully")
@@ -112,14 +131,17 @@ func (i *MySQLInstaller) Install(ctx context.Context, version string, progress f
 }
 
 func (i *MySQLInstaller) Uninstall(ctx context.Context) error {
+	osInfo := system.GetOSInfo()
+	confTarget := "/etc/mysql"
+	if osInfo.PkgManager == "dnf" {
+		confTarget = "/etc/my.cnf.d"
+	}
 	CleanupServerDir("mysql",
-		SymlinkDef{Name: "conf", Target: "/etc/mysql"},
+		SymlinkDef{Name: "conf", Target: confTarget},
 		SymlinkDef{Name: "data", Target: "/var/lib/mysql"},
 		SymlinkDef{Name: "logs", Target: "/var/log/mysql"},
 	)
 	CleanupLogLinks("mysql")
-
-	osInfo := system.GetOSInfo()
 
 	// Stop all possible service names
 	for _, svc := range []string{"mysql", "mysqld", "mariadb"} {
@@ -213,7 +235,11 @@ table_definition_cache = 2000
 `, bufferPoolSize)
 
 	var confPath string
-	if isMariaDB {
+	osInfo := system.GetOSInfo()
+	if osInfo.PkgManager == "dnf" {
+		// RHEL: all custom configs go in /etc/my.cnf.d/
+		confPath = "/etc/my.cnf.d/99-itdlu-tuning.cnf"
+	} else if isMariaDB {
 		confPath = "/etc/mysql/mariadb.conf.d/99-itdlu-tuning.cnf"
 	} else {
 		confPath = "/etc/mysql/mysql.conf.d/99-itdlu-tuning.cnf"

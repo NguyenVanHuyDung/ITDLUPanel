@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ITDLUPanel/panel/internal/pkg/logger"
@@ -42,14 +43,28 @@ func (i *PhpMyAdminInstaller) Install(ctx context.Context, version string, progr
 	progress(20)
 	// Use versioned PHP packages matching the installed PHP-FPM
 	phpVer := detectInstalledPHPVersion()
-	deps := []string{"install", "-y",
-		fmt.Sprintf("php%s-mbstring", phpVer),
-		fmt.Sprintf("php%s-zip", phpVer),
-		fmt.Sprintf("php%s-gd", phpVer),
-		fmt.Sprintf("php%s-curl", phpVer),
-		fmt.Sprintf("php%s-mysql", phpVer),
-		fmt.Sprintf("php%s-xml", phpVer),
-		"unzip", "wget",
+	var deps []string
+	if osInfo.PkgManager == "apt" {
+		deps = []string{"install", "-y",
+			fmt.Sprintf("php%s-mbstring", phpVer),
+			fmt.Sprintf("php%s-zip", phpVer),
+			fmt.Sprintf("php%s-gd", phpVer),
+			fmt.Sprintf("php%s-curl", phpVer),
+			fmt.Sprintf("php%s-mysql", phpVer),
+			fmt.Sprintf("php%s-xml", phpVer),
+			"unzip", "wget",
+		}
+	} else {
+		// RHEL: php extension packages use php{ver}-php-{ext} format with remi
+		deps = []string{"install", "-y",
+			fmt.Sprintf("php%s-php-mbstring", phpVer),
+			fmt.Sprintf("php%s-php-zip", phpVer),
+			fmt.Sprintf("php%s-php-gd", phpVer),
+			fmt.Sprintf("php%s-php-curl", phpVer),
+			fmt.Sprintf("php%s-php-mysqlnd", phpVer),
+			fmt.Sprintf("php%s-php-xml", phpVer),
+			"unzip", "wget",
+		}
 	}
 	if _, err := system.Exec(ctx, osInfo.PkgManager, deps...); err != nil {
 		logger.Warn().Err(err).Msg("some php deps may have failed, continuing")
@@ -83,6 +98,12 @@ func (i *PhpMyAdminInstaller) Install(ctx context.Context, version string, progr
 
 	progress(80)
 	// Create config with secure session settings for HTTPS support
+	// Session save path is OS-dependent
+	sessionPath := "/var/lib/php/sessions"
+	if osInfo.PkgManager == "dnf" {
+		sessionPath = "/tmp"
+	}
+
 	configContent := fmt.Sprintf(`<?php
 $cfg['blowfish_secret'] = '%s';
 $i = 0;
@@ -91,7 +112,7 @@ $cfg['Servers'][$i]['auth_type'] = 'cookie';
 $cfg['Servers'][$i]['host'] = 'localhost';
 $cfg['Servers'][$i]['compress'] = false;
 $cfg['Servers'][$i]['AllowNoPassword'] = false;
-$cfg['Servers'][$i]['SessionSavePath'] = '/var/lib/php/sessions';
+$cfg['Servers'][$i]['SessionSavePath'] = '%s';
 $cfg['UploadDir'] = '';
 $cfg['SaveDir'] = '';
 $cfg['TempDir'] = '/tmp';
@@ -101,7 +122,7 @@ $cfg['TempDir'] = '/tmp';
 @ini_set('session.cookie_httponly', '1');
 @ini_set('session.cookie_samesite', 'Lax');
 @ini_set('session.use_strict_mode', '1');
-`, randomHex(32))
+`, randomHex(32), sessionPath)
 
 	if err := os.WriteFile(installDir+"/config.inc.php", []byte(configContent), 0644); err != nil {
 		logger.Warn().Err(err).Msg("failed to write phpMyAdmin config")
@@ -110,8 +131,12 @@ $cfg['TempDir'] = '/tmp';
 	// Create tmp dir
 	os.MkdirAll(installDir+"/tmp", 0777)
 
-	// Set ownership
-	system.ExecWithTimeout(10*time.Second, "chown", "-R", "www-data:www-data", installDir)
+	// Set ownership (OS-aware web user)
+	webUser := "www-data"
+	if osInfo.PkgManager == "dnf" {
+		webUser = "nginx"
+	}
+	system.ExecWithTimeout(10*time.Second, "chown", "-R", webUser+":"+webUser, installDir)
 
 	progress(90)
 	// Configure nginx to serve phpMyAdmin at /phpmyadmin/
@@ -152,6 +177,7 @@ func randomHex(n int) string {
 const phpMyAdminNginxConfPath = `/ITDLUPanel/server/nginx/conf/conf.d/phpmyadmin.conf`
 
 func phpMyAdminNginxConf(phpVersion string) string {
+	socketPath := getPhpFpmSocketPath(phpVersion)
 	return fmt.Sprintf(`# phpMyAdmin - managed by ITDLUPanel
 server {
     listen 888;
@@ -164,7 +190,7 @@ server {
     }
 
     location ~ \.php$ {
-        fastcgi_pass unix:/var/run/php/php%s-fpm.sock;
+        fastcgi_pass unix:%s;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
     }
@@ -173,25 +199,58 @@ server {
         deny all;
     }
 }
-`, phpVersion)
+`, socketPath)
+}
+
+// getPhpFpmSocketPath returns the PHP-FPM socket path based on OS.
+func getPhpFpmSocketPath(phpVersion string) string {
+	osInfo := system.GetOSInfo()
+	if osInfo.PkgManager == "apt" {
+		return fmt.Sprintf("/var/run/php/php%s-fpm.sock", phpVersion)
+	}
+	// RHEL with remi: socket at /var/opt/remi/php{ver}/run/php-fpm/www.sock
+	remiVer := strings.ReplaceAll(phpVersion, ".", "")
+	return fmt.Sprintf("/var/opt/remi/php%s/run/php-fpm/www.sock", remiVer)
 }
 
 // detectInstalledPHPVersion finds the first active PHP-FPM version on the system.
 func detectInstalledPHPVersion() string {
-	// Check common PHP-FPM sockets
-	for _, ver := range []string{"8.4", "8.3", "8.2", "8.1", "8.0", "7.4"} {
-		sock := fmt.Sprintf("/var/run/php/php%s-fpm.sock", ver)
-		if _, err := os.Stat(sock); err == nil {
-			return ver
+	osInfo := system.GetOSInfo()
+
+	// Check common PHP-FPM sockets (Debian paths)
+	if osInfo.PkgManager == "apt" {
+		for _, ver := range []string{"8.4", "8.3", "8.2", "8.1", "8.0", "7.4"} {
+			sock := fmt.Sprintf("/var/run/php/php%s-fpm.sock", ver)
+			if _, err := os.Stat(sock); err == nil {
+				return ver
+			}
 		}
 	}
-	// Fallback: check systemctl
+
+	// Check systemctl for active PHP-FPM (both naming conventions)
 	for _, ver := range []string{"8.4", "8.3", "8.2", "8.1", "8.0", "7.4"} {
-		result, err := system.ExecWithTimeout(3*time.Second, "systemctl", "is-active", fmt.Sprintf("php%s-fpm", ver))
-		if err == nil && result.ExitCode == 0 {
-			return ver
+		for _, svc := range []string{
+			fmt.Sprintf("php%s-fpm", ver),
+			fmt.Sprintf("php%s-php-fpm", ver),
+		} {
+			result, err := system.ExecWithTimeout(3*time.Second, "systemctl", "is-active", svc)
+			if err == nil && result.ExitCode == 0 {
+				return ver
+			}
 		}
 	}
+
+	// RHEL remi: check for binary existence
+	if osInfo.PkgManager == "dnf" {
+		for _, ver := range []string{"8.4", "8.3", "8.2", "8.1", "8.0", "7.4"} {
+			remiVer := strings.ReplaceAll(ver, ".", "")
+			binPath := fmt.Sprintf("/opt/remi/php%s/root/usr/sbin/php-fpm", remiVer)
+			if _, err := os.Stat(binPath); err == nil {
+				return ver
+			}
+		}
+	}
+
 	return "8.3" // default fallback
 }
 
@@ -229,6 +288,7 @@ func setupPhpMyAdminNginx(ctx context.Context) {
 
 	// Add SSL block if certs exist
 	if _, err := os.Stat(certPath); err == nil {
+		socketPath := getPhpFpmSocketPath(phpVer)
 		nginxConf += fmt.Sprintf(`
 # SSL block
 server {
@@ -246,7 +306,7 @@ server {
     }
 
     location ~ \.php$ {
-        fastcgi_pass unix:/var/run/php/php%s-fpm.sock;
+        fastcgi_pass unix:%s;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
         fastcgi_param HTTPS on;
@@ -256,7 +316,7 @@ server {
         deny all;
     }
 }
-`, sslDir, sslDir, phpVer)
+`, sslDir, sslDir, socketPath)
 	}
 
 	// Save default config JSON with SSL enabled

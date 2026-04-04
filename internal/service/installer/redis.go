@@ -52,22 +52,26 @@ func (i *RedisInstaller) Install(ctx context.Context, version string, progress f
 		logger.Warn().Err(err).Msg("failed to start redis service")
 	}
 
-	if osInfo.PkgManager == "apt" {
-		SetupServerDir("redis", []SymlinkDef{
-			{Name: "conf", Target: "/etc/redis"},
-			{Name: "data", Target: "/var/lib/redis"},
-			{Name: "logs", Target: "/var/log/redis"},
-		})
-	} else {
-		SetupServerDir("redis", []SymlinkDef{
-			{Name: "conf", Target: "/etc/redis"},
-			{Name: "data", Target: "/var/lib/redis"},
-			{Name: "logs", Target: "/var/log/redis"},
-		})
+	confDir := "/etc/redis"
+	if osInfo.PkgManager == "dnf" {
+		// RHEL: config is at /etc/redis/ or /etc/redis.conf; data at /var/lib/redis
+		if _, err := os.Stat("/etc/redis"); os.IsNotExist(err) {
+			os.MkdirAll("/etc/redis", 0755)
+		}
 	}
+	SetupServerDir("redis", []SymlinkDef{
+		{Name: "conf", Target: confDir},
+		{Name: "data", Target: "/var/lib/redis"},
+		{Name: "logs", Target: "/var/log/redis"},
+	})
 
+	// Log path differs between Ubuntu and RHEL
+	redisLog := "/var/log/redis/redis-server.log"
+	if osInfo.PkgManager == "dnf" {
+		redisLog = "/var/log/redis/redis.log"
+	}
 	SetupLogLinks([]LogSymlink{
-		{Name: "redis.log", Target: "/var/log/redis/redis-server.log"},
+		{Name: "redis.log", Target: redisLog},
 	})
 
 	progress(100)

@@ -58,12 +58,26 @@ func (i *PureFTPdInstaller) Install(ctx context.Context, version string, progres
 	}
 
 	// Configure passive port range
-	passiveConf := "/etc/pure-ftpd/conf/PassivePortRange"
-	if err := os.WriteFile(passiveConf, []byte("39000 40000\n"), 0644); err != nil {
-		logger.Warn().Err(err).Msg("failed to set passive port range (non-fatal)")
+	if osInfo.PkgManager == "apt" {
+		passiveConf := "/etc/pure-ftpd/conf/PassivePortRange"
+		os.MkdirAll("/etc/pure-ftpd/conf", 0755)
+		if err := os.WriteFile(passiveConf, []byte("39000 40000\n"), 0644); err != nil {
+			logger.Warn().Err(err).Msg("failed to set passive port range (non-fatal)")
+		}
+		// Enable PureDB virtual user authentication
+		os.MkdirAll("/etc/pure-ftpd/auth", 0755)
+		_ = os.Symlink("../conf/PureDB", "/etc/pure-ftpd/auth/50puredb")
+	} else {
+		// RHEL: pure-ftpd uses /etc/pure-ftpd/pure-ftpd.conf
+		confFile := "/etc/pure-ftpd/pure-ftpd.conf"
+		if data, err := os.ReadFile(confFile); err == nil {
+			content := string(data)
+			if !strings.Contains(content, "PassivePortRange") {
+				content += "\nPassivePortRange 39000 40000\n"
+				_ = os.WriteFile(confFile, []byte(content), 0644)
+			}
+		}
 	}
-	// Enable PureDB virtual user authentication
-	_ = os.Symlink("../conf/PureDB", "/etc/pure-ftpd/auth/50puredb")
 	// Set ForcePassiveIP to server's public IP for external access
 	if pubIP, err := system.ExecWithTimeout(5*time.Second, "curl", "-s", "ifconfig.me"); err == nil {
 		ip := strings.TrimSpace(pubIP.Stdout)
@@ -74,12 +88,23 @@ func (i *PureFTPdInstaller) Install(ctx context.Context, version string, progres
 	// Restart to apply
 	system.ExecWithTimeout(10*time.Second, "systemctl", "restart", "pure-ftpd")
 
+	confTarget := "/etc/pure-ftpd"
+	if osInfo.PkgManager == "dnf" {
+		confTarget = "/etc/pure-ftpd"
+		// RHEL may not have the conf/ subdirectory structure
+		os.MkdirAll("/etc/pure-ftpd", 0755)
+	}
 	SetupServerDir("pureftpd", []SymlinkDef{
-		{Name: "conf", Target: "/etc/pure-ftpd"},
+		{Name: "conf", Target: confTarget},
 	})
 
+	// Log path differs between Ubuntu and RHEL
+	ftpLog := "/var/log/syslog"
+	if osInfo.PkgManager == "dnf" {
+		ftpLog = "/var/log/messages"
+	}
 	SetupLogLinks([]LogSymlink{
-		{Name: "pureftpd.log", Target: "/var/log/syslog"},
+		{Name: "pureftpd.log", Target: ftpLog},
 	})
 
 	progress(100)
