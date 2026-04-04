@@ -3,7 +3,6 @@ package v1
 import (
 	"fmt"
 	"io"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -134,13 +133,7 @@ func (h *SoftwareHandler) install(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusAccepted, response.Response{
-		Code:    http.StatusAccepted,
-		Message: "installation task created",
-		Data: gin.H{
-			"task_id": taskID,
-		},
-	})
+	response.Accepted(c, gin.H{"task_id": taskID})
 }
 
 type installStackRequest struct {
@@ -173,13 +166,7 @@ func (h *SoftwareHandler) installStack(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusAccepted, response.Response{
-		Code:    http.StatusAccepted,
-		Message: "stack installation task created",
-		Data: gin.H{
-			"task_id": taskID,
-		},
-	})
+	response.Accepted(c, gin.H{"task_id": taskID})
 }
 func (h *SoftwareHandler) uninstall(c *gin.Context) {
 	name := c.Param("name")
@@ -199,13 +186,7 @@ func (h *SoftwareHandler) uninstall(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusAccepted, response.Response{
-		Code:    http.StatusAccepted,
-		Message: "uninstallation task created",
-		Data: gin.H{
-			"task_id": taskID,
-		},
-	})
+	response.Accepted(c, gin.H{"task_id": taskID})
 }
 
 // start starts the service for the given software.
@@ -531,13 +512,7 @@ func (h *SoftwareHandler) installPHPExtension(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusAccepted, response.Response{
-		Code:    http.StatusAccepted,
-		Message: "extension install task created",
-		Data: gin.H{
-			"task_id": taskID,
-		},
-	})
+	response.Accepted(c, gin.H{"task_id": taskID})
 }
 
 // uninstallPHPExtension removes PHP extensions for a version.
@@ -567,13 +542,7 @@ func (h *SoftwareHandler) uninstallPHPExtension(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusAccepted, response.Response{
-		Code:    http.StatusAccepted,
-		Message: "extension uninstall task created",
-		Data: gin.H{
-			"task_id": taskID,
-		},
-	})
+	response.Accepted(c, gin.H{"task_id": taskID})
 }
 
 // getPHPConfig returns PHP config settings for a version.

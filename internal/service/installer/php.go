@@ -314,6 +314,8 @@ func (i *PHPInstaller) Uninstall(ctx context.Context) error {
 				return fmt.Errorf("failed to uninstall php: %w", err)
 			}
 		}
+		// Reset Remi PHP module to prevent stale state
+		_, _ = system.Exec(ctx, "dnf", "module", "reset", "-y", "php")
 	}
 
 	logger.Info().Msg("php uninstalled successfully")

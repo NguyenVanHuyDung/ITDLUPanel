@@ -101,7 +101,8 @@ func (i *PhpMyAdminInstaller) Install(ctx context.Context, version string, progr
 	// Session save path is OS-dependent
 	sessionPath := "/var/lib/php/sessions"
 	if osInfo.PkgManager == "dnf" {
-		sessionPath = "/tmp"
+		sessionPath = "/var/lib/php/session"
+		os.MkdirAll(sessionPath, 0733)
 	}
 
 	configContent := fmt.Sprintf(`<?php
@@ -131,10 +132,15 @@ $cfg['TempDir'] = '/tmp';
 	// Create tmp dir
 	os.MkdirAll(installDir+"/tmp", 0777)
 
-	// Set ownership (OS-aware web user)
+	// Set ownership (OS-aware web user — detect active webserver)
 	webUser := "www-data"
 	if osInfo.PkgManager == "dnf" {
-		webUser = "nginx"
+		// On RHEL, use apache user if httpd is installed, otherwise nginx
+		if _, err := os.Stat("/usr/sbin/httpd"); err == nil {
+			webUser = "apache"
+		} else {
+			webUser = "nginx"
+		}
 	}
 	system.ExecWithTimeout(10*time.Second, "chown", "-R", webUser+":"+webUser, installDir)
 
