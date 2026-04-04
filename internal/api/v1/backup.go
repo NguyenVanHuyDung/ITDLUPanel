@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/ITDLUPanel/panel/internal/pkg/logger"
 	"github.com/ITDLUPanel/panel/internal/pkg/response"
 	"github.com/ITDLUPanel/panel/internal/service"
 )
@@ -80,8 +81,10 @@ func (h *BackupHandler) List(c *gin.Context) {
 }
 
 type createBackupRequest struct {
-	Type     string `json:"type" validate:"required,oneof=site database panel"`
-	TargetID int64  `json:"target_id"`
+	Type      string `json:"type" validate:"required,oneof=site database panel"`
+	TargetID  int64  `json:"target_id"`
+	Storage   string `json:"storage"`
+	StorageID *int64 `json:"storage_id"`
 }
 
 // Create creates a new backup.
@@ -122,6 +125,16 @@ func (h *BackupHandler) Create(c *gin.Context) {
 	if err != nil {
 		response.Error(c, err)
 		return
+	}
+
+	// After backup created, upload to FTP if requested
+	if req.Storage == "ftp" && req.StorageID != nil && backup != nil {
+		if err := h.backupService.UploadBackupToFTP(backup.ID, *req.StorageID); err != nil {
+			logger.Warn().Err(err).Msg("failed to upload backup to FTP storage")
+		} else {
+			// Refresh backup info
+			backup, _ = h.backupService.GetByID(backup.ID)
+		}
 	}
 
 	response.Created(c, backup)

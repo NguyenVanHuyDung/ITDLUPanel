@@ -29,6 +29,7 @@ type Backup struct {
 	FilePath   string  `json:"file_path"`
 	FileSize   int64   `json:"file_size"`
 	Storage    string  `json:"storage"`
+	StorageID  *int64  `json:"storage_id"`
 	Checksum   *string `json:"checksum"`
 	Status     string  `json:"status"`
 	CreatedBy  *int64  `json:"created_by"`
@@ -43,12 +44,13 @@ const backupCmdTimeout = 5 * time.Minute
 
 // BackupService manages backup creation, listing, deletion, and restore.
 type BackupService struct {
-	db *sql.DB
+	db                *sql.DB
+	ftpStorageService *FTPStorageService
 }
 
 // NewBackupService creates a new BackupService.
-func NewBackupService(db *sql.DB) *BackupService {
-	return &BackupService{db: db}
+func NewBackupService(db *sql.DB, ftpStorageService *FTPStorageService) *BackupService {
+	return &BackupService{db: db, ftpStorageService: ftpStorageService}
 }
 
 // ---------------------------------------------------------------------------
@@ -197,7 +199,7 @@ func (s *BackupService) List(page, pageSize int, backupType string, targetID int
 
 	offset := (page - 1) * pageSize
 	query := `SELECT id, type, name, target_id, target_name, file_path, file_size,
-	                 storage, checksum, status, created_by, created_at
+	                 storage, storage_id, checksum, status, created_by, created_at
 	          FROM backups` + where + ` ORDER BY id DESC LIMIT ? OFFSET ?`
 	args = append(args, pageSize, offset)
 
@@ -211,7 +213,7 @@ func (s *BackupService) List(page, pageSize int, backupType string, targetID int
 	for rows.Next() {
 		b := &Backup{}
 		if err := rows.Scan(&b.ID, &b.Type, &b.Name, &b.TargetID, &b.TargetName,
-			&b.FilePath, &b.FileSize, &b.Storage, &b.Checksum, &b.Status,
+			&b.FilePath, &b.FileSize, &b.Storage, &b.StorageID, &b.Checksum, &b.Status,
 			&b.CreatedBy, &b.CreatedAt); err != nil {
 			return nil, 0, apperrors.Wrap(err, apperrors.ErrInternal, "failed to scan backup row")
 		}
@@ -268,10 +270,10 @@ func (s *BackupService) GetByID(id int64) (*Backup, error) {
 	b := &Backup{}
 	err := s.db.QueryRow(
 		`SELECT id, type, name, target_id, target_name, file_path, file_size,
-		        storage, checksum, status, created_by, created_at
+		        storage, storage_id, checksum, status, created_by, created_at
 		 FROM backups WHERE id = ?`, id,
 	).Scan(&b.ID, &b.Type, &b.Name, &b.TargetID, &b.TargetName,
-		&b.FilePath, &b.FileSize, &b.Storage, &b.Checksum, &b.Status,
+		&b.FilePath, &b.FileSize, &b.Storage, &b.StorageID, &b.Checksum, &b.Status,
 		&b.CreatedBy, &b.CreatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -293,8 +295,17 @@ func (s *BackupService) Delete(id int64) error {
 		return err
 	}
 
+	// Delete local file if exists
 	if b.FilePath != "" {
 		os.Remove(b.FilePath)
+	}
+
+	// Delete from FTP storage if applicable
+	if b.Storage == "ftp" && b.StorageID != nil && s.ftpStorageService != nil {
+		remoteFileName := filepath.Base(b.FilePath)
+		if err := s.ftpStorageService.DeleteFile(*b.StorageID, remoteFileName); err != nil {
+			logger.Warn().Err(err).Int64("id", id).Msg("failed to delete backup from FTP storage")
+		}
 	}
 
 	if _, err := s.db.Exec("DELETE FROM backups WHERE id = ?", id); err != nil {
@@ -316,8 +327,22 @@ func (s *BackupService) Restore(id int64) error {
 		return err
 	}
 
+	// If file not found locally and stored on FTP, download first
 	if _, err := os.Stat(b.FilePath); os.IsNotExist(err) {
-		return apperrors.New(apperrors.ErrNotFound, "backup file not found on disk")
+		if b.Storage == "ftp" && b.StorageID != nil && s.ftpStorageService != nil {
+			cfg := config.Get()
+			tmpDir := filepath.Join(cfg.Paths.Backup, "tmp")
+			os.MkdirAll(tmpDir, 0755)
+			localPath := filepath.Join(tmpDir, filepath.Base(b.FilePath))
+
+			remoteFileName := filepath.Base(b.FilePath)
+			if err := s.ftpStorageService.DownloadFile(*b.StorageID, remoteFileName, localPath); err != nil {
+				return err
+			}
+			b.FilePath = localPath
+		} else {
+			return apperrors.New(apperrors.ErrNotFound, "backup file not found on disk")
+		}
 	}
 
 	switch b.Type {
@@ -409,11 +434,59 @@ func (s *BackupService) GetDownloadPath(id int64) (string, error) {
 		return "", err
 	}
 
-	if _, err := os.Stat(b.FilePath); os.IsNotExist(err) {
-		return "", apperrors.New(apperrors.ErrNotFound, "backup file not found on disk")
+	// If file exists locally, return it
+	if _, err := os.Stat(b.FilePath); err == nil {
+		return b.FilePath, nil
 	}
 
-	return b.FilePath, nil
+	// If stored on FTP, download to temp first
+	if b.Storage == "ftp" && b.StorageID != nil && s.ftpStorageService != nil {
+		cfg := config.Get()
+		tmpDir := filepath.Join(cfg.Paths.Backup, "tmp")
+		os.MkdirAll(tmpDir, 0755)
+		localPath := filepath.Join(tmpDir, filepath.Base(b.FilePath))
+
+		remoteFileName := filepath.Base(b.FilePath)
+		if err := s.ftpStorageService.DownloadFile(*b.StorageID, remoteFileName, localPath); err != nil {
+			return "", err
+		}
+		return localPath, nil
+	}
+
+	return "", apperrors.New(apperrors.ErrNotFound, "backup file not found")
+}
+
+// UploadBackupToFTP uploads an existing backup to an FTP storage.
+func (s *BackupService) UploadBackupToFTP(backupID, storageID int64) error {
+	if s.ftpStorageService == nil {
+		return apperrors.New(apperrors.ErrInternal, "FTP storage service not available")
+	}
+
+	b, err := s.GetByID(backupID)
+	if err != nil {
+		return err
+	}
+
+	if _, err := os.Stat(b.FilePath); os.IsNotExist(err) {
+		return apperrors.New(apperrors.ErrNotFound, "backup file not found on disk")
+	}
+
+	remoteFileName := filepath.Base(b.FilePath)
+	if err := s.ftpStorageService.UploadFile(storageID, b.FilePath, remoteFileName); err != nil {
+		return err
+	}
+
+	// Update backup record with FTP storage info
+	_, err = s.db.Exec(
+		"UPDATE backups SET storage = 'ftp', storage_id = ? WHERE id = ?",
+		storageID, backupID,
+	)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to update backup storage info")
+	}
+
+	logger.Info().Int64("backup_id", backupID).Int64("storage_id", storageID).Msg("backup uploaded to FTP storage")
+	return nil
 }
 
 // ---------------------------------------------------------------------------

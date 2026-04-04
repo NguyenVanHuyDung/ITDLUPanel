@@ -19,5 +19,6 @@ func All() []Migration {
 		&Migration006SiteDescription{},
 		&Migration007Permissions{},
 		&Migration008PanelSettings{},
+		&Migration009FTPStorage{},
 	}
 }

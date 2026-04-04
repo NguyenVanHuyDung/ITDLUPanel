@@ -106,7 +106,8 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		// Ensure website log directory and logrotate config exist
 		_ = logService.EnsureLogDir()
 		_ = logService.SetupLogRotation()
-		backupService := service.NewBackupService(db)
+		ftpStorageService := service.NewFTPStorageService(db)
+		backupService := service.NewBackupService(db, ftpStorageService)
 		terminalService := service.NewTerminalService()
 		installerRegistry := installer.DefaultRegistry()
 		softwareService := service.NewSoftwareService(db, taskQueue, installerRegistry, firewallService)
@@ -220,6 +221,12 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		// -------------------------------------------------------
 		backupHandler := v1.NewBackupHandler(backupService)
 		backupHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
+
+		// -------------------------------------------------------
+		// FTP Storage management
+		// -------------------------------------------------------
+		ftpStorageHandler := v1.NewFTPStorageHandler(ftpStorageService)
+		ftpStorageHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
 
 		// -------------------------------------------------------
 		// Plugin management (admin)

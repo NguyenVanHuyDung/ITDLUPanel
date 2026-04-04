@@ -124,6 +124,7 @@ export default function MainLayout() {
     { key: '/websites', icon: <GlobalOutlined />, label: t('sidebar.websites') },
     { key: '/databases', icon: <DatabaseOutlined />, label: t('sidebar.databases') },
     { key: '/ftp', icon: <CloudServerOutlined />, label: t('sidebar.ftp') },
+    { key: '/ftp-storage', icon: <CloudServerOutlined />, label: 'FTP Storage' },
     { key: '/files', icon: <FolderOutlined />, label: t('sidebar.files') },
     { key: '/docker', icon: <ContainerOutlined />, label: t('sidebar.docker') },
     { key: '/monitor', icon: <MonitorOutlined />, label: t('sidebar.monitor') },

@@ -3505,6 +3505,9 @@ function WebsitesContent() {
   const [backupListLoading, setBackupListLoading] = useState(false);
   const [backupCreating, setBackupCreating] = useState(false);
   const [backupActionId, setBackupActionId] = useState<number | null>(null);
+  const [ftpStorages, setFtpStorages] = useState<{ id: number; name: string; is_default: boolean }[]>([]);
+  const [backupStorage, setBackupStorage] = useState<string>('local');
+  const [backupStorageId, setBackupStorageId] = useState<number | null>(null);
   const [detectedWebServer, setDetectedWebServer] = useState<string>('');
   const [ftpOption, setFtpOption] = useState<'none' | 'create'>('none');
   const [pathManual, setPathManual] = useState(false);
@@ -3683,7 +3686,12 @@ function WebsitesContent() {
   const handleBackup = async (site: Site) => {
     setBackupCreating(true);
     try {
-      await api.post('/backups', { type: 'site', target_id: site.id });
+      const payload: Record<string, unknown> = { type: 'site', target_id: site.id };
+      if (backupStorage === 'ftp' && backupStorageId) {
+        payload.storage = 'ftp';
+        payload.storage_id = backupStorageId;
+      }
+      await api.post('/backups', payload);
       message.success(`Backup created for ${site.domain}`);
       fetchBackupCounts();
       if (backupSite?.id === site.id) fetchSiteBackups(site.id);
@@ -3709,6 +3717,18 @@ function WebsitesContent() {
   const openBackupModal = (site: Site) => {
     setBackupSite(site);
     fetchSiteBackups(site.id);
+    api.get('/ftp-storages').then(({ data }) => {
+      const list = (data.data ?? []).filter((s: any) => s.is_active);
+      setFtpStorages(list);
+      const defaultFtp = list.find((s: any) => s.is_default);
+      if (defaultFtp) {
+        setBackupStorage('ftp');
+        setBackupStorageId(defaultFtp.id);
+      } else {
+        setBackupStorage('local');
+        setBackupStorageId(null);
+      }
+    }).catch(() => {});
   };
 
   const handleBackupDelete = async (backupId: number) => {
@@ -4540,6 +4560,40 @@ function WebsitesContent() {
                   {backupList.length} backup(s) available
                 </div>
               </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <select
+                  value={backupStorage}
+                  onChange={(e) => {
+                    setBackupStorage(e.target.value);
+                    if (e.target.value === 'local') setBackupStorageId(null);
+                    else if (ftpStorages.length > 0) setBackupStorageId(ftpStorages[0].id);
+                  }}
+                  style={{
+                    padding: '6px 10px', borderRadius: 6, fontSize: 11,
+                    border: `1px solid ${p.cardBorder}`, background: p.card, color: p.text,
+                    cursor: 'pointer', outline: 'none',
+                  }}
+                >
+                  <option value="local">💾 Local</option>
+                  {ftpStorages.map(s => (
+                    <option key={s.id} value="ftp">{`☁️ ${s.name}`}</option>
+                  ))}
+                </select>
+                {backupStorage === 'ftp' && ftpStorages.length > 1 && (
+                  <select
+                    value={backupStorageId ?? ''}
+                    onChange={(e) => setBackupStorageId(Number(e.target.value))}
+                    style={{
+                      padding: '6px 10px', borderRadius: 6, fontSize: 11,
+                      border: `1px solid ${p.cardBorder}`, background: p.card, color: p.text,
+                      cursor: 'pointer', outline: 'none',
+                    }}
+                  >
+                    {ftpStorages.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                )}
               <button
                 onClick={() => handleBackup(backupSite)}
                 disabled={backupCreating}
@@ -4555,6 +4609,7 @@ function WebsitesContent() {
                 {backupCreating ? <Spin size="small" /> : <PlusOutlined />}
                 {backupCreating ? 'Creating...' : 'New Backup'}
               </button>
+              </div>
             </div>
 
             {/* Backup list */}
@@ -4599,7 +4654,15 @@ function WebsitesContent() {
                       return (
                         <tr key={b.id} style={{ borderBottom: `1px solid ${p.cardBorder}` }}>
                           <td style={{ padding: '10px 16px' }}>
-                            <div style={{ fontSize: 12, fontWeight: 500, color: p.text, wordBreak: 'break-all' }}>{fileName}</div>
+                            <div style={{ fontSize: 12, fontWeight: 500, color: p.text, wordBreak: 'break-all' }}>
+                              {fileName}
+                              {b.storage === 'ftp' && (
+                                <span style={{
+                                  fontSize: 9, fontWeight: 600, marginLeft: 6, padding: '1px 5px',
+                                  borderRadius: 3, background: `${p.cyan}15`, color: p.cyan,
+                                }}>FTP</span>
+                              )}
+                            </div>
                           </td>
                           <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
                             <span style={{ fontSize: 11, color: p.textMuted }}>{sizeStr}</span>
