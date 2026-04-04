@@ -79,7 +79,8 @@ export default function Storage() {
       ]);
 
       if (swRes.status === 'fulfilled') {
-        const list: Software[] = swRes.value.data?.data ?? [];
+        const payload = swRes.value.data?.data as { available?: Software[] } | undefined;
+        const list: Software[] = payload?.available ?? [];
         setFtpInstalled(list.some((s) => s.name === 'ftp_storage' && s.installed));
         setS3Installed(list.some((s) => s.name === 's3_storage' && s.installed));
         setGdInstalled(list.some((s) => s.name === 'google_drive' && s.installed));
