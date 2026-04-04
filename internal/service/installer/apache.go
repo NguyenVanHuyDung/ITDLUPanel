@@ -44,6 +44,10 @@ func (i *ApacheInstaller) Install(ctx context.Context, version string, progress 
 		if _, err := system.Exec(ctx, "apt", "update", "-y"); err != nil {
 			logger.Warn().Err(err).Msg("apt update had warnings")
 		}
+	} else {
+		if _, err := system.Exec(ctx, "dnf", "makecache", "--refresh"); err != nil {
+			logger.Warn().Err(err).Msg("dnf makecache had warnings")
+		}
 	}
 
 	// Install apache and supplementary packages

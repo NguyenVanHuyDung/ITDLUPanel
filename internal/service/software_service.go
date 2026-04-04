@@ -109,19 +109,19 @@ func init() {
 		m := knownSoftware["apache"]
 		m.ServiceName = "httpd"
 		m.ConfigPath = "/ITDLUPanel/server/apache/conf/httpd.conf"
-		m.InstallPath = "/ITDLUPanel/server/apache"
 		knownSoftware["apache"] = m
 
 		m2 := knownSoftware["redis"]
 		m2.ServiceName = "redis"
-		m2.ConfigPath = "/ITDLUPanel/server/redis/conf/redis.conf"
 		knownSoftware["redis"] = m2
 
 		m3 := knownSoftware["mysql"]
 		m3.ServiceName = "mysqld"
-		m3.ConfigPath = "/ITDLUPanel/server/mysql/conf/my.cnf"
-		m3.InstallPath = "/ITDLUPanel/server/mysql"
 		knownSoftware["mysql"] = m3
+
+		m4 := knownSoftware["nginx"]
+		m4.ServiceName = "nginx" // same on both, but explicit
+		knownSoftware["nginx"] = m4
 	}
 }
 

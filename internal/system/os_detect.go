@@ -96,9 +96,30 @@ func IsUbuntu() bool {
 	return GetOSInfo().ID == "ubuntu"
 }
 
+// IsDebian returns true if the host is running Debian.
+func IsDebian() bool {
+	return GetOSInfo().ID == "debian"
+}
+
 // IsAlmaLinux returns true if the host is running AlmaLinux.
 func IsAlmaLinux() bool {
 	return GetOSInfo().ID == "almalinux"
+}
+
+// IsRHEL returns true if the host is running any RHEL-based distro.
+func IsRHEL() bool {
+	id := GetOSInfo().ID
+	return id == "almalinux" || id == "centos" || id == "rocky" || id == "fedora" || id == "rhel"
+}
+
+// IsAPT returns true if the system uses apt package manager.
+func IsAPT() bool {
+	return GetOSInfo().PkgManager == "apt"
+}
+
+// IsDNF returns true if the system uses dnf package manager.
+func IsDNF() bool {
+	return GetOSInfo().PkgManager == "dnf"
 }
 
 // PackageInstall returns an *exec.Cmd for installing the given packages
