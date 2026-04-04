@@ -109,12 +109,19 @@ func (i *PHPInstaller) GetPHPExtensions(version string) ([]PHPExtensionInfo, err
 }
 
 func isPhpExtensionInstalled(version, ext string) bool {
-	pkg := fmt.Sprintf("php%s-%s", version, ext)
-	res, err := system.ExecWithTimeout(5*time.Second, "dpkg", "-s", pkg)
-	if err != nil || res.ExitCode != 0 {
-		return false
+	osInfo := system.GetOSInfo()
+	if osInfo.PkgManager == "apt" {
+		pkg := fmt.Sprintf("php%s-%s", version, ext)
+		res, err := system.ExecWithTimeout(5*time.Second, "dpkg", "-s", pkg)
+		if err != nil || res.ExitCode != 0 {
+			return false
+		}
+		return strings.Contains(res.Stdout, "Status: install ok installed")
 	}
-	return strings.Contains(res.Stdout, "Status: install ok installed")
+	// RHEL: check via rpm
+	pkg := fmt.Sprintf("php%s-php-%s", version, ext)
+	res, err := system.ExecWithTimeout(5*time.Second, "rpm", "-q", pkg)
+	return err == nil && res.ExitCode == 0
 }
 
 // Common PHP extensions installed alongside the FPM package.
@@ -143,18 +150,24 @@ func (i *PHPInstaller) Install(ctx context.Context, version string, progress fun
 	progress(5)
 	logger.Info().Str("version", version).Msg("installing php")
 
-	// On Debian/Ubuntu add the ondrej/php PPA for multi-version support
+	// Add third-party PHP repository for multi-version support
 	if osInfo.PkgManager == "apt" {
 		progress(10)
-		// Install software-properties-common for add-apt-repository
-		if _, err := system.Exec(ctx, "apt", "install", "-y", "software-properties-common"); err != nil {
-			logger.Warn().Err(err).Msg("failed to install software-properties-common")
-		}
-
-		progress(15)
-		// Add ondrej/php PPA (idempotent)
-		if _, err := system.Exec(ctx, "add-apt-repository", "-y", "ppa:ondrej/php"); err != nil {
-			logger.Warn().Err(err).Msg("failed to add ondrej/php PPA")
+		if osInfo.ID == "debian" {
+			// Debian: use Sury PHP repo
+			system.Exec(ctx, "apt", "install", "-y", "software-properties-common", "apt-transport-https", "lsb-release", "ca-certificates", "curl")
+			system.Exec(ctx, "bash", "-c", "curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --batch --yes --dearmor -o /usr/share/keyrings/deb.sury.org-php.gpg")
+			codename := getDistroCodename()
+			repoLine := fmt.Sprintf("deb [signed-by=/usr/share/keyrings/deb.sury.org-php.gpg] https://packages.sury.org/php/ %s main", codename)
+			os.WriteFile("/etc/apt/sources.list.d/php-sury.list", []byte(repoLine+"\n"), 0644)
+		} else {
+			// Ubuntu: use ondrej PPA
+			if _, err := system.Exec(ctx, "apt", "install", "-y", "software-properties-common"); err != nil {
+				logger.Warn().Err(err).Msg("failed to install software-properties-common")
+			}
+			if _, err := system.Exec(ctx, "add-apt-repository", "-y", "ppa:ondrej/php"); err != nil {
+				logger.Warn().Err(err).Msg("failed to add ondrej/php PPA")
+			}
 		}
 
 		progress(25)
@@ -162,10 +175,21 @@ func (i *PHPInstaller) Install(ctx context.Context, version string, progress fun
 			logger.Warn().Err(err).Msg("apt update had warnings")
 		}
 	} else {
-		// RHEL-based: enable remi repo
+		// RHEL-based: install EPEL and Remi repo for multi-version PHP
 		progress(15)
 		if _, err := system.Exec(ctx, "dnf", "install", "-y", "epel-release"); err != nil {
 			logger.Warn().Err(err).Msg("failed to install epel-release")
+		}
+		// Install remi repo
+		remiURL := "https://rpms.remirepo.net/enterprise/remi-release-" + getMajorVersion(osInfo.VersionID) + ".rpm"
+		if _, err := system.Exec(ctx, "dnf", "install", "-y", remiURL); err != nil {
+			logger.Warn().Err(err).Msg("failed to install remi-release (may already be installed)")
+		}
+		// Enable remi PHP module for the requested version
+		remiModule := fmt.Sprintf("php:remi-%s", version)
+		system.Exec(ctx, "dnf", "module", "reset", "-y", "php")
+		if _, err := system.Exec(ctx, "dnf", "module", "enable", "-y", remiModule); err != nil {
+			logger.Warn().Err(err).Msg("failed to enable remi php module")
 		}
 		progress(25)
 	}
@@ -205,13 +229,26 @@ func (i *PHPInstaller) Install(ctx context.Context, version string, progress fun
 	// Optimize FPM pool and PHP settings
 	optimizePHPFPM(version)
 
-	SetupServerDir("php", []SymlinkDef{
-		{Name: "conf", Target: "/etc/php"},
-	})
+	if osInfo.PkgManager == "apt" {
+		SetupServerDir("php", []SymlinkDef{
+			{Name: "conf", Target: "/etc/php"},
+		})
+	} else {
+		SetupServerDir("php", []SymlinkDef{
+			{Name: "conf", Target: "/etc/opt/remi"},
+		})
+	}
 
-	SetupLogLinks([]LogSymlink{
-		{Name: fmt.Sprintf("php%s-fpm.log", version), Target: fmt.Sprintf("/var/log/php%s-fpm.log", version)},
-	})
+	if osInfo.PkgManager == "apt" {
+		SetupLogLinks([]LogSymlink{
+			{Name: fmt.Sprintf("php%s-fpm.log", version), Target: fmt.Sprintf("/var/log/php%s-fpm.log", version)},
+		})
+	} else {
+		remiVer := strings.ReplaceAll(version, ".", "")
+		SetupLogLinks([]LogSymlink{
+			{Name: fmt.Sprintf("php%s-fpm.log", version), Target: fmt.Sprintf("/var/opt/remi/php%s/log/php-fpm/error.log", remiVer)},
+		})
+	}
 
 	progress(100)
 	logger.Info().Str("version", version).Msg("php installed successfully")
@@ -219,18 +256,29 @@ func (i *PHPInstaller) Install(ctx context.Context, version string, progress fun
 }
 
 func (i *PHPInstaller) Uninstall(ctx context.Context) error {
-	CleanupServerDir("php",
-		SymlinkDef{Name: "conf", Target: "/etc/php"},
-	)
-	CleanupLogLinks("php")
-
 	osInfo := system.GetOSInfo()
+
+	if osInfo.PkgManager == "apt" {
+		CleanupServerDir("php",
+			SymlinkDef{Name: "conf", Target: "/etc/php"},
+		)
+	} else {
+		CleanupServerDir("php",
+			SymlinkDef{Name: "conf", Target: "/etc/opt/remi"},
+		)
+	}
+	CleanupLogLinks("php")
 
 	// Stop all known php-fpm versions
 	for _, ver := range i.GetVersions() {
-		svc := fmt.Sprintf("php%s-fpm", ver)
-		_, _ = system.Exec(ctx, "systemctl", "stop", svc)
-		_, _ = system.Exec(ctx, "systemctl", "disable", svc)
+		// Try both Debian and RHEL service naming
+		for _, svc := range []string{
+			fmt.Sprintf("php%s-fpm", ver),
+			fmt.Sprintf("php%s-php-fpm", ver),
+		} {
+			_, _ = system.Exec(ctx, "systemctl", "stop", svc)
+			_, _ = system.Exec(ctx, "systemctl", "disable", svc)
+		}
 	}
 
 	if osInfo.PkgManager == "apt" {
@@ -290,9 +338,14 @@ func listInstalledPHPPackages(ctx context.Context) []string {
 
 // UninstallVersion removes a single PHP version without affecting other installed versions.
 func (i *PHPInstaller) UninstallVersion(ctx context.Context, version string) error {
-	svc := fmt.Sprintf("php%s-fpm", version)
-	_, _ = system.Exec(ctx, "systemctl", "stop", svc)
-	_, _ = system.Exec(ctx, "systemctl", "disable", svc)
+	// Try both Debian and RHEL service naming
+	for _, svc := range []string{
+		fmt.Sprintf("php%s-fpm", version),
+		fmt.Sprintf("php%s-php-fpm", version),
+	} {
+		_, _ = system.Exec(ctx, "systemctl", "stop", svc)
+		_, _ = system.Exec(ctx, "systemctl", "disable", svc)
+	}
 
 	osInfo := system.GetOSInfo()
 
@@ -332,16 +385,30 @@ func (i *PHPInstaller) UninstallVersion(ctx context.Context, version string) err
 	remaining := 0
 	for _, v := range i.GetVersions() {
 		if v != version {
+			// Check Debian path
 			bin := fmt.Sprintf("/usr/sbin/php-fpm%s", v)
+			if _, err := os.Stat(bin); err == nil {
+				remaining++
+				continue
+			}
+			// Check RHEL remi path
+			rv := strings.ReplaceAll(v, ".", "")
+			bin = fmt.Sprintf("/opt/remi/php%s/root/usr/sbin/php-fpm", rv)
 			if _, err := os.Stat(bin); err == nil {
 				remaining++
 			}
 		}
 	}
 	if remaining == 0 {
-		CleanupServerDir("php",
-			SymlinkDef{Name: "conf", Target: "/etc/php"},
-		)
+		if osInfo.PkgManager == "apt" {
+			CleanupServerDir("php",
+				SymlinkDef{Name: "conf", Target: "/etc/php"},
+			)
+		} else {
+			CleanupServerDir("php",
+				SymlinkDef{Name: "conf", Target: "/etc/opt/remi"},
+			)
+		}
 		CleanupLogLinks("php")
 	}
 
@@ -373,7 +440,14 @@ func listInstalledPHPVersionPackages(ctx context.Context, version string) []stri
 func (i *PHPInstaller) IsInstalled() bool {
 	// Check for any php-fpm binary
 	for _, ver := range i.GetVersions() {
+		// Check Debian path
 		path := fmt.Sprintf("/usr/sbin/php-fpm%s", ver)
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
+		// Check RHEL remi path
+		remiVer := strings.ReplaceAll(ver, ".", "")
+		path = fmt.Sprintf("/opt/remi/php%s/root/usr/sbin/php-fpm", remiVer)
 		if _, err := os.Stat(path); err == nil {
 			return true
 		}
@@ -409,8 +483,20 @@ func (i *PHPInstaller) InstallExtensions(ctx context.Context, version string, ex
 
 // optimizePHPFPM tunes FPM pool settings and php.ini for the given PHP version.
 func optimizePHPFPM(version string) {
+	osInfo := system.GetOSInfo()
+	var wwwConf, phpIni, svcName string
+	if osInfo.PkgManager == "apt" {
+		wwwConf = fmt.Sprintf("/etc/php/%s/fpm/pool.d/www.conf", version)
+		phpIni = fmt.Sprintf("/etc/php/%s/fpm/php.ini", version)
+		svcName = fmt.Sprintf("php%s-fpm", version)
+	} else {
+		remiVer := strings.ReplaceAll(version, ".", "")
+		wwwConf = fmt.Sprintf("/etc/opt/remi/php%s/php-fpm.d/www.conf", remiVer)
+		phpIni = fmt.Sprintf("/etc/opt/remi/php%s/php.ini", remiVer)
+		svcName = fmt.Sprintf("php%s-php-fpm", version)
+	}
+
 	// Optimize www.conf pool settings
-	wwwConf := fmt.Sprintf("/etc/php/%s/fpm/pool.d/www.conf", version)
 	if data, err := os.ReadFile(wwwConf); err == nil {
 		content := string(data)
 
@@ -439,7 +525,6 @@ func optimizePHPFPM(version string) {
 	}
 
 	// Optimize php.ini opcache settings
-	phpIni := fmt.Sprintf("/etc/php/%s/fpm/php.ini", version)
 	if data, err := os.ReadFile(phpIni); err == nil {
 		content := string(data)
 		appendSettings := []string{
@@ -468,8 +553,16 @@ func optimizePHPFPM(version string) {
 	}
 
 	// Restart php-fpm to apply changes
-	svcName := fmt.Sprintf("php%s-fpm", version)
 	if _, err := system.ExecWithTimeout(30*time.Second, "systemctl", "restart", svcName); err != nil {
 		logger.Warn().Err(err).Str("service", svcName).Msg("failed to restart php-fpm after optimization")
 	}
+}
+
+// getMajorVersion extracts the major version number from a version string (e.g. "9.3" -> "9").
+func getMajorVersion(versionID string) string {
+	parts := strings.Split(versionID, ".")
+	if len(parts) > 0 {
+		return parts[0]
+	}
+	return "9"
 }
