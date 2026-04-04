@@ -12,6 +12,7 @@ import {
   CalendarOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { formatDate, formatDateTime } from '@/lib/datetime';
 import Editor from '@monaco-editor/react';
 import '@/lib/monaco-setup';
 import api from '@/services/api';
@@ -1397,7 +1398,7 @@ function SSLPanel({ siteId, siteDomain }: { siteId: number; siteDomain: string }
   const isExpired = (d: string) => new Date(d) < new Date();
   const isExpiringSoon = (d: string) => { const diff = new Date(d).getTime() - Date.now(); return diff > 0 && diff < 30 * 86400000; };
   const daysUntil = (d: string) => { const diff = Math.ceil((new Date(d).getTime() - Date.now()) / 86400000); return diff; };
-  const fmtDate = (d: string) => { const dt = new Date(d); return dt.toLocaleDateString('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }); };
+  const fmtDate = (d: string) => formatDate(d, 'DD/MM/YYYY');
   const enabled = sslInfo && sslInfo.enabled !== false && sslInfo.valid_until;
 
   const primaryBtn: React.CSSProperties = { padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', background: p.accent, color: '#fff', fontSize: 12, fontWeight: 500 };
@@ -4592,7 +4593,7 @@ function WebsitesContent() {
                           ? `${(b.file_size / 1024).toFixed(1)} KB`
                           : `${b.file_size} B`;
                       const timeStr = b.created_at
-                        ? new Date(b.created_at).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                        ? formatDateTime(b.created_at, 'DD/MM/YYYY HH:mm')
                         : '—';
                       const isActing = backupActionId === b.id;
                       return (

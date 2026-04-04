@@ -10,6 +10,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import type { ApiResponse } from '@/types';
 import api from '@/services/api';
+import { formatDateTime } from '@/lib/datetime';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { usePalette } from '@/hooks/usePalette';
 
@@ -499,7 +500,7 @@ export default function Cron() {
       key: 'last_run',
       width: 150,
       render: (_: unknown, r: CronJob) => r.last_run
-        ? <span style={{ fontSize: 12, color: p.text }}>{new Date(r.last_run).toLocaleString()}</span>
+        ? <span style={{ fontSize: 12, color: p.text }}>{formatDateTime(r.last_run)}</span>
         : <span style={{ fontSize: 12, color: p.textMuted }}>—</span>,
     },
     {

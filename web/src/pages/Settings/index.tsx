@@ -9,8 +9,10 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { usePalette } from '@/hooks/usePalette';
+import { useSettingsStore } from '@/stores/settings';
 import api from '@/services/api';
 import type { ApiResponse } from '@/types';
+import { formatDateTime } from '@/lib/datetime';
 
 // ---------------------------------------------------------------------------
 // SVG Icons (consistent with Firewall, etc.)
@@ -213,6 +215,7 @@ export default function Settings() {
         i18n.changeLanguage(values.language);
       }
       await Promise.all(promises);
+      useSettingsStore.getState().setTimezone(values.timezone);
       message.success(t('common.success'));
       fetchPanelInfo();
     } catch {
@@ -502,7 +505,7 @@ export default function Settings() {
               )}
               {panelInfo.started_at && gridCard(
                 <SetIcon.Clock size={18} color={p.textMuted} />, p.textMuted,
-                'Started At', new Date(panelInfo.started_at).toLocaleString(),
+                'Started At', formatDateTime(panelInfo.started_at),
               )}
             </div>
           ) : (

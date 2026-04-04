@@ -11,6 +11,7 @@ import {
   SyncOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { formatDateTime } from '@/lib/datetime';
 import { useTaskStore, type TaskDetail } from '@/stores/task';
 import { useThemeStore } from '@/stores/theme';
 import type { ColumnsType } from 'antd/es/table';
@@ -167,7 +168,7 @@ function MessageListTab() {
       title: t('task.creation_time'),
       dataIndex: 'created_at',
       width: 160,
-      render: (v: string) => v ? new Date(v).toLocaleString() : '-',
+      render: (v: string) => v ? formatDateTime(v) : '-',
     },
     {
       title: t('task.time_consumption'),

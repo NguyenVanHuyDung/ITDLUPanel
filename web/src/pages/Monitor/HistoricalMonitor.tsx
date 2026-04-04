@@ -10,6 +10,7 @@ import {
   FullscreenOutlined,
   FullscreenExitOutlined,
 } from '@ant-design/icons';
+import { panelDayjs } from '@/lib/datetime';
 import {
   AreaChart,
   Area,
@@ -380,14 +381,10 @@ const histChartTitles: Record<HistChartKey, string> = {
 // Helpers
 // ---------------------------------------------------------------------------
 function fmtTimestamp(ts: string, range_: TimeRange): string {
-  const d = new Date(ts.endsWith('Z') ? ts : ts + 'Z');
-  if (range_ === '1d') {
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  }
-  if (range_ === '7d') {
-    return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:00`;
-  }
-  return `${d.getMonth() + 1}/${d.getDate()}`;
+  const d = panelDayjs(ts.endsWith('Z') ? ts : ts + 'Z');
+  if (range_ === '1d') return d.format('HH:mm');
+  if (range_ === '7d') return d.format('M/D HH:00');
+  return d.format('M/D');
 }
 
 // ---------------------------------------------------------------------------

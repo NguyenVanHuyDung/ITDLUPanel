@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { usePalette } from '@/hooks/usePalette';
 import api from '@/services/api';
 import type { User, Role, PermissionGroup } from '@/types';
+import { formatDateTime } from '@/lib/datetime';
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                         */
@@ -403,7 +404,7 @@ export default function Users() {
       title: 'Last Login', dataIndex: 'last_login', key: 'last_login',
       render: (v: string) => (
         <span style={{ fontSize: 12, color: p.textMuted }}>
-          {v ? new Date(v).toLocaleString() : 'Never'}
+          {v ? formatDateTime(v) : 'Never'}
         </span>
       ),
     },

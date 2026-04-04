@@ -8,6 +8,7 @@ import {
   SettingOutlined,
 } from '@ant-design/icons';
 import api from '@/services/api';
+import { formatDateTime } from '@/lib/datetime';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { usePalette } from '@/hooks/usePalette';
 import Editor from '@monaco-editor/react';
@@ -651,7 +652,7 @@ function PersistenceTab() {
               </Tag>
             </div>
             <InfoTable rows={[
-              { label: 'Last Save Time', value: persistence.rdb_last_save_time ? new Date(persistence.rdb_last_save_time * 1000).toLocaleString() : '—' },
+              { label: 'Last Save Time', value: persistence.rdb_last_save_time ? formatDateTime(persistence.rdb_last_save_time * 1000) : '—' },
               { label: 'Last Save Status', value: persistence.rdb_last_status || '—', color: persistence.rdb_last_status === 'ok' ? SUCCESS : ERROR_CLR },
               { label: 'Currently Saving', value: persistence.rdb_current_save ? 'Yes' : 'No', color: persistence.rdb_current_save ? WARNING : SUCCESS },
             ]} />
@@ -729,7 +730,7 @@ function SlowLogTab() {
 
   const columns = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
-    { title: 'Time', dataIndex: 'timestamp', key: 'timestamp', width: 160, render: (v: number) => v ? new Date(v * 1000).toLocaleString() : '—' },
+    { title: 'Time', dataIndex: 'timestamp', key: 'timestamp', width: 160, render: (v: number) => v ? formatDateTime(v * 1000) : '—' },
     { title: 'Duration (μs)', dataIndex: 'duration', key: 'duration', width: 110, render: (v: number) => <Tag color={v > 10000 ? 'red' : v > 1000 ? 'orange' : 'green'}>{v?.toLocaleString()}</Tag> },
     { title: 'Command', dataIndex: 'command', key: 'command', render: (v: string[]) => <code style={{ fontSize: 12, background: '#F5F5F5', padding: '2px 6px', borderRadius: 4 }}>{(v || []).join(' ')}</code> },
     { title: 'Client', dataIndex: 'client_addr', key: 'client_addr', width: 140 },

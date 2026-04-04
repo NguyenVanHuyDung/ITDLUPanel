@@ -13,6 +13,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
 import type { Database } from '@/types';
+import { formatDateTime } from '@/lib/datetime';
 import RequireSoftware from '@/components/RequireSoftware';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { usePalette } from '@/hooks/usePalette';
@@ -1351,7 +1352,7 @@ function DatabasesContent() {
                       const fileName = b.file_path.split('/').pop() || b.name;
                       const sizeStr = formatSize(b.file_size);
                       const timeStr = b.created_at
-                        ? new Date(b.created_at).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                        ? formatDateTime(b.created_at, 'DD/MM/YYYY HH:mm')
                         : '—';
                       const isActing = backupActionId === b.id;
                       return (

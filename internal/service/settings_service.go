@@ -276,13 +276,14 @@ func (s *SettingsService) SetPanelName(name string) error {
 	return nil
 }
 
-// SetTimezone updates the server timezone setting.
+// SetTimezone updates the server timezone setting and applies it to the process.
 func (s *SettingsService) SetTimezone(tz string) error {
 	tz = strings.TrimSpace(tz)
 	if tz == "" {
 		return apperrors.New(apperrors.ErrValidation, "timezone cannot be empty")
 	}
-	if _, err := time.LoadLocation(tz); err != nil {
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
 		return apperrors.New(apperrors.ErrValidation, fmt.Sprintf("invalid timezone: %s", tz))
 	}
 
@@ -290,8 +291,29 @@ func (s *SettingsService) SetTimezone(tz string) error {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to update timezone")
 	}
 
-	logger.Info().Str("timezone", tz).Msg("timezone updated")
+	// Apply timezone to the process immediately
+	time.Local = loc
+	os.Setenv("TZ", tz)
+
+	logger.Info().Str("timezone", tz).Msg("timezone updated and applied")
 	return nil
+}
+
+// ApplyTimezone loads the timezone setting from the database and sets it as the process timezone.
+func (s *SettingsService) ApplyTimezone() {
+	tz, err := s.settings.Get("timezone")
+	if err != nil || tz == "" {
+		tz = "UTC"
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		logger.Warn().Str("timezone", tz).Err(err).Msg("invalid timezone setting, falling back to UTC")
+		loc = time.UTC
+		tz = "UTC"
+	}
+	time.Local = loc
+	os.Setenv("TZ", tz)
+	logger.Info().Str("timezone", tz).Msg("timezone applied")
 }
 
 // SetSessionTimeout updates the session timeout setting.

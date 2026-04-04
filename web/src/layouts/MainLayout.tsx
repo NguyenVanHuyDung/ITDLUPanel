@@ -34,6 +34,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/stores/auth';
 import { useThemeStore } from '@/stores/theme';
 import { useTaskStore } from '@/stores/task';
+import { useSettingsStore } from '@/stores/settings';
 import { useTaskWebSocket } from '@/hooks/useTaskWebSocket';
 import MessagesBox from '@/components/MessagesBox';
 import api from '@/services/api';
@@ -79,6 +80,10 @@ export default function MainLayout() {
 
   // Connect WebSocket for real-time task updates
   useTaskWebSocket();
+
+  // Load global settings (timezone, etc.)
+  const { fetchSettings: fetchAppSettings } = useSettingsStore();
+  useEffect(() => { fetchAppSettings(); }, [fetchAppSettings]);
 
   const fetchSysInfo = useCallback(async () => {
     try {

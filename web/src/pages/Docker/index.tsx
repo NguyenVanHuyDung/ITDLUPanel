@@ -10,6 +10,7 @@ import { useIsMobile } from '@/hooks/useIsMobile';
 import { usePalette } from '@/hooks/usePalette';
 import type { ApiResponse } from '@/types';
 import api from '@/services/api';
+import { formatDateTime } from '@/lib/datetime';
 
 interface DockerContainer {
   id: string;
@@ -212,7 +213,7 @@ export default function Docker() {
       dataIndex: 'created',
       key: 'created',
       render: (val: string) => val
-        ? <span style={{ fontSize: 12, color: p.textMuted }}>{new Date(val).toLocaleString()}</span>
+        ? <span style={{ fontSize: 12, color: p.textMuted }}>{formatDateTime(val)}</span>
         : '-',
     },
     {
@@ -292,7 +293,7 @@ export default function Docker() {
       dataIndex: 'created',
       key: 'created',
       render: (val: string) => val
-        ? <span style={{ fontSize: 12, color: p.textMuted }}>{new Date(val).toLocaleString()}</span>
+        ? <span style={{ fontSize: 12, color: p.textMuted }}>{formatDateTime(val)}</span>
         : '-',
     },
     {

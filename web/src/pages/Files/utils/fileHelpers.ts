@@ -1,4 +1,5 @@
 /* ──────────────── File helper utilities ──────────────── */
+import { formatDateTime } from '@/lib/datetime';
 
 export function formatSize(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -8,10 +9,7 @@ export function formatSize(bytes: number): string {
 }
 
 export function formatDate(dateStr: string): string {
-  if (!dateStr) return '-';
-  const d = new Date(dateStr);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  return formatDateTime(dateStr);
 }
 
 export function parentPath(p: string): string {

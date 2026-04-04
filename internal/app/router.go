@@ -232,6 +232,7 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		// Settings management (admin)
 		// -------------------------------------------------------
 		settingsService := service.NewSettingsService(db)
+		settingsService.ApplyTimezone()
 		settingsHandler := v1.NewSettingsHandler(settingsService)
 		settingsHandler.RegisterRoutes(apiV1, authMW, adminMW)
 

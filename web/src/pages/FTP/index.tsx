@@ -9,6 +9,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
 import type { ApiResponse } from '@/types';
+import { formatDateTime } from '@/lib/datetime';
 import { usePalette } from '@/hooks/usePalette';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import RequireSoftware from '@/components/RequireSoftware';
@@ -426,7 +427,7 @@ function FTPContent() {
       width: 120,
       render: (val: string) => val
         ? (
-          <Tooltip title={new Date(val).toLocaleString()}>
+          <Tooltip title={formatDateTime(val)}>
             <span style={{ fontSize: 12, color: p.textMuted }}>{relativeTime(val)}</span>
           </Tooltip>
         )

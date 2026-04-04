@@ -4,6 +4,7 @@ import { ReloadOutlined, SyncOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import api from '@/services/api';
+import { panelDayjs } from '@/lib/datetime';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { usePalette } from '@/hooks/usePalette';
 import type { SystemInfo, Software, ApiResponse } from '@/types';
@@ -305,9 +306,9 @@ export default function Dashboard() {
       const d = resp.data;
       setInfo(d);
 
-      const now = new Date();
-      const timeStr = [now.getHours(), now.getMinutes(), now.getSeconds()]
-        .map(v => String(v).padStart(2, '0')).join(':');
+      const now = panelDayjs();
+      const timeStr = [now.hour(), now.minute(), now.second()]
+        .map(n => String(n).padStart(2, '0')).join(':');
 
       const prev = prevNetworkRef.current;
       let upstream = 0, downstream = 0;
