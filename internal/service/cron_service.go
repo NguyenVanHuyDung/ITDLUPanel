@@ -324,7 +324,7 @@ func (s *CronService) RunNow(id int64) (string, error) {
 	if err == nil {
 		status = 1
 	}
-	s.db.Exec("UPDATE cron_jobs SET last_run = ?, last_status = ? WHERE id = ?", now, status, id)
+	s.db.Exec("UPDATE crons SET last_run = ?, last_status = ? WHERE id = ?", now, status, id)
 
 	output := ""
 	if res != nil {
