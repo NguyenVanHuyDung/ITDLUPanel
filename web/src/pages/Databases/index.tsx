@@ -1425,7 +1425,7 @@ function DatabasesContent() {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
-                      {['Filename', 'Size', 'Time', 'Actions'].map(h => (
+                      {['Filename', 'Storage', 'Size', 'Time', 'Actions'].map(h => (
                         <th key={h} style={{
                           padding: '8px 16px', fontSize: 11, fontWeight: 600,
                           color: p.textMuted, textAlign: 'left',
@@ -1442,17 +1442,29 @@ function DatabasesContent() {
                         ? formatDateTime(b.created_at, 'DD/MM/YYYY HH:mm')
                         : '—';
                       const isActing = backupActionId === b.id;
+                      const storageBadges: { label: string; color: string }[] = [];
+                      const st = b.storage || 'local';
+                      if (st.includes('local')) storageBadges.push({ label: 'Local', color: p.green });
+                      if (st.includes('ftp')) storageBadges.push({ label: 'FTP', color: p.cyan });
+                      if (st.includes('s3')) storageBadges.push({ label: 'S3', color: p.amber });
+                      if (st.includes('google_drive')) storageBadges.push({ label: 'GDrive', color: p.accent });
+                      if (st.includes('onedrive')) storageBadges.push({ label: 'OneDrive', color: p.purple });
+                      if (storageBadges.length === 0) storageBadges.push({ label: 'Local', color: p.green });
                       return (
                         <tr key={b.id} style={{ borderBottom: `1px solid ${p.cardBorder}` }}>
                           <td style={{ padding: '10px 16px' }}>
                             <div style={{ fontSize: 12, fontWeight: 500, color: p.text, wordBreak: 'break-all' }}>
                               {fileName}
-                              {b.storage === 'ftp' && (
-                                <span style={{
-                                  fontSize: 9, fontWeight: 600, marginLeft: 6, padding: '1px 5px',
-                                  borderRadius: 3, background: `${p.cyan}15`, color: p.cyan,
-                                }}>FTP</span>
-                              )}
+                            </div>
+                          </td>
+                          <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
+                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                              {storageBadges.map(badge => (
+                                <span key={badge.label} style={{
+                                  fontSize: 9, fontWeight: 600, padding: '2px 6px',
+                                  borderRadius: 3, background: `${badge.color}15`, color: badge.color,
+                                }}>{badge.label}</span>
+                              ))}
                             </div>
                           </td>
                           <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
