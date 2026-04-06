@@ -582,12 +582,24 @@ func (s *CloudStorageService) UploadGoogleDrive(storageID int64, localPath, remo
 	}
 	defer file.Close()
 
+	// If remoteFileName contains path separators, create folders first
+	parentID := cfg.FolderID
+	actualFileName := remoteFileName
+	if dir := path.Dir(remoteFileName); dir != "." && dir != "" {
+		folderID, err := s.ensureGoogleDriveFolder(client, cfg.FolderID, dir)
+		if err != nil {
+			return err
+		}
+		parentID = folderID
+		actualFileName = path.Base(remoteFileName)
+	}
+
 	// Build multipart upload
 	metadata := map[string]any{
-		"name": remoteFileName,
+		"name": actualFileName,
 	}
-	if cfg.FolderID != "" {
-		metadata["parents"] = []string{cfg.FolderID}
+	if parentID != "" {
+		metadata["parents"] = []string{parentID}
 	}
 	metaJSON, _ := json.Marshal(metadata)
 
@@ -665,6 +677,83 @@ func (s *CloudStorageService) findGoogleDriveFile(client *http.Client, fileName,
 	return result.Files[0].ID, nil
 }
 
+// ensureGoogleDriveFolder finds or creates a nested folder path under parentID.
+// Returns the final folder's ID.
+func (s *CloudStorageService) ensureGoogleDriveFolder(client *http.Client, parentID string, folderPath string) (string, error) {
+	parts := strings.Split(strings.Trim(folderPath, "/"), "/")
+	currentParent := parentID
+	for _, name := range parts {
+		if name == "" {
+			continue
+		}
+		// Search for existing folder
+		query := fmt.Sprintf("name='%s' and mimeType='application/vnd.google-apps.folder' and trashed=false", name)
+		if currentParent != "" {
+			query += fmt.Sprintf(" and '%s' in parents", currentParent)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		req, _ := http.NewRequestWithContext(ctx, "GET",
+			fmt.Sprintf("https://www.googleapis.com/drive/v3/files?q=%s&fields=files(id)", query), nil)
+		resp, err := client.Do(req)
+		cancel()
+		if err != nil {
+			return "", apperrors.Wrap(err, apperrors.ErrInternal, "failed to search Google Drive folders")
+		}
+		var result struct {
+			Files []struct{ ID string `json:"id"` } `json:"files"`
+		}
+		json.NewDecoder(resp.Body).Decode(&result)
+		resp.Body.Close()
+
+		if len(result.Files) > 0 {
+			currentParent = result.Files[0].ID
+			continue
+		}
+
+		// Create folder
+		meta := map[string]any{
+			"name":     name,
+			"mimeType": "application/vnd.google-apps.folder",
+		}
+		if currentParent != "" {
+			meta["parents"] = []string{currentParent}
+		}
+		metaJSON, _ := json.Marshal(meta)
+		ctx2, cancel2 := context.WithTimeout(context.Background(), 15*time.Second)
+		req2, _ := http.NewRequestWithContext(ctx2, "POST",
+			"https://www.googleapis.com/drive/v3/files", bytes.NewReader(metaJSON))
+		req2.Header.Set("Content-Type", "application/json")
+		resp2, err := client.Do(req2)
+		cancel2()
+		if err != nil {
+			return "", apperrors.Wrap(err, apperrors.ErrInternal, "failed to create Google Drive folder")
+		}
+		var created struct{ ID string `json:"id"` }
+		json.NewDecoder(resp2.Body).Decode(&created)
+		resp2.Body.Close()
+		if created.ID == "" {
+			return "", apperrors.New(apperrors.ErrInternal, fmt.Sprintf("failed to create folder %q on Google Drive", name))
+		}
+		currentParent = created.ID
+	}
+	return currentParent, nil
+}
+
+// resolveGoogleDrivePath resolves a path-based file name (e.g. "itdlupanel_backup/site/file.tar.gz")
+// into the target folder ID and base file name.
+func (s *CloudStorageService) resolveGoogleDrivePath(client *http.Client, remoteFileName, rootFolderID string) (folderID, baseName string, err error) {
+	folderID = rootFolderID
+	baseName = remoteFileName
+	if dir := path.Dir(remoteFileName); dir != "." && dir != "" {
+		folderID, err = s.ensureGoogleDriveFolder(client, rootFolderID, dir)
+		if err != nil {
+			return "", "", err
+		}
+		baseName = path.Base(remoteFileName)
+	}
+	return folderID, baseName, nil
+}
+
 // DownloadGoogleDrive downloads a file from Google Drive.
 func (s *CloudStorageService) DownloadGoogleDrive(storageID int64, remoteFileName, localPath, redirectURL string) error {
 	cs, err := s.GetByID(storageID)
@@ -681,7 +770,12 @@ func (s *CloudStorageService) DownloadGoogleDrive(storageID int64, remoteFileNam
 		return err
 	}
 
-	fileID, err := s.findGoogleDriveFile(client, remoteFileName, cfg.FolderID)
+	searchFolder, searchName, err := s.resolveGoogleDrivePath(client, remoteFileName, cfg.FolderID)
+	if err != nil {
+		return err
+	}
+
+	fileID, err := s.findGoogleDriveFile(client, searchName, searchFolder)
 	if err != nil {
 		return err
 	}
@@ -727,7 +821,13 @@ func (s *CloudStorageService) DeleteGoogleDrive(storageID int64, remoteFileName,
 		return err
 	}
 
-	fileID, err := s.findGoogleDriveFile(client, remoteFileName, cfg.FolderID)
+	searchFolder, searchName, err := s.resolveGoogleDrivePath(client, remoteFileName, cfg.FolderID)
+	if err != nil {
+		logger.Warn().Err(err).Str("file", remoteFileName).Msg("failed to resolve path on Google Drive for deletion")
+		return nil
+	}
+
+	fileID, err := s.findGoogleDriveFile(client, searchName, searchFolder)
 	if err != nil {
 		logger.Warn().Err(err).Str("file", remoteFileName).Msg("file not found on Google Drive for deletion")
 		return nil

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -490,6 +491,12 @@ func (s *BackupService) GetDownloadPath(id int64) (string, error) {
 	return "", apperrors.New(apperrors.ErrNotFound, "backup file not found")
 }
 
+// remoteBackupPath returns the remote file path with organized folder structure:
+// itdlupanel_backup/{type}/{filename}
+func remoteBackupPath(backupType, fileName string) string {
+	return path.Join("itdlupanel_backup", backupType, fileName)
+}
+
 // UploadBackupToFTP uploads an existing backup to an FTP storage.
 func (s *BackupService) UploadBackupToFTP(backupID, storageID int64) error {
 	if s.ftpStorageService == nil {
@@ -505,7 +512,7 @@ func (s *BackupService) UploadBackupToFTP(backupID, storageID int64) error {
 		return apperrors.New(apperrors.ErrNotFound, "backup file not found on disk")
 	}
 
-	remoteFileName := filepath.Base(b.FilePath)
+	remoteFileName := remoteBackupPath(b.Type, filepath.Base(b.FilePath))
 	if err := s.ftpStorageService.UploadFile(storageID, b.FilePath, remoteFileName); err != nil {
 		return err
 	}
@@ -538,7 +545,7 @@ func (s *BackupService) UploadBackupToCloud(backupID, storageID int64, storageTy
 		return apperrors.New(apperrors.ErrNotFound, "backup file not found on disk")
 	}
 
-	remoteFileName := filepath.Base(b.FilePath)
+	remoteFileName := remoteBackupPath(b.Type, filepath.Base(b.FilePath))
 	if err := s.cloudStorageService.UploadFile(storageID, b.FilePath, remoteFileName, ""); err != nil {
 		return err
 	}

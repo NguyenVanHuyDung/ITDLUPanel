@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/jlaffaye/ftp"
@@ -235,6 +236,7 @@ func (s *FTPStorageService) UploadFile(storageID int64, localPath, remoteFileNam
 	defer file.Close()
 
 	fullRemotePath := path.Join(remotePath, remoteFileName)
+	s.ensureRemoteDir(conn, path.Dir(fullRemotePath))
 	if err := conn.Stor(fullRemotePath, file); err != nil {
 		return apperrors.Wrap(err, apperrors.ErrInternal, fmt.Sprintf("failed to upload file to %s", fullRemotePath))
 	}
@@ -381,10 +383,15 @@ func (s *FTPStorageService) connect(host string, port int, username, password st
 	return conn, nil
 }
 
-// ensureRemoteDir creates remote directory path if it doesn't exist.
+// ensureRemoteDir creates remote directory path recursively if it doesn't exist.
 func (s *FTPStorageService) ensureRemoteDir(conn *ftp.ServerConn, dirPath string) {
 	if dirPath == "/" || dirPath == "" {
 		return
 	}
-	conn.MakeDir(dirPath) //nolint:errcheck
+	parts := strings.Split(strings.Trim(dirPath, "/"), "/")
+	current := ""
+	for _, p := range parts {
+		current += "/" + p
+		conn.MakeDir(current) //nolint:errcheck
+	}
 }
