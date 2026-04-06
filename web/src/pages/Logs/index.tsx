@@ -396,7 +396,7 @@ export default function Logs() {
   /* ─── Parsed & Filtered Data ─── */
 
   const currentLines = activeTab === 'panel' ? panelLines : sshLines;
-  const parsed = useMemo(() => currentLines.map((l, i) => parseLogLine(l, i)), [currentLines]);
+  const parsed = useMemo(() => currentLines.map((l, i) => parseLogLine(l, i)).reverse(), [currentLines]);
 
   const filtered = useMemo(() => {
     let data = parsed;
@@ -459,7 +459,7 @@ export default function Logs() {
   }, [parsed]);
 
   // Website parsed data
-  const parsedWebsite = useMemo(() => websiteLines.map((l, i) => parseAccessLogLine(l, i)), [websiteLines]);
+  const parsedWebsite = useMemo(() => websiteLines.map((l, i) => parseAccessLogLine(l, i)).reverse(), [websiteLines]);
 
   // Website stats (from full parsed data, before filters)
   const wsStats = useMemo(() => {
@@ -546,6 +546,8 @@ export default function Logs() {
   const logColumns = [
     {
       title: 'Time', dataIndex: 'time', key: 'time', width: isMobile ? 80 : 110,
+      sorter: (a: ParsedLog, b: ParsedLog) => a.time.localeCompare(b.time),
+      defaultSortOrder: 'descend' as const,
       render: (v: string) => <span style={{ fontSize: 12, color: p.textMuted }}>{formatTime(v)}</span>,
     },
     {
@@ -606,6 +608,8 @@ export default function Logs() {
   const sshPlainColumns = [
     {
       title: 'Time', key: 'time', width: isMobile ? 80 : 140,
+      sorter: (a: ParsedLog, b: ParsedLog) => a.key - b.key,
+      defaultSortOrder: 'descend' as const,
       render: (_: unknown, record: ParsedLog) => {
         const m = record.raw.match(/^(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})/);
         return <span style={{ fontSize: 11, color: p.textMuted, whiteSpace: 'nowrap' }}>{m ? m[1] : ''}</span>;
@@ -674,6 +678,8 @@ export default function Logs() {
   const auditColumns = [
     {
       title: 'Time', dataIndex: 'created_at', key: 'created_at', width: isMobile ? 100 : 160,
+      sorter: (a: AuditEntry, b: AuditEntry) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      defaultSortOrder: 'descend' as const,
       render: (val: string) => {
         if (!val) return <span style={{ color: p.textDim }}>—</span>;
         const d = new Date(val);
@@ -737,6 +743,8 @@ export default function Logs() {
   const websiteAccessColumns = useMemo(() => [
     {
       title: 'Time', dataIndex: 'time', key: 'time', width: isMobile ? 100 : 180,
+      sorter: (a: ParsedAccessLog, b: ParsedAccessLog) => a.key - b.key,
+      defaultSortOrder: 'descend' as const,
       render: (v: string) => <span style={{ fontSize: 11, color: p.textMuted, whiteSpace: 'nowrap' }}>{v}</span>,
     },
     {
@@ -785,6 +793,8 @@ export default function Logs() {
   const websiteErrorColumns = [
     {
       title: 'Time', key: 'time', width: isMobile ? 100 : 180,
+      sorter: (a: ParsedAccessLog, b: ParsedAccessLog) => a.key - b.key,
+      defaultSortOrder: 'descend' as const,
       render: (_: unknown, r: ParsedAccessLog) => {
         const m = r.raw.match(/^(\d{4}\/\d{2}\/\d{2}\s+\d{2}:\d{2}:\d{2})/);
         return <span style={{ fontSize: 11, color: p.textMuted, whiteSpace: 'nowrap' }}>{m ? m[1] : ''}</span>;
