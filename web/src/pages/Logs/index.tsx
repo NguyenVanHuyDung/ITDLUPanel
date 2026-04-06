@@ -372,26 +372,33 @@ export default function Logs() {
   }, [activeTab, sites.length, fetchSites]);
 
   const handleClearLog = async () => {
-    if (activeTab === 'website') {
-      if (!selectedSiteId) return;
-      try {
-        await api.delete(`/logs/website/${selectedSiteId}/${websiteLogType}`);
-        message.success(t('common.success'));
-        refresh();
-      } catch {
-        message.error(t('common.error'));
-      }
-      return;
-    }
-    const endpoint = activeTab === 'panel' ? '/logs/panel' : '/logs/ssh';
     try {
-      await api.delete(endpoint);
+      if (activeTab === 'website') {
+        if (!selectedSiteId) return;
+        await api.delete(`/logs/website/${selectedSiteId}/${websiteLogType}`);
+      } else if (activeTab === 'panel') {
+        await api.delete('/logs/panel');
+      } else if (activeTab === 'ssh') {
+        await api.delete('/logs/ssh');
+      } else {
+        return;
+      }
       message.success(t('common.success'));
       refresh();
     } catch {
       message.error(t('common.error'));
     }
   };
+
+  const clearLogLabel = useMemo(() => {
+    if (activeTab === 'website') {
+      const site = sites.find(s => s.id === selectedSiteId);
+      return `Clear ${websiteLogType} log of ${site?.domain ?? 'this site'}?`;
+    }
+    if (activeTab === 'panel') return 'Clear panel log?';
+    if (activeTab === 'ssh') return 'Clear SSH log?';
+    return '';
+  }, [activeTab, websiteLogType, selectedSiteId, sites]);
 
   /* ─── Parsed & Filtered Data ─── */
 
@@ -1373,7 +1380,7 @@ export default function Logs() {
             <ReloadOutlined /> {t('common.refresh')}
           </button>
           {activeTab !== 'audit' && (
-            <Popconfirm title="Clear this log file?" onConfirm={handleClearLog}>
+            <Popconfirm title={clearLogLabel} onConfirm={handleClearLog}>
               <button style={{
                 padding: '5px 12px', borderRadius: 6,
                 border: `1px solid ${p.red}`, background: 'transparent',
