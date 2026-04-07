@@ -132,6 +132,14 @@ var knownSoftware = map[string]softwareMeta{
 		InstallPath:    "/ITDLUPanel/server/onedrive",
 		DefaultVersion: "stable",
 	},
+	"docker": {
+		DisplayName:    "Docker",
+		Type:           "tool",
+		ServiceName:    "docker",
+		ConfigPath:     "/etc/docker/daemon.json",
+		InstallPath:    "/ITDLUPanel/server/docker",
+		DefaultVersion: "stable",
+	},
 }
 
 func init() {

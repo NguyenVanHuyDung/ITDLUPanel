@@ -227,6 +227,12 @@ func (s *SiteService) Create(req CreateSiteRequest, userID int64) (*Site, error)
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create document root")
 	}
 
+	// 2b. Create per-site log directory
+	siteLogDir := "/ITDLUPanel/logs/" + req.Domain
+	if err := os.MkdirAll(siteLogDir, 0755); err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create site log directory")
+	}
+
 	// 3. Create default pages (index.html, 404.html, 502.html, 403.html)
 	for name, content := range defaultSitePages(req.Domain) {
 		p := filepath.Join(docRoot, name)
@@ -1439,7 +1445,7 @@ func (s *SiteService) SetAccessLog(id int64, enabled bool) error {
 		if enabled {
 			// Uncomment access_log lines
 			if trimmed == "#access_log off;" {
-				newLines = append(newLines, strings.Replace(line, "#access_log off;", fmt.Sprintf("access_log /ITDLUPanel/logs/%s.access.log;", site.Domain), 1))
+				newLines = append(newLines, strings.Replace(line, "#access_log off;", fmt.Sprintf("access_log /ITDLUPanel/logs/%s/access.log;", site.Domain), 1))
 			} else if isCommentedAccessLog(trimmed) {
 				newLines = append(newLines, vhostUncomment(line))
 			} else {
@@ -2042,8 +2048,8 @@ func (s *SiteService) generateSubdirNginxConf(bindingDomain, docRoot string, sit
 	}
 
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("    access_log /ITDLUPanel/logs/%s.access.log;\n", bindingDomain))
-	b.WriteString(fmt.Sprintf("    error_log /ITDLUPanel/logs/%s.error.log;\n", bindingDomain))
+	b.WriteString(fmt.Sprintf("    access_log /ITDLUPanel/logs/%s/access.log;\n", bindingDomain))
+	b.WriteString(fmt.Sprintf("    error_log /ITDLUPanel/logs/%s/error.log;\n", bindingDomain))
 	b.WriteString("}\n")
 
 	return b.String()

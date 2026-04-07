@@ -102,20 +102,19 @@ func (s *SiteStatisticsService) GetStatistics(siteID int64, days int) (*WebsiteS
 	}
 
 	// Parse today's log (current log file)
-	currentLogPath := fmt.Sprintf("%s/%s.access.log", websiteLogDir, domain)
+	currentLogPath := fmt.Sprintf("%s/access.log", websiteLogDir(domain))
 	s.parseLogFile(currentLogPath, false, dateSet, statsMap)
 
-	// Parse ALL rotated logs — logrotate names files by rotation date, not
-	// content date, so we scan all matching files and let processLine filter
-	// by the actual timestamp in each log entry.
-	prefix := domain + ".access.log."
-	entries, _ := os.ReadDir(websiteLogDir)
+	// Parse ALL rotated logs in the per-site directory
+	siteDir := websiteLogDir(domain)
+	const prefix = "access.log."
+	entries, _ := os.ReadDir(siteDir)
 	for _, e := range entries {
 		name := e.Name()
 		if !strings.HasPrefix(name, prefix) {
 			continue
 		}
-		path := fmt.Sprintf("%s/%s", websiteLogDir, name)
+		path := fmt.Sprintf("%s/%s", siteDir, name)
 		isGz := strings.HasSuffix(name, ".gz")
 		s.parseLogFile(path, isGz, dateSet, statsMap)
 	}

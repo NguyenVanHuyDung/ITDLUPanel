@@ -66,8 +66,14 @@ func (s *LogService) GetPanelLog(lines int) ([]string, error) {
 	return readLogFile(s.panelLogPath, clampLines(lines))
 }
 
-// websiteLogDir is the base directory for website logs.
-const websiteLogDir = "/ITDLUPanel/logs"
+// websiteLogBase is the base directory for per-site website log directories.
+// Each site stores logs at /ITDLUPanel/logs/<domain>/access.log, error.log.
+const websiteLogBase = "/ITDLUPanel/logs"
+
+// websiteLogDir returns the per-site log directory: /ITDLUPanel/logs/<domain>
+func websiteLogDir(domain string) string {
+	return websiteLogBase + "/" + domain
+}
 
 // GetWebsiteAccessLog reads the last N lines of a website's access log.
 // Supports single date or date range (start_date, end_date in YYYY-MM-DD).
@@ -167,9 +173,9 @@ func (s *LogService) ClearWebsiteLog(siteID int64, logType string) error {
 	var logPath string
 	switch logType {
 	case "access":
-		logPath = fmt.Sprintf("%s/%s.access.log", websiteLogDir, domain)
+		logPath = fmt.Sprintf("%s/access.log", websiteLogDir(domain))
 	case "error":
-		logPath = fmt.Sprintf("%s/%s.error.log", websiteLogDir, domain)
+		logPath = fmt.Sprintf("%s/error.log", websiteLogDir(domain))
 	default:
 		return apperrors.New(apperrors.ErrValidation, "unsupported website log type: "+logType)
 	}
@@ -206,15 +212,15 @@ func (s *LogService) ListSitesMinimal() ([]map[string]interface{}, error) {
 }
 
 // ListWebsiteLogDates returns available log dates for a website.
-// Scans /ITDLUPanel/logs/ for rotated files matching {domain}.access.log.YYYY-MM-DD[.gz]
+// Scans /ITDLUPanel/logs/<domain>/ for rotated files matching access.log.YYYY-MM-DD[.gz].
 func (s *LogService) ListWebsiteLogDates(siteID int64) ([]string, error) {
 	domain, err := s.getSiteDomain(siteID)
 	if err != nil {
 		return nil, err
 	}
 
-	prefix := domain + ".access.log."
-	entries, err := os.ReadDir(websiteLogDir)
+	siteDir := websiteLogDir(domain)
+	entries, err := os.ReadDir(siteDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []string{}, nil
@@ -222,7 +228,15 @@ func (s *LogService) ListWebsiteLogDates(siteID int64) ([]string, error) {
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read log directory")
 	}
 
+	const prefix = "access.log."
 	seen := make(map[string]bool)
+
+	// Include today if the active log file is non-empty
+	activeLog := siteDir + "/access.log"
+	if fi, err := os.Stat(activeLog); err == nil && fi.Size() > 0 {
+		seen[time.Now().Format("2006-01-02")] = true
+	}
+
 	for _, e := range entries {
 		name := e.Name()
 		if !strings.HasPrefix(name, prefix) {
@@ -245,10 +259,9 @@ func (s *LogService) ListWebsiteLogDates(siteID int64) ([]string, error) {
 }
 
 // websiteLogPath returns the log file path for a domain.
-// If date is empty, returns the current (today) log.
-// If date is YYYY-MM-DD, returns the rotated log for that date (plain or .gz).
+// Path format: /ITDLUPanel/logs/<domain>/<logType>.log[.date][.gz]
 func (s *LogService) websiteLogPath(domain, logType, date string) string {
-	base := fmt.Sprintf("%s/%s.%s.log", websiteLogDir, domain, logType)
+	base := fmt.Sprintf("%s/%s.log", websiteLogDir(domain), logType)
 	if date == "" {
 		return base
 	}
@@ -265,17 +278,23 @@ func (s *LogService) websiteLogPath(domain, logType, date string) string {
 
 // EnsureLogDir creates /ITDLUPanel/logs if it doesn't exist.
 func (s *LogService) EnsureLogDir() error {
-	return os.MkdirAll(websiteLogDir, 0755)
+	return os.MkdirAll(websiteLogBase, 0755)
+}
+
+// EnsureSiteLogDir creates the per-site log directory: /ITDLUPanel/logs/<domain>/
+func (s *LogService) EnsureSiteLogDir(domain string) error {
+	return os.MkdirAll(websiteLogDir(domain), 0755)
 }
 
 // SetupLogRotation creates a logrotate config for website logs
 // that rotates daily and names files with date suffix.
 func (s *LogService) SetupLogRotation() error {
-	config := `/ITDLUPanel/logs/*.access.log /ITDLUPanel/logs/*.error.log {
+	config := `/ITDLUPanel/logs/*/access.log /ITDLUPanel/logs/*/error.log {
     daily
     missingok
     notifempty
     dateext
+    dateyesterday
     dateformat .%Y-%m-%d
     rotate 90
     compress

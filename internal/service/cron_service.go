@@ -74,13 +74,38 @@ func NewCronService(db *sql.DB) *CronService {
 	return &CronService{db: db}
 }
 
+// ResyncAll rebuilds crontab entries for all enabled cron jobs. Call this on
+// startup or after applying fixes to ensure the crontab matches the database.
+func (s *CronService) ResyncAll() error {
+	rows, err := s.db.Query("SELECT id, schedule FROM crons WHERE status = 1")
+	if err != nil {
+		return fmt.Errorf("failed to query enabled crons: %w", err)
+	}
+	defer rows.Close()
+
+	var synced int
+	for rows.Next() {
+		var id int64
+		var schedule string
+		if err := rows.Scan(&id, &schedule); err != nil {
+			continue
+		}
+		cronCmd := s.buildCrontabCommand(id)
+		if err := s.syncCrontab(id, schedule, cronCmd, true); err != nil {
+			logger.Error().Err(err).Int64("id", id).Msg("failed to resync crontab entry")
+			continue
+		}
+		synced++
+	}
+	logger.Info().Int("count", synced).Msg("crontab entries resynced")
+	return nil
+}
+
 // Create provisions a new cron job and writes it to the system crontab.
 func (s *CronService) Create(req CreateCronRequest) (*CronJob, error) {
 	if !cronExprRegex.MatchString(strings.TrimSpace(req.Schedule)) {
 		return nil, apperrors.New(apperrors.ErrValidation, "invalid cron expression, must be 5 fields")
 	}
-
-	command := s.buildCommand(req.Type, req.Command, 0)
 
 	result, err := s.db.Exec(
 		`INSERT INTO crons (name, type, schedule, command, status) VALUES (?, ?, ?, ?, 1)`,
@@ -92,10 +117,8 @@ func (s *CronService) Create(req CreateCronRequest) (*CronJob, error) {
 
 	id, _ := result.LastInsertId()
 
-	// Rebuild the command with the actual ID for log redirection.
-	command = s.buildCommand(req.Type, req.Command, id)
-	if err := s.syncCrontab(id, req.Schedule, command, true); err != nil {
-		// Rollback the database record on crontab failure.
+	cronCmd := s.buildCrontabCommand(id)
+	if err := s.syncCrontab(id, req.Schedule, cronCmd, true); err != nil {
 		_, _ = s.db.Exec("DELETE FROM crons WHERE id = ?", id)
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to write crontab entry")
 	}
@@ -215,8 +238,8 @@ func (s *CronService) Update(id int64, req UpdateCronRequest) error {
 
 	// Re-sync crontab if the cron is enabled.
 	if cron.Status == 1 {
-		command := s.buildCommand(cron.Type, cron.Command, id)
-		if err := s.syncCrontab(id, cron.Schedule, command, true); err != nil {
+		cronCmd := s.buildCrontabCommand(id)
+		if err := s.syncCrontab(id, cron.Schedule, cronCmd, true); err != nil {
 			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to update crontab entry")
 		}
 	}
@@ -262,8 +285,8 @@ func (s *CronService) SetStatus(id int64, enabled bool) error {
 	}
 
 	if enabled {
-		command := s.buildCommand(cron.Type, cron.Command, id)
-		if err := s.syncCrontab(id, cron.Schedule, command, true); err != nil {
+		cronCmd := s.buildCrontabCommand(id)
+		if err := s.syncCrontab(id, cron.Schedule, cronCmd, true); err != nil {
 			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to enable crontab entry")
 		}
 	} else {
@@ -305,50 +328,52 @@ func (s *CronService) RunNow(id int64) (string, error) {
 	logFile := fmt.Sprintf("%s/%d.log", cronLogDir, id)
 	_ = os.MkdirAll(cronLogDir, 0755)
 
-	// Write execution header to log
 	startTime := time.Now()
 	header := fmt.Sprintf("\n[%s] === Run: %s ===\n[%s] Command: %s\n",
 		startTime.Format("2006-01-02 15:04:05"), job.Name,
 		startTime.Format("2006-01-02 15:04:05"), job.Command)
 	appendToFile(logFile, header)
 
-	fullCmd := s.buildCommand(job.Type, job.Command, id)
+	// Build the raw command (without crontab wrapping)
+	rawCmd := s.rawCommand(job.Type, job.Command)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	res, err := system.Exec(ctx, "bash", "-c", fullCmd)
+	res, execErr := system.Exec(ctx, "bash", "-c", rawCmd)
 
-	// Update last_run
 	now := time.Now()
-	status := 0
-	if err == nil {
-		status = 1
+	statusStr := "0"
+	if execErr == nil {
+		statusStr = "1"
 	}
-	s.db.Exec("UPDATE crons SET last_run = ?, last_status = ? WHERE id = ?", now, status, id)
 
 	output := ""
 	if res != nil {
 		output = res.Stdout + res.Stderr
 	}
 
+	// Update last_run in database
+	_, _ = s.db.Exec(
+		"UPDATE crons SET last_run = ?, last_status = ?, last_output = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+		now, statusStr, truncateOutput(output, 4096), id,
+	)
+
 	// Write execution result to log
 	elapsed := time.Since(startTime).Round(time.Millisecond)
 	var footer string
-	if err != nil {
-		footer = fmt.Sprintf("[%s] Status: FAILED (%s) Duration: %s\n", now.Format("2006-01-02 15:04:05"), err.Error(), elapsed)
-		if output != "" {
-			footer += fmt.Sprintf("[%s] Output: %s\n", now.Format("2006-01-02 15:04:05"), output)
-		}
+	if execErr != nil {
+		footer = fmt.Sprintf("[%s] Status: FAILED (%s) Duration: %s\n", now.Format("2006-01-02 15:04:05"), execErr.Error(), elapsed)
 	} else {
 		footer = fmt.Sprintf("[%s] Status: OK Duration: %s\n", now.Format("2006-01-02 15:04:05"), elapsed)
-		if output != "" {
-			footer += fmt.Sprintf("[%s] Output: %s\n", now.Format("2006-01-02 15:04:05"), output)
-		}
+	}
+	if output != "" {
+		footer += fmt.Sprintf("[%s] Output: %s\n", now.Format("2006-01-02 15:04:05"), output)
 	}
 	appendToFile(logFile, footer)
 
-	if err != nil {
-		return output, apperrors.Wrap(err, apperrors.ErrInternal, "command execution failed")
+	if execErr != nil {
+		return output, apperrors.Wrap(execErr, apperrors.ErrInternal, "command execution failed")
 	}
 	return output, nil
 }
@@ -366,28 +391,55 @@ func appendToFile(path, content string) {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-// buildCommand constructs the full cron command with log redirection and timestamps.
-func (s *CronService) buildCommand(cronType, command string, id int64) string {
-	logFile := fmt.Sprintf("%s/%d.log", cronLogDir, id)
-
-	var cmd string
+// rawCommand returns the executable command for a cron type (without crontab wrapping).
+func (s *CronService) rawCommand(cronType, command string) string {
 	switch cronType {
 	case "url":
 		u, err := url.Parse(command)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			logger.Warn().Str("url", command).Msg("invalid URL for cron job, skipping")
-			cmd = "echo 'invalid cron URL'"
-		} else {
-			escaped := strings.ReplaceAll(command, "'", `'\''`)
-			cmd = fmt.Sprintf("curl -fsS '%s'", escaped)
+			return "echo 'invalid cron URL'"
 		}
+		escaped := strings.ReplaceAll(command, "'", `'\''`)
+		return fmt.Sprintf("curl -fsS '%s'", escaped)
 	default:
-		logger.Warn().Int64("id", id).Msg("shell-type cron job — ensure the command is trusted")
-		cmd = command
+		return command
 	}
+}
 
-	// Wrap with timestamp header/footer for crontab runs
-	return fmt.Sprintf(`echo "[$(date '+%%Y-%%m-%%d %%H:%%M:%%S')] === Cron Start ===" >> %s; %s >> %s 2>&1; echo "[$(date '+%%Y-%%m-%%d %%H:%%M:%%S')] === Cron End (exit: $?) ===" >> %s`, logFile, cmd, logFile, logFile)
+// buildCrontabCommand constructs the crontab command line that delegates to
+// the panel binary's "cron-run" subcommand. This approach avoids crontab %
+// escaping issues and properly updates last_run/last_status in the database.
+func (s *CronService) buildCrontabCommand(id int64) string {
+	// Resolve the panel binary path
+	exe, err := os.Executable()
+	if err != nil {
+		exe = "/root/ITDLUPanel/bin/itdlupanel"
+	}
+	return fmt.Sprintf("%s cron-run -id=%d -config=%s",
+		exe, id, resolveConfigPath())
+}
+
+// resolveConfigPath returns an absolute config file path for crontab use.
+func resolveConfigPath() string {
+	candidates := []string{
+		"/root/ITDLUPanel/config/panel.json",
+		"/ITDLUPanel/server/config/panel.json",
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	return "/root/ITDLUPanel/config/panel.json"
+}
+
+// truncateOutput limits output to maxLen bytes to avoid bloating the database.
+func truncateOutput(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "\n... (truncated)"
 }
 
 // syncCrontab adds or updates a crontab entry for the given cron job ID.

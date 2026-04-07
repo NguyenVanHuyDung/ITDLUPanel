@@ -48,8 +48,8 @@ const apacheTemplate = `<VirtualHost *:80>
     </FilesMatch>
     #PHP-INFO-END
 {{ end }}
-    ErrorLog /ITDLUPanel/logs/{{ .Domain }}.error.log
-    CustomLog /ITDLUPanel/logs/{{ .Domain }}.access.log combined
+    ErrorLog /ITDLUPanel/logs/{{ .Domain }}/error.log
+    CustomLog /ITDLUPanel/logs/{{ .Domain }}/access.log combined
 
     # Security headers
     Header always set X-Frame-Options "SAMEORIGIN"
@@ -108,8 +108,8 @@ const apacheTemplate = `<VirtualHost *:80>
     </FilesMatch>
     #PHP-INFO-END
 {{ end }}
-    ErrorLog /ITDLUPanel/logs/{{ .Domain }}.error.log
-    CustomLog /ITDLUPanel/logs/{{ .Domain }}.access.log combined
+    ErrorLog /ITDLUPanel/logs/{{ .Domain }}/error.log
+    CustomLog /ITDLUPanel/logs/{{ .Domain }}/access.log combined
 
     # Security headers
     Header always set X-Frame-Options "SAMEORIGIN"
@@ -188,8 +188,8 @@ const apacheTemplate = `<VirtualHost *:80>
     </FilesMatch>
     #PHP-INFO-END
 {{ end }}
-    ErrorLog /ITDLUPanel/logs/{{ .Domain }}.ssl.error.log
-    CustomLog /ITDLUPanel/logs/{{ .Domain }}.ssl.access.log combined
+    ErrorLog /ITDLUPanel/logs/{{ .Domain }}/ssl.error.log
+    CustomLog /ITDLUPanel/logs/{{ .Domain }}/ssl.access.log combined
 
     # Security headers (HTTPS)
     Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"

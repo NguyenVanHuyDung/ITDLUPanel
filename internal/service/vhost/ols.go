@@ -22,14 +22,14 @@ vhAliases                 {{ joinAliases .Aliases }}
 enableGzip                1
 enableIpGeo               1
 
-errorlog {{ .DocRoot }}/logs/{{ .Domain }}.error_log {
+errorlog /ITDLUPanel/logs/{{ .Domain }}/error_log {
   useServer               0
   logLevel                WARN
   rollingSize             10M
   keepDays                30
 }
 
-accesslog {{ .DocRoot }}/logs/{{ .Domain }}.access_log {
+accesslog /ITDLUPanel/logs/{{ .Domain }}/access_log {
   useServer               0
   logFormat               "%h %l %u %t \"%r\" %>s %b"
   logHeaders              5
@@ -210,7 +210,7 @@ func (o *OLSGenerator) Generate(cfg VhostConfig) (string, error) {
 	}
 
 	// Create log directory for this vhost
-	logDir := filepath.Join(cfg.DocRoot, "logs")
+	logDir := "/ITDLUPanel/logs/" + cfg.Domain
 	_ = os.MkdirAll(logDir, 0755)
 
 	return buf.String(), nil

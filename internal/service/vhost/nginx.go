@@ -35,8 +35,8 @@ const nginxTemplate = `server {
     }
     #HTTP_TO_HTTPS_END
 {{ else }}
-    access_log /ITDLUPanel/logs/{{ .Domain }}.access.log;
-    error_log  /ITDLUPanel/logs/{{ .Domain }}.error.log;
+    access_log /ITDLUPanel/logs/{{ .Domain }}/access.log;
+    error_log  /ITDLUPanel/logs/{{ .Domain }}/error.log;
 
     # Error pages
     error_page 403 /403.html;
@@ -133,8 +133,8 @@ const nginxTemplate = `server {
 {{ .CustomConfig }}
 {{ end }}
 {{ end }}{{ else }}
-    access_log /ITDLUPanel/logs/{{ .Domain }}.access.log;
-    error_log  /ITDLUPanel/logs/{{ .Domain }}.error.log;
+    access_log /ITDLUPanel/logs/{{ .Domain }}/access.log;
+    error_log  /ITDLUPanel/logs/{{ .Domain }}/error.log;
 
     # Error pages
     error_page 403 /403.html;
@@ -270,8 +270,8 @@ server {
     add_header X-XSS-Protection "1; mode=block" always;
     add_header Referrer-Policy "no-referrer-when-downgrade" always;
 
-    access_log /ITDLUPanel/logs/{{ .Domain }}.access.log;
-    error_log  /ITDLUPanel/logs/{{ .Domain }}.error.log;
+    access_log /ITDLUPanel/logs/{{ .Domain }}/access.log;
+    error_log  /ITDLUPanel/logs/{{ .Domain }}/error.log;
 
     # Error pages
     error_page 403 /403.html;

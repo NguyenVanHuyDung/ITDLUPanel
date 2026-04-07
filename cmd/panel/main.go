@@ -78,6 +78,12 @@ func main() {
 		return
 	}
 
+	// Sub-command: cron-run
+	if len(os.Args) > 1 && os.Args[1] == "cron-run" {
+		runCronCommand()
+		return
+	}
+
 	configPath := flag.String("config", "", "Path to config file (default: auto-detect)")
 	showVersion := flag.Bool("version", false, "Show version and exit")
 	flag.Parse()
@@ -317,5 +323,52 @@ func runBackupCommand() {
 		os.Exit(1)
 	}
 
+	os.Exit(0)
+}
+
+// runCronCommand handles the "cron-run" sub-command.
+// It executes a cron job by ID, logs output, and updates the database.
+//
+// Usage:
+//
+//	itdlupanel cron-run -id=8 [-config config/panel.json]
+func runCronCommand() {
+	cmd := flag.NewFlagSet("cron-run", flag.ExitOnError)
+	cfgPath := cmd.String("config", "", "Path to config file")
+	cronID := cmd.Int64("id", 0, "Cron job ID to execute")
+	cmd.Parse(os.Args[2:])
+
+	if *cronID <= 0 {
+		fmt.Fprintln(os.Stderr, "Usage: itdlupanel cron-run -id=<cron_id> [-config config/panel.json]")
+		os.Exit(1)
+	}
+
+	cp := resolveConfig(*cfgPath)
+	_, err := config.Load(cp)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
+		os.Exit(1)
+	}
+	cfg := config.Get()
+
+	db, err := database.New(cfg.Database.Path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to open database: %v\n", err)
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	cronSvc := service.NewCronService(db.GetDB())
+	output, runErr := cronSvc.RunNow(*cronID)
+	if runErr != nil {
+		fmt.Fprintf(os.Stderr, "Cron job %d failed: %v\n", *cronID, runErr)
+		if output != "" {
+			fmt.Fprintln(os.Stderr, output)
+		}
+		os.Exit(1)
+	}
+	if output != "" {
+		fmt.Print(output)
+	}
 	os.Exit(0)
 }

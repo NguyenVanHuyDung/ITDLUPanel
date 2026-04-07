@@ -99,6 +99,7 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		ftpService := service.NewFTPService(db)
 		fileService := service.NewFileService()
 		cronService := service.NewCronService(db)
+		cronService.ResyncAll()
 		firewallService := service.NewFirewallService(db)
 		securityService := service.NewSecurityService()
 		dockerService := service.NewDockerService()
@@ -211,6 +212,13 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		// -------------------------------------------------------
 		dockerHandler := v1.NewDockerHandler(dockerService)
 		dockerHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
+
+		// -------------------------------------------------------
+		// Docker Compose management
+		// -------------------------------------------------------
+		composeService := service.NewDockerComposeService()
+		composeHandler := v1.NewDockerComposeHandler(composeService)
+		composeHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
 
 		// -------------------------------------------------------
 		// Log management
