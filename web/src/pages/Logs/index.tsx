@@ -336,6 +336,9 @@ export default function Logs() {
     } catch { /* ignore */ }
   }, [selectedSiteId]);
 
+  // Website total lines from backend
+  const [wsTotalLines, setWsTotalLines] = useState(0);
+
   const fetchWebsiteLog = useCallback(async (siteId: number, logType: 'access' | 'error', numLines: number, dateRange: [dayjs.Dayjs, dayjs.Dayjs] | null) => {
     setLoading(true);
     try {
@@ -344,13 +347,15 @@ export default function Logs() {
         params.start_date = dateRange[0].format('YYYY-MM-DD');
         params.end_date = dateRange[1].format('YYYY-MM-DD');
       }
-      const { data } = await api.get<ApiResponse<{ lines: string | string[] }>>(`/logs/website/${siteId}/${logType}`, { params });
+      const { data } = await api.get<ApiResponse<{ lines: string | string[], total_lines?: number }>>(`/logs/website/${siteId}/${logType}`, { params });
       const raw = data.data?.lines;
       if (Array.isArray(raw)) setWebsiteLines(raw);
       else if (typeof raw === 'string') setWebsiteLines(raw.split('\n').filter(Boolean));
       else setWebsiteLines([]);
+      setWsTotalLines(data.data?.total_lines ?? 0);
     } catch {
       setWebsiteLines([]);
+      setWsTotalLines(0);
     } finally {
       setLoading(false);
     }
@@ -1057,10 +1062,10 @@ export default function Logs() {
         {websiteLogType === 'access' && (
           <>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <MetricCard value={wsTotal.toLocaleString()} label="Total Requests" p={p} isDark={isDark} />
-              <MetricCard value={`${errorRate.toFixed(1)}%`} label="Error Rate" color={errorRate > 5 ? p.red : errorRate > 0 ? p.amber : undefined} p={p} isDark={isDark} />
+              <MetricCard value={wsTotalLines > 0 ? wsTotalLines.toLocaleString() : wsTotal.toLocaleString()} label={wsTotalLines > wsTotal ? `Total Requests (showing ${wsTotal})` : "Total Requests"} p={p} isDark={isDark} />
+              <MetricCard value={`${errorRate.toFixed(1)}%`} label={wsTotalLines > wsTotal ? `Error Rate (of ${wsTotal})` : "Error Rate"} color={errorRate > 5 ? p.red : errorRate > 0 ? p.amber : undefined} p={p} isDark={isDark} />
               <MetricCard value={wsUniqueIps} label="Unique IPs" p={p} isDark={isDark} />
-              <MetricCard value={formatBytes(totalSize)} label="Total Bandwidth" p={p} isDark={isDark} />
+              <MetricCard value={formatBytes(totalSize)} label="Bandwidth" p={p} isDark={isDark} />
               {topStatus > 0 && (
                 <MetricCard value={<StatusBadge status={topStatus} p={p} />} label="Top Status Code" p={p} isDark={isDark} />
               )}

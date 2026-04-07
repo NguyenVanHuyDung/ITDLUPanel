@@ -37,6 +37,12 @@ type AuditEntry struct {
 // Service
 // ---------------------------------------------------------------------------
 
+// WebsiteLogResult contains log lines and total line count for the queried period.
+type WebsiteLogResult struct {
+	Lines      []string `json:"lines"`
+	TotalLines int      `json:"total_lines"`
+}
+
 const (
 	logDefaultLines = 100
 	logMaxLines     = 5000
@@ -77,7 +83,7 @@ func websiteLogDir(domain string) string {
 
 // GetWebsiteAccessLog reads the last N lines of a website's access log.
 // Supports single date or date range (start_date, end_date in YYYY-MM-DD).
-func (s *LogService) GetWebsiteAccessLog(siteID int64, lines int, date, startDate, endDate string) ([]string, error) {
+func (s *LogService) GetWebsiteAccessLog(siteID int64, lines int, date, startDate, endDate string) (*WebsiteLogResult, error) {
 	domain, err := s.getSiteDomain(siteID)
 	if err != nil {
 		return nil, err
@@ -86,12 +92,12 @@ func (s *LogService) GetWebsiteAccessLog(siteID int64, lines int, date, startDat
 		return s.readWebsiteLogRange(domain, "access", startDate, endDate, clampLines(lines))
 	}
 	logPath := s.websiteLogPath(domain, "access", date)
-	return readLogFile(logPath, clampLines(lines))
+	return readLogFileWithCount(logPath, clampLines(lines))
 }
 
 // GetWebsiteErrorLog reads the last N lines of a website's error log.
 // Supports single date or date range (start_date, end_date in YYYY-MM-DD).
-func (s *LogService) GetWebsiteErrorLog(siteID int64, lines int, date, startDate, endDate string) ([]string, error) {
+func (s *LogService) GetWebsiteErrorLog(siteID int64, lines int, date, startDate, endDate string) (*WebsiteLogResult, error) {
 	domain, err := s.getSiteDomain(siteID)
 	if err != nil {
 		return nil, err
@@ -100,11 +106,11 @@ func (s *LogService) GetWebsiteErrorLog(siteID int64, lines int, date, startDate
 		return s.readWebsiteLogRange(domain, "error", startDate, endDate, clampLines(lines))
 	}
 	logPath := s.websiteLogPath(domain, "error", date)
-	return readLogFile(logPath, clampLines(lines))
+	return readLogFileWithCount(logPath, clampLines(lines))
 }
 
 // readWebsiteLogRange reads and merges logs across a date range, returning the last N lines.
-func (s *LogService) readWebsiteLogRange(domain, logType, startDate, endDate string, lines int) ([]string, error) {
+func (s *LogService) readWebsiteLogRange(domain, logType, startDate, endDate string, lines int) (*WebsiteLogResult, error) {
 	start, err := time.Parse("2006-01-02", startDate)
 	if err != nil {
 		return nil, apperrors.Wrap(err, apperrors.ErrValidation, "invalid start_date format")
@@ -134,11 +140,14 @@ func (s *LogService) readWebsiteLogRange(domain, logType, startDate, endDate str
 	}
 
 	if len(paths) == 0 {
-		return []string{}, nil
+		return &WebsiteLogResult{Lines: []string{}, TotalLines: 0}, nil
 	}
 	if len(paths) == 1 {
-		return readLogFile(paths[0], lines)
+		return readLogFileWithCount(paths[0], lines)
 	}
+
+	// Count total lines across all files
+	totalLines := countLinesMulti(paths)
 
 	// Build a shell command that cats/zcats all files and pipes to tail
 	var parts []string
@@ -159,9 +168,10 @@ func (s *LogService) readWebsiteLogRange(domain, logType, startDate, endDate str
 	}
 	output := strings.TrimSpace(result.Stdout)
 	if output == "" {
-		return []string{}, nil
+		return &WebsiteLogResult{Lines: []string{}, TotalLines: totalLines}, nil
 	}
-	return strings.Split(output, "\n"), nil
+	logLines := strings.Split(output, "\n")
+	return &WebsiteLogResult{Lines: logLines, TotalLines: totalLines}, nil
 }
 
 // ClearWebsiteLog clears a website's access or error log.
@@ -459,7 +469,6 @@ func readLogFile(filePath string, lines int) ([]string, error) {
 	var err error
 
 	if strings.HasSuffix(filePath, ".gz") {
-		// Use zcat piped to tail for compressed logs
 		result, err = system.Exec(ctx, "bash", "-c",
 			fmt.Sprintf("zcat %s | tail -n %d", filePath, lines))
 	} else {
@@ -476,4 +485,53 @@ func readLogFile(filePath string, lines int) ([]string, error) {
 		return []string{}, nil
 	}
 	return strings.Split(output, "\n"), nil
+}
+
+// readLogFileWithCount reads the last N lines and also counts total lines in the file.
+func readLogFileWithCount(filePath string, lines int) (*WebsiteLogResult, error) {
+	logLines, err := readLogFile(filePath, lines)
+	if err != nil {
+		return nil, err
+	}
+	totalLines := countLines(filePath)
+	return &WebsiteLogResult{Lines: logLines, TotalLines: totalLines}, nil
+}
+
+// countLines counts total lines in a single log file.
+func countLines(filePath string) int {
+	ctx, cancel := context.WithTimeout(context.Background(), logCmdTimeout)
+	defer cancel()
+	var cmd string
+	if strings.HasSuffix(filePath, ".gz") {
+		cmd = fmt.Sprintf("zcat '%s' | wc -l", filePath)
+	} else {
+		cmd = fmt.Sprintf("wc -l < '%s'", filePath)
+	}
+	result, err := system.Exec(ctx, "bash", "-c", cmd)
+	if err != nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(strings.TrimSpace(result.Stdout))
+	return n
+}
+
+// countLinesMulti counts total lines across multiple log files.
+func countLinesMulti(paths []string) int {
+	var parts []string
+	for _, p := range paths {
+		if strings.HasSuffix(p, ".gz") {
+			parts = append(parts, fmt.Sprintf("zcat '%s'", p))
+		} else {
+			parts = append(parts, fmt.Sprintf("cat '%s'", p))
+		}
+	}
+	cmd := fmt.Sprintf("{ %s; } | wc -l", strings.Join(parts, "; "))
+	ctx, cancel := context.WithTimeout(context.Background(), logCmdTimeout)
+	defer cancel()
+	result, err := system.Exec(ctx, "bash", "-c", cmd)
+	if err != nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(strings.TrimSpace(result.Stdout))
+	return n
 }

@@ -68,12 +68,12 @@ func (h *LogHandler) GetWebsiteAccessLog(c *gin.Context) {
 	date := c.DefaultQuery("date", "")
 	startDate := c.DefaultQuery("start_date", "")
 	endDate := c.DefaultQuery("end_date", "")
-	data, err := h.logService.GetWebsiteAccessLog(id, getLines(c), date, startDate, endDate)
+	result, err := h.logService.GetWebsiteAccessLog(id, getLines(c), date, startDate, endDate)
 	if err != nil {
 		response.Error(c, err)
 		return
 	}
-	response.Success(c, gin.H{"lines": data})
+	response.Success(c, gin.H{"lines": result.Lines, "total_lines": result.TotalLines})
 }
 
 // GetWebsiteErrorLog returns the last N lines of a website's error log.
@@ -85,12 +85,12 @@ func (h *LogHandler) GetWebsiteErrorLog(c *gin.Context) {
 	date := c.DefaultQuery("date", "")
 	startDate := c.DefaultQuery("start_date", "")
 	endDate := c.DefaultQuery("end_date", "")
-	data, err := h.logService.GetWebsiteErrorLog(id, getLines(c), date, startDate, endDate)
+	result, err := h.logService.GetWebsiteErrorLog(id, getLines(c), date, startDate, endDate)
 	if err != nil {
 		response.Error(c, err)
 		return
 	}
-	response.Success(c, gin.H{"lines": data})
+	response.Success(c, gin.H{"lines": result.Lines, "total_lines": result.TotalLines})
 }
 
 // ListWebsiteLogDates returns available rotated log dates for a website.
