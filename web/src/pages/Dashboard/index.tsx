@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, Col, Progress, Row, Typography, Spin, Button, Select, Space, Popover, Tag } from 'antd';
-import { ReloadOutlined, SyncOutlined } from '@ant-design/icons';
+import { ReloadOutlined, SyncOutlined, CloudServerOutlined, CloudOutlined, HddOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import api from '@/services/api';
@@ -14,6 +14,10 @@ import PHPManageModal from '@/components/PHPManageModal';
 import FTPManageModal from '@/components/FTPManageModal';
 import MariadbManageModal from '@/components/MariadbManageModal';
 import RedisManageModal from '@/components/RedisManageModal';
+import FTPStorageManageModal from '@/components/FTPStorageManageModal';
+import S3StorageManageModal from '@/components/S3StorageManageModal';
+import GoogleDriveManageModal from '@/components/GoogleDriveManageModal';
+import OneDriveManageModal from '@/components/OneDriveManageModal';
 import { getSoftwareIcon } from '../AppStore/SoftwareIcons';
 
 const { Text } = Typography;
@@ -230,6 +234,11 @@ export default function Dashboard() {
   const [ftpModalOpen, setFtpModalOpen] = useState(false);
   const [mariadbModalOpen, setMariadbModalOpen] = useState(false);
   const [redisModalOpen, setRedisModalOpen] = useState(false);
+  const [ftpStorageModalOpen, setFtpStorageModalOpen] = useState(false);
+  const [s3StorageModalOpen, setS3StorageModalOpen] = useState(false);
+  const [gdStorageModalOpen, setGdStorageModalOpen] = useState(false);
+  const [odStorageModalOpen, setOdStorageModalOpen] = useState(false);
+  const [storageProviders, setStorageProviders] = useState<{ key: string; name: string; count: number; color: string; icon: React.ReactNode }[]>([]);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevNetworkRef = useRef<{ sent: number; recv: number } | null>(null);
 
@@ -247,6 +256,26 @@ export default function Dashboard() {
     try {
       const { data: resp } = await api.get('/software');
       if (resp.data?.installed) setInstalledSoftware(resp.data.installed);
+    } catch { /* ignore */ }
+  }, []);
+
+  const fetchStorageProviders = useCallback(async () => {
+    try {
+      const [ftpResp, cloudResp] = await Promise.all([
+        api.get('/ftp-storages'),
+        api.get('/cloud-storages'),
+      ]);
+      const ftpCount = Array.isArray(ftpResp.data?.data) ? ftpResp.data.data.length : 0;
+      const cloudList = Array.isArray(cloudResp.data?.data) ? cloudResp.data.data : [];
+      const s3Count = cloudList.filter((c: { type: string }) => c.type === 's3').length;
+      const gdCount = cloudList.filter((c: { type: string }) => c.type === 'google_drive').length;
+      const odCount = cloudList.filter((c: { type: string }) => c.type === 'onedrive').length;
+      setStorageProviders([
+        { key: 'ftp', name: 'FTP Storage', count: ftpCount, color: '#1890FF', icon: <CloudServerOutlined /> },
+        { key: 's3', name: 'Amazon S3', count: s3Count, color: '#FF9900', icon: <CloudOutlined /> },
+        { key: 'gdrive', name: 'Google Drive', count: gdCount, color: '#4285F4', icon: <CloudOutlined /> },
+        { key: 'onedrive', name: 'OneDrive', count: odCount, color: '#0078D4', icon: <HddOutlined /> },
+      ]);
     } catch { /* ignore */ }
   }, []);
 
@@ -328,7 +357,7 @@ export default function Dashboard() {
     }
   }, []);
 
-  useEffect(() => { fetchData(true); fetchSoftware(); fetchSSLCerts(); fetchSecurityData(); fetchProcesses(); }, [fetchData, fetchSoftware, fetchSSLCerts, fetchSecurityData, fetchProcesses]);
+  useEffect(() => { fetchData(true); fetchSoftware(); fetchStorageProviders(); fetchSSLCerts(); fetchSecurityData(); fetchProcesses(); }, [fetchData, fetchSoftware, fetchStorageProviders, fetchSSLCerts, fetchSecurityData, fetchProcesses]);
 
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
@@ -875,12 +904,68 @@ export default function Dashboard() {
         </Col>
       </Row>
 
+      {/* ══════ STORAGE PROVIDERS ══════ */}
+      <Row gutter={16} style={{ marginTop: 16 }}>
+        <Col xs={24}>
+          <Card
+            title={<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><CloudServerOutlined style={{ color: '#1565C0', fontSize: 18 }} /> Storage Providers</div>}
+            size="small"
+            style={{ height: '100%' }}
+            styles={{ body: { padding: 16 }, header: { fontWeight: 600 } }}
+          >
+            <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '140px' : '180px'}, 1fr))`, gap: 10 }}>
+              {storageProviders.map(sp => (
+                <div
+                  key={sp.key}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '10px 12px', borderRadius: 8,
+                    border: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}`,
+                    background: isDark ? p.card : '#fafafa',
+                    cursor: 'pointer',
+                    transition: 'box-shadow 0.15s',
+                  }}
+                  onClick={() => {
+                    if (sp.key === 'ftp') setFtpStorageModalOpen(true);
+                    if (sp.key === 's3') setS3StorageModalOpen(true);
+                    if (sp.key === 'gdrive') setGdStorageModalOpen(true);
+                    if (sp.key === 'onedrive') setOdStorageModalOpen(true);
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}
+                >
+                  <div style={{
+                    width: 36, height: 36, borderRadius: 8,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                    background: `${sp.color}15`, color: sp.color, fontSize: 20,
+                  }}>
+                    {sp.icon}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: isDark ? p.text : undefined }}>
+                      {sp.name}
+                    </div>
+                    <div style={{ fontSize: 11, color: isDark ? p.textMuted : '#999' }}>
+                      {sp.count > 0 ? `${sp.count} config${sp.count !== 1 ? 's' : ''}` : 'Not configured'}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </Col>
+      </Row>
+
       <NginxManageModal open={nginxModalOpen} onClose={() => setNginxModalOpen(false)} />
       <PhpMyAdminManageModal open={pmaModalOpen} onClose={() => setPmaModalOpen(false)} />
       <PHPManageModal open={phpModalOpen} onClose={() => setPhpModalOpen(false)} />
       <FTPManageModal open={ftpModalOpen} onClose={() => setFtpModalOpen(false)} />
       <MariadbManageModal open={mariadbModalOpen} onClose={() => setMariadbModalOpen(false)} />
       <RedisManageModal open={redisModalOpen} onClose={() => setRedisModalOpen(false)} />
+      <FTPStorageManageModal open={ftpStorageModalOpen} onClose={() => setFtpStorageModalOpen(false)} />
+      <S3StorageManageModal open={s3StorageModalOpen} onClose={() => setS3StorageModalOpen(false)} />
+      <GoogleDriveManageModal open={gdStorageModalOpen} onClose={() => setGdStorageModalOpen(false)} />
+      <OneDriveManageModal open={odStorageModalOpen} onClose={() => setOdStorageModalOpen(false)} />
     </div>
   );
 }
