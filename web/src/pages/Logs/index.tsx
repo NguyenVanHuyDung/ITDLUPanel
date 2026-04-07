@@ -175,11 +175,12 @@ function ToggleBtn({ active, color, label, onClick, p }: {
 }) {
   return (
     <button onClick={onClick} style={{
-      padding: '4px 12px', borderRadius: 6, fontSize: 11, fontWeight: 500,
-      border: `1px solid ${active ? color : p.cardBorder}`,
-      background: active ? `${color}12` : 'transparent',
-      color: active ? color : p.textMuted,
+      padding: '4px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+      border: `1px solid ${active ? color : `${color}40`}`,
+      background: active ? `${color}22` : 'transparent',
+      color: active ? color : `${color}90`,
       cursor: 'pointer', transition: 'all 0.15s',
+      opacity: active ? 1 : 0.7,
     }}>{label}</button>
   );
 }
@@ -1112,8 +1113,8 @@ export default function Logs() {
             background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)',
             border: `1px solid ${p.cardBorder}`,
           }}>
-            {/* Status groups */}
-            <span style={{ fontSize: 11, color: p.textDim }}>Status:</span>
+            {/* Status + Method on same row */}
+            <span style={{ fontSize: 11, color: p.textDim, fontWeight: 600 }}>Status:</span>
             <ToggleBtn active={wsStatusFilters.size === 4} color={p.accent} label="ALL"
               onClick={() => setWsStatusFilters(new Set(['2xx', '3xx', '4xx', '5xx']))} p={p} />
             {(['2xx', '3xx', '4xx', '5xx'] as const).map(g => (
@@ -1121,10 +1122,9 @@ export default function Logs() {
                 label={g} onClick={() => toggleStatusFilter(g)} p={p} />
             ))}
 
-            <span style={{ width: 1, height: 20, background: p.cardBorder, margin: '0 4px' }} />
+            <span style={{ width: 1, height: 20, background: p.cardBorder, margin: '0 2px' }} />
 
-            {/* Method toggles */}
-            <span style={{ fontSize: 11, color: p.textDim }}>Method:</span>
+            <span style={{ fontSize: 11, color: p.textDim, fontWeight: 600 }}>Method:</span>
             <ToggleBtn active={wsMethodFilters.size === 0} color={p.accent} label="ALL"
               onClick={() => setWsMethodFilters(new Set())} p={p} />
             {['GET', 'POST', 'PUT', 'DELETE', 'PATCH'].map(m => (
