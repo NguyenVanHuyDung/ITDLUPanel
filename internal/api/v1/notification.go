@@ -37,6 +37,12 @@ func (h *NotificationHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminM
 		g.PUT("/rules", h.BulkUpsertRules)
 		g.PUT("/rules/:channelId", h.SetRules)
 
+		// Templates
+		g.GET("/templates/defaults/:eventType", h.GetDefaultTemplates)
+		g.GET("/templates/:channelId/:eventType", h.GetRuleTemplate)
+		g.PUT("/templates/:channelId/:eventType", h.SaveRuleTemplate)
+		g.POST("/templates/preview", h.PreviewTemplate)
+
 		// Logs
 		g.GET("/logs", h.ListLogs)
 		g.DELETE("/logs", h.ClearLogs)
@@ -194,9 +200,11 @@ func (h *NotificationHandler) SetRules(c *gin.Context) {
 func (h *NotificationHandler) BulkUpsertRules(c *gin.Context) {
 	var req struct {
 		Rules []struct {
-			ChannelID int64  `json:"channel_id"`
-			EventType string `json:"event_type"`
-			IsEnabled bool   `json:"is_enabled"`
+			ChannelID     int64  `json:"channel_id"`
+			EventType     string `json:"event_type"`
+			IsEnabled     bool   `json:"is_enabled"`
+			CustomSubject string `json:"custom_subject"`
+			CustomBody    string `json:"custom_body"`
 		} `json:"rules"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -258,4 +266,75 @@ func (h *NotificationHandler) ListEventTypes(c *gin.Context) {
 
 func (h *NotificationHandler) ListCriticalEventTypes(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": service.CriticalEventTypes()})
+}
+
+// ---------- Templates ----------
+
+func (h *NotificationHandler) GetDefaultTemplates(c *gin.Context) {
+	eventType := c.Param("eventType")
+	data := h.svc.DefaultTemplates(eventType)
+	c.JSON(http.StatusOK, gin.H{"data": data})
+}
+
+func (h *NotificationHandler) GetRuleTemplate(c *gin.Context) {
+	channelID, err := strconv.ParseInt(c.Param("channelId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid channelId"})
+		return
+	}
+	eventType := c.Param("eventType")
+	subj, body, err := h.svc.GetRuleTemplate(channelID, eventType)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defaults := h.svc.DefaultTemplates(eventType)
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"custom_subject":  subj,
+		"custom_body":     body,
+		"default_subject": defaults["default_subject"],
+		"default_body":    defaults["default_body"],
+		"variables":       defaults["variables"],
+	}})
+}
+
+func (h *NotificationHandler) SaveRuleTemplate(c *gin.Context) {
+	channelID, err := strconv.ParseInt(c.Param("channelId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid channelId"})
+		return
+	}
+	eventType := c.Param("eventType")
+
+	var body struct {
+		CustomSubject string `json:"custom_subject"`
+		CustomBody    string `json:"custom_body"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.svc.SaveRuleTemplate(channelID, eventType, body.CustomSubject, body.CustomBody); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "template saved"})
+}
+
+func (h *NotificationHandler) PreviewTemplate(c *gin.Context) {
+	var body struct {
+		Template  string `json:"template"`
+		EventType string `json:"event_type"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	result, err := h.svc.PreviewTemplate(body.Template, body.EventType)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "template error: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": result})
 }

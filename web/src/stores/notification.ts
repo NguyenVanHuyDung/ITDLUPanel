@@ -65,6 +65,13 @@ interface NotificationState {
 
   updateRules: (rules: { channel_id: number; event_type: string; is_enabled: boolean }[]) => Promise<void>;
   clearLogs: () => Promise<void>;
+
+  getRuleTemplate: (channelId: number, eventType: string) => Promise<{
+    custom_subject: string; custom_body: string;
+    default_subject: string; default_body: string; variables: string;
+  }>;
+  saveRuleTemplate: (channelId: number, eventType: string, customSubject: string, customBody: string) => Promise<void>;
+  previewTemplate: (template: string, eventType: string) => Promise<string>;
 }
 
 export const useNotificationStore = create<NotificationState>((set) => ({
@@ -134,5 +141,22 @@ export const useNotificationStore = create<NotificationState>((set) => ({
   clearLogs: async () => {
     await api.delete('/notifications/logs');
     set({ logs: [] });
+  },
+
+  getRuleTemplate: async (channelId, eventType) => {
+    const { data } = await api.get(`/notifications/templates/${channelId}/${eventType}`);
+    return data.data;
+  },
+
+  saveRuleTemplate: async (channelId, eventType, customSubject, customBody) => {
+    await api.put(`/notifications/templates/${channelId}/${eventType}`, {
+      custom_subject: customSubject,
+      custom_body: customBody,
+    });
+  },
+
+  previewTemplate: async (template, eventType) => {
+    const { data } = await api.post('/notifications/templates/preview', { template, event_type: eventType });
+    return data.data;
   },
 }));

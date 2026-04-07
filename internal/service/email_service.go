@@ -186,6 +186,39 @@ func (s *EmailService) FormatEventEmail(eventType, severity, title, detail, pane
 	})
 }
 
+// FormatCustomEmail wraps custom body text in the professional HTML template.
+func (s *EmailService) FormatCustomEmail(eventType, severity, title, customBody, panelURL string) string {
+	meta := eventEmailMeta(eventType, severity)
+	// Split custom body by newlines into fields.
+	lines := strings.Split(strings.TrimSpace(customBody), "\n")
+	var fields []emailField
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if idx := strings.Index(line, ":"); idx > 0 && idx < 30 {
+			fields = append(fields, emailField{Label: line[:idx], Value: strings.TrimSpace(line[idx+1:])})
+		} else {
+			fields = append(fields, emailField{Label: "", Value: line})
+		}
+	}
+	if len(fields) == 0 {
+		fields = append(fields, emailField{Label: "Message", Value: customBody})
+	}
+
+	return s.buildEmail(emailData{
+		Color:       meta.color,
+		Icon:        meta.icon,
+		SevLabel:    strings.ToUpper(severity),
+		SevColor:    meta.color,
+		Title:       title,
+		Description: customBody,
+		Fields:      fields,
+		PanelURL:    panelURL,
+	})
+}
+
 // ---- email template types ----
 
 type emailField struct {

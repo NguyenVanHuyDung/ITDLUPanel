@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Form, Input, InputNumber, Select, Switch, Button, Table, Modal,
-  Space, Tag, Tooltip, Popconfirm, Spin, message, Badge, Empty,
+  Space, Tag, Tooltip, Popconfirm, Spin, message, Badge, Empty, Typography,
 } from 'antd';
 import {
   MailOutlined, SendOutlined, PlusOutlined, DeleteOutlined,
   EditOutlined, CheckCircleOutlined, CloseCircleOutlined,
   ExperimentOutlined, BellOutlined, ReloadOutlined,
+  FormOutlined, EyeOutlined, UndoOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { usePalette } from '@/hooks/usePalette';
@@ -14,6 +15,9 @@ import { useIsMobile } from '@/hooks/useIsMobile';
 import { useThemeStore } from '@/stores/theme';
 import { useNotificationStore } from '@/stores/notification';
 import type { NotificationChannel } from '@/stores/notification';
+
+const { TextArea } = Input;
+const { Text } = Typography;
 
 /* ------------------------------------------------------------------ */
 /*  Event type labels & severity colors                                */
@@ -54,6 +58,7 @@ export default function NotificationsTab() {
     fetchChannels, fetchRules, fetchLogs, fetchEventTypes, fetchCriticalTypes,
     createChannel, updateChannel, deleteChannel, testChannel, testEvent,
     updateRules, clearLogs,
+    getRuleTemplate, saveRuleTemplate, previewTemplate,
   } = useNotificationStore();
 
   const [channelModal, setChannelModal] = useState(false);
@@ -63,6 +68,19 @@ export default function NotificationsTab() {
   const [testing, setTesting] = useState<number | null>(null);
   const [testingEvent, setTestingEvent] = useState<string | null>(null);
   const [section, setSection] = useState<'channels' | 'rules' | 'logs'>('channels');
+
+  // Template editor state
+  const [tplModal, setTplModal] = useState(false);
+  const [tplChannelId, setTplChannelId] = useState<number>(0);
+  const [tplEventType, setTplEventType] = useState('');
+  const [tplSubject, setTplSubject] = useState('');
+  const [tplBody, setTplBody] = useState('');
+  const [tplDefaultSubject, setTplDefaultSubject] = useState('');
+  const [tplDefaultBody, setTplDefaultBody] = useState('');
+  const [tplVariables, setTplVariables] = useState('');
+  const [tplPreview, setTplPreview] = useState('');
+  const [tplSaving, setTplSaving] = useState(false);
+  const [tplPreviewing, setTplPreviewing] = useState(false);
 
   const parseConfig = (cfg: string): Record<string, string> => {
     try { return JSON.parse(cfg); } catch { return {}; }
@@ -157,6 +175,65 @@ export default function NotificationsTab() {
     } finally {
       setTestingEvent(null);
     }
+  };
+
+  /* ---------- Template Editor ---------- */
+  const openTemplateEditor = async (channelId: number, eventType: string) => {
+    setTplChannelId(channelId);
+    setTplEventType(eventType);
+    setTplPreview('');
+    try {
+      const data = await getRuleTemplate(channelId, eventType);
+      setTplSubject(data.custom_subject || '');
+      setTplBody(data.custom_body || '');
+      setTplDefaultSubject(data.default_subject || '');
+      setTplDefaultBody(data.default_body || '');
+      setTplVariables(data.variables || '');
+      setTplModal(true);
+    } catch {
+      message.error('Failed to load template');
+    }
+  };
+
+  const handleSaveTemplate = async () => {
+    setTplSaving(true);
+    try {
+      await saveRuleTemplate(tplChannelId, tplEventType, tplSubject, tplBody);
+      message.success('Template saved');
+      setTplModal(false);
+      await fetchRules();
+    } catch {
+      message.error('Failed to save template');
+    } finally {
+      setTplSaving(false);
+    }
+  };
+
+  const handlePreviewTemplate = async (tpl: string) => {
+    setTplPreviewing(true);
+    try {
+      const result = await previewTemplate(tpl, tplEventType);
+      setTplPreview(result);
+    } catch (e: unknown) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const axiosErr = e as any;
+      const errMsg = axiosErr?.response?.data?.error || axiosErr?.message || 'Preview failed';
+      message.error(errMsg, 4);
+      setTplPreview('');
+    } finally {
+      setTplPreviewing(false);
+    }
+  };
+
+  const handleResetTemplate = () => {
+    setTplSubject('');
+    setTplBody('');
+    setTplPreview('');
+  };
+
+  const hasCustomTemplate = (channelId: number, eventType: string) => {
+    const rule = rules.find((r) => r.channel_id === channelId && r.event_type === eventType);
+    return !!(rule?.custom_subject || rule?.custom_body);
   };
 
   const handleDeleteChannel = async (id: number) => {
@@ -400,7 +477,7 @@ export default function NotificationsTab() {
         {sectionTitle(<BellOutlined style={{ color: p.accent }} />, 'Event Rules')}
         <p style={{ color: p.textSoft, marginBottom: 16, fontSize: 13, lineHeight: 1.6 }}>
           Toggle which events trigger notifications on each channel.
-          Use the <ExperimentOutlined /> button to send a sample notification for any event type.
+          Use <ExperimentOutlined /> to send a test, <FormOutlined /> to customize the message template.
           Events marked <Tag color="red" style={{ fontSize: 11 }}>Critical</Tag> are auto-enabled for new channels.
         </p>
 
@@ -417,8 +494,8 @@ export default function NotificationsTab() {
                   {activeChannels.map((ch) => (
                     <th
                       key={ch.id}
-                      colSpan={2}
-                      style={{ textAlign: 'center', padding: '10px 8px', borderBottom: `2px solid ${p.border}`, color: p.text, fontWeight: 600, minWidth: 140 }}
+                      colSpan={3}
+                      style={{ textAlign: 'center', padding: '10px 8px', borderBottom: `2px solid ${p.border}`, color: p.text, fontWeight: 600, minWidth: 180 }}
                     >
                       {ch.type === 'email' ? '📧' : '📨'} {ch.name}
                     </th>
@@ -433,6 +510,9 @@ export default function NotificationsTab() {
                       </th>
                       <th style={{ textAlign: 'center', padding: '4px 4px', borderBottom: `1px solid ${p.border}`, fontSize: 11, color: p.textSoft, fontWeight: 500 }}>
                         Test
+                      </th>
+                      <th style={{ textAlign: 'center', padding: '4px 4px', borderBottom: `1px solid ${p.border}`, fontSize: 11, color: p.textSoft, fontWeight: 500 }}>
+                        Template
                       </th>
                     </React.Fragment>
                   ))}
@@ -468,6 +548,7 @@ export default function NotificationsTab() {
                       </td>
                       {activeChannels.map((ch) => {
                         const testKey = `${ch.id}-${ev}`;
+                        const customized = hasCustomTemplate(ch.id, ev);
                         return (
                           <React.Fragment key={ch.id}>
                             <td style={{ textAlign: 'center', padding: '8px 4px', borderBottom: `1px solid ${p.border}` }}>
@@ -485,6 +566,17 @@ export default function NotificationsTab() {
                                   icon={<ExperimentOutlined style={{ color: p.accent }} />}
                                   loading={testingEvent === testKey}
                                   onClick={() => handleTestEvent(ch.id, ev)}
+                                  style={{ borderRadius: 4 }}
+                                />
+                              </Tooltip>
+                            </td>
+                            <td style={{ textAlign: 'center', padding: '8px 4px', borderBottom: `1px solid ${p.border}` }}>
+                              <Tooltip title={customized ? 'Custom template (click to edit)' : 'Customize template'}>
+                                <Button
+                                  size="small"
+                                  type="text"
+                                  icon={<FormOutlined style={{ color: customized ? '#52c41a' : p.textSoft }} />}
+                                  onClick={() => openTemplateEditor(ch.id, ev)}
                                   style={{ borderRadius: 4 }}
                                 />
                               </Tooltip>
@@ -588,6 +680,144 @@ export default function NotificationsTab() {
   );
 
   /* ================================================================ */
+  /*  Template Editor Modal                                            */
+  /* ================================================================ */
+  const tplInfo = eventLabel(tplEventType);
+  const tplChannel = channels.find((c) => c.id === tplChannelId);
+
+  const renderTemplateModal = () => (
+    <Modal
+      open={tplModal}
+      title={
+        <span>
+          <FormOutlined style={{ marginRight: 8 }} />
+          Customize Template — {tplInfo.emoji} {tplInfo.label}
+          {tplChannel && <Text type="secondary" style={{ marginLeft: 8, fontSize: 13 }}>
+            via {tplChannel.type === 'email' ? '📧' : '📨'} {tplChannel.name}
+          </Text>}
+        </span>
+      }
+      width={640}
+      onCancel={() => setTplModal(false)}
+      footer={
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <Button icon={<UndoOutlined />} onClick={handleResetTemplate}>
+            Reset to Default
+          </Button>
+          <Space>
+            <Button onClick={() => setTplModal(false)}>Cancel</Button>
+            <Button type="primary" loading={tplSaving} onClick={handleSaveTemplate}>
+              Save Template
+            </Button>
+          </Space>
+        </div>
+      }
+      destroyOnClose
+    >
+      <div style={{ marginBottom: 16 }}>
+        <div style={{
+          padding: '10px 14px',
+          borderRadius: 8,
+          background: isDark ? 'rgba(24,144,255,0.08)' : '#e6f7ff',
+          border: `1px solid ${isDark ? 'rgba(24,144,255,0.2)' : '#91d5ff'}`,
+          fontSize: 12,
+          color: p.text,
+          lineHeight: 1.7,
+        }}>
+          <strong>Available variables:</strong><br />
+          <code style={{ fontSize: 11 }}>{tplVariables || '{{.Title}}, {{.Detail}}, {{.EventType}}, {{.Severity}}, {{.Timestamp}}, {{.ServerName}}, {{.PanelURL}}'}</code><br />
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            Leave fields empty to use the default template. Variables use Go template syntax.
+          </Text>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ fontWeight: 600, fontSize: 13, color: p.text, display: 'block', marginBottom: 4 }}>
+          Subject / Title
+        </label>
+        <Input
+          value={tplSubject}
+          onChange={(e) => setTplSubject(e.target.value)}
+          placeholder={tplDefaultSubject || 'Leave empty for default'}
+          style={{ fontFamily: 'monospace', fontSize: 12 }}
+        />
+        {tplDefaultSubject && (
+          <Text type="secondary" style={{ fontSize: 11 }}>Default: {tplDefaultSubject}</Text>
+        )}
+      </div>
+
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ fontWeight: 600, fontSize: 13, color: p.text, display: 'block', marginBottom: 4 }}>
+          Body / Message
+        </label>
+        <TextArea
+          value={tplBody}
+          onChange={(e) => setTplBody(e.target.value)}
+          placeholder={tplDefaultBody || 'Leave empty for default'}
+          rows={6}
+          style={{ fontFamily: 'monospace', fontSize: 12 }}
+        />
+        {tplDefaultBody && (
+          <details style={{ marginTop: 4 }}>
+            <summary style={{ fontSize: 11, color: p.textSoft, cursor: 'pointer' }}>
+              Show default body
+            </summary>
+            <pre style={{ fontSize: 11, color: p.textSoft, margin: '4px 0 0', whiteSpace: 'pre-wrap', background: isDark ? 'rgba(0,0,0,0.2)' : '#f5f5f5', padding: 8, borderRadius: 6 }}>
+              {tplDefaultBody}
+            </pre>
+          </details>
+        )}
+      </div>
+
+      <div style={{ marginBottom: 8 }}>
+        <Space>
+          <Button
+            size="small"
+            icon={<EyeOutlined />}
+            loading={tplPreviewing}
+            onClick={() => handlePreviewTemplate(tplBody || tplDefaultBody)}
+            style={{ borderRadius: 4 }}
+          >
+            Preview Body
+          </Button>
+          {tplSubject && (
+            <Button
+              size="small"
+              icon={<EyeOutlined />}
+              loading={tplPreviewing}
+              onClick={() => handlePreviewTemplate(tplSubject || tplDefaultSubject)}
+              style={{ borderRadius: 4 }}
+            >
+              Preview Subject
+            </Button>
+          )}
+        </Space>
+      </div>
+
+      {tplPreview && (
+        <div style={{
+          padding: 12,
+          borderRadius: 8,
+          background: isDark ? 'rgba(0,0,0,0.3)' : '#fafafa',
+          border: `1px solid ${p.border}`,
+          fontSize: 12,
+          whiteSpace: 'pre-wrap',
+          fontFamily: 'monospace',
+          maxHeight: 200,
+          overflow: 'auto',
+          color: p.text,
+        }}>
+          <Text type="secondary" style={{ fontSize: 10, display: 'block', marginBottom: 6 }}>
+            Preview (with sample data):
+          </Text>
+          {tplPreview}
+        </div>
+      )}
+    </Modal>
+  );
+
+  /* ================================================================ */
   /*  MAIN RENDER                                                      */
   /* ================================================================ */
   return (
@@ -603,6 +833,8 @@ export default function NotificationsTab() {
       {section === 'channels' && renderChannels()}
       {section === 'rules' && renderRules()}
       {section === 'logs' && renderLogs()}
+
+      {renderTemplateModal()}
     </Spin>
   );
 }

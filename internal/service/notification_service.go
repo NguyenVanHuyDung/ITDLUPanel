@@ -1,11 +1,14 @@
 package service
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
+	"text/template"
 	"time"
 
 	"github.com/ITDLUPanel/panel/internal/config"
@@ -82,10 +85,12 @@ type NotificationChannel struct {
 
 // NotificationRule maps an event type to a channel.
 type NotificationRule struct {
-	ID        int64  `json:"id"`
-	EventType string `json:"event_type"`
-	ChannelID int64  `json:"channel_id"`
-	IsEnabled bool   `json:"is_enabled"`
+	ID            int64  `json:"id"`
+	EventType     string `json:"event_type"`
+	ChannelID     int64  `json:"channel_id"`
+	IsEnabled     bool   `json:"is_enabled"`
+	CustomSubject string `json:"custom_subject,omitempty"`
+	CustomBody    string `json:"custom_body,omitempty"`
 }
 
 // NotificationLog records a sent notification.
@@ -175,7 +180,7 @@ func (s *NotificationService) dispatchAsync(evt NotificationEvent) {
 
 	// Query rules for this event type.
 	rows, err := s.db.Query(`
-		SELECT nc.id, nc.type, nc.name, nc.config
+		SELECT nc.id, nc.type, nc.name, nc.config, COALESCE(nr.custom_subject,''), COALESCE(nr.custom_body,'')
 		FROM notification_rules nr
 		JOIN notification_channels nc ON nr.channel_id = nc.id
 		WHERE nr.event_type = ? AND nr.is_enabled = 1 AND nc.is_enabled = 1`,
@@ -190,21 +195,32 @@ func (s *NotificationService) dispatchAsync(evt NotificationEvent) {
 
 	for rows.Next() {
 		var ch NotificationChannel
-		if err := rows.Scan(&ch.ID, &ch.Type, &ch.Name, &ch.Config); err != nil {
+		var customSubject, customBody string
+		if err := rows.Scan(&ch.ID, &ch.Type, &ch.Name, &ch.Config, &customSubject, &customBody); err != nil {
 			logger.Error().Err(err).Msg("notification: scan channel failed")
 			continue
 		}
 
+		tplVars := TemplateVars{
+			Title:      evt.Title,
+			Detail:     evt.Detail,
+			EventType:  evt.Type,
+			Severity:   evt.Severity,
+			Timestamp:  time.Now().Format("2006-01-02 15:04:05 MST"),
+			ServerName: s.serverName(),
+			PanelURL:   panelURL,
+		}
+
 		switch ch.Type {
 		case "email":
-			s.sendEmail(ch, evt, panelURL)
+			s.sendEmail(ch, evt, panelURL, customSubject, customBody, tplVars)
 		case "telegram":
-			s.sendTelegram(ch, evt)
+			s.sendTelegram(ch, evt, customBody, tplVars)
 		}
 	}
 }
 
-func (s *NotificationService) sendEmail(ch NotificationChannel, evt NotificationEvent, panelURL string) {
+func (s *NotificationService) sendEmail(ch NotificationChannel, evt NotificationEvent, panelURL, customSubject, customBody string, vars TemplateVars) {
 	cfg, err := s.email.ParseConfig(ch.Config)
 	if err != nil {
 		s.logNotification(evt.Type, "email", "", evt.Title, "", "failed", err.Error())
@@ -212,7 +228,21 @@ func (s *NotificationService) sendEmail(ch NotificationChannel, evt Notification
 	}
 
 	subject := fmt.Sprintf("[%s] %s", strings.ToUpper(evt.Severity), evt.Title)
-	body := s.email.FormatEventEmail(evt.Type, evt.Severity, evt.Title, evt.Detail, panelURL)
+	if customSubject != "" {
+		if rendered, err := renderTemplate(customSubject, vars); err == nil {
+			subject = rendered
+		}
+	}
+
+	var body string
+	if customBody != "" {
+		if rendered, err := renderTemplate(customBody, vars); err == nil {
+			body = s.email.FormatCustomEmail(evt.Type, evt.Severity, subject, rendered, panelURL)
+		}
+	}
+	if body == "" {
+		body = s.email.FormatEventEmail(evt.Type, evt.Severity, evt.Title, evt.Detail, panelURL)
+	}
 
 	recipient := cfg.ToAddr
 	if recipient == "" {
@@ -226,14 +256,22 @@ func (s *NotificationService) sendEmail(ch NotificationChannel, evt Notification
 	s.logNotification(evt.Type, "email", recipient, subject, "", "sent", "")
 }
 
-func (s *NotificationService) sendTelegram(ch NotificationChannel, evt NotificationEvent) {
+func (s *NotificationService) sendTelegram(ch NotificationChannel, evt NotificationEvent, customBody string, vars TemplateVars) {
 	cfg, err := s.telegram.ParseConfig(ch.Config)
 	if err != nil {
 		s.logNotification(evt.Type, "telegram", "", evt.Title, "", "failed", err.Error())
 		return
 	}
 
-	msg := s.telegram.FormatEventMessage(evt.Type, evt.Severity, evt.Title, evt.Detail)
+	var msg string
+	if customBody != "" {
+		if rendered, err := renderTemplate(customBody, vars); err == nil {
+			msg = rendered
+		}
+	}
+	if msg == "" {
+		msg = s.telegram.FormatEventMessage(evt.Type, evt.Severity, evt.Title, evt.Detail)
+	}
 	if err := s.telegram.Send(cfg, msg); err != nil {
 		logger.Error().Err(err).Str("channel", ch.Name).Msg("notification: telegram send failed")
 		s.logNotification(evt.Type, "telegram", cfg.ChatID, evt.Title, msg, "failed", err.Error())
@@ -525,7 +563,7 @@ func sampleEventData(eventType string) sampleEvent {
 
 // ListRules returns all notification rules.
 func (s *NotificationService) ListRules() ([]NotificationRule, error) {
-	rows, err := s.db.Query(`SELECT id, event_type, channel_id, is_enabled FROM notification_rules ORDER BY event_type, channel_id`)
+	rows, err := s.db.Query(`SELECT id, event_type, channel_id, is_enabled, COALESCE(custom_subject,''), COALESCE(custom_body,'') FROM notification_rules ORDER BY event_type, channel_id`)
 	if err != nil {
 		return nil, err
 	}
@@ -535,7 +573,7 @@ func (s *NotificationService) ListRules() ([]NotificationRule, error) {
 	for rows.Next() {
 		var r NotificationRule
 		var enabled int
-		if err := rows.Scan(&r.ID, &r.EventType, &r.ChannelID, &enabled); err != nil {
+		if err := rows.Scan(&r.ID, &r.EventType, &r.ChannelID, &enabled, &r.CustomSubject, &r.CustomBody); err != nil {
 			return nil, err
 		}
 		r.IsEnabled = enabled == 1
@@ -585,9 +623,11 @@ func (s *NotificationService) UpdateRule(id int64, enabled bool) error {
 // BulkUpsertRules creates or updates multiple rules at once.
 // Each entry specifies a channel_id, event_type, and is_enabled flag.
 func (s *NotificationService) BulkUpsertRules(rules []struct {
-	ChannelID int64  `json:"channel_id"`
-	EventType string `json:"event_type"`
-	IsEnabled bool   `json:"is_enabled"`
+	ChannelID     int64  `json:"channel_id"`
+	EventType     string `json:"event_type"`
+	IsEnabled     bool   `json:"is_enabled"`
+	CustomSubject string `json:"custom_subject"`
+	CustomBody    string `json:"custom_body"`
 }) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -601,15 +641,15 @@ func (s *NotificationService) BulkUpsertRules(rules []struct {
 			en = 1
 		}
 		// Upsert: try update first, if no rows affected, insert.
-		res, err := tx.Exec(`UPDATE notification_rules SET is_enabled = ? WHERE channel_id = ? AND event_type = ?`,
-			en, r.ChannelID, r.EventType)
+		res, err := tx.Exec(`UPDATE notification_rules SET is_enabled = ?, custom_subject = ?, custom_body = ? WHERE channel_id = ? AND event_type = ?`,
+			en, r.CustomSubject, r.CustomBody, r.ChannelID, r.EventType)
 		if err != nil {
 			return err
 		}
 		n, _ := res.RowsAffected()
 		if n == 0 {
-			_, err = tx.Exec(`INSERT INTO notification_rules (event_type, channel_id, is_enabled) VALUES (?, ?, ?)`,
-				r.EventType, r.ChannelID, en)
+			_, err = tx.Exec(`INSERT INTO notification_rules (event_type, channel_id, is_enabled, custom_subject, custom_body) VALUES (?, ?, ?, ?, ?)`,
+				r.EventType, r.ChannelID, en, r.CustomSubject, r.CustomBody)
 			if err != nil {
 				return err
 			}
@@ -699,4 +739,139 @@ func maskSensitiveConfig(chType, raw string) string {
 
 	out, _ := json.Marshal(m)
 	return string(out)
+}
+
+// ---------------------------------------------------------------------------
+// Template Variables & Rendering
+// ---------------------------------------------------------------------------
+
+// TemplateVars are the variables available in custom notification templates.
+type TemplateVars struct {
+	Title      string
+	Detail     string
+	EventType  string
+	Severity   string
+	Timestamp  string
+	ServerName string
+	PanelURL   string
+}
+
+// renderTemplate renders a Go text/template with the given variables.
+func renderTemplate(tpl string, vars TemplateVars) (string, error) {
+	t, err := template.New("notif").Parse(tpl)
+	if err != nil {
+		return "", err
+	}
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, vars); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+func (s *NotificationService) serverName() string {
+	hostname, _ := os.Hostname()
+	if hostname == "" {
+		hostname = "ITDLUPanel Server"
+	}
+	return hostname
+}
+
+// DefaultTemplates returns the default subject/body templates for an event type.
+func (s *NotificationService) DefaultTemplates(eventType string) map[string]string {
+	subjects := map[string]string{
+		"cron_success":            "[SUCCESS] Cron Job Completed: {{.Title}}",
+		"cron_failed":             "[FAILED] Cron Job Failed: {{.Title}}",
+		"ssl_expiry_warning":      "[WARNING] SSL Certificate Expiring: {{.Title}}",
+		"ssl_expired":             "[CRITICAL] SSL Certificate Expired: {{.Title}}",
+		"backup_completed":        "[SUCCESS] Backup Completed: {{.Title}}",
+		"backup_failed":           "[FAILED] Backup Failed: {{.Title}}",
+		"software_installed":      "[INFO] Software Installed: {{.Title}}",
+		"software_install_failed": "[FAILED] Software Install Failed: {{.Title}}",
+		"site_created":            "[INFO] Website Created: {{.Title}}",
+		"site_deleted":            "[WARNING] Website Deleted: {{.Title}}",
+		"cpu_high":                "[WARNING] High CPU Usage: {{.Title}}",
+		"memory_high":             "[WARNING] High Memory Usage: {{.Title}}",
+		"disk_high":               "[CRITICAL] Disk Space Low: {{.Title}}",
+		"service_down":            "[CRITICAL] Service Down: {{.Title}}",
+		"login_failed":            "[WARNING] Failed Login Attempt: {{.Title}}",
+	}
+	bodies := map[string]string{
+		"cron_success":            "{{.Title}}\n\nServer: {{.ServerName}}\nTime: {{.Timestamp}}\n\n{{.Detail}}",
+		"cron_failed":             "{{.Title}}\n\nServer: {{.ServerName}}\nTime: {{.Timestamp}}\n\n{{.Detail}}\n\nPlease check the cron job configuration.",
+		"ssl_expiry_warning":      "{{.Title}}\n\nServer: {{.ServerName}}\nTime: {{.Timestamp}}\n\n{{.Detail}}\n\nRenew the certificate to prevent service disruption.",
+		"ssl_expired":             "{{.Title}}\n\nServer: {{.ServerName}}\nTime: {{.Timestamp}}\n\n{{.Detail}}\n\n⚠️ Immediate renewal required!",
+		"backup_completed":        "{{.Title}}\n\nServer: {{.ServerName}}\nTime: {{.Timestamp}}\n\n{{.Detail}}",
+		"backup_failed":           "{{.Title}}\n\nServer: {{.ServerName}}\nTime: {{.Timestamp}}\n\n{{.Detail}}\n\nCheck storage space and permissions.",
+		"software_installed":      "{{.Title}}\n\nServer: {{.ServerName}}\nTime: {{.Timestamp}}\n\n{{.Detail}}",
+		"software_install_failed": "{{.Title}}\n\nServer: {{.ServerName}}\nTime: {{.Timestamp}}\n\n{{.Detail}}",
+		"site_created":            "{{.Title}}\n\nServer: {{.ServerName}}\nTime: {{.Timestamp}}\n\n{{.Detail}}",
+		"site_deleted":            "{{.Title}}\n\nServer: {{.ServerName}}\nTime: {{.Timestamp}}\n\n{{.Detail}}",
+		"cpu_high":                "{{.Title}}\n\nServer: {{.ServerName}}\nTime: {{.Timestamp}}\n\n{{.Detail}}",
+		"memory_high":             "{{.Title}}\n\nServer: {{.ServerName}}\nTime: {{.Timestamp}}\n\n{{.Detail}}",
+		"disk_high":               "{{.Title}}\n\nServer: {{.ServerName}}\nTime: {{.Timestamp}}\n\n{{.Detail}}\n\n⚠️ Free up space immediately!",
+		"service_down":            "{{.Title}}\n\nServer: {{.ServerName}}\nTime: {{.Timestamp}}\n\n{{.Detail}}\n\n⚠️ Service may need manual restart.",
+		"login_failed":            "{{.Title}}\n\nServer: {{.ServerName}}\nTime: {{.Timestamp}}\n\n{{.Detail}}\n\nReview security settings if this was unexpected.",
+	}
+
+	subj := subjects[eventType]
+	if subj == "" {
+		subj = "[{{.Severity}}] {{.Title}}"
+	}
+	body := bodies[eventType]
+	if body == "" {
+		body = "{{.Title}}\n\nServer: {{.ServerName}}\nTime: {{.Timestamp}}\n\n{{.Detail}}"
+	}
+
+	return map[string]string{
+		"default_subject": subj,
+		"default_body":    body,
+		"variables":       "{{.Title}}, {{.Detail}}, {{.EventType}}, {{.Severity}}, {{.Timestamp}}, {{.ServerName}}, {{.PanelURL}}",
+	}
+}
+
+// SaveRuleTemplate saves custom subject/body for a specific rule.
+func (s *NotificationService) SaveRuleTemplate(channelID int64, eventType, customSubject, customBody string) error {
+	res, err := s.db.Exec(
+		`UPDATE notification_rules SET custom_subject = ?, custom_body = ? WHERE channel_id = ? AND event_type = ?`,
+		customSubject, customBody, channelID, eventType)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		// Rule doesn't exist yet — create it (disabled by default).
+		_, err = s.db.Exec(
+			`INSERT INTO notification_rules (event_type, channel_id, is_enabled, custom_subject, custom_body) VALUES (?, ?, 0, ?, ?)`,
+			eventType, channelID, customSubject, customBody)
+		return err
+	}
+	return nil
+}
+
+// GetRuleTemplate returns the custom template for a rule, or empty strings.
+func (s *NotificationService) GetRuleTemplate(channelID int64, eventType string) (string, string, error) {
+	var subj, body string
+	err := s.db.QueryRow(
+		`SELECT COALESCE(custom_subject,''), COALESCE(custom_body,'') FROM notification_rules WHERE channel_id = ? AND event_type = ?`,
+		channelID, eventType).Scan(&subj, &body)
+	if err == sql.ErrNoRows {
+		return "", "", nil
+	}
+	return subj, body, err
+}
+
+// PreviewTemplate renders a template with sample data and returns the result.
+func (s *NotificationService) PreviewTemplate(tpl string, eventType string) (string, error) {
+	sample := sampleEventData(eventType)
+	vars := TemplateVars{
+		Title:      sample.title,
+		Detail:     sample.detail,
+		EventType:  eventType,
+		Severity:   EventSeverity(eventType),
+		Timestamp:  time.Now().Format("2006-01-02 15:04:05 MST"),
+		ServerName: s.serverName(),
+		PanelURL:   s.panelURL(),
+	}
+	return renderTemplate(tpl, vars)
 }
