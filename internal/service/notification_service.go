@@ -306,7 +306,15 @@ func (s *NotificationService) GetChannel(id int64) (*NotificationChannel, error)
 
 // GetChannelRaw returns a channel with unmasked config (internal use).
 func (s *NotificationService) GetChannelRaw(id int64) (*NotificationChannel, error) {
-	return s.GetChannel(id)
+	var ch NotificationChannel
+	var enabled int
+	err := s.db.QueryRow(`SELECT id, type, name, config, is_enabled, created_at, updated_at FROM notification_channels WHERE id = ?`, id).
+		Scan(&ch.ID, &ch.Type, &ch.Name, &ch.Config, &enabled, &ch.CreatedAt, &ch.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	ch.IsEnabled = enabled == 1
+	return &ch, nil
 }
 
 // CriticalEventTypes returns event types that should be auto-enabled for new channels.

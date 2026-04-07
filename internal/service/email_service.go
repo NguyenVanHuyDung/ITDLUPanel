@@ -12,13 +12,21 @@ import (
 
 // EmailConfig holds SMTP configuration for sending email notifications.
 type EmailConfig struct {
-	Host       string `json:"host"`
-	Port       int    `json:"port"`
-	Username   string `json:"username"`
-	Password   string `json:"password"`
-	FromAddr   string `json:"from"`
-	Encryption string `json:"encryption"`
-	ToAddr     string `json:"to"`
+	Host       string          `json:"host"`
+	Port       json.Number     `json:"port"`
+	Username   string          `json:"username"`
+	Password   string          `json:"password"`
+	FromAddr   string          `json:"from"`
+	Encryption string          `json:"encryption"`
+	ToAddr     string          `json:"to"`
+}
+
+func (c EmailConfig) PortInt() int {
+	n, _ := c.Port.Int64()
+	if n == 0 {
+		n = 587
+	}
+	return int(n)
 }
 
 // EmailService sends email notifications via SMTP.
@@ -59,9 +67,9 @@ func (s *EmailService) Send(cfg EmailConfig, to, subject, htmlBody string) error
 	msg.WriteString("\r\n")
 	msg.WriteString(htmlBody)
 
-	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.PortInt())
 
-	if cfg.Encryption == "ssl" || cfg.Port == 465 {
+	if cfg.Encryption == "ssl" || cfg.PortInt() == 465 {
 		return s.sendTLS(cfg, addr, to, msg.String())
 	}
 	return s.sendStartTLS(cfg, addr, to, msg.String())
