@@ -255,7 +255,10 @@ export default function Dashboard() {
   const fetchSoftware = useCallback(async () => {
     try {
       const { data: resp } = await api.get('/software');
-      if (resp.data?.installed) setInstalledSoftware(resp.data.installed);
+      if (resp.data?.installed) {
+        const storageNames = ['ftp_storage', 's3_storage', 'google_drive', 'onedrive'];
+        setInstalledSoftware(resp.data.installed.filter((s: Software) => !storageNames.includes(s.name)));
+      }
     } catch { /* ignore */ }
   }, []);
 
