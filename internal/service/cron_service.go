@@ -442,6 +442,22 @@ func truncateOutput(s string, maxLen int) string {
 	return s[:maxLen] + "\n... (truncated)"
 }
 
+// ensureCronTZ prepends CRON_TZ=<system timezone> to the crontab if not present.
+// This guarantees cron interprets schedules in the correct timezone even if the
+// cron daemon was started before the system TZ was configured.
+func ensureCronTZ(crontab string) string {
+	if strings.Contains(crontab, "CRON_TZ=") {
+		return crontab
+	}
+	tz := "Asia/Ho_Chi_Minh"
+	if data, err := os.ReadFile("/etc/timezone"); err == nil {
+		if t := strings.TrimSpace(string(data)); t != "" {
+			tz = t
+		}
+	}
+	return fmt.Sprintf("CRON_TZ=%s\n%s", tz, crontab)
+}
+
 // syncCrontab adds or updates a crontab entry for the given cron job ID.
 func (s *CronService) syncCrontab(id int64, schedule, command string, add bool) error {
 	_ = os.MkdirAll(cronLogDir, 0755)
@@ -480,9 +496,27 @@ func (s *CronService) syncCrontab(id int64, schedule, command string, add bool) 
 		newLines = append(newLines, fmt.Sprintf("%s %s", schedule, command))
 	}
 
-	newCrontab := strings.Join(newLines, "\n")
+	// Collapse consecutive blank lines to keep crontab tidy.
+	var cleaned []string
+	prevBlank := false
+	for _, line := range newLines {
+		if strings.TrimSpace(line) == "" {
+			if prevBlank {
+				continue
+			}
+			prevBlank = true
+		} else {
+			prevBlank = false
+		}
+		cleaned = append(cleaned, line)
+	}
+
+	newCrontab := strings.Join(cleaned, "\n")
 	// Ensure the crontab ends with a newline.
 	newCrontab = strings.TrimRight(newCrontab, "\n") + "\n"
+
+	// Ensure CRON_TZ is set at the top so cron uses the system timezone.
+	newCrontab = ensureCronTZ(newCrontab)
 
 	// Write the new crontab via stdin to `crontab -`.
 	ctx2, cancel2 := context.WithTimeout(context.Background(), 10*time.Second)
