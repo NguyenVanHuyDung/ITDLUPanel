@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/ITDLUPanel/panel/internal/app"
@@ -125,6 +126,22 @@ func main() {
 	fmt.Println("\nShutting down...")
 }
 
+// installDir returns the panel installation directory derived from the
+// running executable's location (binary lives at <install>/bin/itdlupanel).
+// Falls back to the parent of the config file's directory.
+func installDir(configPath string) string {
+	if exe, err := os.Executable(); err == nil {
+		if real, err2 := filepath.EvalSymlinks(exe); err2 == nil {
+			exe = real
+		}
+		dir := filepath.Dir(filepath.Dir(exe))
+		if _, err := os.Stat(dir); err == nil {
+			return dir
+		}
+	}
+	return filepath.Dir(filepath.Dir(configPath))
+}
+
 // resolveConfig returns the config path, auto-detecting if empty.
 func resolveConfig(path string) string {
 	if path != "" {
@@ -183,6 +200,11 @@ func runBackupCommand() {
 	}
 
 	cp := resolveConfig(*cfgPath)
+
+	// Change working directory to install directory for relative paths.
+	rootDir := installDir(cp)
+	_ = os.Chdir(rootDir)
+
 	_, err := config.Load(cp)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
@@ -190,7 +212,12 @@ func runBackupCommand() {
 	}
 	cfg := config.Get()
 
-	db, err := database.New(cfg.Database.Path)
+	dbPath := cfg.Database.Path
+	if !filepath.IsAbs(dbPath) {
+		dbPath = filepath.Join(rootDir, dbPath)
+	}
+
+	db, err := database.New(dbPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open database: %v\n", err)
 		os.Exit(1)
@@ -344,6 +371,15 @@ func runCronCommand() {
 	}
 
 	cp := resolveConfig(*cfgPath)
+
+	// Change working directory to the install directory so relative paths
+	// (e.g. "data/panel.db") resolve correctly when called from cron.
+	rootDir := installDir(cp)
+	if err := os.Chdir(rootDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to chdir to %s: %v\n", rootDir, err)
+		os.Exit(1)
+	}
+
 	_, err := config.Load(cp)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
@@ -351,7 +387,13 @@ func runCronCommand() {
 	}
 	cfg := config.Get()
 
-	db, err := database.New(cfg.Database.Path)
+	// Resolve database path relative to install directory.
+	dbPath := cfg.Database.Path
+	if !filepath.IsAbs(dbPath) {
+		dbPath = filepath.Join(rootDir, dbPath)
+	}
+
+	db, err := database.New(dbPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open database: %v\n", err)
 		os.Exit(1)
