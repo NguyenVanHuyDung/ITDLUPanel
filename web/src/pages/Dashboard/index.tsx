@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, Col, Progress, Row, Typography, Spin, Button, Select, Space, Popover, Tag } from 'antd';
 import { ReloadOutlined, SyncOutlined, CloudServerOutlined, CloudOutlined, HddOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import api from '@/services/api';
 import { panelDayjs } from '@/lib/datetime';
@@ -221,6 +222,7 @@ interface ProcessInfo {
 export default function Dashboard() {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
+  const navigate = useNavigate();
   const { p, isDark } = usePalette();
   const [loading, setLoading] = useState(true);
   const [info, setInfo] = useState<SystemInfo | null>(null);
@@ -832,16 +834,26 @@ export default function Dashboard() {
                 {installedSoftware.map(sw => {
                   const running = sw.status === 1;
                   const swIcon = getSoftwareIcon(sw.name);
+                  const clickable = ['nginx', 'phpmyadmin', 'php', 'pureftpd', 'mysql', 'redis', 'docker'].includes(sw.name);
                   return (
                     <div key={sw.name} style={{
                       display: 'flex', alignItems: 'center', gap: 10,
                       padding: '10px 12px', borderRadius: 8,
-                      border: '1px solid #f0f0f0', background: '#fafafa',
-                      cursor: (sw.name === 'nginx' || sw.name === 'phpmyadmin' || sw.name === 'php' || sw.name === 'pureftpd' || sw.name === 'mysql' || sw.name === 'redis') ? 'pointer' : 'default',
+                      border: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}`,
+                      background: isDark ? p.card : '#fafafa',
+                      cursor: clickable ? 'pointer' : 'default',
                       transition: 'box-shadow 0.15s',
                     }}
-                    onClick={() => { if (sw.name === 'nginx') setNginxModalOpen(true); if (sw.name === 'phpmyadmin') setPmaModalOpen(true); if (sw.name === 'php') setPhpModalOpen(true); if (sw.name === 'pureftpd') setFtpModalOpen(true); if (sw.name === 'mysql') setMariadbModalOpen(true); if (sw.name === 'redis') setRedisModalOpen(true); }}
-                    onMouseEnter={e => { if (sw.name === 'nginx' || sw.name === 'phpmyadmin' || sw.name === 'php' || sw.name === 'pureftpd' || sw.name === 'mysql' || sw.name === 'redis') e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)'; }}
+                    onClick={() => {
+                      if (sw.name === 'nginx') setNginxModalOpen(true);
+                      if (sw.name === 'phpmyadmin') setPmaModalOpen(true);
+                      if (sw.name === 'php') setPhpModalOpen(true);
+                      if (sw.name === 'pureftpd') setFtpModalOpen(true);
+                      if (sw.name === 'mysql') setMariadbModalOpen(true);
+                      if (sw.name === 'redis') setRedisModalOpen(true);
+                      if (sw.name === 'docker') navigate('/docker');
+                    }}
+                    onMouseEnter={e => { if (clickable) e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)'; }}
                     onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}
                     >
                       <div style={{
@@ -851,10 +863,10 @@ export default function Dashboard() {
                         {swIcon}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 600, fontSize: 13, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontWeight: 600, fontSize: 13, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: isDark ? p.text : undefined }}>
                           {sw.display_name}
                         </div>
-                        <div style={{ fontSize: 11, color: '#999' }}>{sw.version}</div>
+                        <div style={{ fontSize: 11, color: isDark ? p.textMuted : '#999' }}>{sw.version}</div>
                       </div>
                       <div style={{ width: 8, height: 8, borderRadius: '50%', background: running ? '#4CAF50' : '#d9d9d9', flexShrink: 0 }} />
                     </div>

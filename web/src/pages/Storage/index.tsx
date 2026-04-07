@@ -251,7 +251,8 @@ export default function Storage() {
                 border: `1px solid ${p.cardBorder}`,
                 borderRadius: 12,
                 padding: 20,
-                position: 'relative',
+                display: 'flex',
+                flexDirection: 'column',
                 transition: 'all 0.2s',
               }}>
                 {/* Icon + status row */}
@@ -280,16 +281,17 @@ export default function Storage() {
                 </div>
 
                 {/* Description */}
-                <div style={{ fontSize: 12, color: p.textMuted, marginBottom: 16, lineHeight: 1.5 }}>
+                <div style={{ fontSize: 12, color: p.textMuted, lineHeight: 1.5 }}>
                   {prov.description}
                 </div>
 
                 {/* Connection count (only when installed) */}
-                {prov.installed && (
-                  <div style={{ fontSize: 11, color: p.textDim, marginBottom: 12 }}>
-                    {prov.count} connection{prov.count !== 1 ? 's' : ''} configured
-                  </div>
-                )}
+                <div style={{ fontSize: 11, color: p.textDim, marginTop: 8, visibility: prov.installed ? 'visible' : 'hidden' }}>
+                  {prov.count} connection{prov.count !== 1 ? 's' : ''} configured
+                </div>
+
+                {/* Spacer pushes actions to bottom */}
+                <div style={{ flex: 1, minHeight: 12 }} />
 
                 {/* Actions */}
                 {prov.installed ? (
