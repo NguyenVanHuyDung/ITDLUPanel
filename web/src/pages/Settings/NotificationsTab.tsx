@@ -318,95 +318,216 @@ export default function NotificationsTab() {
   };
 
   /* ---------- Nav buttons ---------- */
-  const navBtn = (key: typeof section, icon: React.ReactNode, label: string) => (
-    <Button
-      type={section === key ? 'primary' : 'default'}
-      icon={icon}
+  const navBtn = (key: typeof section, icon: React.ReactNode, label: string, count?: number) => (
+    <button
       onClick={() => setSection(key)}
-      style={{ borderRadius: 6 }}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+        border: section === key ? `1.5px solid ${p.accent}` : `1px solid ${p.cardBorder}`,
+        background: section === key ? `${p.accent}14` : 'transparent',
+        color: section === key ? p.accent : p.textMuted,
+        cursor: 'pointer', transition: 'all 0.15s',
+      }}
     >
+      {icon}
       {label}
-    </Button>
+      {count !== undefined && count > 0 && (
+        <span style={{
+          fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 8,
+          background: section === key ? `${p.accent}25` : `${p.textMuted}18`,
+          color: section === key ? p.accent : p.textMuted,
+        }}>{count}</span>
+      )}
+    </button>
   );
 
   /* ================================================================ */
-  /*  RENDER: Channels                                                 */
+  /*  RENDER: Channels — modern card design                            */
   /* ================================================================ */
-  const renderChannels = () => (
-    <div style={sectionBox}>
-      {sectionTitle(<BellOutlined style={{ color: p.accent }} />, 'Notification Channels')}
-      <div style={{ marginBottom: 12 }}>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openNewChannel} style={{ borderRadius: 6 }}>
-          Add Channel
-        </Button>
+  const renderChannels = () => {
+    const emailIcon = (
+      <div style={{
+        width: 44, height: 44, borderRadius: 12,
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        boxShadow: '0 4px 12px rgba(102,126,234,0.3)',
+      }}>
+        <MailOutlined style={{ fontSize: 22, color: '#fff' }} />
       </div>
+    );
+    const telegramIcon = (
+      <div style={{
+        width: 44, height: 44, borderRadius: 12,
+        background: 'linear-gradient(135deg, #0088cc 0%, #00b4d8 100%)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        boxShadow: '0 4px 12px rgba(0,136,204,0.3)',
+      }}>
+        <SendOutlined style={{ fontSize: 22, color: '#fff' }} />
+      </div>
+    );
 
-      {channels.length === 0 ? (
-        <Empty description="No notification channels configured" />
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {channels.map((ch) => {
-            const cfg = parseConfig(ch.config);
-            return (
-            <div
-              key={ch.id}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '10px 14px',
-                borderRadius: 8,
-                background: isDark ? p.card : '#fff',
-                border: `1px solid ${p.cardBorder}`,
-                flexWrap: 'wrap',
-                gap: 8,
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                {ch.type === 'email' ? (
-                  <MailOutlined style={{ fontSize: 20, color: '#1890ff' }} />
-                ) : (
-                  <SendOutlined style={{ fontSize: 20, color: '#0088cc' }} />
-                )}
-                <div>
-                  <div style={{ fontWeight: 600, color: p.text }}>{ch.name}</div>
-                  <div style={{ fontSize: 12, color: p.textMuted }}>
-                    {ch.type === 'email'
-                      ? `${cfg.host || ''}:${cfg.port || ''} → ${cfg.to || ''}`
-                      : `Chat ID: ${cfg.chat_id || ''}`}
+    return (
+      <div style={sectionBox}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <BellOutlined style={{ fontSize: 18, color: p.accent }} />
+            <span style={{ fontSize: 17, fontWeight: 700, color: p.text }}>Notification Channels</span>
+            {channels.length > 0 && (
+              <span style={{
+                fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10,
+                background: `${p.accent}18`, color: p.accent,
+              }}>{channels.length}</span>
+            )}
+          </div>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openNewChannel}
+            style={{ borderRadius: 8, fontWeight: 600, height: 36, boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
+            Add Channel
+          </Button>
+        </div>
+
+        {channels.length === 0 ? (
+          <div style={{
+            textAlign: 'center', padding: '48px 20px',
+            borderRadius: 12, border: `2px dashed ${p.cardBorder}`,
+            background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)',
+          }}>
+            <BellOutlined style={{ fontSize: 40, color: p.textDim, marginBottom: 12 }} />
+            <div style={{ fontSize: 15, fontWeight: 600, color: p.text, marginBottom: 4 }}>No channels configured</div>
+            <div style={{ fontSize: 13, color: p.textMuted, marginBottom: 16 }}>Add an Email or Telegram channel to start receiving notifications</div>
+            <Button type="primary" icon={<PlusOutlined />} onClick={openNewChannel} style={{ borderRadius: 8 }}>
+              Add Your First Channel
+            </Button>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(380px, 1fr))', gap: 14 }}>
+            {channels.map((ch) => {
+              const cfg = parseConfig(ch.config);
+              const isEmail = ch.type === 'email';
+              return (
+                <div key={ch.id} style={{
+                  borderRadius: 12, overflow: 'hidden',
+                  background: isDark ? p.card : '#fff',
+                  border: `1px solid ${ch.is_enabled ? (isEmail ? '#667eea30' : '#0088cc30') : p.cardBorder}`,
+                  boxShadow: isDark ? 'none' : '0 2px 8px rgba(0,0,0,0.04)',
+                  transition: 'all 0.2s',
+                }}>
+                  {/* Top accent bar */}
+                  <div style={{
+                    height: 3,
+                    background: ch.is_enabled
+                      ? (isEmail ? 'linear-gradient(90deg, #667eea, #764ba2)' : 'linear-gradient(90deg, #0088cc, #00b4d8)')
+                      : p.cardBorder,
+                  }} />
+
+                  <div style={{ padding: '16px 18px' }}>
+                    {/* Header: icon + name + status */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+                      {isEmail ? emailIcon : telegramIcon}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                          <span style={{ fontSize: 15, fontWeight: 700, color: p.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ch.name}</span>
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase',
+                            padding: '2px 8px', borderRadius: 6,
+                            background: ch.is_enabled ? `${p.green}18` : `${p.textMuted}15`,
+                            color: ch.is_enabled ? p.green : p.textMuted,
+                          }}>{ch.is_enabled ? 'Active' : 'Disabled'}</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: p.textMuted, textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: 600 }}>
+                          {isEmail ? '📧 Email (SMTP)' : '📨 Telegram Bot'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Connection details */}
+                    <div style={{
+                      padding: '10px 12px', borderRadius: 8, marginBottom: 14,
+                      background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                      border: `1px solid ${p.cardBorder}`,
+                    }}>
+                      {isEmail ? (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px', fontSize: 12 }}>
+                          <div>
+                            <span style={{ color: p.textDim, fontSize: 10, fontWeight: 600, textTransform: 'uppercase' }}>Server</span>
+                            <div style={{ color: p.text, fontFamily: 'monospace', fontSize: 12 }}>{cfg.host || '—'}:{cfg.port || '—'}</div>
+                          </div>
+                          <div>
+                            <span style={{ color: p.textDim, fontSize: 10, fontWeight: 600, textTransform: 'uppercase' }}>Encryption</span>
+                            <div style={{ color: p.text }}>{(cfg.encryption || 'starttls').toUpperCase()}</div>
+                          </div>
+                          <div>
+                            <span style={{ color: p.textDim, fontSize: 10, fontWeight: 600, textTransform: 'uppercase' }}>From</span>
+                            <div style={{ color: p.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cfg.from || cfg.username || '—'}</div>
+                          </div>
+                          <div>
+                            <span style={{ color: p.textDim, fontSize: 10, fontWeight: 600, textTransform: 'uppercase' }}>To</span>
+                            <div style={{ color: p.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cfg.to || '—'}</div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px', fontSize: 12 }}>
+                          <div>
+                            <span style={{ color: p.textDim, fontSize: 10, fontWeight: 600, textTransform: 'uppercase' }}>Bot Token</span>
+                            <div style={{ color: p.text, fontFamily: 'monospace', fontSize: 12 }}>••••{(cfg.bot_token || '').slice(-6)}</div>
+                          </div>
+                          <div>
+                            <span style={{ color: p.textDim, fontSize: 10, fontWeight: 600, textTransform: 'uppercase' }}>Chat ID</span>
+                            <div style={{ color: p.text, fontFamily: 'monospace', fontSize: 12 }}>{cfg.chat_id || '—'}</div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action buttons */}
+                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                      <Tooltip title="Send test notification">
+                        <Button
+                          size="small"
+                          icon={<ExperimentOutlined />}
+                          loading={testing === ch.id}
+                          onClick={() => handleTestChannel(ch.id)}
+                          style={{
+                            borderRadius: 8, fontWeight: 600, fontSize: 12, height: 32,
+                            borderColor: p.accent, color: p.accent,
+                          }}
+                        >
+                          Test
+                        </Button>
+                      </Tooltip>
+                      <Tooltip title="Edit channel settings">
+                        <Button size="small" icon={<EditOutlined />} onClick={() => openEditChannel(ch)}
+                          style={{ borderRadius: 8, height: 32 }}
+                        >
+                          Edit
+                        </Button>
+                      </Tooltip>
+                      <Popconfirm title="Delete this channel?" description="All rules for this channel will also be removed." onConfirm={() => handleDeleteChannel(ch.id)}>
+                        <Button size="small" danger icon={<DeleteOutlined />} style={{ borderRadius: 8, height: 32 }}>
+                          Delete
+                        </Button>
+                      </Popconfirm>
+                    </div>
                   </div>
                 </div>
-                <Badge status={ch.is_enabled ? 'success' : 'default'} text={ch.is_enabled ? 'Active' : 'Disabled'} />
-              </div>
-              <Space size={4}>
-                <Tooltip title="Test">
-                  <Button
-                    size="small"
-                    icon={<ExperimentOutlined />}
-                    loading={testing === ch.id}
-                    onClick={() => handleTestChannel(ch.id)}
-                  />
-                </Tooltip>
-                <Tooltip title="Edit">
-                  <Button size="small" icon={<EditOutlined />} onClick={() => openEditChannel(ch)} />
-                </Tooltip>
-                <Popconfirm title="Delete this channel?" onConfirm={() => handleDeleteChannel(ch.id)}>
-                  <Button size="small" danger icon={<DeleteOutlined />} />
-                </Popconfirm>
-              </Space>
-            </div>
-            );
-          })}
-        </div>
-      )}
+              );
+            })}
+          </div>
+        )}
 
       {/* ---- Channel Modal ---- */}
       <Modal
         open={channelModal}
-        title={editingChannel ? 'Edit Channel' : 'New Channel'}
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {editingChannel ? <EditOutlined style={{ color: p.accent }} /> : <PlusOutlined style={{ color: p.accent }} />}
+            <span>{editingChannel ? 'Edit Channel' : 'New Notification Channel'}</span>
+          </div>
+        }
         onCancel={() => { setChannelModal(false); setEditingChannel(null); }}
         footer={null}
         destroyOnClose
+        width={480}
       >
         <Form form={form} layout="vertical" onFinish={handleSaveChannel}>
           <Form.Item name="name" label="Name" rules={[{ required: true }]}>
@@ -485,7 +606,8 @@ export default function NotificationsTab() {
         </Form>
       </Modal>
     </div>
-  );
+    );
+  };
 
   /* ================================================================ */
   /*  RENDER: Rules — modern card-based design                         */
@@ -995,12 +1117,10 @@ export default function NotificationsTab() {
   /* ================================================================ */
   return (
     <Spin spinning={loading}>
-      <div style={{ marginBottom: 16 }}>
-        <Space wrap>
-          {navBtn('channels', <BellOutlined />, 'Channels')}
-          {navBtn('rules', <CheckCircleOutlined />, 'Event Rules')}
-          {navBtn('logs', <MailOutlined />, 'Logs')}
-        </Space>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
+        {navBtn('channels', <BellOutlined />, 'Channels', channels.length)}
+        {navBtn('rules', <CheckCircleOutlined />, 'Event Rules')}
+        {navBtn('logs', <MailOutlined />, 'Logs', logs.length)}
       </div>
 
       {section === 'channels' && renderChannels()}
