@@ -4,7 +4,7 @@ import {
   SettingOutlined, SafetyCertificateOutlined,
   WarningOutlined, UploadOutlined, ReloadOutlined,
   CheckCircleOutlined, CloseCircleOutlined,
-  LockOutlined, CopyOutlined,
+  LockOutlined, CopyOutlined, BellOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -13,6 +13,7 @@ import { useSettingsStore } from '@/stores/settings';
 import api from '@/services/api';
 import type { ApiResponse } from '@/types';
 import { formatDateTime } from '@/lib/datetime';
+import NotificationsTab from './NotificationsTab';
 
 // ---------------------------------------------------------------------------
 // SVG Icons (consistent with Firewall, etc.)
@@ -273,6 +274,7 @@ export default function Settings() {
     { key: 'server' as const, icon: <SetIcon.Server size={14} color="currentColor" />, label: 'Server' },
     { key: 'ssl' as const, icon: <SafetyCertificateOutlined />, label: 'SSL' },
     { key: 'security' as const, icon: <LockOutlined />, label: t('settings.security', 'Security') },
+    { key: 'notifications' as const, icon: <BellOutlined />, label: 'Notifications' },
     { key: 'danger' as const, icon: <WarningOutlined />, label: 'Danger Zone' },
   ];
 
@@ -698,6 +700,7 @@ export default function Settings() {
           {activeTab === 'server' && renderServerTab()}
           {activeTab === 'ssl' && renderSSLTab()}
           {activeTab === 'security' && renderSecurityTab()}
+          {activeTab === 'notifications' && <NotificationsTab />}
           {activeTab === 'danger' && renderDangerTab()}
         </div>
       </div>

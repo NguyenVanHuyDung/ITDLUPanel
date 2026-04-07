@@ -260,6 +260,20 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		settingsHandler.RegisterRoutes(apiV1, authMW, adminMW)
 
 		// -------------------------------------------------------
+		// Notification management (admin)
+		// -------------------------------------------------------
+		notificationService := service.NewNotificationService(db, wsHub)
+		notificationHandler := v1.NewNotificationHandler(notificationService)
+		notificationHandler.RegisterRoutes(apiV1, authMW, adminMW)
+
+		// Wire notification hooks into event-producing services
+		cronService.SetNotifier(notificationService)
+		backupService.SetNotifier(notificationService)
+		sslService.SetNotifier(notificationService)
+		softwareService.SetNotifier(notificationService)
+		siteService.SetNotifier(notificationService)
+
+		// -------------------------------------------------------
 		// WebSocket endpoints (terminal handles its own JWT auth via query param)
 		// -------------------------------------------------------
 		apiV1.GET("/terminal", ws.HandleTerminal(terminalService, CheckPermission))

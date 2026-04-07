@@ -58,13 +58,17 @@ type CertInfo struct {
 
 // SSLService manages SSL certificates.
 type SSLService struct {
-	db *sql.DB
+	db       *sql.DB
+	notifier *NotificationService
 }
 
 // NewSSLService creates a new SSLService.
 func NewSSLService(db *sql.DB) *SSLService {
 	return &SSLService{db: db}
 }
+
+// SetNotifier sets the notification service for event dispatching.
+func (s *SSLService) SetNotifier(n *NotificationService) { s.notifier = n }
 
 // IssueLetsEncrypt obtains a certificate from Let's Encrypt using HTTP-01 challenge.
 func (s *SSLService) IssueLetsEncrypt(domain, email string) error {
@@ -648,12 +652,25 @@ func (s *SSLService) CheckExpiry() ([]*CertInfo, error) {
 		return nil, err
 	}
 
+	now := time.Now()
 	var expiring []*CertInfo
-	threshold := time.Now().Add(expiryThreshold)
+	threshold := now.Add(expiryThreshold)
 	for _, cert := range all {
 		expDate, _ := time.Parse("2006-01-02", cert.ValidUntil)
 		if expDate.Before(threshold) {
 			expiring = append(expiring, cert)
+			if s.notifier != nil {
+				daysLeft := int(expDate.Sub(now).Hours() / 24)
+				evType := EventSSLExpiryWarning
+				if daysLeft <= 0 {
+					evType = EventSSLExpired
+				}
+				s.notifier.Notify(NotificationEvent{
+					Type:   evType,
+					Title:  cert.Domain,
+					Detail: fmt.Sprintf("Expires: %s (%d days left)", cert.ValidUntil, daysLeft),
+				})
+			}
 		}
 	}
 	return expiring, nil

@@ -1,0 +1,516 @@
+package service
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/ITDLUPanel/panel/internal/config"
+	"github.com/ITDLUPanel/panel/internal/pkg/logger"
+	"github.com/ITDLUPanel/panel/internal/websocket"
+)
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+// Supported event types.
+const (
+	EventCronSuccess          = "cron_success"
+	EventCronFailed           = "cron_failed"
+	EventSSLExpiryWarning     = "ssl_expiry_warning"
+	EventSSLExpired           = "ssl_expired"
+	EventBackupCompleted      = "backup_completed"
+	EventBackupFailed         = "backup_failed"
+	EventSoftwareInstalled    = "software_installed"
+	EventSoftwareInstallFail  = "software_install_failed"
+	EventSiteCreated          = "site_created"
+	EventSiteDeleted          = "site_deleted"
+	EventCPUHigh              = "cpu_high"
+	EventMemoryHigh           = "memory_high"
+	EventDiskHigh             = "disk_high"
+	EventServiceDown          = "service_down"
+	EventLoginFailed          = "login_failed"
+)
+
+// AllEventTypes returns all known event types for UI display.
+func AllEventTypes() []string {
+	return []string{
+		EventCronSuccess, EventCronFailed,
+		EventSSLExpiryWarning, EventSSLExpired,
+		EventBackupCompleted, EventBackupFailed,
+		EventSoftwareInstalled, EventSoftwareInstallFail,
+		EventSiteCreated, EventSiteDeleted,
+		EventCPUHigh, EventMemoryHigh, EventDiskHigh, EventServiceDown,
+		EventLoginFailed,
+	}
+}
+
+// EventSeverity maps event types to their default severity.
+func EventSeverity(eventType string) string {
+	switch eventType {
+	case EventCronSuccess, EventBackupCompleted, EventSoftwareInstalled, EventSiteCreated:
+		return "success"
+	case EventSSLExpiryWarning, EventCPUHigh, EventMemoryHigh, EventSiteDeleted, EventLoginFailed:
+		return "warning"
+	case EventCronFailed, EventBackupFailed, EventSoftwareInstallFail:
+		return "error"
+	case EventSSLExpired, EventDiskHigh, EventServiceDown:
+		return "critical"
+	default:
+		return "info"
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+// NotificationChannel represents a configured notification channel.
+type NotificationChannel struct {
+	ID        int64  `json:"id"`
+	Type      string `json:"type"`
+	Name      string `json:"name"`
+	Config    string `json:"config"`
+	IsEnabled bool   `json:"is_enabled"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+// NotificationRule maps an event type to a channel.
+type NotificationRule struct {
+	ID        int64  `json:"id"`
+	EventType string `json:"event_type"`
+	ChannelID int64  `json:"channel_id"`
+	IsEnabled bool   `json:"is_enabled"`
+}
+
+// NotificationLog records a sent notification.
+type NotificationLog struct {
+	ID          int64  `json:"id"`
+	EventType   string `json:"event_type"`
+	ChannelType string `json:"channel_type"`
+	Recipient   string `json:"recipient"`
+	Subject     string `json:"subject"`
+	Message     string `json:"message"`
+	Status      string `json:"status"`
+	Error       string `json:"error"`
+	CreatedAt   string `json:"created_at"`
+}
+
+// NotificationEvent is the payload passed to Notify().
+type NotificationEvent struct {
+	Type    string `json:"type"`
+	Title   string `json:"title"`
+	Detail  string `json:"detail"`
+	Severity string `json:"severity,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// Service
+// ---------------------------------------------------------------------------
+
+// NotificationService orchestrates sending notifications across channels.
+type NotificationService struct {
+	db       *sql.DB
+	hub      *websocket.Hub
+	email    *EmailService
+	telegram *TelegramService
+
+	// Rate limiter: event_type → last sent time.
+	rateMu   sync.Mutex
+	rateMap  map[string]time.Time
+	rateWait time.Duration
+}
+
+// NewNotificationService creates a new NotificationService.
+func NewNotificationService(db *sql.DB, hub *websocket.Hub) *NotificationService {
+	return &NotificationService{
+		db:       db,
+		hub:      hub,
+		email:    NewEmailService(),
+		telegram: NewTelegramService(),
+		rateMap:  make(map[string]time.Time),
+		rateWait: 5 * time.Minute,
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Public: Notify (main entry point)
+// ---------------------------------------------------------------------------
+
+// Notify dispatches a notification event to all configured channels.
+// It runs asynchronously and never blocks the caller.
+func (s *NotificationService) Notify(evt NotificationEvent) {
+	if evt.Severity == "" {
+		evt.Severity = EventSeverity(evt.Type)
+	}
+
+	// Always broadcast to WebSocket for real-time in-app notifications.
+	if s.hub != nil {
+		s.hub.BroadcastJSON(websocket.NewEvent(websocket.EventNotification, map[string]interface{}{
+			"event_type": evt.Type,
+			"title":      evt.Title,
+			"detail":     evt.Detail,
+			"severity":   evt.Severity,
+			"timestamp":  time.Now().Format(time.RFC3339),
+		}))
+	}
+
+	go s.dispatchAsync(evt)
+}
+
+func (s *NotificationService) dispatchAsync(evt NotificationEvent) {
+	// Rate limiting per event type.
+	s.rateMu.Lock()
+	if last, ok := s.rateMap[evt.Type]; ok && time.Since(last) < s.rateWait {
+		s.rateMu.Unlock()
+		return
+	}
+	s.rateMap[evt.Type] = time.Now()
+	s.rateMu.Unlock()
+
+	// Query rules for this event type.
+	rows, err := s.db.Query(`
+		SELECT nc.id, nc.type, nc.name, nc.config
+		FROM notification_rules nr
+		JOIN notification_channels nc ON nr.channel_id = nc.id
+		WHERE nr.event_type = ? AND nr.is_enabled = 1 AND nc.is_enabled = 1`,
+		evt.Type)
+	if err != nil {
+		logger.Error().Err(err).Str("event", evt.Type).Msg("notification: query rules failed")
+		return
+	}
+	defer rows.Close()
+
+	panelURL := s.panelURL()
+
+	for rows.Next() {
+		var ch NotificationChannel
+		if err := rows.Scan(&ch.ID, &ch.Type, &ch.Name, &ch.Config); err != nil {
+			logger.Error().Err(err).Msg("notification: scan channel failed")
+			continue
+		}
+
+		switch ch.Type {
+		case "email":
+			s.sendEmail(ch, evt, panelURL)
+		case "telegram":
+			s.sendTelegram(ch, evt)
+		}
+	}
+}
+
+func (s *NotificationService) sendEmail(ch NotificationChannel, evt NotificationEvent, panelURL string) {
+	cfg, err := s.email.ParseConfig(ch.Config)
+	if err != nil {
+		s.logNotification(evt.Type, "email", "", evt.Title, "", "failed", err.Error())
+		return
+	}
+
+	subject := fmt.Sprintf("[%s] %s", strings.ToUpper(evt.Severity), evt.Title)
+	body := s.email.FormatEventEmail(evt.Type, evt.Severity, evt.Title, evt.Detail, panelURL)
+
+	// Email recipient: use the from_addr as default recipient.
+	recipient := cfg.FromAddr
+	if err := s.email.Send(cfg, recipient, subject, body); err != nil {
+		logger.Error().Err(err).Str("channel", ch.Name).Msg("notification: email send failed")
+		s.logNotification(evt.Type, "email", recipient, subject, "", "failed", err.Error())
+		return
+	}
+	s.logNotification(evt.Type, "email", recipient, subject, "", "sent", "")
+}
+
+func (s *NotificationService) sendTelegram(ch NotificationChannel, evt NotificationEvent) {
+	cfg, err := s.telegram.ParseConfig(ch.Config)
+	if err != nil {
+		s.logNotification(evt.Type, "telegram", "", evt.Title, "", "failed", err.Error())
+		return
+	}
+
+	msg := s.telegram.FormatEventMessage(evt.Type, evt.Severity, evt.Title, evt.Detail)
+	if err := s.telegram.Send(cfg, msg); err != nil {
+		logger.Error().Err(err).Str("channel", ch.Name).Msg("notification: telegram send failed")
+		s.logNotification(evt.Type, "telegram", cfg.ChatID, evt.Title, msg, "failed", err.Error())
+		return
+	}
+	s.logNotification(evt.Type, "telegram", cfg.ChatID, evt.Title, msg, "sent", "")
+}
+
+func (s *NotificationService) logNotification(eventType, channelType, recipient, subject, message, status, errMsg string) {
+	_, err := s.db.Exec(`INSERT INTO notification_logs (event_type, channel_type, recipient, subject, message, status, error)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		eventType, channelType, recipient, subject, message, status, errMsg)
+	if err != nil {
+		logger.Error().Err(err).Msg("notification: failed to write log")
+	}
+}
+
+func (s *NotificationService) panelURL() string {
+	cfg := config.Get()
+	scheme := "http"
+	if cfg.Server.SSL {
+		scheme = "https"
+	}
+	port := cfg.Server.Port
+	host := cfg.Server.Host
+	if host == "0.0.0.0" || host == "" {
+		host = "localhost"
+	}
+	return fmt.Sprintf("%s://%s:%d", scheme, host, port)
+}
+
+// ---------------------------------------------------------------------------
+// CRUD: Channels
+// ---------------------------------------------------------------------------
+
+// ListChannels returns all notification channels.
+func (s *NotificationService) ListChannels() ([]NotificationChannel, error) {
+	rows, err := s.db.Query(`SELECT id, type, name, config, is_enabled, created_at, updated_at FROM notification_channels ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []NotificationChannel
+	for rows.Next() {
+		var ch NotificationChannel
+		var enabled int
+		if err := rows.Scan(&ch.ID, &ch.Type, &ch.Name, &ch.Config, &enabled, &ch.CreatedAt, &ch.UpdatedAt); err != nil {
+			return nil, err
+		}
+		ch.IsEnabled = enabled == 1
+		ch.Config = maskSensitiveConfig(ch.Type, ch.Config)
+		list = append(list, ch)
+	}
+	return list, nil
+}
+
+// GetChannel returns a single notification channel.
+func (s *NotificationService) GetChannel(id int64) (*NotificationChannel, error) {
+	var ch NotificationChannel
+	var enabled int
+	err := s.db.QueryRow(`SELECT id, type, name, config, is_enabled, created_at, updated_at FROM notification_channels WHERE id = ?`, id).
+		Scan(&ch.ID, &ch.Type, &ch.Name, &ch.Config, &enabled, &ch.CreatedAt, &ch.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	ch.IsEnabled = enabled == 1
+	return &ch, nil
+}
+
+// GetChannelRaw returns a channel with unmasked config (internal use).
+func (s *NotificationService) GetChannelRaw(id int64) (*NotificationChannel, error) {
+	return s.GetChannel(id)
+}
+
+// CreateChannel adds a new notification channel.
+func (s *NotificationService) CreateChannel(chType, name, cfg string, enabled bool) (int64, error) {
+	en := 0
+	if enabled {
+		en = 1
+	}
+	res, err := s.db.Exec(`INSERT INTO notification_channels (type, name, config, is_enabled) VALUES (?, ?, ?, ?)`,
+		chType, name, cfg, en)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// UpdateChannel updates an existing notification channel.
+func (s *NotificationService) UpdateChannel(id int64, name, cfg string, enabled bool) error {
+	en := 0
+	if enabled {
+		en = 1
+	}
+
+	// If config is empty or has masked values, keep existing.
+	if cfg == "" || strings.Contains(cfg, "***") {
+		_, err := s.db.Exec(`UPDATE notification_channels SET name = ?, is_enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+			name, en, id)
+		return err
+	}
+	_, err := s.db.Exec(`UPDATE notification_channels SET name = ?, config = ?, is_enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		name, cfg, en, id)
+	return err
+}
+
+// DeleteChannel removes a notification channel and its rules.
+func (s *NotificationService) DeleteChannel(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM notification_channels WHERE id = ?`, id)
+	return err
+}
+
+// TestChannel sends a test notification via the specified channel.
+func (s *NotificationService) TestChannel(id int64) error {
+	ch, err := s.GetChannelRaw(id)
+	if err != nil {
+		return fmt.Errorf("channel not found: %w", err)
+	}
+	switch ch.Type {
+	case "email":
+		cfg, err := s.email.ParseConfig(ch.Config)
+		if err != nil {
+			return err
+		}
+		return s.email.TestConnection(cfg)
+	case "telegram":
+		cfg, err := s.telegram.ParseConfig(ch.Config)
+		if err != nil {
+			return err
+		}
+		return s.telegram.TestConnection(cfg)
+	default:
+		return fmt.Errorf("unknown channel type: %s", ch.Type)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CRUD: Rules
+// ---------------------------------------------------------------------------
+
+// ListRules returns all notification rules.
+func (s *NotificationService) ListRules() ([]NotificationRule, error) {
+	rows, err := s.db.Query(`SELECT id, event_type, channel_id, is_enabled FROM notification_rules ORDER BY event_type, channel_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []NotificationRule
+	for rows.Next() {
+		var r NotificationRule
+		var enabled int
+		if err := rows.Scan(&r.ID, &r.EventType, &r.ChannelID, &enabled); err != nil {
+			return nil, err
+		}
+		r.IsEnabled = enabled == 1
+		list = append(list, r)
+	}
+	return list, nil
+}
+
+// SetRules replaces all rules for a channel with the provided set.
+func (s *NotificationService) SetRules(channelID int64, eventTypes []string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Remove existing rules for this channel.
+	if _, err := tx.Exec(`DELETE FROM notification_rules WHERE channel_id = ?`, channelID); err != nil {
+		return err
+	}
+
+	// Insert new rules.
+	stmt, err := tx.Prepare(`INSERT INTO notification_rules (event_type, channel_id, is_enabled) VALUES (?, ?, 1)`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, et := range eventTypes {
+		if _, err := stmt.Exec(et, channelID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// UpdateRule toggles a single rule.
+func (s *NotificationService) UpdateRule(id int64, enabled bool) error {
+	en := 0
+	if enabled {
+		en = 1
+	}
+	_, err := s.db.Exec(`UPDATE notification_rules SET is_enabled = ? WHERE id = ?`, en, id)
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// CRUD: Logs
+// ---------------------------------------------------------------------------
+
+// ListLogs returns notification logs with pagination.
+func (s *NotificationService) ListLogs(page, perPage int, channelType, eventType, status string) ([]NotificationLog, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 || perPage > 100 {
+		perPage = 20
+	}
+
+	where := "1=1"
+	args := []interface{}{}
+	if channelType != "" {
+		where += " AND channel_type = ?"
+		args = append(args, channelType)
+	}
+	if eventType != "" {
+		where += " AND event_type = ?"
+		args = append(args, eventType)
+	}
+	if status != "" {
+		where += " AND status = ?"
+		args = append(args, status)
+	}
+
+	var total int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM notification_logs WHERE "+where, args...).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	query := fmt.Sprintf("SELECT id, event_type, channel_type, COALESCE(recipient,''), COALESCE(subject,''), COALESCE(message,''), status, COALESCE(error,''), created_at FROM notification_logs WHERE %s ORDER BY id DESC LIMIT ? OFFSET ?", where)
+	args = append(args, perPage, (page-1)*perPage)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var list []NotificationLog
+	for rows.Next() {
+		var l NotificationLog
+		if err := rows.Scan(&l.ID, &l.EventType, &l.ChannelType, &l.Recipient, &l.Subject, &l.Message, &l.Status, &l.Error, &l.CreatedAt); err != nil {
+			return nil, 0, err
+		}
+		list = append(list, l)
+	}
+	return list, total, nil
+}
+
+// ClearLogs deletes all notification logs.
+func (s *NotificationService) ClearLogs() error {
+	_, err := s.db.Exec("DELETE FROM notification_logs")
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+func maskSensitiveConfig(chType, raw string) string {
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		return raw
+	}
+
+	sensitiveKeys := []string{"password", "bot_token", "secret", "access_token", "refresh_token", "client_secret"}
+	for _, key := range sensitiveKeys {
+		if _, ok := m[key]; ok {
+			if v, ok := m[key].(string); ok && v != "" {
+				m[key] = "***"
+			}
+		}
+	}
+
+	out, _ := json.Marshal(m)
+	return string(out)
+}

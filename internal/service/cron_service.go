@@ -66,13 +66,17 @@ type CronJob struct {
 
 // CronService manages cron jobs.
 type CronService struct {
-	db *sql.DB
+	db       *sql.DB
+	notifier *NotificationService
 }
 
 // NewCronService creates a new CronService.
 func NewCronService(db *sql.DB) *CronService {
 	return &CronService{db: db}
 }
+
+// SetNotifier sets the notification service for event dispatching.
+func (s *CronService) SetNotifier(n *NotificationService) { s.notifier = n }
 
 // ResyncAll rebuilds crontab entries for all enabled cron jobs. Call this on
 // startup or after applying fixes to ensure the crontab matches the database.
@@ -373,7 +377,13 @@ func (s *CronService) RunNow(id int64) (string, error) {
 	appendToFile(logFile, footer)
 
 	if execErr != nil {
+		if s.notifier != nil {
+			s.notifier.Notify(NotificationEvent{Type: EventCronFailed, Title: fmt.Sprintf("Cron Failed: %s", job.Name), Detail: truncateOutput(output, 500)})
+		}
 		return output, apperrors.Wrap(execErr, apperrors.ErrInternal, "command execution failed")
+	}
+	if s.notifier != nil {
+		s.notifier.Notify(NotificationEvent{Type: EventCronSuccess, Title: fmt.Sprintf("Cron OK: %s", job.Name), Detail: fmt.Sprintf("Duration: %s", elapsed)})
 	}
 	return output, nil
 }

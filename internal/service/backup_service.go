@@ -48,11 +48,43 @@ type BackupService struct {
 	db                  *sql.DB
 	ftpStorageService   *FTPStorageService
 	cloudStorageService *CloudStorageService
+	notifier            *NotificationService
 }
 
 // NewBackupService creates a new BackupService.
 func NewBackupService(db *sql.DB, ftpStorageService *FTPStorageService, cloudStorageService *CloudStorageService) *BackupService {
 	return &BackupService{db: db, ftpStorageService: ftpStorageService, cloudStorageService: cloudStorageService}
+}
+
+// SetNotifier sets the notification service for event dispatching.
+func (s *BackupService) SetNotifier(n *NotificationService) { s.notifier = n }
+
+func (s *BackupService) notifyBackup(ok bool, name string, size int64, err error) {
+	if s.notifier == nil {
+		return
+	}
+	if ok {
+		s.notifier.Notify(NotificationEvent{Type: EventBackupCompleted, Title: name, Detail: fmt.Sprintf("Size: %s", formatBytes(size))})
+	} else {
+		detail := ""
+		if err != nil {
+			detail = err.Error()
+		}
+		s.notifier.Notify(NotificationEvent{Type: EventBackupFailed, Title: name, Detail: detail})
+	}
+}
+
+func formatBytes(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
 // ---------------------------------------------------------------------------
@@ -85,13 +117,19 @@ func (s *BackupService) CreateSiteBackup(siteID int64, createdBy int64) (*Backup
 	defer cancel()
 
 	if _, err := system.Exec(ctx, "tar", "czf", backupPath, "-C", cfg.Paths.WWWRoot, site.Domain); err != nil {
+		s.notifyBackup(false, fmt.Sprintf("Site backup - %s", site.Domain), 0, err)
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create site backup")
 	}
 
 	fileSize := fileSize(backupPath)
 	backupName := fmt.Sprintf("Site backup - %s", site.Domain)
 
-	return s.insertRecord("site", backupName, &siteID, &site.Domain, backupPath, fileSize, createdBy)
+	rec, err := s.insertRecord("site", backupName, &siteID, &site.Domain, backupPath, fileSize, createdBy)
+	if err != nil {
+		return nil, err
+	}
+	s.notifyBackup(true, backupName, fileSize, nil)
+	return rec, nil
 }
 
 // CreateDatabaseBackup creates a mysqldump of the specified database.
@@ -128,7 +166,12 @@ func (s *BackupService) CreateDatabaseBackup(dbID int64, createdBy int64) (*Back
 	size := fileSize(gzFile)
 	backupName := fmt.Sprintf("Database backup - %s", dbInfo.name)
 
-	return s.insertRecord("database", backupName, &dbID, &dbInfo.name, gzFile, size, createdBy)
+	rec, err := s.insertRecord("database", backupName, &dbID, &dbInfo.name, gzFile, size, createdBy)
+	if err != nil {
+		return nil, err
+	}
+	s.notifyBackup(true, backupName, size, nil)
+	return rec, nil
 }
 
 // CreatePanelBackup archives the panel config directory and SQLite database.
@@ -161,7 +204,12 @@ func (s *BackupService) CreatePanelBackup(createdBy int64) (*Backup, error) {
 	size := fileSize(backupPath)
 	backupName := fmt.Sprintf("Panel backup - %s", timestamp)
 
-	return s.insertRecord("panel", backupName, nil, nil, backupPath, size, createdBy)
+	rec, err := s.insertRecord("panel", backupName, nil, nil, backupPath, size, createdBy)
+	if err != nil {
+		return nil, err
+	}
+	s.notifyBackup(true, backupName, size, nil)
+	return rec, nil
 }
 
 // ---------------------------------------------------------------------------

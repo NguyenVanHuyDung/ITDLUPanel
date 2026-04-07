@@ -139,13 +139,17 @@ const wwwrootBase = "/ITDLUPanel/wwwroot"
 
 // SiteService handles website CRUD and operations.
 type SiteService struct {
-	db *sql.DB
+	db       *sql.DB
+	notifier *NotificationService
 }
 
 // NewSiteService creates a new SiteService.
 func NewSiteService(db *sql.DB) *SiteService {
 	return &SiteService{db: db}
 }
+
+// SetNotifier sets the notification service for event dispatching.
+func (s *SiteService) SetNotifier(n *NotificationService) { s.notifier = n }
 
 // ReconcileVhosts checks all active sites and regenerates any missing vhost
 // config files. Call this on startup to ensure nginx state matches the DB.
@@ -335,6 +339,10 @@ func (s *SiteService) Create(req CreateSiteRequest, userID int64) (*Site, error)
 
 	logger.Info().Int64("id", id).Str("domain", req.Domain).Msg("site created")
 
+	if s.notifier != nil {
+		s.notifier.Notify(NotificationEvent{Type: EventSiteCreated, Title: req.Domain, Detail: fmt.Sprintf("Webserver: %s, PHP: %s", req.Webserver, req.PHPVersion)})
+	}
+
 	return s.GetByID(id)
 }
 
@@ -494,6 +502,11 @@ func (s *SiteService) Delete(id int64) error {
 	}
 
 	logger.Info().Int64("id", id).Str("domain", site.Domain).Msg("site deleted")
+
+	if s.notifier != nil {
+		s.notifier.Notify(NotificationEvent{Type: EventSiteDeleted, Title: site.Domain})
+	}
+
 	return nil
 }
 

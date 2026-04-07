@@ -208,6 +208,7 @@ type SoftwareService struct {
 	queue           *task.Queue
 	registry        *installer.Registry
 	firewallService *FirewallService
+	notifier        *NotificationService
 	onNginxVersionChanged func() // called after nginx version switch to regenerate vhosts
 }
 
@@ -215,6 +216,9 @@ type SoftwareService struct {
 func (s *SoftwareService) SetOnNginxVersionChanged(fn func()) {
 	s.onNginxVersionChanged = fn
 }
+
+// SetNotifier sets the notification service for event dispatching.
+func (s *SoftwareService) SetNotifier(n *NotificationService) { s.notifier = n }
 
 // NewSoftwareService creates a new SoftwareService.
 func NewSoftwareService(db *sql.DB, queue *task.Queue, registry *installer.Registry, firewallSvc *FirewallService) *SoftwareService {
@@ -257,6 +261,9 @@ func (s *SoftwareService) registerTaskHandlers() {
 		if err := inst.Install(ctx, version, func(pct int) {
 			progress(pct, fmt.Sprintf("Installing %s... %d%%", name, pct))
 		}); err != nil {
+			if s.notifier != nil {
+				s.notifier.Notify(NotificationEvent{Type: EventSoftwareInstallFail, Title: name, Detail: err.Error()})
+			}
 			return err
 		}
 
@@ -299,6 +306,11 @@ func (s *SoftwareService) registerTaskHandlers() {
 		}
 
 		progress(100, fmt.Sprintf("%s installed successfully", name))
+
+		// Notify
+		if s.notifier != nil {
+			s.notifier.Notify(NotificationEvent{Type: EventSoftwareInstalled, Title: name, Detail: fmt.Sprintf("Version: %s", version)})
+		}
 
 		// Auto-open firewall ports for this software
 		if s.firewallService != nil {

@@ -22,5 +22,6 @@ func All() []Migration {
 		&Migration009FTPStorage{},
 		&Migration010CloudStorages{},
 		&Migration011UserResources{},
+		&Migration012Notifications{},
 	}
 }
