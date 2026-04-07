@@ -3,6 +3,7 @@ package v1
 import (
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,12 +19,47 @@ import (
 
 // DatabaseHandler handles database management API endpoints.
 type DatabaseHandler struct {
-	dbService *service.DatabaseService
+	dbService           *service.DatabaseService
+	userResourceService *service.UserResourceService
 }
 
 // NewDatabaseHandler creates a new DatabaseHandler.
-func NewDatabaseHandler(dbService *service.DatabaseService) *DatabaseHandler {
-	return &DatabaseHandler{dbService: dbService}
+func NewDatabaseHandler(dbService *service.DatabaseService, userResourceService *service.UserResourceService) *DatabaseHandler {
+	return &DatabaseHandler{dbService: dbService, userResourceService: userResourceService}
+}
+
+// requireAccess checks if a non-admin user has access to a database resource.
+func (h *DatabaseHandler) requireAccess(c *gin.Context, dbID int64) bool {
+	role, _ := c.Get("role")
+	if role == "admin" {
+		return true
+	}
+	userID, _ := c.Get("user_id")
+	uid, _ := userID.(int64)
+	hasAccess, err := h.userResourceService.HasAccess(uid, "database", dbID)
+	if err != nil || !hasAccess {
+		c.JSON(http.StatusForbidden, response.Response{
+			Code:    http.StatusForbidden,
+			Message: "access denied to this resource",
+		})
+		return false
+	}
+	return true
+}
+
+// getAllowedDBIDs returns nil for admins (no filter) or the list of allowed IDs for non-admins.
+func (h *DatabaseHandler) getAllowedDBIDs(c *gin.Context) []int64 {
+	role, _ := c.Get("role")
+	if role == "admin" {
+		return nil
+	}
+	userID, _ := c.Get("user_id")
+	uid, _ := userID.(int64)
+	ids, _ := h.userResourceService.ListResourceIDs(uid, "database")
+	if ids == nil {
+		ids = []int64{}
+	}
+	return ids
 }
 
 // RegisterRoutes registers database management routes.
@@ -70,7 +106,7 @@ func (h *DatabaseHandler) List(c *gin.Context) {
 		q.PerPage = 20
 	}
 
-	databases, total, err := h.dbService.List(q.Page, q.PerPage)
+	databases, total, err := h.dbService.List(q.Page, q.PerPage, h.getAllowedDBIDs(c))
 	if err != nil {
 		response.Error(c, err)
 		return
@@ -110,6 +146,14 @@ func (h *DatabaseHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// Auto-assign newly created database to non-admin user
+	role, _ := c.Get("role")
+	if role != "admin" {
+		userID, _ := c.Get("user_id")
+		uid, _ := userID.(int64)
+		_ = h.userResourceService.Assign(uid, "database", db.ID)
+	}
+
 	response.Created(c, db)
 }
 
@@ -117,6 +161,10 @@ func (h *DatabaseHandler) Create(c *gin.Context) {
 func (h *DatabaseHandler) Get(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 
@@ -136,10 +184,16 @@ func (h *DatabaseHandler) Delete(c *gin.Context) {
 		return
 	}
 
+	if !h.requireAccess(c, id) {
+		return
+	}
+
 	if err := h.dbService.Delete(id); err != nil {
 		response.Error(c, err)
 		return
 	}
+
+	_ = h.userResourceService.RemoveAllForResource("database", id)
 
 	response.Success(c, gin.H{"message": "database deleted successfully"})
 }
@@ -156,6 +210,10 @@ type changeDBPasswordRequest struct {
 func (h *DatabaseHandler) ChangePassword(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 
@@ -187,6 +245,10 @@ func (h *DatabaseHandler) Backup(c *gin.Context) {
 		return
 	}
 
+	if !h.requireAccess(c, id) {
+		return
+	}
+
 	path, err := h.dbService.Backup(id)
 	if err != nil {
 		response.Error(c, err)
@@ -204,6 +266,10 @@ type restoreDBRequest struct {
 func (h *DatabaseHandler) Restore(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 
@@ -232,6 +298,10 @@ func (h *DatabaseHandler) Restore(c *gin.Context) {
 func (h *DatabaseHandler) GetSize(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 
@@ -281,6 +351,10 @@ func (h *DatabaseHandler) SetAccess(c *gin.Context) {
 		return
 	}
 
+	if !h.requireAccess(c, id) {
+		return
+	}
+
 	var req setAccessRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.ValidationError(c, []response.FieldError{
@@ -306,6 +380,10 @@ func (h *DatabaseHandler) SetAccess(c *gin.Context) {
 func (h *DatabaseHandler) Import(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 
@@ -376,6 +454,10 @@ type setDBQuotaRequest struct {
 func (h *DatabaseHandler) SetQuota(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 

@@ -14,13 +14,49 @@ import (
 
 // SiteHandler handles website management API endpoints.
 type SiteHandler struct {
-	siteService      *service.SiteService
-	statsService     *service.SiteStatisticsService
+	siteService         *service.SiteService
+	statsService        *service.SiteStatisticsService
+	userResourceService *service.UserResourceService
 }
 
 // NewSiteHandler creates a new SiteHandler.
-func NewSiteHandler(siteService *service.SiteService, statsService *service.SiteStatisticsService) *SiteHandler {
-	return &SiteHandler{siteService: siteService, statsService: statsService}
+func NewSiteHandler(siteService *service.SiteService, statsService *service.SiteStatisticsService, userResourceService *service.UserResourceService) *SiteHandler {
+	return &SiteHandler{siteService: siteService, statsService: statsService, userResourceService: userResourceService}
+}
+
+// requireAccess checks if a non-admin user has access to a site resource.
+// Returns true if access is granted, false if denied (and writes the HTTP response).
+func (h *SiteHandler) requireAccess(c *gin.Context, siteID int64) bool {
+	role, _ := c.Get("role")
+	if role == "admin" {
+		return true
+	}
+	userID, _ := c.Get("user_id")
+	uid, _ := userID.(int64)
+	hasAccess, err := h.userResourceService.HasAccess(uid, "site", siteID)
+	if err != nil || !hasAccess {
+		c.JSON(http.StatusForbidden, response.Response{
+			Code:    http.StatusForbidden,
+			Message: "access denied to this resource",
+		})
+		return false
+	}
+	return true
+}
+
+// getAllowedSiteIDs returns nil for admins (no filter) or the list of allowed IDs for non-admins.
+func (h *SiteHandler) getAllowedSiteIDs(c *gin.Context) []int64 {
+	role, _ := c.Get("role")
+	if role == "admin" {
+		return nil
+	}
+	userID, _ := c.Get("user_id")
+	uid, _ := userID.(int64)
+	ids, _ := h.userResourceService.ListResourceIDs(uid, "site")
+	if ids == nil {
+		ids = []int64{}
+	}
+	return ids
 }
 
 // RegisterRoutes registers all site management routes.
@@ -161,7 +197,7 @@ func (h *SiteHandler) ListSites(c *gin.Context) {
 		q.PerPage = 20
 	}
 
-	sites, total, err := h.siteService.List(q.Page, q.PerPage)
+	sites, total, err := h.siteService.List(q.Page, q.PerPage, h.getAllowedSiteIDs(c))
 	if err != nil {
 		response.Error(c, err)
 		return
@@ -204,6 +240,12 @@ func (h *SiteHandler) CreateSite(c *gin.Context) {
 		return
 	}
 
+	// Auto-assign newly created site to non-admin user
+	role, _ := c.Get("role")
+	if role != "admin" {
+		_ = h.userResourceService.Assign(uid, "site", site.ID)
+	}
+
 	response.Created(c, site)
 }
 
@@ -211,6 +253,10 @@ func (h *SiteHandler) CreateSite(c *gin.Context) {
 func (h *SiteHandler) GetSite(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 
@@ -227,6 +273,10 @@ func (h *SiteHandler) GetSite(c *gin.Context) {
 func (h *SiteHandler) UpdateSite(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 
@@ -258,10 +308,16 @@ func (h *SiteHandler) DeleteSite(c *gin.Context) {
 		return
 	}
 
+	if !h.requireAccess(c, id) {
+		return
+	}
+
 	if err := h.siteService.Delete(id); err != nil {
 		response.Error(c, err)
 		return
 	}
+
+	_ = h.userResourceService.RemoveAllForResource("site", id)
 
 	response.Success(c, gin.H{"message": "site deleted successfully"})
 }
@@ -274,6 +330,10 @@ func (h *SiteHandler) DeleteSite(c *gin.Context) {
 func (h *SiteHandler) StartSite(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 
@@ -292,6 +352,10 @@ func (h *SiteHandler) StopSite(c *gin.Context) {
 		return
 	}
 
+	if !h.requireAccess(c, id) {
+		return
+	}
+
 	if err := h.siteService.Stop(id); err != nil {
 		response.Error(c, err)
 		return
@@ -304,6 +368,10 @@ func (h *SiteHandler) StopSite(c *gin.Context) {
 func (h *SiteHandler) GetConfig(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 
@@ -324,6 +392,10 @@ type updateConfigRequest struct {
 func (h *SiteHandler) UpdateConfig(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 
@@ -356,6 +428,10 @@ type switchPHPRequest struct {
 func (h *SiteHandler) SwitchPHP(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 
@@ -392,6 +468,10 @@ type addDomainRequest struct {
 func (h *SiteHandler) AddDomain(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 
@@ -443,6 +523,10 @@ func (h *SiteHandler) ListDomains(c *gin.Context) {
 		return
 	}
 
+	if !h.requireAccess(c, id) {
+		return
+	}
+
 	domains, err := h.siteService.ListDomains(id)
 	if err != nil {
 		response.Error(c, err)
@@ -473,6 +557,10 @@ func (h *SiteHandler) GetSSLInfo(c *gin.Context) {
 		return
 	}
 
+	if !h.requireAccess(c, id) {
+		return
+	}
+
 	info, err := h.siteService.GetSSLInfo(id)
 	if err != nil {
 		response.Error(c, err)
@@ -491,6 +579,10 @@ type enableSSLRequest struct {
 func (h *SiteHandler) EnableSSL(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 
@@ -527,6 +619,10 @@ func (h *SiteHandler) DisableSSL(c *gin.Context) {
 		return
 	}
 
+	if !h.requireAccess(c, id) {
+		return
+	}
+
 	if err := h.siteService.DisableSSL(id); err != nil {
 		response.Error(c, err)
 		return
@@ -543,6 +639,10 @@ type applySSLRequest struct {
 func (h *SiteHandler) ApplySSLFromHolder(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 
@@ -573,6 +673,10 @@ func (h *SiteHandler) GetForceHTTPS(c *gin.Context) {
 	if err != nil {
 		return
 	}
+
+	if !h.requireAccess(c, id) {
+		return
+	}
 	enabled, err := h.siteService.GetForceHTTPS(id)
 	if err != nil {
 		response.Error(c, err)
@@ -585,6 +689,10 @@ func (h *SiteHandler) GetForceHTTPS(c *gin.Context) {
 func (h *SiteHandler) SetForceHTTPS(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 	var req struct {
@@ -619,6 +727,24 @@ type batchSSLRequest struct {
 	SourceDomain string  `json:"source_domain" binding:"required"`
 }
 
+// filterAllowedIDs filters a list of IDs to only those the current user can access.
+func (h *SiteHandler) filterAllowedIDs(c *gin.Context, ids []int64) []int64 {
+	role, _ := c.Get("role")
+	if role == "admin" {
+		return ids
+	}
+	userID, _ := c.Get("user_id")
+	uid, _ := userID.(int64)
+	var allowed []int64
+	for _, id := range ids {
+		has, _ := h.userResourceService.HasAccess(uid, "site", id)
+		if has {
+			allowed = append(allowed, id)
+		}
+	}
+	return allowed
+}
+
 // BatchDeleteSites deletes multiple sites.
 func (h *SiteHandler) BatchDeleteSites(c *gin.Context) {
 	var req batchIDsRequest
@@ -629,7 +755,11 @@ func (h *SiteHandler) BatchDeleteSites(c *gin.Context) {
 		return
 	}
 
+	req.IDs = h.filterAllowedIDs(c, req.IDs)
 	errors := h.siteService.BatchDelete(req.IDs)
+	for _, id := range req.IDs {
+		_ = h.userResourceService.RemoveAllForResource("site", id)
+	}
 	total := len(req.IDs)
 	failed := len(errors)
 
@@ -655,7 +785,7 @@ func (h *SiteHandler) BatchSwitchPHP(c *gin.Context) {
 		return
 	}
 
-	errors := h.siteService.BatchSwitchPHP(req.IDs, req.PHPVersion)
+	errors := h.siteService.BatchSwitchPHP(h.filterAllowedIDs(c, req.IDs), req.PHPVersion)
 	total := len(req.IDs)
 	failed := len(errors)
 
@@ -681,7 +811,7 @@ func (h *SiteHandler) BatchApplySSL(c *gin.Context) {
 		return
 	}
 
-	errors := h.siteService.BatchApplySSL(req.IDs, req.SourceDomain)
+	errors := h.siteService.BatchApplySSL(h.filterAllowedIDs(c, req.IDs), req.SourceDomain)
 	total := len(req.IDs)
 	failed := len(errors)
 
@@ -706,6 +836,10 @@ func (h *SiteHandler) UpdateDirectory(c *gin.Context) {
 	if err != nil {
 		return
 	}
+
+	if !h.requireAccess(c, id) {
+		return
+	}
 	var req struct {
 		Path string `json:"path" binding:"required"`
 	}
@@ -725,6 +859,10 @@ func (h *SiteHandler) ListSubdirs(c *gin.Context) {
 	if err != nil {
 		return
 	}
+
+	if !h.requireAccess(c, id) {
+		return
+	}
 	dirs, err := h.siteService.ListSubdirs(id)
 	if err != nil {
 		response.Error(c, err)
@@ -736,6 +874,10 @@ func (h *SiteHandler) ListSubdirs(c *gin.Context) {
 func (h *SiteHandler) SetRunningDirectory(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 	var req struct {
@@ -757,6 +899,10 @@ func (h *SiteHandler) GetOpenBasedir(c *gin.Context) {
 	if err != nil {
 		return
 	}
+
+	if !h.requireAccess(c, id) {
+		return
+	}
 	enabled, value, err := h.siteService.GetOpenBasedir(id)
 	if err != nil {
 		response.Error(c, err)
@@ -768,6 +914,10 @@ func (h *SiteHandler) GetOpenBasedir(c *gin.Context) {
 func (h *SiteHandler) SetOpenBasedir(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 	var req struct {
@@ -789,6 +939,10 @@ func (h *SiteHandler) GetAccessLog(c *gin.Context) {
 	if err != nil {
 		return
 	}
+
+	if !h.requireAccess(c, id) {
+		return
+	}
 	enabled, err := h.siteService.GetAccessLogEnabled(id)
 	if err != nil {
 		response.Error(c, err)
@@ -800,6 +954,10 @@ func (h *SiteHandler) GetAccessLog(c *gin.Context) {
 func (h *SiteHandler) SetAccessLog(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 	var req struct {
@@ -821,6 +979,10 @@ func (h *SiteHandler) GetPasswordAccess(c *gin.Context) {
 	if err != nil {
 		return
 	}
+
+	if !h.requireAccess(c, id) {
+		return
+	}
 	enabled, username, err := h.siteService.GetPasswordAccess(id)
 	if err != nil {
 		response.Error(c, err)
@@ -832,6 +994,10 @@ func (h *SiteHandler) GetPasswordAccess(c *gin.Context) {
 func (h *SiteHandler) SetPasswordAccess(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 	var req struct {
@@ -859,6 +1025,10 @@ func (h *SiteHandler) GetSubdirBindings(c *gin.Context) {
 	if err != nil {
 		return
 	}
+
+	if !h.requireAccess(c, id) {
+		return
+	}
 	bindings, err := h.siteService.GetSubdirBindings(id)
 	if err != nil {
 		response.Error(c, err)
@@ -870,6 +1040,10 @@ func (h *SiteHandler) GetSubdirBindings(c *gin.Context) {
 func (h *SiteHandler) AddSubdirBinding(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 	var req struct {
@@ -892,6 +1066,10 @@ func (h *SiteHandler) RemoveSubdirBinding(c *gin.Context) {
 	if err != nil {
 		return
 	}
+
+	if !h.requireAccess(c, id) {
+		return
+	}
 	index, err := parseID(c, "index")
 	if err != nil {
 		return
@@ -912,6 +1090,10 @@ func (h *SiteHandler) GetLimitAccessRules(c *gin.Context) {
 	if err != nil {
 		return
 	}
+
+	if !h.requireAccess(c, id) {
+		return
+	}
 	rules, err := h.siteService.GetLimitAccessRules(id)
 	if err != nil {
 		response.Error(c, err)
@@ -923,6 +1105,10 @@ func (h *SiteHandler) GetLimitAccessRules(c *gin.Context) {
 func (h *SiteHandler) AddLimitAccessRule(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 	var req service.LimitAccessRule
@@ -940,6 +1126,10 @@ func (h *SiteHandler) AddLimitAccessRule(c *gin.Context) {
 func (h *SiteHandler) RemoveLimitAccessRule(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 	index, err := parseID(c, "index")
@@ -962,6 +1152,10 @@ func (h *SiteHandler) GetDenyAccessRules(c *gin.Context) {
 	if err != nil {
 		return
 	}
+
+	if !h.requireAccess(c, id) {
+		return
+	}
 	rules, err := h.siteService.GetDenyAccessRules(id)
 	if err != nil {
 		response.Error(c, err)
@@ -973,6 +1167,10 @@ func (h *SiteHandler) GetDenyAccessRules(c *gin.Context) {
 func (h *SiteHandler) AddDenyAccessRule(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 	var req service.DenyAccessRule
@@ -990,6 +1188,10 @@ func (h *SiteHandler) AddDenyAccessRule(c *gin.Context) {
 func (h *SiteHandler) RemoveDenyAccessRule(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 	index, err := parseID(c, "index")
@@ -1012,6 +1214,10 @@ func (h *SiteHandler) GetTrafficControl(c *gin.Context) {
 	if err != nil {
 		return
 	}
+
+	if !h.requireAccess(c, id) {
+		return
+	}
 	config, err := h.siteService.GetTrafficControl(id)
 	if err != nil {
 		response.Error(c, err)
@@ -1023,6 +1229,10 @@ func (h *SiteHandler) GetTrafficControl(c *gin.Context) {
 func (h *SiteHandler) SetTrafficControl(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 	var req service.TrafficConfig
@@ -1046,6 +1256,10 @@ func (h *SiteHandler) GetDefaultDoc(c *gin.Context) {
 	if err != nil {
 		return
 	}
+
+	if !h.requireAccess(c, id) {
+		return
+	}
 	config, err := h.siteService.GetDefaultDoc(id)
 	if err != nil {
 		response.Error(c, err)
@@ -1057,6 +1271,10 @@ func (h *SiteHandler) GetDefaultDoc(c *gin.Context) {
 func (h *SiteHandler) SetDefaultDoc(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 	var req service.DefaultDocConfig
@@ -1080,6 +1298,10 @@ func (h *SiteHandler) GetReverseProxyRules(c *gin.Context) {
 	if err != nil {
 		return
 	}
+
+	if !h.requireAccess(c, id) {
+		return
+	}
 	rules, err := h.siteService.GetReverseProxyRules(id)
 	if err != nil {
 		response.Error(c, err)
@@ -1091,6 +1313,10 @@ func (h *SiteHandler) GetReverseProxyRules(c *gin.Context) {
 func (h *SiteHandler) AddReverseProxyRule(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 	var req service.ReverseProxyRule
@@ -1108,6 +1334,10 @@ func (h *SiteHandler) AddReverseProxyRule(c *gin.Context) {
 func (h *SiteHandler) UpdateReverseProxyRule(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 	index, err := parseID(c, "index")
@@ -1131,6 +1361,10 @@ func (h *SiteHandler) RemoveReverseProxyRule(c *gin.Context) {
 	if err != nil {
 		return
 	}
+
+	if !h.requireAccess(c, id) {
+		return
+	}
 	index, err := parseID(c, "index")
 	if err != nil {
 		return
@@ -1151,6 +1385,10 @@ func (h *SiteHandler) GetRedirectRules(c *gin.Context) {
 	if err != nil {
 		return
 	}
+
+	if !h.requireAccess(c, id) {
+		return
+	}
 	rules, err := h.siteService.GetRedirectRules(id)
 	if err != nil {
 		response.Error(c, err)
@@ -1162,6 +1400,10 @@ func (h *SiteHandler) GetRedirectRules(c *gin.Context) {
 func (h *SiteHandler) AddRedirectRule(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 	var req service.RedirectRule
@@ -1179,6 +1421,10 @@ func (h *SiteHandler) AddRedirectRule(c *gin.Context) {
 func (h *SiteHandler) UpdateRedirectRule(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 	index, err := parseID(c, "index")
@@ -1202,6 +1448,10 @@ func (h *SiteHandler) RemoveRedirectRule(c *gin.Context) {
 	if err != nil {
 		return
 	}
+
+	if !h.requireAccess(c, id) {
+		return
+	}
 	index, err := parseID(c, "index")
 	if err != nil {
 		return
@@ -1222,6 +1472,10 @@ func (h *SiteHandler) GetHotlinkConfig(c *gin.Context) {
 	if err != nil {
 		return
 	}
+
+	if !h.requireAccess(c, id) {
+		return
+	}
 	config, err := h.siteService.GetHotlinkConfig(id)
 	if err != nil {
 		response.Error(c, err)
@@ -1233,6 +1487,10 @@ func (h *SiteHandler) GetHotlinkConfig(c *gin.Context) {
 func (h *SiteHandler) SetHotlinkConfig(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 	var req service.HotlinkConfig
@@ -1256,6 +1514,10 @@ func (h *SiteHandler) GetMaintenanceConfig(c *gin.Context) {
 	if err != nil {
 		return
 	}
+
+	if !h.requireAccess(c, id) {
+		return
+	}
 	config, err := h.siteService.GetMaintenanceConfig(id)
 	if err != nil {
 		response.Error(c, err)
@@ -1267,6 +1529,10 @@ func (h *SiteHandler) GetMaintenanceConfig(c *gin.Context) {
 func (h *SiteHandler) SetMaintenanceConfig(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 	var req service.MaintenanceConfig
@@ -1319,6 +1585,10 @@ func (h *SiteHandler) SetQuota(c *gin.Context) {
 		return
 	}
 
+	if !h.requireAccess(c, id) {
+		return
+	}
+
 	var req setQuotaRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.ValidationError(c, []response.FieldError{{Field: "body", Message: "invalid request body"}})
@@ -1337,6 +1607,10 @@ func (h *SiteHandler) SetQuota(c *gin.Context) {
 func (h *SiteHandler) GetDiskUsage(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 
@@ -1360,6 +1634,10 @@ func (h *SiteHandler) GetURLRewrite(c *gin.Context) {
 		return
 	}
 
+	if !h.requireAccess(c, id) {
+		return
+	}
+
 	content, err := h.siteService.GetURLRewrite(id)
 	if err != nil {
 		response.Error(c, err)
@@ -1377,6 +1655,10 @@ type setURLRewriteRequest struct {
 func (h *SiteHandler) SetURLRewrite(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 
@@ -1432,6 +1714,10 @@ func (h *SiteHandler) GetComposerStatus(c *gin.Context) {
 		return
 	}
 
+	if !h.requireAccess(c, id) {
+		return
+	}
+
 	status, err := h.siteService.GetComposerStatus(id)
 	if err != nil {
 		response.Error(c, err)
@@ -1462,6 +1748,10 @@ func (h *SiteHandler) RunComposer(c *gin.Context) {
 		return
 	}
 
+	if !h.requireAccess(c, id) {
+		return
+	}
+
 	var req composerRunRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Error(c, err)
@@ -1481,6 +1771,10 @@ func (h *SiteHandler) RunComposer(c *gin.Context) {
 func (h *SiteHandler) GetComposerJSON(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 
@@ -1504,6 +1798,10 @@ func (h *SiteHandler) UpdateComposerJSON(c *gin.Context) {
 		return
 	}
 
+	if !h.requireAccess(c, id) {
+		return
+	}
+
 	var req updateComposerJSONRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Error(c, err)
@@ -1524,23 +1822,27 @@ func (h *SiteHandler) UpdateComposerJSON(c *gin.Context) {
 
 // GetStatistics returns access log statistics for a website.
 func (h *SiteHandler) GetStatistics(c *gin.Context) {
-id, err := parseID(c, "id")
-if err != nil {
-return
-}
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
 
-days := 7
-if d := c.Query("days"); d != "" {
-if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 {
-days = parsed
-}
-}
+	if !h.requireAccess(c, id) {
+		return
+	}
 
-stats, err := h.statsService.GetStatistics(id, days)
-if err != nil {
-response.Error(c, err)
-return
-}
+	days := 7
+	if d := c.Query("days"); d != "" {
+		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 {
+			days = parsed
+		}
+	}
 
-response.Success(c, stats)
+	stats, err := h.statsService.GetStatistics(id, days)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, stats)
 }

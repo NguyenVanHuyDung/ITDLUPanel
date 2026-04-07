@@ -105,16 +105,24 @@ func (s *FTPService) Create(req CreateFTPRequest) (*FTPAccount, error) {
 }
 
 // List returns a paginated list of FTP accounts.
-func (s *FTPService) List(page, pageSize int) ([]*FTPAccount, int, error) {
+func (s *FTPService) List(page, pageSize int, allowedIDs []int64) ([]*FTPAccount, int, error) {
+	whereClause := ""
+	if allowedIDs != nil {
+		if len(allowedIDs) == 0 {
+			return []*FTPAccount{}, 0, nil
+		}
+		whereClause = " WHERE id IN (" + buildIDFilter(allowedIDs) + ")"
+	}
+
 	var total int
-	if err := s.db.QueryRow("SELECT COUNT(*) FROM ftps").Scan(&total); err != nil {
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM ftps" + whereClause).Scan(&total); err != nil {
 		return nil, 0, apperrors.Wrap(err, apperrors.ErrInternal, "failed to count FTP accounts")
 	}
 
 	offset := (page - 1) * pageSize
 	rows, err := s.db.Query(
 		`SELECT id, username, path, status, created_by, created_at
-		 FROM ftps ORDER BY id DESC LIMIT ? OFFSET ?`,
+		 FROM ftps`+whereClause+` ORDER BY id DESC LIMIT ? OFFSET ?`,
 		pageSize, offset,
 	)
 	if err != nil {

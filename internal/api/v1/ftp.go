@@ -2,6 +2,7 @@ package v1
 
 import (
 	"fmt"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 
@@ -12,12 +13,47 @@ import (
 
 // FTPHandler handles FTP account management API endpoints.
 type FTPHandler struct {
-	ftpService *service.FTPService
+	ftpService          *service.FTPService
+	userResourceService *service.UserResourceService
 }
 
 // NewFTPHandler creates a new FTPHandler.
-func NewFTPHandler(ftpService *service.FTPService) *FTPHandler {
-	return &FTPHandler{ftpService: ftpService}
+func NewFTPHandler(ftpService *service.FTPService, userResourceService *service.UserResourceService) *FTPHandler {
+	return &FTPHandler{ftpService: ftpService, userResourceService: userResourceService}
+}
+
+// requireAccess checks if a non-admin user has access to an FTP resource.
+func (h *FTPHandler) requireAccess(c *gin.Context, ftpID int64) bool {
+	role, _ := c.Get("role")
+	if role == "admin" {
+		return true
+	}
+	userID, _ := c.Get("user_id")
+	uid, _ := userID.(int64)
+	hasAccess, err := h.userResourceService.HasAccess(uid, "ftp", ftpID)
+	if err != nil || !hasAccess {
+		c.JSON(http.StatusForbidden, response.Response{
+			Code:    http.StatusForbidden,
+			Message: "access denied to this resource",
+		})
+		return false
+	}
+	return true
+}
+
+// getAllowedFTPIDs returns nil for admins (no filter) or the list of allowed IDs for non-admins.
+func (h *FTPHandler) getAllowedFTPIDs(c *gin.Context) []int64 {
+	role, _ := c.Get("role")
+	if role == "admin" {
+		return nil
+	}
+	userID, _ := c.Get("user_id")
+	uid, _ := userID.(int64)
+	ids, _ := h.userResourceService.ListResourceIDs(uid, "ftp")
+	if ids == nil {
+		ids = []int64{}
+	}
+	return ids
 }
 
 // RegisterRoutes registers FTP management routes.
@@ -62,7 +98,7 @@ func (h *FTPHandler) List(c *gin.Context) {
 		q.PerPage = 20
 	}
 
-	accounts, total, err := h.ftpService.List(q.Page, q.PerPage)
+	accounts, total, err := h.ftpService.List(q.Page, q.PerPage, h.getAllowedFTPIDs(c))
 	if err != nil {
 		response.Error(c, err)
 		return
@@ -102,6 +138,14 @@ func (h *FTPHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// Auto-assign newly created FTP account to non-admin user
+	role, _ := c.Get("role")
+	if role != "admin" {
+		userID, _ := c.Get("user_id")
+		uid, _ := userID.(int64)
+		_ = h.userResourceService.Assign(uid, "ftp", account.ID)
+	}
+
 	response.Created(c, account)
 }
 
@@ -109,6 +153,10 @@ func (h *FTPHandler) Create(c *gin.Context) {
 func (h *FTPHandler) Get(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 
@@ -125,6 +173,10 @@ func (h *FTPHandler) Get(c *gin.Context) {
 func (h *FTPHandler) Update(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 
@@ -156,10 +208,16 @@ func (h *FTPHandler) Delete(c *gin.Context) {
 		return
 	}
 
+	if !h.requireAccess(c, id) {
+		return
+	}
+
 	if err := h.ftpService.Delete(id); err != nil {
 		response.Error(c, err)
 		return
 	}
+
+	_ = h.userResourceService.RemoveAllForResource("ftp", id)
 
 	response.Success(c, gin.H{"message": "FTP account deleted successfully"})
 }
@@ -176,6 +234,10 @@ type changeFTPPasswordRequest struct {
 func (h *FTPHandler) ChangePassword(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 
@@ -208,6 +270,10 @@ type setFTPStatusRequest struct {
 func (h *FTPHandler) SetStatus(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
+		return
+	}
+
+	if !h.requireAccess(c, id) {
 		return
 	}
 
@@ -245,6 +311,24 @@ type ftpBatchPathRequest struct {
 	Path string  `json:"path" validate:"required"`
 }
 
+// filterAllowedIDs filters a list of IDs to only those the current user can access.
+func (h *FTPHandler) filterAllowedIDs(c *gin.Context, ids []int64) []int64 {
+	role, _ := c.Get("role")
+	if role == "admin" {
+		return ids
+	}
+	userID, _ := c.Get("user_id")
+	uid, _ := userID.(int64)
+	var allowed []int64
+	for _, id := range ids {
+		has, _ := h.userResourceService.HasAccess(uid, "ftp", id)
+		if has {
+			allowed = append(allowed, id)
+		}
+	}
+	return allowed
+}
+
 // BatchDelete removes multiple FTP accounts at once.
 func (h *FTPHandler) BatchDelete(c *gin.Context) {
 	var req ftpBatchIDsRequest
@@ -255,11 +339,13 @@ func (h *FTPHandler) BatchDelete(c *gin.Context) {
 		return
 	}
 
+	req.IDs = h.filterAllowedIDs(c, req.IDs)
 	success, failed := 0, 0
 	for _, id := range req.IDs {
 		if err := h.ftpService.Delete(id); err != nil {
 			failed++
 		} else {
+			_ = h.userResourceService.RemoveAllForResource("ftp", id)
 			success++
 		}
 	}
@@ -282,7 +368,7 @@ func (h *FTPHandler) BatchSetStatus(c *gin.Context) {
 	}
 
 	success, failed := 0, 0
-	for _, id := range req.IDs {
+	for _, id := range h.filterAllowedIDs(c, req.IDs) {
 		if err := h.ftpService.SetStatus(id, req.Enabled); err != nil {
 			failed++
 		} else {
@@ -308,7 +394,7 @@ func (h *FTPHandler) BatchUpdatePath(c *gin.Context) {
 	}
 
 	success, failed := 0, 0
-	for _, id := range req.IDs {
+	for _, id := range h.filterAllowedIDs(c, req.IDs) {
 		if err := h.ftpService.Update(id, service.UpdateFTPRequest{Path: req.Path}); err != nil {
 			failed++
 		} else {

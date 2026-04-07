@@ -332,10 +332,30 @@ func (s *SiteService) Create(req CreateSiteRequest, userID int64) (*Site, error)
 	return s.GetByID(id)
 }
 
+// buildIDFilter converts a slice of IDs to a comma-separated string for SQL IN clauses.
+func buildIDFilter(ids []int64) string {
+	if len(ids) == 0 {
+		return "-1"
+	}
+	parts := make([]string, len(ids))
+	for i, id := range ids {
+		parts[i] = fmt.Sprintf("%d", id)
+	}
+	return strings.Join(parts, ",")
+}
+
 // List returns a paginated list of sites.
-func (s *SiteService) List(page, pageSize int) ([]*Site, int, error) {
+func (s *SiteService) List(page, pageSize int, allowedIDs []int64) ([]*Site, int, error) {
+	whereClause := ""
+	if allowedIDs != nil {
+		if len(allowedIDs) == 0 {
+			return []*Site{}, 0, nil
+		}
+		whereClause = " WHERE id IN (" + buildIDFilter(allowedIDs) + ")"
+	}
+
 	var total int
-	if err := s.db.QueryRow("SELECT COUNT(*) FROM sites").Scan(&total); err != nil {
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM sites" + whereClause).Scan(&total); err != nil {
 		return nil, 0, apperrors.Wrap(err, apperrors.ErrInternal, "failed to count sites")
 	}
 
@@ -344,7 +364,7 @@ func (s *SiteService) List(page, pageSize int) ([]*Site, int, error) {
 		`SELECT id, name, domain, description, path, webserver, php_version, ssl_enabled,
 		        ssl_type, ssl_expiry, status, config_extra, created_by, created_at, updated_at,
 		        disk_quota, disk_usage
-		 FROM sites ORDER BY id DESC LIMIT ? OFFSET ?`, pageSize, offset,
+		 FROM sites`+whereClause+` ORDER BY id DESC LIMIT ? OFFSET ?`, pageSize, offset,
 	)
 	if err != nil {
 		return nil, 0, apperrors.Wrap(err, apperrors.ErrInternal, "failed to list sites")

@@ -110,6 +110,7 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		cloudStorageService := service.NewCloudStorageService(db)
 		backupService := service.NewBackupService(db, ftpStorageService, cloudStorageService)
 		terminalService := service.NewTerminalService()
+		userResourceService := service.NewUserResourceService(db)
 		installerRegistry := installer.DefaultRegistry()
 		softwareService := service.NewSoftwareService(db, taskQueue, installerRegistry, firewallService)
 		softwareService.SetOnNginxVersionChanged(func() {
@@ -124,7 +125,7 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		authHandler := v1.NewAuthHandler(authService, totpService, GetUserPermissions)
 		authHandler.RegisterRoutes(apiV1, authMW)
 
-		userHandler := v1.NewUserHandler(userService)
+		userHandler := v1.NewUserHandler(userService, userResourceService)
 		userHandler.RegisterRoutes(apiV1, authMW, adminMW)
 
 		// -------------------------------------------------------
@@ -159,7 +160,7 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		// Site management
 		// -------------------------------------------------------
 		statsService := service.NewSiteStatisticsService(db)
-		siteHandler := v1.NewSiteHandler(siteService, statsService)
+		siteHandler := v1.NewSiteHandler(siteService, statsService, userResourceService)
 		siteHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
 
 		// -------------------------------------------------------
@@ -171,7 +172,7 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		// -------------------------------------------------------
 		// Database management
 		// -------------------------------------------------------
-		databaseHandler := v1.NewDatabaseHandler(databaseService)
+		databaseHandler := v1.NewDatabaseHandler(databaseService, userResourceService)
 		databaseHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
 
 		// -------------------------------------------------------
@@ -184,7 +185,7 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		// -------------------------------------------------------
 		// FTP management
 		// -------------------------------------------------------
-		ftpHandler := v1.NewFTPHandler(ftpService)
+		ftpHandler := v1.NewFTPHandler(ftpService, userResourceService)
 		ftpHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
 
 		// -------------------------------------------------------

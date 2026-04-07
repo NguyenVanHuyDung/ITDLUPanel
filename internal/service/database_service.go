@@ -130,16 +130,24 @@ func (s *DatabaseService) Create(req CreateDBRequest) (*Database, error) {
 }
 
 // List returns a paginated list of databases.
-func (s *DatabaseService) List(page, pageSize int) ([]*Database, int, error) {
+func (s *DatabaseService) List(page, pageSize int, allowedIDs []int64) ([]*Database, int, error) {
+	whereClause := ""
+	if allowedIDs != nil {
+		if len(allowedIDs) == 0 {
+			return []*Database{}, 0, nil
+		}
+		whereClause = " WHERE id IN (" + buildIDFilter(allowedIDs) + ")"
+	}
+
 	var total int
-	if err := s.db.QueryRow("SELECT COUNT(*) FROM databases").Scan(&total); err != nil {
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM databases" + whereClause).Scan(&total); err != nil {
 		return nil, 0, apperrors.Wrap(err, apperrors.ErrInternal, "failed to count databases")
 	}
 
 	offset := (page - 1) * pageSize
 	rows, err := s.db.Query(
 		`SELECT id, name, db_type, username, password, charset, collation, remote_access, size, created_by, created_at, disk_quota
-		 FROM databases ORDER BY id DESC LIMIT ? OFFSET ?`,
+		 FROM databases`+whereClause+` ORDER BY id DESC LIMIT ? OFFSET ?`,
 		pageSize, offset,
 	)
 	if err != nil {

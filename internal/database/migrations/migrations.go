@@ -21,5 +21,6 @@ func All() []Migration {
 		&Migration008PanelSettings{},
 		&Migration009FTPStorage{},
 		&Migration010CloudStorages{},
+		&Migration011UserResources{},
 	}
 }

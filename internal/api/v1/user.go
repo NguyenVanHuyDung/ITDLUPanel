@@ -13,13 +13,15 @@ import (
 
 // UserHandler handles user management API endpoints.
 type UserHandler struct {
-	userService *service.UserService
+	userService         *service.UserService
+	userResourceService *service.UserResourceService
 }
 
 // NewUserHandler creates a new UserHandler.
-func NewUserHandler(userService *service.UserService) *UserHandler {
+func NewUserHandler(userService *service.UserService, userResourceService *service.UserResourceService) *UserHandler {
 	return &UserHandler{
-		userService: userService,
+		userService:         userService,
+		userResourceService: userResourceService,
 	}
 }
 
@@ -33,6 +35,11 @@ func (h *UserHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gin.Ha
 		users.PUT("/:id", h.UpdateUser)
 		users.PUT("/:id/password", h.ResetPassword)
 		users.DELETE("/:id", h.DeleteUser)
+
+		// Resource assignment (admin only)
+		users.GET("/:id/resources", h.ListUserResources)
+		users.POST("/:id/resources", h.BulkAssignResources)
+		users.DELETE("/:id/resources/:type/:rid", h.RemoveResource)
 	}
 }
 
@@ -216,4 +223,98 @@ func (h *UserHandler) DeleteUser(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"message": "user deleted successfully"})
+}
+
+// ---------------------------------------------------------------------------
+// Resource assignment (admin only)
+// ---------------------------------------------------------------------------
+
+// ListUserResources returns all resource assignments for a user.
+func (h *UserHandler) ListUserResources(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.Response{
+			Code:    http.StatusBadRequest,
+			Message: "invalid user ID",
+		})
+		return
+	}
+
+	resources, err := h.userResourceService.ListUserResources(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, resources)
+}
+
+type bulkAssignRequest struct {
+	Type        string  `json:"type" validate:"required,oneof=site database ftp"`
+	ResourceIDs []int64 `json:"resource_ids" validate:"required"`
+}
+
+// BulkAssignResources assigns multiple resources of one type to a user.
+func (h *UserHandler) BulkAssignResources(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.Response{
+			Code:    http.StatusBadRequest,
+			Message: "invalid user ID",
+		})
+		return
+	}
+
+	var req bulkAssignRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid request body"},
+		})
+		return
+	}
+
+	if errs := validator.Validate(req); errs != nil {
+		response.ValidationError(c, errs)
+		return
+	}
+
+	if err := h.userResourceService.BulkAssign(id, req.Type, req.ResourceIDs); err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"message": "resources assigned successfully"})
+}
+
+// RemoveResource removes a specific resource assignment from a user.
+func (h *UserHandler) RemoveResource(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.Response{
+			Code:    http.StatusBadRequest,
+			Message: "invalid user ID",
+		})
+		return
+	}
+
+	resourceType := c.Param("type")
+	ridStr := c.Param("rid")
+	rid, err := strconv.ParseInt(ridStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.Response{
+			Code:    http.StatusBadRequest,
+			Message: "invalid resource ID",
+		})
+		return
+	}
+
+	if err := h.userResourceService.Remove(id, resourceType, rid); err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"message": "resource assignment removed"})
 }
