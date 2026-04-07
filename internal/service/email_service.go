@@ -51,19 +51,13 @@ func (s *EmailService) Send(cfg EmailConfig, to, subject, htmlBody string) error
 		from = cfg.Username
 	}
 
-	headers := map[string]string{
-		"From":         from,
-		"To":           to,
-		"Subject":      subject,
-		"MIME-Version": "1.0",
-		"Content-Type": "text/html; charset=UTF-8",
-		"Date":         time.Now().Format(time.RFC1123Z),
-	}
-
 	var msg strings.Builder
-	for k, v := range headers {
-		fmt.Fprintf(&msg, "%s: %s\r\n", k, v)
-	}
+	fmt.Fprintf(&msg, "From: %s\r\n", from)
+	fmt.Fprintf(&msg, "To: %s\r\n", to)
+	fmt.Fprintf(&msg, "Subject: %s\r\n", subject)
+	fmt.Fprintf(&msg, "Date: %s\r\n", time.Now().Format(time.RFC1123Z))
+	msg.WriteString("MIME-Version: 1.0\r\n")
+	msg.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
 	msg.WriteString("\r\n")
 	msg.WriteString(htmlBody)
 
