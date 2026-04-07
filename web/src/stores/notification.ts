@@ -61,6 +61,7 @@ interface NotificationState {
   updateChannel: (id: number, ch: Partial<NotificationChannel>) => Promise<void>;
   deleteChannel: (id: number) => Promise<void>;
   testChannel: (id: number) => Promise<string>;
+  testEvent: (channelId: number, eventType: string) => Promise<string>;
 
   updateRules: (rules: { channel_id: number; event_type: string; is_enabled: boolean }[]) => Promise<void>;
   clearLogs: () => Promise<void>;
@@ -119,6 +120,11 @@ export const useNotificationStore = create<NotificationState>((set) => ({
   testChannel: async (id) => {
     const { data } = await api.post(`/notifications/channels/${id}/test`);
     return data.message || 'Test sent';
+  },
+
+  testEvent: async (channelId, eventType) => {
+    const { data } = await api.post(`/notifications/channels/${channelId}/test/${eventType}`);
+    return data.message || 'Test event sent';
   },
 
   updateRules: async (rules) => {

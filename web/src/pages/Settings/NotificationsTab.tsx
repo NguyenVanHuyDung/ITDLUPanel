@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Form, Input, InputNumber, Select, Switch, Button, Table, Modal,
   Space, Tag, Tooltip, Popconfirm, Spin, message, Badge, Empty,
@@ -52,7 +52,7 @@ export default function NotificationsTab() {
   const {
     channels, rules, logs, eventTypes, criticalTypes, loading,
     fetchChannels, fetchRules, fetchLogs, fetchEventTypes, fetchCriticalTypes,
-    createChannel, updateChannel, deleteChannel, testChannel,
+    createChannel, updateChannel, deleteChannel, testChannel, testEvent,
     updateRules, clearLogs,
   } = useNotificationStore();
 
@@ -61,6 +61,7 @@ export default function NotificationsTab() {
   const [form] = Form.useForm();
   const [channelType, setChannelType] = useState<'email' | 'telegram'>('email');
   const [testing, setTesting] = useState<number | null>(null);
+  const [testingEvent, setTestingEvent] = useState<string | null>(null);
   const [section, setSection] = useState<'channels' | 'rules' | 'logs'>('channels');
 
   const parseConfig = (cfg: string): Record<string, string> => {
@@ -139,6 +140,22 @@ export default function NotificationsTab() {
       message.error(errMsg, 6);
     } finally {
       setTesting(null);
+    }
+  };
+
+  const handleTestEvent = async (channelId: number, eventType: string) => {
+    const key = `${channelId}-${eventType}`;
+    setTestingEvent(key);
+    try {
+      const msg = await testEvent(channelId, eventType);
+      message.success(msg);
+    } catch (e: unknown) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const axiosErr = e as any;
+      const errMsg = axiosErr?.response?.data?.error || axiosErr?.message || 'Test failed';
+      message.error(errMsg, 6);
+    } finally {
+      setTestingEvent(null);
     }
   };
 
@@ -381,9 +398,10 @@ export default function NotificationsTab() {
     return (
       <div style={sectionBox}>
         {sectionTitle(<BellOutlined style={{ color: p.accent }} />, 'Event Rules')}
-        <p style={{ color: p.textSoft, marginBottom: 16, fontSize: 13 }}>
-          Choose which events trigger notifications on each channel.
-          Events marked with <Tag color="red" style={{ fontSize: 11 }}>Critical</Tag> are auto-enabled for new channels.
+        <p style={{ color: p.textSoft, marginBottom: 16, fontSize: 13, lineHeight: 1.6 }}>
+          Toggle which events trigger notifications on each channel.
+          Use the <ExperimentOutlined /> button to send a sample notification for any event type.
+          Events marked <Tag color="red" style={{ fontSize: 11 }}>Critical</Tag> are auto-enabled for new channels.
         </p>
 
         {activeChannels.length === 0 ? (
@@ -393,16 +411,30 @@ export default function NotificationsTab() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr>
-                  <th style={{ textAlign: 'left', padding: '8px 10px', borderBottom: `1px solid ${p.border}`, color: p.text }}>
-                    Event
+                  <th style={{ textAlign: 'left', padding: '10px 12px', borderBottom: `2px solid ${p.border}`, color: p.text, fontWeight: 700 }}>
+                    Event Type
                   </th>
                   {activeChannels.map((ch) => (
                     <th
                       key={ch.id}
-                      style={{ textAlign: 'center', padding: '8px 10px', borderBottom: `1px solid ${p.border}`, color: p.text, minWidth: 90 }}
+                      colSpan={2}
+                      style={{ textAlign: 'center', padding: '10px 8px', borderBottom: `2px solid ${p.border}`, color: p.text, fontWeight: 600, minWidth: 140 }}
                     >
                       {ch.type === 'email' ? '📧' : '📨'} {ch.name}
                     </th>
+                  ))}
+                </tr>
+                <tr>
+                  <th style={{ padding: '4px 12px', borderBottom: `1px solid ${p.border}` }} />
+                  {activeChannels.map((ch) => (
+                    <React.Fragment key={ch.id}>
+                      <th style={{ textAlign: 'center', padding: '4px 4px', borderBottom: `1px solid ${p.border}`, fontSize: 11, color: p.textSoft, fontWeight: 500 }}>
+                        Enabled
+                      </th>
+                      <th style={{ textAlign: 'center', padding: '4px 4px', borderBottom: `1px solid ${p.border}`, fontSize: 11, color: p.textSoft, fontWeight: 500 }}>
+                        Test
+                      </th>
+                    </React.Fragment>
                   ))}
                 </tr>
               </thead>
@@ -412,23 +444,54 @@ export default function NotificationsTab() {
                   const info = eventLabel(ev);
                   const isCritical = criticalTypes.includes(ev);
                   return (
-                    <tr key={ev} style={isCritical ? { background: isDark ? 'rgba(255,0,0,0.04)' : 'rgba(255,0,0,0.02)' } : undefined}>
-                      <td style={{ padding: '6px 10px', borderBottom: `1px solid ${p.border}`, color: p.text }}>
-                        <Tag color={info.color} style={{ marginRight: 4 }}>{info.emoji} {info.label}</Tag>
-                        {isCritical && <Tag color="red" style={{ fontSize: 10 }}>Critical</Tag>}
+                    <tr
+                      key={ev}
+                      style={{
+                        background: isCritical
+                          ? (isDark ? 'rgba(255,0,0,0.04)' : 'rgba(255,0,0,0.02)')
+                          : undefined,
+                        transition: 'background 0.2s',
+                      }}
+                      onMouseEnter={(e) => {
+                        (e.currentTarget as HTMLElement).style.background = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)';
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.currentTarget as HTMLElement).style.background = isCritical
+                          ? (isDark ? 'rgba(255,0,0,0.04)' : 'rgba(255,0,0,0.02)')
+                          : '';
+                      }}
+                    >
+                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${p.border}`, color: p.text }}>
+                        <span style={{ marginRight: 6 }}>{info.emoji}</span>
+                        <Tag color={info.color} style={{ marginRight: 4, fontSize: 12 }}>{info.label}</Tag>
+                        {isCritical && <Tag color="red" style={{ fontSize: 10, lineHeight: '16px' }}>Critical</Tag>}
                       </td>
-                      {activeChannels.map((ch) => (
-                        <td
-                          key={ch.id}
-                          style={{ textAlign: 'center', padding: '6px 10px', borderBottom: `1px solid ${p.border}` }}
-                        >
-                          <Switch
-                            size="small"
-                            checked={isRuleEnabled(ch.id, ev)}
-                            onChange={(checked) => handleRuleToggle(ch.id, ev, checked)}
-                          />
-                        </td>
-                      ))}
+                      {activeChannels.map((ch) => {
+                        const testKey = `${ch.id}-${ev}`;
+                        return (
+                          <React.Fragment key={ch.id}>
+                            <td style={{ textAlign: 'center', padding: '8px 4px', borderBottom: `1px solid ${p.border}` }}>
+                              <Switch
+                                size="small"
+                                checked={isRuleEnabled(ch.id, ev)}
+                                onChange={(checked) => handleRuleToggle(ch.id, ev, checked)}
+                              />
+                            </td>
+                            <td style={{ textAlign: 'center', padding: '8px 4px', borderBottom: `1px solid ${p.border}` }}>
+                              <Tooltip title={`Send sample "${info.label}" via ${ch.name}`}>
+                                <Button
+                                  size="small"
+                                  type="text"
+                                  icon={<ExperimentOutlined style={{ color: p.accent }} />}
+                                  loading={testingEvent === testKey}
+                                  onClick={() => handleTestEvent(ch.id, ev)}
+                                  style={{ borderRadius: 4 }}
+                                />
+                              </Tooltip>
+                            </td>
+                          </React.Fragment>
+                        );
+                      })}
                     </tr>
                   );
                 })}

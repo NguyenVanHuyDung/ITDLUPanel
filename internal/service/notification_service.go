@@ -404,6 +404,121 @@ func (s *NotificationService) TestChannel(id int64) error {
 	}
 }
 
+// TestEvent sends a sample notification for a specific event type through a channel.
+func (s *NotificationService) TestEvent(channelID int64, eventType string) error {
+	ch, err := s.GetChannelRaw(channelID)
+	if err != nil {
+		return fmt.Errorf("channel not found: %w", err)
+	}
+
+	sample := sampleEventData(eventType)
+	severity := EventSeverity(eventType)
+
+	switch ch.Type {
+	case "email":
+		cfg, err := s.email.ParseConfig(ch.Config)
+		if err != nil {
+			return err
+		}
+		to := cfg.ToAddr
+		if to == "" {
+			to = cfg.Username
+		}
+		subject := fmt.Sprintf("[%s] %s — %s", strings.ToUpper(severity), sample.title, "ITDLUPanel")
+		body := s.email.FormatEventEmail(eventType, severity, sample.title, sample.detail, "")
+		return s.email.Send(cfg, to, subject, body)
+
+	case "telegram":
+		cfg, err := s.telegram.ParseConfig(ch.Config)
+		if err != nil {
+			return err
+		}
+		text := s.telegram.FormatEventMessage(eventType, severity, sample.title, sample.detail)
+		return s.telegram.Send(cfg, text)
+
+	default:
+		return fmt.Errorf("unknown channel type: %s", ch.Type)
+	}
+}
+
+type sampleEvent struct {
+	title  string
+	detail string
+}
+
+func sampleEventData(eventType string) sampleEvent {
+	samples := map[string]sampleEvent{
+		"cron_success": {
+			title:  "Cron Job Completed: Daily Backup",
+			detail: "Task: Daily database backup\nDuration: 12.3s\nOutput: Backup created successfully (245 MB)",
+		},
+		"cron_failed": {
+			title:  "Cron Job Failed: Cleanup Script",
+			detail: "Task: /usr/local/bin/cleanup.sh\nExit Code: 1\nError: Permission denied: /var/log/app.log",
+		},
+		"ssl_expiry_warning": {
+			title:  "SSL Certificate Expiring: example.com",
+			detail: "Domain: example.com\nExpires: 2025-02-15 00:00:00 UTC\nDays Remaining: 7\nIssuer: Let's Encrypt Authority X3",
+		},
+		"ssl_expired": {
+			title:  "SSL Certificate Expired: example.com",
+			detail: "Domain: example.com\nExpired: 2025-01-30 00:00:00 UTC\nIssuer: Let's Encrypt Authority X3\nAction: Immediate renewal required",
+		},
+		"backup_completed": {
+			title:  "Backup Completed: Full Server Backup",
+			detail: "Type: Full backup\nSize: 1.24 GB\nDuration: 3m 42s\nDestination: /backup/server/2025-01-30.tar.gz",
+		},
+		"backup_failed": {
+			title:  "Backup Failed: Database Backup",
+			detail: "Type: Database backup\nError: Insufficient disk space\nRequired: 500 MB\nAvailable: 128 MB",
+		},
+		"software_installed": {
+			title:  "Software Installed: Nginx 1.24.0",
+			detail: "Package: nginx\nVersion: 1.24.0\nDuration: 45s\nStatus: Running",
+		},
+		"software_install_failed": {
+			title:  "Software Install Failed: Redis",
+			detail: "Package: redis-server\nError: Package dependency conflict\nDetails: libssl1.1 version mismatch",
+		},
+		"site_created": {
+			title:  "Website Created: mysite.example.com",
+			detail: "Domain: mysite.example.com\nPHP Version: 8.2\nDocument Root: /www/wwwroot/mysite.example.com",
+		},
+		"site_deleted": {
+			title:  "Website Deleted: old-site.example.com",
+			detail: "Domain: old-site.example.com\nBackup: Created before deletion\nFiles removed: 1,247",
+		},
+		"cpu_high": {
+			title:  "High CPU Usage Alert: 95%",
+			detail: "Current Usage: 95.2%\nThreshold: 90%\nTop Process: mysqld (PID: 1234) — 78.3%\nDuration: 5 minutes",
+		},
+		"memory_high": {
+			title:  "High Memory Usage Alert: 92%",
+			detail: "Used: 7.4 GB / 8 GB\nThreshold: 85%\nTop Process: java (PID: 5678) — 3.2 GB\nSwap: 1.2 GB / 2 GB",
+		},
+		"disk_high": {
+			title:  "Disk Space Critical: /dev/sda1 at 96%",
+			detail: "Partition: /dev/sda1 mounted at /\nUsed: 48 GB / 50 GB\nThreshold: 90%\nLargest Directory: /var/log (12 GB)",
+		},
+		"service_down": {
+			title:  "Service Down: MySQL",
+			detail: "Service: mysql\nStatus: inactive (dead)\nLast Active: 2 minutes ago\nAutomatic restart: Attempted, failed",
+		},
+		"login_failed": {
+			title:  "Failed Login Attempt Detected",
+			detail: "Username: admin\nIP Address: 203.0.113.42\nLocation: Unknown\nAttempts: 3 in last 5 minutes",
+		},
+	}
+
+	if s, ok := samples[eventType]; ok {
+		return s
+	}
+	return sampleEvent{
+		title:  "Test Event: " + eventType,
+		detail: "This is a sample notification for event type: " + eventType,
+	}
+}
+
 // ---------------------------------------------------------------------------
 // CRUD: Rules
 // ---------------------------------------------------------------------------

@@ -30,6 +30,7 @@ func (h *NotificationHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminM
 		g.PUT("/channels/:id", h.UpdateChannel)
 		g.DELETE("/channels/:id", h.DeleteChannel)
 		g.POST("/channels/:id/test", h.TestChannel)
+		g.POST("/channels/:id/test/:eventType", h.TestEvent)
 
 		// Rules
 		g.GET("/rules", h.ListRules)
@@ -136,6 +137,24 @@ func (h *NotificationHandler) TestChannel(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "test notification sent"})
+}
+
+func (h *NotificationHandler) TestEvent(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	eventType := c.Param("eventType")
+	if eventType == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "eventType required"})
+		return
+	}
+	if err := h.svc.TestEvent(id, eventType); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "test event sent", "event_type": eventType})
 }
 
 // ---------- Rules ----------
