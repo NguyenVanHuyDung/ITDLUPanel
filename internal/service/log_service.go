@@ -37,10 +37,31 @@ type AuditEntry struct {
 // Service
 // ---------------------------------------------------------------------------
 
-// WebsiteLogResult contains log lines and total line count for the queried period.
+// WebsiteLogResult contains log lines and aggregate stats for the queried period.
 type WebsiteLogResult struct {
-	Lines      []string `json:"lines"`
-	TotalLines int      `json:"total_lines"`
+	Lines      []string        `json:"lines"`
+	TotalLines int             `json:"total_lines"`
+	Stats      *AccessLogStats `json:"stats,omitempty"`
+}
+
+// AccessLogStats holds aggregate statistics computed from all log lines.
+type AccessLogStats struct {
+	TotalRequests int            `json:"total_requests"`
+	UniqueIPs     int            `json:"unique_ips"`
+	TotalBytes    int64          `json:"total_bytes"`
+	Status2xx     int            `json:"status_2xx"`
+	Status3xx     int            `json:"status_3xx"`
+	Status4xx     int            `json:"status_4xx"`
+	Status5xx     int            `json:"status_5xx"`
+	TopStatus     int            `json:"top_status"`
+	TopStatusN    int            `json:"top_status_count"`
+	TopIPs        []IPCount      `json:"top_ips,omitempty"`
+}
+
+// IPCount represents an IP address with its request count.
+type IPCount struct {
+	IP    string `json:"ip"`
+	Count int    `json:"count"`
 }
 
 const (
@@ -146,17 +167,13 @@ func (s *LogService) readWebsiteLogRange(domain, logType, startDate, endDate str
 		return readLogFileWithCount(paths[0], lines)
 	}
 
-	// Count total lines across all files
-	totalLines := countLinesMulti(paths)
+	// Compute stats from all files (access logs only get full stats)
+	stats := computeAccessStats(paths)
 
 	// Build a shell command that cats/zcats all files and pipes to tail
 	var parts []string
 	for _, p := range paths {
-		if strings.HasSuffix(p, ".gz") {
-			parts = append(parts, fmt.Sprintf("zcat '%s'", p))
-		} else {
-			parts = append(parts, fmt.Sprintf("cat '%s'", p))
-		}
+		parts = append(parts, catCmd(p))
 	}
 	cmd := fmt.Sprintf("{ %s; } | tail -n %d", strings.Join(parts, "; "), lines)
 
@@ -168,10 +185,10 @@ func (s *LogService) readWebsiteLogRange(domain, logType, startDate, endDate str
 	}
 	output := strings.TrimSpace(result.Stdout)
 	if output == "" {
-		return &WebsiteLogResult{Lines: []string{}, TotalLines: totalLines}, nil
+		return &WebsiteLogResult{Lines: []string{}, TotalLines: stats.TotalRequests, Stats: stats}, nil
 	}
 	logLines := strings.Split(output, "\n")
-	return &WebsiteLogResult{Lines: logLines, TotalLines: totalLines}, nil
+	return &WebsiteLogResult{Lines: logLines, TotalLines: stats.TotalRequests, Stats: stats}, nil
 }
 
 // ClearWebsiteLog clears a website's access or error log.
@@ -487,43 +504,125 @@ func readLogFile(filePath string, lines int) ([]string, error) {
 	return strings.Split(output, "\n"), nil
 }
 
-// readLogFileWithCount reads the last N lines and also counts total lines in the file.
+// readLogFileWithCount reads the last N lines and computes stats from all lines.
 func readLogFileWithCount(filePath string, lines int) (*WebsiteLogResult, error) {
 	logLines, err := readLogFile(filePath, lines)
 	if err != nil {
 		return nil, err
 	}
-	totalLines := countLines(filePath)
-	return &WebsiteLogResult{Lines: logLines, TotalLines: totalLines}, nil
+	stats := computeAccessStats([]string{filePath})
+	return &WebsiteLogResult{Lines: logLines, TotalLines: stats.TotalRequests, Stats: stats}, nil
 }
 
-// countLines counts total lines in a single log file.
-func countLines(filePath string) int {
-	ctx, cancel := context.WithTimeout(context.Background(), logCmdTimeout)
-	defer cancel()
-	var cmd string
-	if strings.HasSuffix(filePath, ".gz") {
-		cmd = fmt.Sprintf("zcat '%s' | wc -l", filePath)
-	} else {
-		cmd = fmt.Sprintf("wc -l < '%s'", filePath)
+// catCmd returns the shell command to read a log file (zcat for .gz, cat otherwise).
+func catCmd(path string) string {
+	if strings.HasSuffix(path, ".gz") {
+		return fmt.Sprintf("zcat '%s'", path)
 	}
-	result, err := system.Exec(ctx, "bash", "-c", cmd)
-	if err != nil {
-		return 0
-	}
-	n, _ := strconv.Atoi(strings.TrimSpace(result.Stdout))
-	return n
+	return fmt.Sprintf("cat '%s'", path)
 }
 
-// countLinesMulti counts total lines across multiple log files.
-func countLinesMulti(paths []string) int {
+// computeAccessStats runs a single awk pass over all log files to compute aggregate stats.
+func computeAccessStats(paths []string) *AccessLogStats {
+	if len(paths) == 0 {
+		return &AccessLogStats{}
+	}
+
 	var parts []string
 	for _, p := range paths {
-		if strings.HasSuffix(p, ".gz") {
-			parts = append(parts, fmt.Sprintf("zcat '%s'", p))
-		} else {
-			parts = append(parts, fmt.Sprintf("cat '%s'", p))
+		parts = append(parts, catCmd(p))
+	}
+
+	// Single awk pass: parse nginx combined log format
+	// Format: IP - - [time] "METHOD path HTTP/ver" STATUS SIZE ...
+	awkScript := `{
+		total++
+		ip=$1
+		ips[ip]++
+		# status is the field after the closing quote of request
+		s=0; b=0
+		for(i=1;i<=NF;i++){
+			if($i ~ /^[1-5][0-9][0-9]$/ && $(i-1) ~ /"$/){s=int($i); b=int($(i+1)); break}
 		}
+		if(s==0){
+			# fallback: split by quotes, status after 2nd quote
+			n=split($0,a,"\"")
+			if(n>=3){
+				split(a[3],w," ")
+				s=int(w[2]); b=int(w[3])
+			}
+		}
+		if(s>=200&&s<300) s2++
+		else if(s>=300&&s<400) s3++
+		else if(s>=400&&s<500) s4++
+		else if(s>=500) s5++
+		bytes+=b
+		sc[s]++
+	}
+	END {
+		# find top status
+		ts=0; tn=0
+		for(code in sc) if(sc[code]>tn){ts=code;tn=sc[code]}
+		# count unique IPs
+		uip=0; for(i in ips) uip++
+		# top 5 IPs
+		n=asorti(ips,sorted,"@val_num_desc")
+		tip=""
+		for(i=1;i<=5&&i<=n;i++){
+			if(i>1) tip=tip","
+			tip=tip sorted[i] ":" ips[sorted[i]]
+		}
+		printf "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\n",total,uip,bytes,int(s2),int(s3),int(s4),int(s5),ts,tn,tip
+	}`
+
+	cmd := fmt.Sprintf("{ %s; } | awk '%s'", strings.Join(parts, "; "), awkScript)
+	ctx, cancel := context.WithTimeout(context.Background(), logCmdTimeout)
+	defer cancel()
+	result, err := system.Exec(ctx, "bash", "-c", cmd)
+	if err != nil {
+		// Fallback: at least count lines
+		return &AccessLogStats{TotalRequests: countLinesFallback(paths)}
+	}
+
+	line := strings.TrimSpace(result.Stdout)
+	fields := strings.Split(line, "\t")
+	if len(fields) < 9 {
+		return &AccessLogStats{TotalRequests: countLinesFallback(paths)}
+	}
+
+	toInt := func(s string) int { n, _ := strconv.Atoi(s); return n }
+	toInt64 := func(s string) int64 { n, _ := strconv.ParseInt(s, 10, 64); return n }
+
+	stats := &AccessLogStats{
+		TotalRequests: toInt(fields[0]),
+		UniqueIPs:     toInt(fields[1]),
+		TotalBytes:    toInt64(fields[2]),
+		Status2xx:     toInt(fields[3]),
+		Status3xx:     toInt(fields[4]),
+		Status4xx:     toInt(fields[5]),
+		Status5xx:     toInt(fields[6]),
+		TopStatus:     toInt(fields[7]),
+		TopStatusN:    toInt(fields[8]),
+	}
+
+	// Parse top IPs: "ip1:count1,ip2:count2,..."
+	if len(fields) >= 10 && fields[9] != "" {
+		for _, entry := range strings.Split(fields[9], ",") {
+			kv := strings.SplitN(entry, ":", 2)
+			if len(kv) == 2 {
+				stats.TopIPs = append(stats.TopIPs, IPCount{IP: kv[0], Count: toInt(kv[1])})
+			}
+		}
+	}
+
+	return stats
+}
+
+// countLinesFallback counts total lines as a fallback when awk parsing fails.
+func countLinesFallback(paths []string) int {
+	var parts []string
+	for _, p := range paths {
+		parts = append(parts, catCmd(p))
 	}
 	cmd := fmt.Sprintf("{ %s; } | wc -l", strings.Join(parts, "; "))
 	ctx, cancel := context.WithTimeout(context.Background(), logCmdTimeout)

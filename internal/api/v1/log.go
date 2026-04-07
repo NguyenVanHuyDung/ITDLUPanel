@@ -73,7 +73,7 @@ func (h *LogHandler) GetWebsiteAccessLog(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	response.Success(c, gin.H{"lines": result.Lines, "total_lines": result.TotalLines})
+	response.Success(c, gin.H{"lines": result.Lines, "total_lines": result.TotalLines, "stats": result.Stats})
 }
 
 // GetWebsiteErrorLog returns the last N lines of a website's error log.
@@ -90,7 +90,7 @@ func (h *LogHandler) GetWebsiteErrorLog(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	response.Success(c, gin.H{"lines": result.Lines, "total_lines": result.TotalLines})
+	response.Success(c, gin.H{"lines": result.Lines, "total_lines": result.TotalLines, "stats": result.Stats})
 }
 
 // ListWebsiteLogDates returns available rotated log dates for a website.

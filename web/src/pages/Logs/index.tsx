@@ -336,8 +336,20 @@ export default function Logs() {
     } catch { /* ignore */ }
   }, [selectedSiteId]);
 
-  // Website total lines from backend
-  const [wsTotalLines, setWsTotalLines] = useState(0);
+  // Backend stats for all log lines
+  interface BackendStats {
+    total_requests: number;
+    unique_ips: number;
+    total_bytes: number;
+    status_2xx: number;
+    status_3xx: number;
+    status_4xx: number;
+    status_5xx: number;
+    top_status: number;
+    top_status_count: number;
+    top_ips?: { ip: string; count: number }[];
+  }
+  const [wsBackendStats, setWsBackendStats] = useState<BackendStats | null>(null);
 
   const fetchWebsiteLog = useCallback(async (siteId: number, logType: 'access' | 'error', numLines: number, dateRange: [dayjs.Dayjs, dayjs.Dayjs] | null) => {
     setLoading(true);
@@ -347,15 +359,15 @@ export default function Logs() {
         params.start_date = dateRange[0].format('YYYY-MM-DD');
         params.end_date = dateRange[1].format('YYYY-MM-DD');
       }
-      const { data } = await api.get<ApiResponse<{ lines: string | string[], total_lines?: number }>>(`/logs/website/${siteId}/${logType}`, { params });
+      const { data } = await api.get<ApiResponse<{ lines: string | string[], total_lines?: number, stats?: BackendStats }>>(`/logs/website/${siteId}/${logType}`, { params });
       const raw = data.data?.lines;
       if (Array.isArray(raw)) setWebsiteLines(raw);
       else if (typeof raw === 'string') setWebsiteLines(raw.split('\n').filter(Boolean));
       else setWebsiteLines([]);
-      setWsTotalLines(data.data?.total_lines ?? 0);
+      setWsBackendStats(data.data?.stats ?? null);
     } catch {
       setWebsiteLines([]);
-      setWsTotalLines(0);
+      setWsBackendStats(null);
     } finally {
       setLoading(false);
     }
@@ -1045,7 +1057,17 @@ export default function Logs() {
       );
     }
 
-    const { total: wsTotal, uniqueIps: wsUniqueIps, totalSize, errorRate, topStatus, s2xx, s3xx, s4xx, s5xx } = wsStats;
+    // Use backend stats when available (computed from ALL lines), fallback to local parsed stats
+    const bs = wsBackendStats;
+    const totalReqs = bs?.total_requests ?? wsStats.total;
+    const uniqueIps = bs?.unique_ips ?? wsStats.uniqueIps;
+    const totalBytes = bs?.total_bytes ?? wsStats.totalSize;
+    const s2xx = bs?.status_2xx ?? wsStats.s2xx;
+    const s3xx = bs?.status_3xx ?? wsStats.s3xx;
+    const s4xx = bs?.status_4xx ?? wsStats.s4xx;
+    const s5xx = bs?.status_5xx ?? wsStats.s5xx;
+    const bsTopStatus = bs?.top_status ?? wsStats.topStatus;
+    const errorRate = totalReqs > 0 ? ((s4xx + s5xx) / totalReqs) * 100 : 0;
     const statusTotal = s2xx + s3xx + s4xx + s5xx || 1;
     const statusSegments = [
       { color: p.green, pct: (s2xx / statusTotal) * 100, label: `2xx (${s2xx})` },
@@ -1053,6 +1075,7 @@ export default function Logs() {
       { color: p.amber, pct: (s4xx / statusTotal) * 100, label: `4xx (${s4xx})` },
       { color: p.red, pct: (s5xx / statusTotal) * 100, label: `5xx (${s5xx})` },
     ];
+    const showingSubset = totalReqs > wsStats.total;
 
     const showSidePanel = wsSidePanelOpen && !isMobile && websiteLogType === 'access';
 
@@ -1062,17 +1085,17 @@ export default function Logs() {
         {websiteLogType === 'access' && (
           <>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <MetricCard value={wsTotalLines > 0 ? wsTotalLines.toLocaleString() : wsTotal.toLocaleString()} label={wsTotalLines > wsTotal ? `Total Requests (showing ${wsTotal})` : "Total Requests"} p={p} isDark={isDark} />
-              <MetricCard value={`${errorRate.toFixed(1)}%`} label={wsTotalLines > wsTotal ? `Error Rate (of ${wsTotal})` : "Error Rate"} color={errorRate > 5 ? p.red : errorRate > 0 ? p.amber : undefined} p={p} isDark={isDark} />
-              <MetricCard value={wsUniqueIps} label="Unique IPs" p={p} isDark={isDark} />
-              <MetricCard value={formatBytes(totalSize)} label="Bandwidth" p={p} isDark={isDark} />
-              {topStatus > 0 && (
-                <MetricCard value={<StatusBadge status={topStatus} p={p} />} label="Top Status Code" p={p} isDark={isDark} />
+              <MetricCard value={totalReqs.toLocaleString()} label={showingSubset ? `Total Requests (showing ${wsStats.total})` : "Total Requests"} p={p} isDark={isDark} />
+              <MetricCard value={`${errorRate.toFixed(1)}%`} label="Error Rate" color={errorRate > 5 ? p.red : errorRate > 0 ? p.amber : undefined} p={p} isDark={isDark} />
+              <MetricCard value={uniqueIps} label="Unique IPs" p={p} isDark={isDark} />
+              <MetricCard value={formatBytes(totalBytes)} label="Bandwidth" p={p} isDark={isDark} />
+              {bsTopStatus > 0 && (
+                <MetricCard value={<StatusBadge status={bsTopStatus} p={p} />} label="Top Status Code" p={p} isDark={isDark} />
               )}
             </div>
 
             {/* Status distribution bar */}
-            {wsTotal > 0 && (
+            {totalReqs > 0 && (
               <div style={{ padding: '0 4px' }}>
                 <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4 }}>Status Distribution</div>
                 <DistributionBar segments={statusSegments} p={p} />
