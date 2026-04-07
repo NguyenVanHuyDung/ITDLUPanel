@@ -132,7 +132,7 @@ func (h *NotificationHandler) TestChannel(c *gin.Context) {
 		return
 	}
 	if err := h.svc.TestChannel(id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "test notification sent"})

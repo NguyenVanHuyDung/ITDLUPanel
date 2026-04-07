@@ -120,8 +120,10 @@ export default function NotificationsTab() {
       form.resetFields();
       await fetchChannels();
     } catch (e: unknown) {
-      const errMsg = e instanceof Error ? e.message : 'Failed';
-      message.error(errMsg);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const axiosErr = e as any;
+      const errMsg = axiosErr?.response?.data?.error || axiosErr?.message || 'Failed';
+      message.error(errMsg, 6);
     }
   };
 
@@ -131,8 +133,10 @@ export default function NotificationsTab() {
       const msg = await testChannel(id);
       message.success(msg);
     } catch (e: unknown) {
-      const errMsg = e instanceof Error ? e.message : 'Test failed';
-      message.error(errMsg);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const axiosErr = e as any;
+      const errMsg = axiosErr?.response?.data?.error || axiosErr?.message || 'Test failed';
+      message.error(errMsg, 6);
     } finally {
       setTesting(null);
     }
