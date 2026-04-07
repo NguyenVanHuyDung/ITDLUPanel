@@ -20,28 +20,46 @@ const { TextArea } = Input;
 const { Text } = Typography;
 
 /* ------------------------------------------------------------------ */
-/*  Event type labels & severity colors                                */
+/*  Event type labels, categories & severity colors                    */
 /* ------------------------------------------------------------------ */
 
-const EVENT_LABELS: Record<string, { label: string; color: string; emoji: string }> = {
-  cron_success:            { label: 'Cron Success',            color: 'green',   emoji: '✅' },
-  cron_failed:             { label: 'Cron Failed',             color: 'red',     emoji: '❌' },
-  ssl_expiry_warning:      { label: 'SSL Expiry Warning',      color: 'orange',  emoji: '⚠️' },
-  ssl_expired:             { label: 'SSL Expired',             color: 'red',     emoji: '🔴' },
-  backup_completed:        { label: 'Backup Completed',        color: 'green',   emoji: '✅' },
-  backup_failed:           { label: 'Backup Failed',           color: 'red',     emoji: '❌' },
-  software_installed:      { label: 'Software Installed',      color: 'green',   emoji: '📦' },
-  software_install_failed: { label: 'Software Install Failed', color: 'red',     emoji: '❌' },
-  site_created:            { label: 'Site Created',            color: 'blue',    emoji: '🌐' },
-  site_deleted:            { label: 'Site Deleted',            color: 'orange',  emoji: '🗑️' },
-  cpu_high:                { label: 'CPU High',                color: 'orange',  emoji: '🔥' },
-  memory_high:             { label: 'Memory High',             color: 'orange',  emoji: '💾' },
-  disk_high:               { label: 'Disk High',               color: 'red',     emoji: '💿' },
-  service_down:            { label: 'Service Down',            color: 'red',     emoji: '🔻' },
-  login_failed:            { label: 'Login Failed',            color: 'orange',  emoji: '🔒' },
+const EVENT_LABELS: Record<string, { label: string; color: string; emoji: string; desc: string }> = {
+  cron_success:            { label: 'Cron Success',            color: 'green',   emoji: '✅', desc: 'Scheduled task completed' },
+  cron_failed:             { label: 'Cron Failed',             color: 'red',     emoji: '❌', desc: 'Scheduled task failed' },
+  ssl_expiry_warning:      { label: 'SSL Expiry Warning',      color: 'orange',  emoji: '⚠️', desc: 'Certificate expiring soon' },
+  ssl_expired:             { label: 'SSL Expired',             color: 'red',     emoji: '🔴', desc: 'Certificate has expired' },
+  backup_completed:        { label: 'Backup Completed',        color: 'green',   emoji: '✅', desc: 'Backup finished successfully' },
+  backup_failed:           { label: 'Backup Failed',           color: 'red',     emoji: '❌', desc: 'Backup operation failed' },
+  software_installed:      { label: 'Software Installed',      color: 'green',   emoji: '📦', desc: 'Package installed successfully' },
+  software_install_failed: { label: 'Software Install Failed', color: 'red',     emoji: '❌', desc: 'Package installation failed' },
+  site_created:            { label: 'Site Created',            color: 'blue',    emoji: '🌐', desc: 'New website created' },
+  site_deleted:            { label: 'Site Deleted',            color: 'orange',  emoji: '🗑️', desc: 'Website removed' },
+  cpu_high:                { label: 'CPU High',                color: 'orange',  emoji: '🔥', desc: 'CPU threshold exceeded' },
+  memory_high:             { label: 'Memory High',             color: 'orange',  emoji: '💾', desc: 'Memory usage critical' },
+  disk_high:               { label: 'Disk High',               color: 'red',     emoji: '💿', desc: 'Disk space running low' },
+  service_down:            { label: 'Service Down',            color: 'red',     emoji: '🔻', desc: 'Service stopped responding' },
+  login_failed:            { label: 'Login Failed',            color: 'orange',  emoji: '🔒', desc: 'Failed login attempt' },
 };
 
-const eventLabel = (t: string) => EVENT_LABELS[t] ?? { label: t, color: 'default', emoji: '🔔' };
+const eventLabel = (t: string) => EVENT_LABELS[t] ?? { label: t, color: 'default', emoji: '🔔', desc: '' };
+
+interface EventCategory {
+  key: string;
+  label: string;
+  icon: string;
+  gradient: [string, string];
+  events: string[];
+}
+
+const EVENT_CATEGORIES: EventCategory[] = [
+  { key: 'cron',     label: 'Scheduled Tasks',    icon: '🕐', gradient: ['#667eea', '#764ba2'], events: ['cron_success', 'cron_failed'] },
+  { key: 'ssl',      label: 'SSL Certificates',   icon: '🔐', gradient: ['#f093fb', '#f5576c'], events: ['ssl_expiry_warning', 'ssl_expired'] },
+  { key: 'backup',   label: 'Backups',             icon: '💾', gradient: ['#4facfe', '#00f2fe'], events: ['backup_completed', 'backup_failed'] },
+  { key: 'software', label: 'Software',            icon: '📦', gradient: ['#43e97b', '#38f9d7'], events: ['software_installed', 'software_install_failed'] },
+  { key: 'sites',    label: 'Websites',            icon: '🌐', gradient: ['#a18cd1', '#fbc2eb'], events: ['site_created', 'site_deleted'] },
+  { key: 'system',   label: 'System Resources',    icon: '📊', gradient: ['#fccb90', '#d57eeb'], events: ['cpu_high', 'memory_high', 'disk_high'] },
+  { key: 'security', label: 'Security',            icon: '🛡️', gradient: ['#ff9a9e', '#fecfef'], events: ['service_down', 'login_failed'] },
+];
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
@@ -68,6 +86,7 @@ export default function NotificationsTab() {
   const [testing, setTesting] = useState<number | null>(null);
   const [testingEvent, setTestingEvent] = useState<string | null>(null);
   const [section, setSection] = useState<'channels' | 'rules' | 'logs'>('channels');
+  const [activeRuleChannel, setActiveRuleChannel] = useState<number | null>(null);
 
   // Template editor state
   const [tplModal, setTplModal] = useState(false);
@@ -94,11 +113,12 @@ export default function NotificationsTab() {
 
   /* ---------- Styles ---------- */
   const sectionBox: React.CSSProperties = {
-    borderRadius: 10,
-    background: isDark ? p.rowAlt : p.headerBg,
-    border: `1px solid ${p.border}`,
+    borderRadius: 12,
+    background: isDark ? p.card : '#fff',
+    border: `1px solid ${p.cardBorder}`,
     padding: isMobile ? 14 : 20,
     marginBottom: 16,
+    boxShadow: isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.04)',
   };
 
   const sectionTitle = (icon: React.ReactNode, title: string) => (
@@ -336,8 +356,8 @@ export default function NotificationsTab() {
                 justifyContent: 'space-between',
                 padding: '10px 14px',
                 borderRadius: 8,
-                background: isDark ? p.bg : '#fff',
-                border: `1px solid ${p.border}`,
+                background: isDark ? p.card : '#fff',
+                border: `1px solid ${p.cardBorder}`,
                 flexWrap: 'wrap',
                 gap: 8,
               }}
@@ -350,7 +370,7 @@ export default function NotificationsTab() {
                 )}
                 <div>
                   <div style={{ fontWeight: 600, color: p.text }}>{ch.name}</div>
-                  <div style={{ fontSize: 12, color: p.textSoft }}>
+                  <div style={{ fontSize: 12, color: p.textMuted }}>
                     {ch.type === 'email'
                       ? `${cfg.host || ''}:${cfg.port || ''} → ${cfg.to || ''}`
                       : `Chat ID: ${cfg.chat_id || ''}`}
@@ -468,128 +488,281 @@ export default function NotificationsTab() {
   );
 
   /* ================================================================ */
-  /*  RENDER: Rules matrix                                             */
+  /*  RENDER: Rules — modern card-based design                         */
   /* ================================================================ */
   const renderRules = () => {
     const activeChannels = channels.filter((c) => c.is_enabled);
+
+    // Auto-select first channel if none selected
+    const selCh = activeChannels.find((c) => c.id === activeRuleChannel) ?? activeChannels[0] ?? null;
+    if (selCh && activeRuleChannel !== selCh.id) {
+      setTimeout(() => setActiveRuleChannel(selCh.id), 0);
+    }
+
+    // Severity dot color
+    const sevDot = (ev: string): string => {
+      const sev = eventTypes.find((e) => e.type === ev)?.severity;
+      const map: Record<string, string> = { info: p.accent, success: p.green, warning: p.amber, error: p.red, critical: p.red };
+      return map[sev ?? ''] ?? p.textMuted;
+    };
+
+    // Count enabled rules for a channel within a category
+    const categoryEnabledCount = (cat: EventCategory, chId: number) =>
+      cat.events.filter((ev) => isRuleEnabled(chId, ev)).length;
+
     return (
       <div style={sectionBox}>
         {sectionTitle(<BellOutlined style={{ color: p.accent }} />, 'Event Rules')}
-        <p style={{ color: p.textSoft, marginBottom: 16, fontSize: 13, lineHeight: 1.6 }}>
-          Toggle which events trigger notifications on each channel.
-          Use <ExperimentOutlined /> to send a test, <FormOutlined /> to customize the message template.
-          Events marked <Tag color="red" style={{ fontSize: 11 }}>Critical</Tag> are auto-enabled for new channels.
-        </p>
 
         {activeChannels.length === 0 ? (
           <Empty description="Create and enable a channel first" />
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr>
-                  <th style={{ textAlign: 'left', padding: '10px 12px', borderBottom: `2px solid ${p.border}`, color: p.text, fontWeight: 700 }}>
-                    Event Type
-                  </th>
-                  {activeChannels.map((ch) => (
-                    <th
-                      key={ch.id}
-                      colSpan={3}
-                      style={{ textAlign: 'center', padding: '10px 8px', borderBottom: `2px solid ${p.border}`, color: p.text, fontWeight: 600, minWidth: 180 }}
-                    >
-                      {ch.type === 'email' ? '📧' : '📨'} {ch.name}
-                    </th>
-                  ))}
-                </tr>
-                <tr>
-                  <th style={{ padding: '4px 12px', borderBottom: `1px solid ${p.border}` }} />
-                  {activeChannels.map((ch) => (
-                    <React.Fragment key={ch.id}>
-                      <th style={{ textAlign: 'center', padding: '4px 4px', borderBottom: `1px solid ${p.border}`, fontSize: 11, color: p.textSoft, fontWeight: 500 }}>
-                        Enabled
-                      </th>
-                      <th style={{ textAlign: 'center', padding: '4px 4px', borderBottom: `1px solid ${p.border}`, fontSize: 11, color: p.textSoft, fontWeight: 500 }}>
-                        Test
-                      </th>
-                      <th style={{ textAlign: 'center', padding: '4px 4px', borderBottom: `1px solid ${p.border}`, fontSize: 11, color: p.textSoft, fontWeight: 500 }}>
-                        Template
-                      </th>
-                    </React.Fragment>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {eventTypes.map((evInfo) => {
-                  const ev = evInfo.type;
-                  const info = eventLabel(ev);
-                  const isCritical = criticalTypes.includes(ev);
-                  return (
-                    <tr
-                      key={ev}
-                      style={{
-                        background: isCritical
-                          ? (isDark ? 'rgba(255,0,0,0.04)' : 'rgba(255,0,0,0.02)')
-                          : undefined,
-                        transition: 'background 0.2s',
-                      }}
-                      onMouseEnter={(e) => {
-                        (e.currentTarget as HTMLElement).style.background = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)';
-                      }}
-                      onMouseLeave={(e) => {
-                        (e.currentTarget as HTMLElement).style.background = isCritical
-                          ? (isDark ? 'rgba(255,0,0,0.04)' : 'rgba(255,0,0,0.02)')
-                          : '';
-                      }}
-                    >
-                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${p.border}`, color: p.text }}>
-                        <span style={{ marginRight: 6 }}>{info.emoji}</span>
-                        <Tag color={info.color} style={{ marginRight: 4, fontSize: 12 }}>{info.label}</Tag>
-                        {isCritical && <Tag color="red" style={{ fontSize: 10, lineHeight: '16px' }}>Critical</Tag>}
-                      </td>
-                      {activeChannels.map((ch) => {
-                        const testKey = `${ch.id}-${ev}`;
-                        const customized = hasCustomTemplate(ch.id, ev);
-                        return (
-                          <React.Fragment key={ch.id}>
-                            <td style={{ textAlign: 'center', padding: '8px 4px', borderBottom: `1px solid ${p.border}` }}>
-                              <Switch
+          <>
+            {/* ---- Channel selector pills ---- */}
+            <div style={{
+              display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap',
+            }}>
+              {activeChannels.map((ch) => {
+                const isActive = selCh?.id === ch.id;
+                const enabledCount = rules.filter((r) => r.channel_id === ch.id && r.is_enabled).length;
+                return (
+                  <button
+                    key={ch.id}
+                    onClick={() => setActiveRuleChannel(ch.id)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      padding: '8px 16px',
+                      borderRadius: 10,
+                      border: isActive ? `2px solid ${p.accent}` : `1px solid ${p.cardBorder}`,
+                      background: isActive
+                        ? (isDark ? 'rgba(24,144,255,0.12)' : 'rgba(24,144,255,0.06)')
+                        : (isDark ? p.card : '#fff'),
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      outline: 'none',
+                      boxShadow: isActive ? `0 0 0 3px ${isDark ? 'rgba(24,144,255,0.15)' : 'rgba(24,144,255,0.1)'}` : 'none',
+                    }}
+                  >
+                    <span style={{ fontSize: 18 }}>{ch.type === 'email' ? '📧' : '📨'}</span>
+                    <span style={{ fontWeight: isActive ? 700 : 500, color: isActive ? p.accent : p.text, fontSize: 13 }}>
+                      {ch.name}
+                    </span>
+                    <span style={{
+                      fontSize: 11, fontWeight: 600,
+                      padding: '2px 8px', borderRadius: 10,
+                      background: isDark ? p.codeBg : '#f0f0f0',
+                      color: enabledCount > 0 ? p.green : p.textMuted,
+                    }}>
+                      {enabledCount}/{eventTypes.length}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* ---- Category groups ---- */}
+            {selCh && EVENT_CATEGORIES.map((cat) => {
+              const enabledInCat = categoryEnabledCount(cat, selCh.id);
+              const totalInCat = cat.events.length;
+
+              return (
+                <div key={cat.key} style={{ marginBottom: 16 }}>
+                  {/* Category header */}
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '10px 14px',
+                    borderRadius: '10px 10px 0 0',
+                    background: isDark
+                      ? `linear-gradient(135deg, ${cat.gradient[0]}18, ${cat.gradient[1]}10)`
+                      : `linear-gradient(135deg, ${cat.gradient[0]}12, ${cat.gradient[1]}08)`,
+                    borderBottom: `1px solid ${isDark ? p.cardBorder : cat.gradient[0] + '22'}`,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 16 }}>{cat.icon}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: p.text }}>{cat.label}</span>
+                    </div>
+                    <span style={{
+                      fontSize: 11, fontWeight: 600,
+                      padding: '2px 10px', borderRadius: 10,
+                      background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                      color: enabledInCat === totalInCat ? p.green : enabledInCat > 0 ? p.amber : p.textMuted,
+                    }}>
+                      {enabledInCat}/{totalInCat} active
+                    </span>
+                  </div>
+
+                  {/* Event cards */}
+                  <div style={{
+                    border: `1px solid ${p.cardBorder}`,
+                    borderTop: 'none',
+                    borderRadius: '0 0 10px 10px',
+                    overflow: 'hidden',
+                  }}>
+                    {cat.events.map((ev, idx) => {
+                      const info = eventLabel(ev);
+                      const isCritical = criticalTypes.includes(ev);
+                      const enabled = isRuleEnabled(selCh.id, ev);
+                      const customized = hasCustomTemplate(selCh.id, ev);
+                      const testKey = `${selCh.id}-${ev}`;
+                      const isLast = idx === cat.events.length - 1;
+
+                      return (
+                        <div
+                          key={ev}
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            padding: isMobile ? '10px 12px' : '10px 16px',
+                            gap: 8,
+                            borderBottom: isLast ? 'none' : `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}`,
+                            background: isDark ? p.card : '#fff',
+                            transition: 'background 0.15s',
+                            flexWrap: 'wrap',
+                          }}
+                          onMouseEnter={(e) => {
+                            (e.currentTarget as HTMLElement).style.background = isDark ? p.rowHover : '#fafbfc';
+                          }}
+                          onMouseLeave={(e) => {
+                            (e.currentTarget as HTMLElement).style.background = isDark ? p.card : '#fff';
+                          }}
+                        >
+                          {/* Left: status dot + info */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                            <div style={{
+                              width: 8, height: 8, borderRadius: '50%',
+                              background: enabled ? sevDot(ev) : (isDark ? '#444' : '#d9d9d9'),
+                              flexShrink: 0,
+                              boxShadow: enabled ? `0 0 6px ${sevDot(ev)}40` : 'none',
+                              transition: 'all 0.2s',
+                            }} />
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{
+                                display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+                              }}>
+                                <span style={{ fontSize: 14 }}>{info.emoji}</span>
+                                <span style={{
+                                  fontSize: 13, fontWeight: 600, color: enabled ? p.text : p.textMuted,
+                                  transition: 'color 0.2s',
+                                }}>
+                                  {info.label}
+                                </span>
+                                {isCritical && (
+                                  <span style={{
+                                    fontSize: 10, fontWeight: 700, letterSpacing: 0.5,
+                                    padding: '1px 6px', borderRadius: 4,
+                                    background: isDark ? 'rgba(255,77,79,0.15)' : '#fff1f0',
+                                    color: p.red,
+                                    textTransform: 'uppercase',
+                                  }}>
+                                    Critical
+                                  </span>
+                                )}
+                                {customized && (
+                                  <span style={{
+                                    fontSize: 10, fontWeight: 600,
+                                    padding: '1px 6px', borderRadius: 4,
+                                    background: isDark ? 'rgba(82,196,26,0.12)' : '#f6ffed',
+                                    color: p.green,
+                                  }}>
+                                    Custom
+                                  </span>
+                                )}
+                              </div>
+                              {!isMobile && (
+                                <div style={{ fontSize: 11, color: p.textMuted, marginTop: 1 }}>
+                                  {info.desc}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Right: actions */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 8, flexShrink: 0 }}>
+                            <Tooltip title="Edit template">
+                              <Button
                                 size="small"
-                                checked={isRuleEnabled(ch.id, ev)}
-                                onChange={(checked) => handleRuleToggle(ch.id, ev, checked)}
+                                type="text"
+                                icon={<FormOutlined style={{ fontSize: 13, color: customized ? p.green : p.textMuted }} />}
+                                onClick={() => openTemplateEditor(selCh.id, ev)}
+                                style={{ borderRadius: 6, width: 28, height: 28 }}
                               />
-                            </td>
-                            <td style={{ textAlign: 'center', padding: '8px 4px', borderBottom: `1px solid ${p.border}` }}>
-                              <Tooltip title={`Send sample "${info.label}" via ${ch.name}`}>
-                                <Button
-                                  size="small"
-                                  type="text"
-                                  icon={<ExperimentOutlined style={{ color: p.accent }} />}
-                                  loading={testingEvent === testKey}
-                                  onClick={() => handleTestEvent(ch.id, ev)}
-                                  style={{ borderRadius: 4 }}
-                                />
-                              </Tooltip>
-                            </td>
-                            <td style={{ textAlign: 'center', padding: '8px 4px', borderBottom: `1px solid ${p.border}` }}>
-                              <Tooltip title={customized ? 'Custom template (click to edit)' : 'Customize template'}>
-                                <Button
-                                  size="small"
-                                  type="text"
-                                  icon={<FormOutlined style={{ color: customized ? '#52c41a' : p.textSoft }} />}
-                                  onClick={() => openTemplateEditor(ch.id, ev)}
-                                  style={{ borderRadius: 4 }}
-                                />
-                              </Tooltip>
-                            </td>
-                          </React.Fragment>
-                        );
-                      })}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                            </Tooltip>
+                            <Tooltip title={`Test "${info.label}"`}>
+                              <Button
+                                size="small"
+                                type="text"
+                                icon={<ExperimentOutlined style={{ fontSize: 13, color: p.accent }} />}
+                                loading={testingEvent === testKey}
+                                onClick={() => handleTestEvent(selCh.id, ev)}
+                                style={{ borderRadius: 6, width: 28, height: 28 }}
+                              />
+                            </Tooltip>
+                            <Switch
+                              size="small"
+                              checked={enabled}
+                              onChange={(checked) => handleRuleToggle(selCh.id, ev, checked)}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* ---- Quick actions bar ---- */}
+            {selCh && (
+              <div style={{
+                display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap',
+              }}>
+                <Button
+                  size="small"
+                  type="link"
+                  onClick={async () => {
+                    const allRules = eventTypes.map((et) => ({
+                      channel_id: selCh.id,
+                      event_type: et.type,
+                      is_enabled: true,
+                    }));
+                    try { await updateRules(allRules); await fetchRules(); message.success('All events enabled'); } catch { message.error('Failed'); }
+                  }}
+                  style={{ fontSize: 12, padding: '0 4px' }}
+                >
+                  Enable All
+                </Button>
+                <Button
+                  size="small"
+                  type="link"
+                  onClick={async () => {
+                    const allRules = eventTypes.map((et) => ({
+                      channel_id: selCh.id,
+                      event_type: et.type,
+                      is_enabled: false,
+                    }));
+                    try { await updateRules(allRules); await fetchRules(); message.success('All events disabled'); } catch { message.error('Failed'); }
+                  }}
+                  style={{ fontSize: 12, padding: '0 4px', color: p.textMuted }}
+                >
+                  Disable All
+                </Button>
+                <Button
+                  size="small"
+                  type="link"
+                  onClick={async () => {
+                    const criticalRules = eventTypes.map((et) => ({
+                      channel_id: selCh.id,
+                      event_type: et.type,
+                      is_enabled: criticalTypes.includes(et.type),
+                    }));
+                    try { await updateRules(criticalRules); await fetchRules(); message.success('Critical events only'); } catch { message.error('Failed'); }
+                  }}
+                  style={{ fontSize: 12, padding: '0 4px' }}
+                >
+                  Critical Only
+                </Button>
+              </div>
+            )}
+          </>
         )}
       </div>
     );
@@ -760,10 +933,10 @@ export default function NotificationsTab() {
         />
         {tplDefaultBody && (
           <details style={{ marginTop: 4 }}>
-            <summary style={{ fontSize: 11, color: p.textSoft, cursor: 'pointer' }}>
+            <summary style={{ fontSize: 11, color: p.textMuted, cursor: 'pointer' }}>
               Show default body
             </summary>
-            <pre style={{ fontSize: 11, color: p.textSoft, margin: '4px 0 0', whiteSpace: 'pre-wrap', background: isDark ? 'rgba(0,0,0,0.2)' : '#f5f5f5', padding: 8, borderRadius: 6 }}>
+            <pre style={{ fontSize: 11, color: p.textMuted, margin: '4px 0 0', whiteSpace: 'pre-wrap', background: isDark ? 'rgba(0,0,0,0.2)' : '#f5f5f5', padding: 8, borderRadius: 6 }}>
               {tplDefaultBody}
             </pre>
           </details>
@@ -800,7 +973,7 @@ export default function NotificationsTab() {
           padding: 12,
           borderRadius: 8,
           background: isDark ? 'rgba(0,0,0,0.3)' : '#fafafa',
-          border: `1px solid ${p.border}`,
+          border: `1px solid ${p.cardBorder}`,
           fontSize: 12,
           whiteSpace: 'pre-wrap',
           fontFamily: 'monospace',
