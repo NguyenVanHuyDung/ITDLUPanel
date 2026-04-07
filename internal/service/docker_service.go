@@ -128,6 +128,93 @@ type CreateContainerRequest struct {
 	Command       string            `json:"command"`
 }
 
+// NetworkDetail holds full info about a Docker network.
+type NetworkDetail struct {
+	ID         string            `json:"id"`
+	Name       string            `json:"name"`
+	Driver     string            `json:"driver"`
+	Scope      string            `json:"scope"`
+	Subnet     string            `json:"subnet"`
+	Gateway    string            `json:"gateway"`
+	Internal   bool              `json:"internal"`
+	Containers map[string]string `json:"containers"` // containerID -> name
+	Created    string            `json:"created"`
+}
+
+// VolumeDetail holds full info about a Docker volume.
+type VolumeDetail struct {
+	Name       string            `json:"name"`
+	Driver     string            `json:"driver"`
+	Mountpoint string            `json:"mountpoint"`
+	Labels     map[string]string `json:"labels"`
+	Options    map[string]string `json:"options"`
+	CreatedAt  string            `json:"created_at"`
+	UsedBy     []string          `json:"used_by"`
+}
+
+// ImageDetail holds the full inspect info about a Docker image.
+type ImageDetail struct {
+	ID           string            `json:"id"`
+	Tags         []string          `json:"tags"`
+	Size         int64             `json:"size"`
+	Created      string            `json:"created"`
+	OS           string            `json:"os"`
+	Arch         string            `json:"arch"`
+	Author       string            `json:"author"`
+	Env          []string          `json:"env"`
+	Cmd          []string          `json:"cmd"`
+	Entrypoint   []string          `json:"entrypoint"`
+	WorkingDir   string            `json:"working_dir"`
+	ExposedPorts []string          `json:"exposed_ports"`
+	Volumes      []string          `json:"volumes"`
+	Labels       map[string]string `json:"labels"`
+}
+
+// ImageSearchResult holds a Docker Hub search result.
+type ImageSearchResult struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Stars       int    `json:"stars"`
+	Official    bool   `json:"official"`
+}
+
+// ImageHistoryEntry holds one layer in image history.
+type ImageHistoryEntry struct {
+	ID        string `json:"id"`
+	Created   int64  `json:"created"`
+	CreatedBy string `json:"created_by"`
+	Size      int64  `json:"size"`
+	Comment   string `json:"comment"`
+}
+
+// SystemDiskUsage holds Docker system disk usage info.
+type SystemDiskUsage struct {
+	ImagesCount     int   `json:"images_count"`
+	ImagesSize      int64 `json:"images_size"`
+	ContainersCount int   `json:"containers_count"`
+	ContainersSize  int64 `json:"containers_size"`
+	VolumesCount    int   `json:"volumes_count"`
+	VolumesSize     int64 `json:"volumes_size"`
+	BuildCacheSize  int64 `json:"build_cache_size"`
+}
+
+// CreateNetworkRequest describes the payload to create a network.
+type CreateNetworkRequest struct {
+	Name     string `json:"name"`
+	Driver   string `json:"driver"`
+	Subnet   string `json:"subnet"`
+	Gateway  string `json:"gateway"`
+	Internal bool   `json:"internal"`
+}
+
+// CreateVolumeRequest describes the payload to create a volume.
+type CreateVolumeRequest struct {
+	Name    string            `json:"name"`
+	Driver  string            `json:"driver"`
+	Labels  map[string]string `json:"labels"`
+	Options map[string]string `json:"driver_opts"`
+}
+
 // ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------
@@ -832,6 +919,622 @@ func (s *DockerService) ListVolumes() ([]*Volume, error) {
 		})
 	}
 	return volumes, nil
+}
+
+// ---------------------------------------------------------------------------
+// Container extensions
+// ---------------------------------------------------------------------------
+
+// PauseContainer pauses a running container.
+func (s *DockerService) PauseContainer(id string) error {
+	resp, err := s.post(fmt.Sprintf("/containers/%s/pause", id), "")
+	if err != nil {
+		return fmt.Errorf("pause container: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		return s.readError(resp)
+	}
+	logger.Info().Str("container", id).Msg("container paused")
+	return nil
+}
+
+// UnpauseContainer unpauses a paused container.
+func (s *DockerService) UnpauseContainer(id string) error {
+	resp, err := s.post(fmt.Sprintf("/containers/%s/unpause", id), "")
+	if err != nil {
+		return fmt.Errorf("unpause container: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		return s.readError(resp)
+	}
+	logger.Info().Str("container", id).Msg("container unpaused")
+	return nil
+}
+
+// RenameContainer renames a container.
+func (s *DockerService) RenameContainer(id, newName string) error {
+	resp, err := s.post(fmt.Sprintf("/containers/%s/rename?name=%s", id, newName), "")
+	if err != nil {
+		return fmt.Errorf("rename container: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		return s.readError(resp)
+	}
+	logger.Info().Str("container", id).Str("new_name", newName).Msg("container renamed")
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Image extensions
+// ---------------------------------------------------------------------------
+
+// SearchImages searches Docker Hub for images.
+func (s *DockerService) SearchImages(term string) ([]*ImageSearchResult, error) {
+	resp, err := s.get(fmt.Sprintf("/images/search?term=%s&limit=25", term))
+	if err != nil {
+		return nil, fmt.Errorf("search images: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, s.readError(resp)
+	}
+
+	var raw []struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		StarCount   int    `json:"star_count"`
+		IsOfficial  bool   `json:"is_official"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("search images decode: %w", err)
+	}
+
+	results := make([]*ImageSearchResult, 0, len(raw))
+	for _, r := range raw {
+		results = append(results, &ImageSearchResult{
+			Name:        r.Name,
+			Description: r.Description,
+			Stars:       r.StarCount,
+			Official:    r.IsOfficial,
+		})
+	}
+	return results, nil
+}
+
+// InspectImage returns detailed info about an image.
+func (s *DockerService) InspectImage(id string) (*ImageDetail, error) {
+	resp, err := s.get(fmt.Sprintf("/images/%s/json", id))
+	if err != nil {
+		return nil, fmt.Errorf("inspect image: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, s.readError(resp)
+	}
+
+	var raw struct {
+		ID           string `json:"Id"`
+		RepoTags     []string
+		Size         int64
+		Created      string
+		Os           string
+		Architecture string
+		Author       string
+		Config       struct {
+			Env          []string
+			Cmd          []string
+			Entrypoint   []string
+			WorkingDir   string
+			ExposedPorts map[string]struct{}
+			Volumes      map[string]struct{}
+			Labels       map[string]string
+		}
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("inspect image decode: %w", err)
+	}
+
+	id2 := raw.ID
+	if strings.HasPrefix(id2, "sha256:") {
+		id2 = id2[7:]
+	}
+	if len(id2) > 12 {
+		id2 = id2[:12]
+	}
+
+	exposedPorts := make([]string, 0)
+	for port := range raw.Config.ExposedPorts {
+		exposedPorts = append(exposedPorts, port)
+	}
+
+	volumes := make([]string, 0)
+	for vol := range raw.Config.Volumes {
+		volumes = append(volumes, vol)
+	}
+
+	return &ImageDetail{
+		ID:           id2,
+		Tags:         raw.RepoTags,
+		Size:         raw.Size,
+		Created:      raw.Created,
+		OS:           raw.Os,
+		Arch:         raw.Architecture,
+		Author:       raw.Author,
+		Env:          raw.Config.Env,
+		Cmd:          raw.Config.Cmd,
+		Entrypoint:   raw.Config.Entrypoint,
+		WorkingDir:   raw.Config.WorkingDir,
+		ExposedPorts: exposedPorts,
+		Volumes:      volumes,
+		Labels:       raw.Config.Labels,
+	}, nil
+}
+
+// GetImageHistory returns the build history of an image.
+func (s *DockerService) GetImageHistory(id string) ([]*ImageHistoryEntry, error) {
+	resp, err := s.get(fmt.Sprintf("/images/%s/history", id))
+	if err != nil {
+		return nil, fmt.Errorf("image history: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, s.readError(resp)
+	}
+
+	var raw []struct {
+		ID        string `json:"Id"`
+		Created   int64  `json:"Created"`
+		CreatedBy string `json:"CreatedBy"`
+		Size      int64  `json:"Size"`
+		Comment   string `json:"Comment"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("image history decode: %w", err)
+	}
+
+	entries := make([]*ImageHistoryEntry, 0, len(raw))
+	for _, e := range raw {
+		id2 := e.ID
+		if strings.HasPrefix(id2, "sha256:") {
+			id2 = id2[7:]
+		}
+		if len(id2) > 12 {
+			id2 = id2[:12]
+		}
+		entries = append(entries, &ImageHistoryEntry{
+			ID:        id2,
+			Created:   e.Created,
+			CreatedBy: e.CreatedBy,
+			Size:      e.Size,
+			Comment:   e.Comment,
+		})
+	}
+	return entries, nil
+}
+
+// TagImage tags an image.
+func (s *DockerService) TagImage(id, repo, tag string) error {
+	path := fmt.Sprintf("/images/%s/tag?repo=%s&tag=%s", id, repo, tag)
+	resp, err := s.post(path, "")
+	if err != nil {
+		return fmt.Errorf("tag image: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		return s.readError(resp)
+	}
+	logger.Info().Str("image", id).Str("repo", repo).Str("tag", tag).Msg("image tagged")
+	return nil
+}
+
+// PruneImages removes dangling images.
+func (s *DockerService) PruneImages() (int64, error) {
+	resp, err := s.post("/images/prune", "")
+	if err != nil {
+		return 0, fmt.Errorf("prune images: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, s.readError(resp)
+	}
+
+	var raw struct {
+		SpaceReclaimed int64 `json:"SpaceReclaimed"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return 0, fmt.Errorf("prune images decode: %w", err)
+	}
+	logger.Info().Int64("reclaimed", raw.SpaceReclaimed).Msg("images pruned")
+	return raw.SpaceReclaimed, nil
+}
+
+// ---------------------------------------------------------------------------
+// Network CRUD
+// ---------------------------------------------------------------------------
+
+// InspectNetwork returns detailed info about a network.
+func (s *DockerService) InspectNetwork(id string) (*NetworkDetail, error) {
+	resp, err := s.get(fmt.Sprintf("/networks/%s", id))
+	if err != nil {
+		return nil, fmt.Errorf("inspect network: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, s.readError(resp)
+	}
+
+	var raw struct {
+		ID       string `json:"Id"`
+		Name     string
+		Driver   string
+		Scope    string
+		Created  string
+		Internal bool
+		IPAM     struct {
+			Config []struct {
+				Subnet  string
+				Gateway string
+			}
+		}
+		Containers map[string]struct {
+			Name string
+		}
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("inspect network decode: %w", err)
+	}
+
+	subnet, gateway := "", ""
+	if len(raw.IPAM.Config) > 0 {
+		subnet = raw.IPAM.Config[0].Subnet
+		gateway = raw.IPAM.Config[0].Gateway
+	}
+
+	containers := make(map[string]string)
+	for cid, c := range raw.Containers {
+		short := cid
+		if len(short) > 12 {
+			short = short[:12]
+		}
+		containers[short] = c.Name
+	}
+
+	nid := raw.ID
+	if len(nid) > 12 {
+		nid = nid[:12]
+	}
+
+	return &NetworkDetail{
+		ID:         nid,
+		Name:       raw.Name,
+		Driver:     raw.Driver,
+		Scope:      raw.Scope,
+		Subnet:     subnet,
+		Gateway:    gateway,
+		Internal:   raw.Internal,
+		Containers: containers,
+		Created:    raw.Created,
+	}, nil
+}
+
+// CreateNetwork creates a new Docker network.
+func (s *DockerService) CreateNetwork(req CreateNetworkRequest) (*Network, error) {
+	body := map[string]any{
+		"Name":     req.Name,
+		"Driver":   req.Driver,
+		"Internal": req.Internal,
+	}
+	if req.Subnet != "" || req.Gateway != "" {
+		ipamConfig := map[string]string{}
+		if req.Subnet != "" {
+			ipamConfig["Subnet"] = req.Subnet
+		}
+		if req.Gateway != "" {
+			ipamConfig["Gateway"] = req.Gateway
+		}
+		body["IPAM"] = map[string]any{
+			"Config": []map[string]string{ipamConfig},
+		}
+	}
+
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("create network marshal: %w", err)
+	}
+
+	resp, err := s.post("/networks/create", string(payload))
+	if err != nil {
+		return nil, fmt.Errorf("create network: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		return nil, s.readError(resp)
+	}
+
+	var result struct {
+		ID string `json:"Id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("create network decode: %w", err)
+	}
+
+	nid := result.ID
+	if len(nid) > 12 {
+		nid = nid[:12]
+	}
+
+	logger.Info().Str("network", nid).Str("name", req.Name).Msg("network created")
+	return &Network{
+		ID:     nid,
+		Name:   req.Name,
+		Driver: req.Driver,
+		Scope:  "local",
+	}, nil
+}
+
+// RemoveNetwork removes a Docker network.
+func (s *DockerService) RemoveNetwork(id string) error {
+	resp, err := s.delete(fmt.Sprintf("/networks/%s", id))
+	if err != nil {
+		return fmt.Errorf("remove network: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		return s.readError(resp)
+	}
+	logger.Info().Str("network", id).Msg("network removed")
+	return nil
+}
+
+// ConnectContainerToNetwork connects a container to a network.
+func (s *DockerService) ConnectContainerToNetwork(networkID, containerID string) error {
+	payload, _ := json.Marshal(map[string]string{"Container": containerID})
+	resp, err := s.post(fmt.Sprintf("/networks/%s/connect", networkID), string(payload))
+	if err != nil {
+		return fmt.Errorf("connect network: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return s.readError(resp)
+	}
+	logger.Info().Str("network", networkID).Str("container", containerID).Msg("container connected to network")
+	return nil
+}
+
+// DisconnectContainerFromNetwork disconnects a container from a network.
+func (s *DockerService) DisconnectContainerFromNetwork(networkID, containerID string) error {
+	payload, _ := json.Marshal(map[string]string{"Container": containerID})
+	resp, err := s.post(fmt.Sprintf("/networks/%s/disconnect", networkID), string(payload))
+	if err != nil {
+		return fmt.Errorf("disconnect network: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return s.readError(resp)
+	}
+	logger.Info().Str("network", networkID).Str("container", containerID).Msg("container disconnected from network")
+	return nil
+}
+
+// PruneNetworks removes unused networks.
+func (s *DockerService) PruneNetworks() ([]string, error) {
+	resp, err := s.post("/networks/prune", "")
+	if err != nil {
+		return nil, fmt.Errorf("prune networks: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, s.readError(resp)
+	}
+
+	var raw struct {
+		NetworksDeleted []string `json:"NetworksDeleted"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("prune networks decode: %w", err)
+	}
+	logger.Info().Int("count", len(raw.NetworksDeleted)).Msg("networks pruned")
+	return raw.NetworksDeleted, nil
+}
+
+// ---------------------------------------------------------------------------
+// Volume CRUD
+// ---------------------------------------------------------------------------
+
+// InspectVolume returns detailed info about a volume.
+func (s *DockerService) InspectVolume(name string) (*VolumeDetail, error) {
+	resp, err := s.get(fmt.Sprintf("/volumes/%s", name))
+	if err != nil {
+		return nil, fmt.Errorf("inspect volume: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, s.readError(resp)
+	}
+
+	var raw struct {
+		Name       string
+		Driver     string
+		Mountpoint string
+		Labels     map[string]string
+		Options    map[string]string
+		CreatedAt  string
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("inspect volume decode: %w", err)
+	}
+
+	// Find containers using this volume
+	usedBy := make([]string, 0)
+	containers, err := s.ListContainers(true)
+	if err == nil {
+		for _, c := range containers {
+			detail, dErr := s.GetContainer(c.ID)
+			if dErr == nil {
+				for _, m := range detail.Mounts {
+					if m.Type == "volume" && m.Source == raw.Name {
+						usedBy = append(usedBy, c.Name)
+						break
+					}
+				}
+			}
+		}
+	}
+
+	return &VolumeDetail{
+		Name:       raw.Name,
+		Driver:     raw.Driver,
+		Mountpoint: raw.Mountpoint,
+		Labels:     raw.Labels,
+		Options:    raw.Options,
+		CreatedAt:  raw.CreatedAt,
+		UsedBy:     usedBy,
+	}, nil
+}
+
+// CreateVolume creates a new Docker volume.
+func (s *DockerService) CreateVolume(req CreateVolumeRequest) (*Volume, error) {
+	body := map[string]any{
+		"Name":   req.Name,
+		"Driver": req.Driver,
+	}
+	if len(req.Labels) > 0 {
+		body["Labels"] = req.Labels
+	}
+	if len(req.Options) > 0 {
+		body["DriverOpts"] = req.Options
+	}
+
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("create volume marshal: %w", err)
+	}
+
+	resp, err := s.post("/volumes/create", string(payload))
+	if err != nil {
+		return nil, fmt.Errorf("create volume: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		return nil, s.readError(resp)
+	}
+
+	var result struct {
+		Name       string
+		Driver     string
+		Mountpoint string
+		CreatedAt  string
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("create volume decode: %w", err)
+	}
+
+	logger.Info().Str("volume", result.Name).Msg("volume created")
+	return &Volume{
+		Name:       result.Name,
+		Driver:     result.Driver,
+		Mountpoint: result.Mountpoint,
+		CreatedAt:  result.CreatedAt,
+	}, nil
+}
+
+// RemoveVolume removes a Docker volume.
+func (s *DockerService) RemoveVolume(name string, force bool) error {
+	path := fmt.Sprintf("/volumes/%s", name)
+	if force {
+		path += "?force=true"
+	}
+	resp, err := s.delete(path)
+	if err != nil {
+		return fmt.Errorf("remove volume: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		return s.readError(resp)
+	}
+	logger.Info().Str("volume", name).Msg("volume removed")
+	return nil
+}
+
+// PruneVolumes removes unused volumes.
+func (s *DockerService) PruneVolumes() (int64, error) {
+	resp, err := s.post("/volumes/prune", "")
+	if err != nil {
+		return 0, fmt.Errorf("prune volumes: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, s.readError(resp)
+	}
+
+	var raw struct {
+		SpaceReclaimed int64 `json:"SpaceReclaimed"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return 0, fmt.Errorf("prune volumes decode: %w", err)
+	}
+	logger.Info().Int64("reclaimed", raw.SpaceReclaimed).Msg("volumes pruned")
+	return raw.SpaceReclaimed, nil
+}
+
+// ---------------------------------------------------------------------------
+// System disk usage
+// ---------------------------------------------------------------------------
+
+// GetSystemDiskUsage returns Docker system disk usage.
+func (s *DockerService) GetSystemDiskUsage() (*SystemDiskUsage, error) {
+	resp, err := s.get("/system/df")
+	if err != nil {
+		return nil, fmt.Errorf("system df: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, s.readError(resp)
+	}
+
+	var raw struct {
+		Images []struct {
+			Size int64 `json:"Size"`
+		} `json:"Images"`
+		Containers []struct {
+			SizeRootFs int64 `json:"SizeRootFs"`
+		} `json:"Containers"`
+		Volumes []struct {
+			UsageData struct {
+				Size int64 `json:"Size"`
+			} `json:"UsageData"`
+		} `json:"Volumes"`
+		BuildCache []struct {
+			Size int64 `json:"Size"`
+		} `json:"BuildCache"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("system df decode: %w", err)
+	}
+
+	du := &SystemDiskUsage{
+		ImagesCount:     len(raw.Images),
+		ContainersCount: len(raw.Containers),
+		VolumesCount:    len(raw.Volumes),
+	}
+	for _, img := range raw.Images {
+		du.ImagesSize += img.Size
+	}
+	for _, c := range raw.Containers {
+		du.ContainersSize += c.SizeRootFs
+	}
+	for _, v := range raw.Volumes {
+		du.VolumesSize += v.UsageData.Size
+	}
+	for _, b := range raw.BuildCache {
+		du.BuildCacheSize += b.Size
+	}
+	return du, nil
 }
 
 // ---------------------------------------------------------------------------
