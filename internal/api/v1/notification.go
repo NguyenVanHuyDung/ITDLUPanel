@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -32,6 +33,7 @@ func (h *NotificationHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminM
 
 		// Rules
 		g.GET("/rules", h.ListRules)
+		g.PUT("/rules", h.BulkUpsertRules)
 		g.PUT("/rules/:channelId", h.SetRules)
 
 		// Logs
@@ -40,6 +42,7 @@ func (h *NotificationHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminM
 
 		// Meta
 		g.GET("/event-types", h.ListEventTypes)
+		g.GET("/event-types/critical", h.ListCriticalEventTypes)
 	}
 }
 
@@ -59,10 +62,10 @@ func (h *NotificationHandler) ListChannels(c *gin.Context) {
 
 func (h *NotificationHandler) CreateChannel(c *gin.Context) {
 	var req struct {
-		Type      string `json:"type" binding:"required"`
-		Name      string `json:"name" binding:"required"`
-		Config    string `json:"config" binding:"required"`
-		IsEnabled bool   `json:"is_enabled"`
+		Type      string                 `json:"type" binding:"required"`
+		Name      string                 `json:"name" binding:"required"`
+		Config    map[string]interface{} `json:"config" binding:"required"`
+		IsEnabled bool                   `json:"is_enabled"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -73,7 +76,8 @@ func (h *NotificationHandler) CreateChannel(c *gin.Context) {
 		return
 	}
 
-	id, err := h.svc.CreateChannel(req.Type, req.Name, req.Config, req.IsEnabled)
+	cfgJSON, _ := json.Marshal(req.Config)
+	id, err := h.svc.CreateChannel(req.Type, req.Name, string(cfgJSON), req.IsEnabled)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -88,15 +92,20 @@ func (h *NotificationHandler) UpdateChannel(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Name      string `json:"name"`
-		Config    string `json:"config"`
-		IsEnabled bool   `json:"is_enabled"`
+		Name      string                 `json:"name"`
+		Config    map[string]interface{} `json:"config"`
+		IsEnabled bool                   `json:"is_enabled"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := h.svc.UpdateChannel(id, req.Name, req.Config, req.IsEnabled); err != nil {
+	cfgStr := ""
+	if req.Config != nil {
+		b, _ := json.Marshal(req.Config)
+		cfgStr = string(b)
+	}
+	if err := h.svc.UpdateChannel(id, req.Name, cfgStr, req.IsEnabled); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -163,6 +172,25 @@ func (h *NotificationHandler) SetRules(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "rules updated"})
 }
 
+func (h *NotificationHandler) BulkUpsertRules(c *gin.Context) {
+	var req struct {
+		Rules []struct {
+			ChannelID int64  `json:"channel_id"`
+			EventType string `json:"event_type"`
+			IsEnabled bool   `json:"is_enabled"`
+		} `json:"rules"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.svc.BulkUpsertRules(req.Rules); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "rules updated"})
+}
+
 // ---------- Logs ----------
 
 func (h *NotificationHandler) ListLogs(c *gin.Context) {
@@ -207,4 +235,8 @@ func (h *NotificationHandler) ListEventTypes(c *gin.Context) {
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"data": result})
+}
+
+func (h *NotificationHandler) ListCriticalEventTypes(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"data": service.CriticalEventTypes()})
 }

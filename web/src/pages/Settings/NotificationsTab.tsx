@@ -50,8 +50,8 @@ export default function NotificationsTab() {
   const isDark = useThemeStore((s) => s.mode) === 'dark';
 
   const {
-    channels, rules, logs, eventTypes, loading,
-    fetchChannels, fetchRules, fetchLogs, fetchEventTypes,
+    channels, rules, logs, eventTypes, criticalTypes, loading,
+    fetchChannels, fetchRules, fetchLogs, fetchEventTypes, fetchCriticalTypes,
     createChannel, updateChannel, deleteChannel, testChannel,
     updateRules, clearLogs,
   } = useNotificationStore();
@@ -63,9 +63,13 @@ export default function NotificationsTab() {
   const [testing, setTesting] = useState<number | null>(null);
   const [section, setSection] = useState<'channels' | 'rules' | 'logs'>('channels');
 
+  const parseConfig = (cfg: string): Record<string, string> => {
+    try { return JSON.parse(cfg); } catch { return {}; }
+  };
+
   const reload = useCallback(async () => {
-    await Promise.all([fetchChannels(), fetchRules(), fetchEventTypes(), fetchLogs()]);
-  }, [fetchChannels, fetchRules, fetchEventTypes, fetchLogs]);
+    await Promise.all([fetchChannels(), fetchRules(), fetchEventTypes(), fetchCriticalTypes(), fetchLogs()]);
+  }, [fetchChannels, fetchRules, fetchEventTypes, fetchCriticalTypes, fetchLogs]);
 
   useEffect(() => { reload(); }, [reload]);
 
@@ -147,11 +151,12 @@ export default function NotificationsTab() {
   const openEditChannel = (ch: NotificationChannel) => {
     setEditingChannel(ch);
     setChannelType(ch.type);
+    const cfg = parseConfig(ch.config);
     form.setFieldsValue({
       type: ch.type,
       name: ch.name,
       is_enabled: ch.is_enabled,
-      ...ch.config,
+      ...cfg,
     });
     setChannelModal(true);
   };
@@ -222,7 +227,9 @@ export default function NotificationsTab() {
         <Empty description="No notification channels configured" />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {channels.map((ch) => (
+          {channels.map((ch) => {
+            const cfg = parseConfig(ch.config);
+            return (
             <div
               key={ch.id}
               style={{
@@ -247,8 +254,8 @@ export default function NotificationsTab() {
                   <div style={{ fontWeight: 600, color: p.text }}>{ch.name}</div>
                   <div style={{ fontSize: 12, color: p.textSoft }}>
                     {ch.type === 'email'
-                      ? `${ch.config.host || ''}:${ch.config.port || ''} → ${ch.config.to || ''}`
-                      : `Chat ID: ${ch.config.chat_id || ''}`}
+                      ? `${cfg.host || ''}:${cfg.port || ''} → ${cfg.to || ''}`
+                      : `Chat ID: ${cfg.chat_id || ''}`}
                   </div>
                 </div>
                 <Badge status={ch.is_enabled ? 'success' : 'default'} text={ch.is_enabled ? 'Active' : 'Disabled'} />
@@ -270,7 +277,8 @@ export default function NotificationsTab() {
                 </Popconfirm>
               </Space>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -371,6 +379,7 @@ export default function NotificationsTab() {
         {sectionTitle(<BellOutlined style={{ color: p.accent }} />, 'Event Rules')}
         <p style={{ color: p.textSoft, marginBottom: 16, fontSize: 13 }}>
           Choose which events trigger notifications on each channel.
+          Events marked with <Tag color="red" style={{ fontSize: 11 }}>Critical</Tag> are auto-enabled for new channels.
         </p>
 
         {activeChannels.length === 0 ? (
@@ -394,12 +403,15 @@ export default function NotificationsTab() {
                 </tr>
               </thead>
               <tbody>
-                {eventTypes.map((ev) => {
+                {eventTypes.map((evInfo) => {
+                  const ev = evInfo.type;
                   const info = eventLabel(ev);
+                  const isCritical = criticalTypes.includes(ev);
                   return (
-                    <tr key={ev}>
+                    <tr key={ev} style={isCritical ? { background: isDark ? 'rgba(255,0,0,0.04)' : 'rgba(255,0,0,0.02)' } : undefined}>
                       <td style={{ padding: '6px 10px', borderBottom: `1px solid ${p.border}`, color: p.text }}>
-                        <Tag color={info.color} style={{ marginRight: 6 }}>{info.emoji} {info.label}</Tag>
+                        <Tag color={info.color} style={{ marginRight: 4 }}>{info.emoji} {info.label}</Tag>
+                        {isCritical && <Tag color="red" style={{ fontSize: 10 }}>Critical</Tag>}
                       </td>
                       {activeChannels.map((ch) => (
                         <td

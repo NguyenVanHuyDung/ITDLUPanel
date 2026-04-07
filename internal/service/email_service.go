@@ -12,13 +12,13 @@ import (
 
 // EmailConfig holds SMTP configuration for sending email notifications.
 type EmailConfig struct {
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
-	Username string `json:"username"`
-	Password string `json:"password"`
-	FromAddr string `json:"from_addr"`
-	FromName string `json:"from_name"`
-	UseTLS   bool   `json:"use_tls"`
+	Host       string `json:"host"`
+	Port       int    `json:"port"`
+	Username   string `json:"username"`
+	Password   string `json:"password"`
+	FromAddr   string `json:"from"`
+	Encryption string `json:"encryption"`
+	ToAddr     string `json:"to"`
 }
 
 // EmailService sends email notifications via SMTP.
@@ -39,8 +39,8 @@ func (s *EmailService) ParseConfig(raw string) (EmailConfig, error) {
 // Send sends an email with HTML body.
 func (s *EmailService) Send(cfg EmailConfig, to, subject, htmlBody string) error {
 	from := cfg.FromAddr
-	if cfg.FromName != "" {
-		from = fmt.Sprintf("%s <%s>", cfg.FromName, cfg.FromAddr)
+	if from == "" {
+		from = cfg.Username
 	}
 
 	headers := map[string]string{
@@ -61,8 +61,7 @@ func (s *EmailService) Send(cfg EmailConfig, to, subject, htmlBody string) error
 
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
 
-	// Port 465 = implicit TLS (SMTPS); other ports = STARTTLS.
-	if cfg.Port == 465 || (cfg.UseTLS && cfg.Port != 587) {
+	if cfg.Encryption == "ssl" || cfg.Port == 465 {
 		return s.sendTLS(cfg, addr, to, msg.String())
 	}
 	return s.sendStartTLS(cfg, addr, to, msg.String())
@@ -116,7 +115,11 @@ func (s *EmailService) doSend(c *smtp.Client, cfg EmailConfig, to, msg string) e
 			return fmt.Errorf("smtp auth: %w", err)
 		}
 	}
-	if err := c.Mail(cfg.FromAddr); err != nil {
+	from := cfg.FromAddr
+	if from == "" {
+		from = cfg.Username
+	}
+	if err := c.Mail(from); err != nil {
 		return fmt.Errorf("mail from: %w", err)
 	}
 	if err := c.Rcpt(to); err != nil {
@@ -137,7 +140,11 @@ func (s *EmailService) doSend(c *smtp.Client, cfg EmailConfig, to, msg string) e
 
 // TestConnection verifies the SMTP connection and authentication.
 func (s *EmailService) TestConnection(cfg EmailConfig) error {
-	return s.Send(cfg, cfg.FromAddr, "ITDLUPanel Test", s.testEmailHTML())
+	to := cfg.ToAddr
+	if to == "" {
+		to = cfg.Username
+	}
+	return s.Send(cfg, to, "ITDLUPanel Test", s.testEmailHTML())
 }
 
 func (s *EmailService) testEmailHTML() string {

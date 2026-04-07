@@ -9,7 +9,7 @@ export interface NotificationChannel {
   id: number;
   type: 'email' | 'telegram';
   name: string;
-  config: Record<string, string>;
+  config: string;
   is_enabled: boolean;
   created_at: string;
   updated_at: string;
@@ -34,6 +34,11 @@ export interface NotificationLog {
   created_at: string;
 }
 
+export interface EventTypeInfo {
+  type: string;
+  severity: string;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Store                                                              */
 /* ------------------------------------------------------------------ */
@@ -42,13 +47,15 @@ interface NotificationState {
   channels: NotificationChannel[];
   rules: NotificationRule[];
   logs: NotificationLog[];
-  eventTypes: string[];
+  eventTypes: EventTypeInfo[];
+  criticalTypes: string[];
   loading: boolean;
 
   fetchChannels: () => Promise<void>;
   fetchRules: () => Promise<void>;
   fetchLogs: (page?: number, limit?: number) => Promise<void>;
   fetchEventTypes: () => Promise<void>;
+  fetchCriticalTypes: () => Promise<void>;
 
   createChannel: (ch: Partial<NotificationChannel>) => Promise<void>;
   updateChannel: (id: number, ch: Partial<NotificationChannel>) => Promise<void>;
@@ -64,6 +71,7 @@ export const useNotificationStore = create<NotificationState>((set) => ({
   rules: [],
   logs: [],
   eventTypes: [],
+  criticalTypes: [],
   loading: false,
 
   fetchChannels: async () => {
@@ -82,13 +90,18 @@ export const useNotificationStore = create<NotificationState>((set) => ({
   },
 
   fetchLogs: async (page = 1, limit = 50) => {
-    const { data } = await api.get('/notifications/logs', { params: { page, limit } });
+    const { data } = await api.get('/notifications/logs', { params: { page, per_page: limit } });
     set({ logs: data.data ?? [] });
   },
 
   fetchEventTypes: async () => {
     const { data } = await api.get('/notifications/event-types');
     set({ eventTypes: data.data ?? [] });
+  },
+
+  fetchCriticalTypes: async () => {
+    const { data } = await api.get('/notifications/event-types/critical');
+    set({ criticalTypes: data.data ?? [] });
   },
 
   createChannel: async (ch) => {

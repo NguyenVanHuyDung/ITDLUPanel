@@ -214,8 +214,10 @@ func (s *NotificationService) sendEmail(ch NotificationChannel, evt Notification
 	subject := fmt.Sprintf("[%s] %s", strings.ToUpper(evt.Severity), evt.Title)
 	body := s.email.FormatEventEmail(evt.Type, evt.Severity, evt.Title, evt.Detail, panelURL)
 
-	// Email recipient: use the from_addr as default recipient.
-	recipient := cfg.FromAddr
+	recipient := cfg.ToAddr
+	if recipient == "" {
+		recipient = cfg.Username
+	}
 	if err := s.email.Send(cfg, recipient, subject, body); err != nil {
 		logger.Error().Err(err).Str("channel", ch.Name).Msg("notification: email send failed")
 		s.logNotification(evt.Type, "email", recipient, subject, "", "failed", err.Error())
@@ -307,7 +309,22 @@ func (s *NotificationService) GetChannelRaw(id int64) (*NotificationChannel, err
 	return s.GetChannel(id)
 }
 
-// CreateChannel adds a new notification channel.
+// CriticalEventTypes returns event types that should be auto-enabled for new channels.
+// These are the most important events that system admins should be alerted about.
+func CriticalEventTypes() []string {
+	return []string{
+		EventCronFailed,
+		EventSSLExpiryWarning,
+		EventSSLExpired,
+		EventBackupFailed,
+		EventSoftwareInstallFail,
+		EventDiskHigh,
+		EventServiceDown,
+		EventLoginFailed,
+	}
+}
+
+// CreateChannel adds a new notification channel and auto-creates rules for critical events.
 func (s *NotificationService) CreateChannel(chType, name, cfg string, enabled bool) (int64, error) {
 	en := 0
 	if enabled {
@@ -318,7 +335,17 @@ func (s *NotificationService) CreateChannel(chType, name, cfg string, enabled bo
 	if err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+
+	// Auto-enable critical event rules for the new channel.
+	if err := s.SetRules(id, CriticalEventTypes()); err != nil {
+		logger.Warn().Err(err).Int64("channel", id).Msg("notification: failed to auto-create critical rules")
+	}
+
+	return id, nil
 }
 
 // UpdateChannel updates an existing notification channel.
@@ -430,6 +457,42 @@ func (s *NotificationService) UpdateRule(id int64, enabled bool) error {
 	}
 	_, err := s.db.Exec(`UPDATE notification_rules SET is_enabled = ? WHERE id = ?`, en, id)
 	return err
+}
+
+// BulkUpsertRules creates or updates multiple rules at once.
+// Each entry specifies a channel_id, event_type, and is_enabled flag.
+func (s *NotificationService) BulkUpsertRules(rules []struct {
+	ChannelID int64  `json:"channel_id"`
+	EventType string `json:"event_type"`
+	IsEnabled bool   `json:"is_enabled"`
+}) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, r := range rules {
+		en := 0
+		if r.IsEnabled {
+			en = 1
+		}
+		// Upsert: try update first, if no rows affected, insert.
+		res, err := tx.Exec(`UPDATE notification_rules SET is_enabled = ? WHERE channel_id = ? AND event_type = ?`,
+			en, r.ChannelID, r.EventType)
+		if err != nil {
+			return err
+		}
+		n, _ := res.RowsAffected()
+		if n == 0 {
+			_, err = tx.Exec(`INSERT INTO notification_rules (event_type, channel_id, is_enabled) VALUES (?, ?, ?)`,
+				r.EventType, r.ChannelID, en)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit()
 }
 
 // ---------------------------------------------------------------------------
