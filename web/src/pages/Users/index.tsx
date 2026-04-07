@@ -55,6 +55,19 @@ export default function Users() {
   const [roleForm] = Form.useForm();
   const [checkedPerms, setCheckedPerms] = useState<string[]>([]);
 
+  // Resource assignment state
+  const [resourceModalOpen, setResourceModalOpen] = useState(false);
+  const [resourceUser, setResourceUser] = useState<User | null>(null);
+  const [resourceLoading, setResourceLoading] = useState(false);
+  const [resourceSaving, setResourceSaving] = useState(false);
+  const [allSites, setAllSites] = useState<{ id: number; domain: string }[]>([]);
+  const [allDatabases, setAllDatabases] = useState<{ id: number; name: string }[]>([]);
+  const [allFtps, setAllFtps] = useState<{ id: number; username: string }[]>([]);
+  const [assignedSiteIds, setAssignedSiteIds] = useState<number[]>([]);
+  const [assignedDbIds, setAssignedDbIds] = useState<number[]>([]);
+  const [assignedFtpIds, setAssignedFtpIds] = useState<number[]>([]);
+  const [resourceTab, setResourceTab] = useState<'site' | 'database' | 'ftp'>('site');
+
   /* ---------------------------------------------------------------- */
   /*  Data fetching                                                   */
   /* ---------------------------------------------------------------- */
@@ -215,6 +228,54 @@ export default function Users() {
       fetchUsers();
     } catch {
       message.error('Failed to update status');
+    }
+  };
+
+  /* ---------------------------------------------------------------- */
+  /*  Resource assignment handlers                                    */
+  /* ---------------------------------------------------------------- */
+
+  const openResourceModal = async (user: User) => {
+    setResourceUser(user);
+    setResourceTab('site');
+    setResourceModalOpen(true);
+    setResourceLoading(true);
+    try {
+      const [resRes, sitesRes, dbsRes, ftpsRes] = await Promise.all([
+        api.get(`/users/${user.id}/resources`),
+        api.get('/sites'),
+        api.get('/databases'),
+        api.get('/ftp'),
+      ]);
+      const resources = resRes.data.data || [];
+      setAssignedSiteIds(resources.filter((r: { resource_type: string }) => r.resource_type === 'site').map((r: { resource_id: number }) => r.resource_id));
+      setAssignedDbIds(resources.filter((r: { resource_type: string }) => r.resource_type === 'database').map((r: { resource_id: number }) => r.resource_id));
+      setAssignedFtpIds(resources.filter((r: { resource_type: string }) => r.resource_type === 'ftp').map((r: { resource_id: number }) => r.resource_id));
+      setAllSites((sitesRes.data.data || []).map((s: { id: number; domain: string }) => ({ id: s.id, domain: s.domain })));
+      setAllDatabases((dbsRes.data.data || []).map((d: { id: number; name: string }) => ({ id: d.id, name: d.name })));
+      setAllFtps((ftpsRes.data.data || []).map((f: { id: number; username: string }) => ({ id: f.id, username: f.username })));
+    } catch {
+      message.error('Failed to load resources');
+    } finally {
+      setResourceLoading(false);
+    }
+  };
+
+  const handleSaveResources = async () => {
+    if (!resourceUser) return;
+    setResourceSaving(true);
+    try {
+      await Promise.all([
+        api.post(`/users/${resourceUser.id}/resources`, { type: 'site', resource_ids: assignedSiteIds }),
+        api.post(`/users/${resourceUser.id}/resources`, { type: 'database', resource_ids: assignedDbIds }),
+        api.post(`/users/${resourceUser.id}/resources`, { type: 'ftp', resource_ids: assignedFtpIds }),
+      ]);
+      message.success('Resources assigned successfully');
+      setResourceModalOpen(false);
+    } catch {
+      message.error('Failed to save resources');
+    } finally {
+      setResourceSaving(false);
     }
   };
 
@@ -431,6 +492,13 @@ export default function Users() {
               {r.status === 1 ? <LockOutlined /> : <UnlockOutlined />}
             </button>
           </Tooltip>
+          {r.role !== 'admin' && (
+            <Tooltip title="Assign Resources">
+              <button style={btnAction} onClick={() => openResourceModal(r)}>
+                <SafetyCertificateOutlined />
+              </button>
+            </Tooltip>
+          )}
           <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(r.id)} okText={t('common.yes')} cancelText={t('common.no')}>
             <button style={btnDanger}><DeleteOutlined /></button>
           </Popconfirm>
@@ -706,6 +774,98 @@ export default function Users() {
             style={{ background: 'transparent' }}
           />
         </div>
+      </Modal>
+
+      {/* ============================================================ */}
+      {/*  Resource Assignment Modal                                    */}
+      {/* ============================================================ */}
+      <Modal
+        title={`Assign Resources — ${resourceUser?.username || ''}`}
+        open={resourceModalOpen}
+        onOk={handleSaveResources}
+        onCancel={() => setResourceModalOpen(false)}
+        confirmLoading={resourceSaving}
+        okText="Save"
+        cancelText={t('common.cancel')}
+        width={520}
+        destroyOnHidden
+      >
+        {resourceLoading ? (
+          <div style={{ textAlign: 'center', padding: 40, color: p.textMuted, fontSize: 13 }}>Loading resources…</div>
+        ) : (
+          <>
+            <div style={{
+              display: 'flex', gap: 4, marginBottom: 16,
+              background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+              borderRadius: 8, padding: 3,
+            }}>
+              {([
+                { key: 'site' as const, label: 'Sites', count: assignedSiteIds.length },
+                { key: 'database' as const, label: 'Databases', count: assignedDbIds.length },
+                { key: 'ftp' as const, label: 'FTP', count: assignedFtpIds.length },
+              ]).map(tab => (
+                <button key={tab.key} style={tabStyle(resourceTab === tab.key)} onClick={() => setResourceTab(tab.key)}>
+                  {tab.label}
+                  <Badge count={tab.count} showZero style={{
+                    backgroundColor: resourceTab === tab.key ? '#fff' : `${p.textDim}30`,
+                    color: resourceTab === tab.key ? p.accent : p.textMuted,
+                    fontSize: 10, marginLeft: 4, boxShadow: 'none',
+                  }} />
+                </button>
+              ))}
+            </div>
+
+            {(() => {
+              const tabConfig = {
+                site: { items: allSites.map(s => ({ id: s.id, label: s.domain })), assignedIds: assignedSiteIds, setIds: setAssignedSiteIds, label: 'sites' },
+                database: { items: allDatabases.map(d => ({ id: d.id, label: d.name })), assignedIds: assignedDbIds, setIds: setAssignedDbIds, label: 'databases' },
+                ftp: { items: allFtps.map(f => ({ id: f.id, label: f.username })), assignedIds: assignedFtpIds, setIds: setAssignedFtpIds, label: 'FTP accounts' },
+              };
+              const { items, assignedIds, setIds, label } = tabConfig[resourceTab];
+              return (
+                <>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 8, padding: '0 12px' }}>
+                    <button onClick={() => setIds(items.map(i => i.id))} style={{ ...btnOutline, fontSize: 11, padding: '3px 10px' }}>Select All</button>
+                    <button onClick={() => setIds([])} style={{ ...btnOutline, fontSize: 11, padding: '3px 10px' }}>Deselect All</button>
+                  </div>
+                  <div style={{
+                    maxHeight: 400, overflow: 'auto', padding: '8px 0',
+                    border: `1px solid ${p.cardBorder}`, borderRadius: 8,
+                    background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)',
+                  }}>
+                    {items.length === 0 ? (
+                      <div style={{ textAlign: 'center', color: p.textMuted, padding: 24, fontSize: 13 }}>
+                        No {label} found
+                      </div>
+                    ) : (
+                      items.map(item => {
+                        const checked = assignedIds.includes(item.id);
+                        return (
+                          <label key={item.id} style={{
+                            display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+                            borderRadius: 6, cursor: 'pointer', fontSize: 13, color: p.text,
+                            background: checked ? `${p.accent}08` : 'transparent',
+                            transition: 'background 0.15s',
+                          }}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                setIds(checked ? assignedIds.filter(id => id !== item.id) : [...assignedIds, item.id]);
+                              }}
+                              style={{ accentColor: p.accent }}
+                            />
+                            <span>{item.label}</span>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+                </>
+              );
+            })()}
+          </>
+        )}
       </Modal>
     </div>
   );
