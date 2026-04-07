@@ -262,7 +262,7 @@ func (s *LogService) ListWebsiteLogDates(siteID int64) ([]string, error) {
 // Path format: /ITDLUPanel/logs/<domain>/<logType>.log[.date][.gz]
 func (s *LogService) websiteLogPath(domain, logType, date string) string {
 	base := fmt.Sprintf("%s/%s.log", websiteLogDir(domain), logType)
-	if date == "" {
+	if date == "" || date == time.Now().Format("2006-01-02") {
 		return base
 	}
 	plain := base + "." + date

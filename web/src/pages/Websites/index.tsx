@@ -1077,7 +1077,7 @@ function DirectoryPanel({ site }: { site: Site }) {
               Write Access Log
             </div>
             <div style={hintStyle}>
-              Record all HTTP requests to this site. Log path: <code style={{ background: p.codeBg, padding: '1px 4px', borderRadius: 3 }}>/var/log/nginx/{site.domain}.access.log</code>
+              Record all HTTP requests to this site. Log path: <code style={{ background: p.codeBg, padding: '1px 4px', borderRadius: 3 }}>/ITDLUPanel/logs/{site.domain}/access.log</code>
             </div>
           </div>
           <Switch
