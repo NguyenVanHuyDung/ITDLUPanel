@@ -294,6 +294,8 @@ export default function Cron() {
     setSubmitting(true);
     try {
       let command = values.command;
+      // Strip any existing storage flags to avoid duplicates on edit
+      command = command.replace(/\s*-storage=\S+/g, '').replace(/\s*-storage-id=\d+/g, '').trim();
       // For CLI-based backup templates, inject -max-keep and -target flags
       if (currentTemplate?.cliBackupType) {
         let cmd = `${panelBin} backup -type=${currentTemplate.cliBackupType}`;
@@ -312,7 +314,6 @@ export default function Cron() {
         cmd += ` ${panelCfg}`;
         command = cmd;
       } else if (storageType !== 'local' && storageId) {
-        // Manual cron: append storage flags if a backup command
         const sType = storageType.split(':')[0];
         command += ` -storage=${sType} -storage-id=${storageId}`;
       }
@@ -414,6 +415,18 @@ export default function Cron() {
     } else {
       setSchedMode('custom');
       form.setFieldsValue({ schedule: record.schedule });
+    }
+    // Parse storage flags from command string
+    const storageMatch = record.command.match(/-storage=(\S+)/);
+    const storageIdMatch = record.command.match(/-storage-id=(\d+)/);
+    if (storageMatch && storageIdMatch) {
+      const sType = storageMatch[1];
+      const sId = storageIdMatch[1];
+      setStorageType(`${sType}:${sId}`);
+      setStorageId(parseInt(sId));
+    } else {
+      setStorageType('local');
+      setStorageId(null);
     }
     setModalOpen(true);
   };
