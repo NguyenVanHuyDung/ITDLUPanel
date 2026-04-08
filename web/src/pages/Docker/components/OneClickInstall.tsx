@@ -21,22 +21,54 @@ interface AppTemplate {
 }
 
 const defaultApps: AppTemplate[] = [
+  // Web Servers
   { name: 'Nginx', image: 'nginx', tag: 'latest', description: 'High-performance HTTP server and reverse proxy', category: 'Web Server', ports: { '80': '80', '443': '443' }, env: [], volumes: [] },
+  { name: 'Apache', image: 'httpd', tag: '2.4', description: 'Apache HTTP Server — the most widely used web server', category: 'Web Server', ports: { '80': '80' }, env: [], volumes: [] },
+  { name: 'Caddy', image: 'caddy', tag: 'latest', description: 'Fast web server with automatic HTTPS', category: 'Web Server', ports: { '80': '80', '443': '443' }, env: [], volumes: ['/opt/caddy/data:/data', '/opt/caddy/config:/config'] },
+  { name: 'Traefik', image: 'traefik', tag: 'v3.0', description: 'Cloud-native reverse proxy and load balancer', category: 'Web Server', ports: { '80': '80', '443': '443', '8080': '8080' }, env: [], volumes: ['/var/run/docker.sock:/var/run/docker.sock'] },
+  // Databases
   { name: 'MySQL', image: 'mysql', tag: '8.0', description: 'Popular open-source relational database', category: 'Database', ports: { '3306': '3306' }, env: ['MYSQL_ROOT_PASSWORD=changeme'], volumes: ['/opt/mysql/data:/var/lib/mysql'] },
   { name: 'PostgreSQL', image: 'postgres', tag: '16', description: 'Advanced open-source relational database', category: 'Database', ports: { '5432': '5432' }, env: ['POSTGRES_PASSWORD=changeme'], volumes: ['/opt/postgres/data:/var/lib/postgresql/data'] },
-  { name: 'Redis', image: 'redis', tag: 'alpine', description: 'In-memory data structure store, cache, and broker', category: 'Cache', ports: { '6379': '6379' }, env: [], volumes: ['/opt/redis/data:/data'] },
   { name: 'MongoDB', image: 'mongo', tag: '7', description: 'Document-oriented NoSQL database', category: 'Database', ports: { '27017': '27017' }, env: ['MONGO_INITDB_ROOT_USERNAME=admin', 'MONGO_INITDB_ROOT_PASSWORD=changeme'], volumes: ['/opt/mongo/data:/data/db'] },
   { name: 'MariaDB', image: 'mariadb', tag: '11', description: 'MySQL-compatible relational database', category: 'Database', ports: { '3306': '3306' }, env: ['MARIADB_ROOT_PASSWORD=changeme'], volumes: ['/opt/mariadb/data:/var/lib/mysql'] },
+  { name: 'ClickHouse', image: 'clickhouse/clickhouse-server', tag: 'latest', description: 'Fast column-oriented OLAP database for analytics', category: 'Database', ports: { '8123': '8123', '9000': '9000' }, env: [], volumes: ['/opt/clickhouse/data:/var/lib/clickhouse'] },
+  { name: 'CockroachDB', image: 'cockroachdb/cockroach', tag: 'latest', description: 'Distributed SQL database built for scale', category: 'Database', ports: { '26257': '26257', '8080': '8080' }, env: [], volumes: ['/opt/cockroach/data:/cockroach/cockroach-data'] },
+  // Cache
+  { name: 'Redis', image: 'redis', tag: 'alpine', description: 'In-memory data structure store, cache, and broker', category: 'Cache', ports: { '6379': '6379' }, env: [], volumes: ['/opt/redis/data:/data'] },
+  { name: 'Memcached', image: 'memcached', tag: 'alpine', description: 'High-performance memory object caching system', category: 'Cache', ports: { '11211': '11211' }, env: [], volumes: [] },
+  { name: 'KeyDB', image: 'eqalpha/keydb', tag: 'latest', description: 'High-performance Redis alternative with multithreading', category: 'Cache', ports: { '6379': '6379' }, env: [], volumes: ['/opt/keydb/data:/data'] },
+  // Queue / Message
+  { name: 'RabbitMQ', image: 'rabbitmq', tag: '3-management', description: 'Open-source message broker with management UI', category: 'Queue', ports: { '5672': '5672', '15672': '15672' }, env: ['RABBITMQ_DEFAULT_USER=admin', 'RABBITMQ_DEFAULT_PASS=changeme'], volumes: [] },
+  { name: 'Kafka', image: 'bitnami/kafka', tag: 'latest', description: 'Distributed event streaming platform', category: 'Queue', ports: { '9092': '9092' }, env: ['KAFKA_CFG_NODE_ID=0', 'KAFKA_CFG_PROCESS_ROLES=controller,broker', 'KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093', 'KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@kafka:9093', 'KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER'], volumes: ['/opt/kafka/data:/bitnami/kafka'] },
+  { name: 'NATS', image: 'nats', tag: 'latest', description: 'High-performance cloud-native messaging system', category: 'Queue', ports: { '4222': '4222', '8222': '8222' }, env: [], volumes: [] },
+  // Storage
+  { name: 'MinIO', image: 'minio/minio', tag: 'latest', description: 'S3-compatible object storage', category: 'Storage', ports: { '9000': '9000', '9001': '9001' }, env: ['MINIO_ROOT_USER=admin', 'MINIO_ROOT_PASSWORD=changeme123'], volumes: ['/opt/minio/data:/data'] },
+  // Search
+  { name: 'Elasticsearch', image: 'elasticsearch', tag: '8.12.0', description: 'Distributed search and analytics engine', category: 'Search', ports: { '9200': '9200', '9300': '9300' }, env: ['discovery.type=single-node', 'xpack.security.enabled=false'], volumes: ['/opt/elasticsearch/data:/usr/share/elasticsearch/data'] },
+  { name: 'Meilisearch', image: 'getmeili/meilisearch', tag: 'latest', description: 'Lightning-fast, typo-tolerant search engine', category: 'Search', ports: { '7700': '7700' }, env: ['MEILI_ENV=production', 'MEILI_MASTER_KEY=changeme'], volumes: ['/opt/meilisearch/data:/meili_data'] },
+  { name: 'Typesense', image: 'typesense/typesense', tag: '27.1', description: 'Fast, typo-tolerant search engine alternative to Algolia', category: 'Search', ports: { '8108': '8108' }, env: ['TYPESENSE_API_KEY=changeme', 'TYPESENSE_DATA_DIR=/data'], volumes: ['/opt/typesense/data:/data'] },
+  // DevTools
   { name: 'Portainer', image: 'portainer/portainer-ce', tag: 'latest', description: 'Docker management UI', category: 'DevTools', ports: { '9443': '9443', '9000': '9000' }, env: [], volumes: ['/var/run/docker.sock:/var/run/docker.sock', '/opt/portainer/data:/data'] },
   { name: 'phpMyAdmin', image: 'phpmyadmin', tag: 'latest', description: 'Web-based MySQL administration tool', category: 'DevTools', ports: { '8080': '80' }, env: ['PMA_ARBITRARY=1'], volumes: [] },
   { name: 'Adminer', image: 'adminer', tag: 'latest', description: 'Lightweight database management tool', category: 'DevTools', ports: { '8080': '8080' }, env: [], volumes: [] },
-  { name: 'Memcached', image: 'memcached', tag: 'alpine', description: 'High-performance memory object caching system', category: 'Cache', ports: { '11211': '11211' }, env: [], volumes: [] },
-  { name: 'RabbitMQ', image: 'rabbitmq', tag: '3-management', description: 'Open-source message broker', category: 'Queue', ports: { '5672': '5672', '15672': '15672' }, env: ['RABBITMQ_DEFAULT_USER=admin', 'RABBITMQ_DEFAULT_PASS=changeme'], volumes: [] },
-  { name: 'MinIO', image: 'minio/minio', tag: 'latest', description: 'S3-compatible object storage', category: 'Storage', ports: { '9000': '9000', '9001': '9001' }, env: ['MINIO_ROOT_USER=admin', 'MINIO_ROOT_PASSWORD=changeme123'], volumes: ['/opt/minio/data:/data'] },
-  { name: 'Elasticsearch', image: 'elasticsearch', tag: '8.12.0', description: 'Distributed search and analytics engine', category: 'Search', ports: { '9200': '9200', '9300': '9300' }, env: ['discovery.type=single-node', 'xpack.security.enabled=false'], volumes: ['/opt/elasticsearch/data:/usr/share/elasticsearch/data'] },
-  { name: 'GitLab', image: 'gitlab/gitlab-ce', tag: 'latest', description: 'Complete DevOps platform', category: 'DevTools', ports: { '80': '80', '443': '443', '22': '22' }, env: [], volumes: ['/opt/gitlab/config:/etc/gitlab', '/opt/gitlab/logs:/var/log/gitlab', '/opt/gitlab/data:/var/opt/gitlab'] },
+  { name: 'pgAdmin', image: 'dpage/pgadmin4', tag: 'latest', description: 'Web-based PostgreSQL administration tool', category: 'DevTools', ports: { '5050': '80' }, env: ['PGADMIN_DEFAULT_EMAIL=admin@example.com', 'PGADMIN_DEFAULT_PASSWORD=changeme'], volumes: ['/opt/pgadmin/data:/var/lib/pgadmin'] },
+  { name: 'GitLab', image: 'gitlab/gitlab-ce', tag: 'latest', description: 'Complete DevOps platform with Git hosting', category: 'DevTools', ports: { '80': '80', '443': '443', '22': '22' }, env: [], volumes: ['/opt/gitlab/config:/etc/gitlab', '/opt/gitlab/logs:/var/log/gitlab', '/opt/gitlab/data:/var/opt/gitlab'] },
+  { name: 'Gitea', image: 'gitea/gitea', tag: 'latest', description: 'Lightweight self-hosted Git service', category: 'DevTools', ports: { '3000': '3000', '222': '22' }, env: [], volumes: ['/opt/gitea/data:/data'] },
   { name: 'Jenkins', image: 'jenkins/jenkins', tag: 'lts', description: 'Open-source automation server for CI/CD', category: 'DevTools', ports: { '8080': '8080', '50000': '50000' }, env: [], volumes: ['/opt/jenkins/data:/var/jenkins_home'] },
+  { name: 'Drone CI', image: 'drone/drone', tag: 'latest', description: 'Container-native CI/CD platform', category: 'DevTools', ports: { '80': '80', '443': '443' }, env: ['DRONE_SERVER_HOST=localhost', 'DRONE_SERVER_PROTO=http', 'DRONE_RPC_SECRET=changeme'], volumes: ['/opt/drone/data:/data'] },
+  { name: 'SonarQube', image: 'sonarqube', tag: 'community', description: 'Code quality and security analysis platform', category: 'DevTools', ports: { '9000': '9000' }, env: [], volumes: ['/opt/sonarqube/data:/opt/sonarqube/data', '/opt/sonarqube/logs:/opt/sonarqube/logs'] },
+  { name: 'Vault', image: 'hashicorp/vault', tag: 'latest', description: 'Secret management and data protection', category: 'DevTools', ports: { '8200': '8200' }, env: ['VAULT_DEV_ROOT_TOKEN_ID=changeme'], volumes: ['/opt/vault/data:/vault/file'] },
+  // Monitoring
+  { name: 'Grafana', image: 'grafana/grafana', tag: 'latest', description: 'Observability dashboards and visualization', category: 'Monitoring', ports: { '3000': '3000' }, env: ['GF_SECURITY_ADMIN_PASSWORD=changeme'], volumes: ['/opt/grafana/data:/var/lib/grafana'] },
+  { name: 'Prometheus', image: 'prom/prometheus', tag: 'latest', description: 'Metrics collection and alerting toolkit', category: 'Monitoring', ports: { '9090': '9090' }, env: [], volumes: ['/opt/prometheus/data:/prometheus'] },
+  { name: 'Uptime Kuma', image: 'louislam/uptime-kuma', tag: 'latest', description: 'Self-hosted monitoring tool like Uptime Robot', category: 'Monitoring', ports: { '3001': '3001' }, env: [], volumes: ['/opt/uptime-kuma/data:/app/data'] },
+  // CMS
   { name: 'WordPress', image: 'wordpress', tag: 'latest', description: 'Popular CMS for building websites', category: 'CMS', ports: { '8080': '80' }, env: ['WORDPRESS_DB_HOST=mysql:3306', 'WORDPRESS_DB_USER=wordpress', 'WORDPRESS_DB_PASSWORD=changeme'], volumes: [] },
+  { name: 'Ghost', image: 'ghost', tag: 'latest', description: 'Professional publishing platform and headless CMS', category: 'CMS', ports: { '2368': '2368' }, env: ['NODE_ENV=production', 'url=http://localhost:2368'], volumes: ['/opt/ghost/data:/var/lib/ghost/content'] },
+  { name: 'Strapi', image: 'strapi/strapi', tag: 'latest', description: 'Open-source headless CMS with REST & GraphQL', category: 'CMS', ports: { '1337': '1337' }, env: [], volumes: ['/opt/strapi/data:/srv/app'] },
+  // Communication
+  { name: 'n8n', image: 'n8nio/n8n', tag: 'latest', description: 'Workflow automation tool — open-source Zapier alternative', category: 'Automation', ports: { '5678': '5678' }, env: [], volumes: ['/opt/n8n/data:/home/node/.n8n'] },
+  { name: 'Directus', image: 'directus/directus', tag: 'latest', description: 'Instant REST & GraphQL API for any SQL database', category: 'DevTools', ports: { '8055': '8055' }, env: ['SECRET=changeme', 'ADMIN_EMAIL=admin@example.com', 'ADMIN_PASSWORD=changeme'], volumes: ['/opt/directus/uploads:/directus/uploads', '/opt/directus/database:/directus/database'] },
 ];
 
 const categories = ['All', ...Array.from(new Set(defaultApps.map(a => a.category)))];
