@@ -147,8 +147,9 @@ export default function OneClickInstall({ onRefresh }: { onRefresh?: () => void 
             <div style={{ fontSize: 12, color: p.textMuted, flex: 1 }}>{app.description}</div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span style={{
-                fontSize: 10, padding: '2px 8px', borderRadius: 4,
+                fontSize: 10, padding: '3px 8px', borderRadius: 4,
                 background: `${p.purple}15`, color: p.purple, fontWeight: 500,
+                lineHeight: 1,
               }}>{app.category}</span>
               <button onClick={() => openInstall(app)} style={{
                 padding: '5px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',

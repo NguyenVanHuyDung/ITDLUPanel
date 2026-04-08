@@ -118,8 +118,9 @@ export default function NetworkList({ onRefresh }: { onRefresh?: () => void }) {
       key: 'driver',
       render: (val: string) => (
         <span style={{
-          fontSize: 11, padding: '2px 8px', borderRadius: 4,
+          fontSize: 11, padding: '3px 10px', borderRadius: 4,
           background: `${p.cyan}15`, color: p.cyan, fontWeight: 500,
+          lineHeight: 1,
         }}>{val}</span>
       ),
     },

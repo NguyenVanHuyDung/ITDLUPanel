@@ -111,7 +111,7 @@ export default function VolumeList({ onRefresh }: { onRefresh?: () => void }) {
       dataIndex: 'name',
       key: 'name',
       render: (val: string) => (
-        <span style={{ fontWeight: 600, color: p.text, fontSize: 13, fontFamily: 'monospace' }}>
+        <span style={{ fontWeight: 600, color: p.text, fontSize: 12, fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" }}>
           {val.length > 30 ? val.slice(0, 30) + '...' : val}
         </span>
       ),
@@ -122,8 +122,9 @@ export default function VolumeList({ onRefresh }: { onRefresh?: () => void }) {
       key: 'driver',
       render: (val: string) => (
         <span style={{
-          fontSize: 11, padding: '2px 8px', borderRadius: 4,
+          fontSize: 11, padding: '3px 10px', borderRadius: 4,
           background: `${p.purple}15`, color: p.purple, fontWeight: 500,
+          lineHeight: 1,
         }}>{val}</span>
       ),
     },

@@ -115,8 +115,9 @@ export default function LocalImage({ onRefresh }: { onRefresh?: () => void }) {
         const parts = tag.split(':');
         return (
           <span style={{
-            fontSize: 11, padding: '2px 9px', borderRadius: 4,
+            fontSize: 11, padding: '3px 10px', borderRadius: 4,
             background: `${p.accent}15`, color: p.accent, fontWeight: 500,
+            lineHeight: 1,
           }}>
             {parts[1] || 'latest'}
           </span>

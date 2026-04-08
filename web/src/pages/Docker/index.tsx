@@ -175,20 +175,23 @@ export default function Docker() {
           {!loadingInfo && info && (
             <>
               <span style={{
-                fontSize: 11, padding: '2px 9px', borderRadius: 4,
+                fontSize: 11, padding: '3px 10px', borderRadius: 4,
                 background: `${p.accent}15`, color: p.accent, fontWeight: 500,
+                lineHeight: 1,
               }}>
                 v{info.server_version}
               </span>
               <span style={{
-                fontSize: 11, padding: '2px 9px', borderRadius: 4,
+                fontSize: 11, padding: '3px 10px', borderRadius: 4,
                 background: `${p.green}15`, color: p.green, fontWeight: 500,
+                lineHeight: 1,
               }}>
                 {info.containers} containers ({info.running} running)
               </span>
               <span style={{
-                fontSize: 11, padding: '2px 9px', borderRadius: 4,
+                fontSize: 11, padding: '3px 10px', borderRadius: 4,
                 background: `${p.purple}15`, color: p.purple, fontWeight: 500,
+                lineHeight: 1,
               }}>
                 {info.images} images
               </span>
@@ -216,7 +219,7 @@ export default function Docker() {
           <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
             padding: '6px 14px', borderRadius: 6,
             border: 'none', cursor: 'pointer',
-            fontSize: 12, fontWeight: 500,
+            fontSize: 12.5, fontWeight: 500,
             background: activeTab === tab.key ? `${p.accent}15` : 'transparent',
             color: activeTab === tab.key ? p.accent : p.textMuted,
             transition: 'all 0.15s',

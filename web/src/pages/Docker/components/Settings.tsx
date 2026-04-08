@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { message, Descriptions, Switch, Input, Alert } from 'antd';
+import { message, Descriptions, Input, Alert, Popconfirm } from 'antd';
 import {
-  SettingOutlined, ReloadOutlined, PoweroffOutlined, PlayCircleOutlined,
-  SaveOutlined, DownloadOutlined,
+  SettingOutlined, ReloadOutlined, PoweroffOutlined,
+  SaveOutlined, DownloadOutlined, LoadingOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { usePalette } from '@/hooks/usePalette';
@@ -33,6 +33,9 @@ export default function Settings() {
   const [installed, setInstalled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [mirrors, setMirrors] = useState('');
+  const [savingMirrors, setSavingMirrors] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [stopping, setStopping] = useState(false);
 
   const fetchInfo = useCallback(async () => {
     setLoading(true);
@@ -47,11 +50,58 @@ export default function Settings() {
     }
   }, []);
 
-  useEffect(() => { fetchInfo(); }, [fetchInfo]);
+  const fetchConfig = useCallback(async () => {
+    try {
+      const { data } = await api.get<ApiResponse<{ mirrors: string[] }>>('/docker/system/config');
+      const m = data.data?.mirrors ?? [];
+      setMirrors(m.join('\n'));
+    } catch { /* ignore - config may not exist yet */ }
+  }, []);
+
+  useEffect(() => { fetchInfo(); fetchConfig(); }, [fetchInfo, fetchConfig]);
 
   const formatMemory = (bytes: number) => {
     if (!bytes) return '-';
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  };
+
+  const handleSaveMirrors = async () => {
+    setSavingMirrors(true);
+    try {
+      const mirrorList = mirrors.split('\n').map(m => m.trim()).filter(Boolean);
+      await api.put('/docker/system/config', { mirrors: mirrorList });
+      message.success('Registry mirrors saved. Restart Docker for changes to take effect.');
+    } catch {
+      message.error('Failed to save mirror configuration');
+    } finally {
+      setSavingMirrors(false);
+    }
+  };
+
+  const handleRestart = async () => {
+    setRestarting(true);
+    try {
+      await api.post('/docker/system/restart');
+      message.success('Docker daemon restarted successfully');
+      setTimeout(() => fetchInfo(), 3000);
+    } catch {
+      message.error('Failed to restart Docker');
+    } finally {
+      setRestarting(false);
+    }
+  };
+
+  const handleStop = async () => {
+    setStopping(true);
+    try {
+      await api.post('/docker/system/stop');
+      message.success('Docker daemon stopped');
+      setTimeout(() => fetchInfo(), 2000);
+    } catch {
+      message.error('Failed to stop Docker');
+    } finally {
+      setStopping(false);
+    }
   };
 
   if (loading) {
@@ -94,7 +144,7 @@ export default function Settings() {
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: 4,
               padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 500,
-              background: `${p.green}15`, color: p.green,
+              background: `${p.green}15`, color: p.green, lineHeight: 1,
             }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.green }} />
               Running
@@ -110,7 +160,7 @@ export default function Settings() {
             <Descriptions.Item label="CPUs">{info?.ncpu ?? '-'}</Descriptions.Item>
             <Descriptions.Item label="Total Memory">{info ? formatMemory(info.mem_total) : '-'}</Descriptions.Item>
             <Descriptions.Item label="Docker Root Dir" span={2}>
-              <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{info?.docker_root ?? '-'}</span>
+              <span style={{ fontFamily: "'SFMono-Regular', Consolas, monospace", fontSize: 12 }}>{info?.docker_root ?? '-'}</span>
             </Descriptions.Item>
           </Descriptions>
         </div>
@@ -134,15 +184,15 @@ export default function Settings() {
             rows={3}
             value={mirrors}
             onChange={e => setMirrors(e.target.value)}
-            placeholder="https://mirror.example.com&#10;https://registry.example.io"
-            style={{ fontFamily: 'monospace', fontSize: 12, marginBottom: 8 }}
+            placeholder={'https://mirror.example.com\nhttps://registry.example.io'}
+            style={{ fontFamily: "'SFMono-Regular', Consolas, monospace", fontSize: 12, marginBottom: 8 }}
           />
-          <button onClick={() => message.info('Mirror configuration will be saved to /etc/docker/daemon.json')} style={{
-            padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
-            background: p.accent, color: '#fff', fontSize: 12, fontWeight: 500,
+          <button onClick={handleSaveMirrors} disabled={savingMirrors} style={{
+            padding: '6px 14px', borderRadius: 6, border: 'none', cursor: savingMirrors ? 'not-allowed' : 'pointer',
+            background: savingMirrors ? p.border : p.accent, color: '#fff', fontSize: 12, fontWeight: 500,
             display: 'inline-flex', alignItems: 'center', gap: 6,
           }}>
-            <SaveOutlined /> Save Mirrors
+            {savingMirrors ? <LoadingOutlined /> : <SaveOutlined />} {savingMirrors ? 'Saving...' : 'Save Mirrors'}
           </button>
         </div>
       </div>
@@ -158,20 +208,26 @@ export default function Settings() {
           Quick Actions
         </div>
         <div style={{ padding: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button onClick={() => message.info('Run: systemctl restart docker')} style={{
-            padding: '8px 18px', borderRadius: 8, border: `1px solid ${p.cardBorder}`,
-            background: 'transparent', color: p.text, fontSize: 13, cursor: 'pointer',
-            display: 'inline-flex', alignItems: 'center', gap: 8,
-          }}>
-            <ReloadOutlined /> Restart Docker
-          </button>
-          <button onClick={() => message.info('Run: systemctl stop docker')} style={{
-            padding: '8px 18px', borderRadius: 8, border: `1px solid ${p.red}`,
-            background: 'transparent', color: p.red, fontSize: 13, cursor: 'pointer',
-            display: 'inline-flex', alignItems: 'center', gap: 8,
-          }}>
-            <PoweroffOutlined /> Stop Docker
-          </button>
+          <Popconfirm title="Restart Docker daemon? Running containers will be temporarily interrupted." onConfirm={handleRestart}>
+            <button disabled={restarting} style={{
+              padding: '8px 18px', borderRadius: 8, border: `1px solid ${p.cardBorder}`,
+              background: 'transparent', color: p.text, fontSize: 13, cursor: restarting ? 'not-allowed' : 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              opacity: restarting ? 0.6 : 1,
+            }}>
+              {restarting ? <LoadingOutlined /> : <ReloadOutlined />} {restarting ? 'Restarting...' : 'Restart Docker'}
+            </button>
+          </Popconfirm>
+          <Popconfirm title="Stop Docker daemon? All running containers will be stopped." onConfirm={handleStop}>
+            <button disabled={stopping} style={{
+              padding: '8px 18px', borderRadius: 8, border: `1px solid ${p.red}`,
+              background: 'transparent', color: p.red, fontSize: 13, cursor: stopping ? 'not-allowed' : 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              opacity: stopping ? 0.6 : 1,
+            }}>
+              {stopping ? <LoadingOutlined /> : <PoweroffOutlined />} {stopping ? 'Stopping...' : 'Stop Docker'}
+            </button>
+          </Popconfirm>
         </div>
       </div>
     </div>

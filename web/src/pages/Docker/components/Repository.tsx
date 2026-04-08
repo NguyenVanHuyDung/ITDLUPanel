@@ -1,13 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
-import { message, Table, Popconfirm, Modal, Form, Input, Tag } from 'antd';
+import { useState } from 'react';
+import { message, Table, Popconfirm, Modal, Form, Input, Alert } from 'antd';
 import {
-  PlusOutlined, DeleteOutlined, LoginOutlined, CheckCircleOutlined,
+  PlusOutlined, DeleteOutlined, CheckCircleOutlined, InfoCircleOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { usePalette } from '@/hooks/usePalette';
 import { useIsMobile } from '@/hooks/useIsMobile';
-import type { ApiResponse } from '@/types';
-import api from '@/services/api';
 
 interface DockerRegistry {
   id: number;
@@ -38,8 +36,9 @@ export default function Repository() {
           <span style={{ fontWeight: 600, color: p.text }}>{val}</span>
           {r.is_default && (
             <span style={{
-              fontSize: 10, padding: '1px 6px', borderRadius: 4,
+              fontSize: 10, padding: '2px 8px', borderRadius: 4,
               background: `${p.accent}15`, color: p.accent, fontWeight: 500,
+              lineHeight: 1,
             }}>DEFAULT</span>
           )}
         </div>
@@ -50,7 +49,7 @@ export default function Repository() {
       dataIndex: 'url',
       key: 'url',
       ellipsis: true,
-      render: (val: string) => <span style={{ fontSize: 12, fontFamily: 'monospace', color: p.textMuted }}>{val}</span>,
+      render: (val: string) => <span style={{ fontSize: 12, fontFamily: "'SFMono-Regular', Consolas, monospace", color: p.textMuted }}>{val}</span>,
     },
     {
       title: 'Username',
@@ -65,9 +64,10 @@ export default function Repository() {
       render: (val: string) => (
         <span style={{
           display: 'inline-flex', alignItems: 'center', gap: 4,
-          padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 500,
+          padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 500,
           background: val === 'connected' ? `${p.green}15` : `${p.textMuted}15`,
           color: val === 'connected' ? p.green : p.textMuted,
+          lineHeight: 1,
         }}>
           <CheckCircleOutlined /> {val}
         </span>
@@ -114,6 +114,15 @@ export default function Repository() {
 
   return (
     <div>
+      <Alert
+        message="Registry bookmarks are stored locally in this session"
+        description="Custom registries added here serve as bookmarks for reference. To authenticate with a private registry, use docker login via the terminal or configure credentials in Settings → Registry Mirrors."
+        type="info"
+        showIcon
+        icon={<InfoCircleOutlined />}
+        style={{ marginBottom: 16, borderRadius: 8 }}
+      />
+
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
         <button onClick={() => setAddOpen(true)} style={{
           padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
@@ -137,7 +146,7 @@ export default function Repository() {
           <Form.Item name="name" label="Name" rules={[{ required: true }]}>
             <Input placeholder="My Registry" />
           </Form.Item>
-          <Form.Item name="url" label="URL" rules={[{ required: true }]}>
+          <Form.Item name="url" label="URL" rules={[{ required: true, type: 'url', message: 'Please enter a valid URL' }]}>
             <Input placeholder="https://registry.example.com" />
           </Form.Item>
           <Form.Item name="username" label="Username">

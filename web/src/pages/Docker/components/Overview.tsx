@@ -99,7 +99,7 @@ export default function Overview() {
         <span style={{ color, fontSize: 18 }}>{icon}</span>
         <span style={{ fontSize: 12, color: p.textMuted, fontWeight: 500 }}>{label}</span>
       </div>
-      <div style={{ fontSize: 26, fontWeight: 700, color: p.text, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 26, fontWeight: 700, color: p.text, lineHeight: 1.3 }}>{value}</div>
       {sub && <div style={{ fontSize: 11, color: p.textMuted, marginTop: 4 }}>{sub}</div>}
     </div>
   );

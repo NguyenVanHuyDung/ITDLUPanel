@@ -134,6 +134,7 @@ export default function Storage() {
     try {
       const { data } = await api.post<ApiResponse<{ task_id: number }>>('/software/install', {
         name: prov.softwareName,
+        version: 'stable',
       });
       const taskId = data.data?.task_id;
       if (taskId) {

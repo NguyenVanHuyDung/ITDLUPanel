@@ -89,8 +89,9 @@ export default function CloudImage() {
                 <span style={{ fontWeight: 600, color: p.text, fontSize: 14 }}>{img.name}</span>
                 {img.official && (
                   <span style={{
-                    fontSize: 10, padding: '1px 6px', borderRadius: 4,
+                    fontSize: 10, padding: '2px 8px', borderRadius: 4,
                     background: `${p.green}20`, color: p.green, fontWeight: 600,
+                    lineHeight: 1,
                   }}>OFFICIAL</span>
                 )}
                 <span style={{ fontSize: 11, color: p.textMuted }}>★ {img.stars}</span>

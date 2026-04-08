@@ -170,8 +170,9 @@ export default function ContainerList({ onRefresh }: { onRefresh?: () => void })
         return (
           <span style={{
             display: 'inline-flex', alignItems: 'center', gap: 5,
-            padding: '2px 10px', borderRadius: 99,
+            padding: '3px 10px', borderRadius: 99,
             background: `${color}15`, color, fontSize: 11, fontWeight: 500,
+            lineHeight: 1,
           }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }} />
             {r.state}
@@ -371,8 +372,9 @@ export default function ContainerList({ onRefresh }: { onRefresh?: () => void })
       >
         <pre style={{
           background: '#1e1e1e', color: '#d4d4d4', padding: 16, borderRadius: 8,
-          maxHeight: '60vh', overflow: 'auto', fontSize: isMobile ? 11 : 13,
-          whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+          maxHeight: '60vh', overflow: 'auto', fontSize: isMobile ? 11 : 12,
+          fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
+          whiteSpace: 'pre-wrap', wordBreak: 'break-all', lineHeight: 1.5,
         }}>
           {logsLoading ? 'Loading...' : logsContent}
         </pre>

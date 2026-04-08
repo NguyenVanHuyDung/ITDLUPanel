@@ -126,8 +126,9 @@ export default function ComposeList() {
                   <span style={{ fontWeight: 600, color: p.text, fontSize: 14 }}>{proj.name}</span>
                   <span style={{
                     display: 'inline-flex', alignItems: 'center', gap: 4,
-                    padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 500,
+                    padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 500,
                     background: `${statusColor(proj.status)}15`, color: statusColor(proj.status),
+                    lineHeight: 1,
                   }}>
                     <span style={{ width: 6, height: 6, borderRadius: '50%', background: statusColor(proj.status) }} />
                     {proj.status || 'unknown'}
@@ -207,8 +208,9 @@ export default function ComposeList() {
       >
         <pre style={{
           background: '#1e1e1e', color: '#d4d4d4', padding: 16, borderRadius: 8,
-          maxHeight: '60vh', overflow: 'auto', fontSize: 12,
-          whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+          maxHeight: '60vh', overflow: 'auto', fontSize: isMobile ? 11 : 12,
+          fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
+          whiteSpace: 'pre-wrap', wordBreak: 'break-all', lineHeight: 1.5,
         }}>
           {logsContent}
         </pre>
