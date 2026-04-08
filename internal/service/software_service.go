@@ -987,9 +987,21 @@ func readPHPIniValue(filePath, key string) string {
 	if err != nil {
 		return ""
 	}
+
+	// First pass: look for an uncommented (active) value.
+	// Second pass: fall back to commented-out default (;key=val).
+	var commented string
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
+
 		if strings.HasPrefix(line, ";") || strings.HasPrefix(line, "#") {
+			stripped := strings.TrimLeft(line, ";# ")
+			if strings.HasPrefix(stripped, key+" ") || strings.HasPrefix(stripped, key+"=") {
+				parts := strings.SplitN(stripped, "=", 2)
+				if len(parts) == 2 && commented == "" {
+					commented = strings.TrimSpace(parts[1])
+				}
+			}
 			continue
 		}
 		if strings.HasPrefix(line, key+" ") || strings.HasPrefix(line, key+"=") {
@@ -999,7 +1011,7 @@ func readPHPIniValue(filePath, key string) string {
 			}
 		}
 	}
-	return ""
+	return commented
 }
 
 func setPHPIniValue(filePath, key, value string) error {
