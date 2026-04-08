@@ -297,10 +297,21 @@ func (s *SoftwareService) registerTaskHandlers() {
 			}
 		}
 
+		// Determine the actual running service name (may differ from metadata default)
+		actualServiceName := meta.ServiceName
+		if aliases, ok := serviceNameAliases[name]; ok {
+			for _, alias := range aliases {
+				if s.isServiceRunning(alias) {
+					actualServiceName = alias
+					break
+				}
+			}
+		}
+
 		if _, err := s.db.Exec(
 			`INSERT OR REPLACE INTO software (name, display_name, version, type, status, config_path, install_path, service_name, installed_at, updated_at)
 			 VALUES (?, ?, ?, ?, 1, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-			name, meta.DisplayName, dbVersion, meta.Type, meta.ConfigPath, meta.InstallPath, meta.ServiceName,
+			name, meta.DisplayName, dbVersion, meta.Type, meta.ConfigPath, meta.InstallPath, actualServiceName,
 		); err != nil {
 			logger.Error().Err(err).Str("software", name).Msg("failed to record software installation in DB")
 		}
@@ -465,10 +476,21 @@ func (s *SoftwareService) registerTaskHandlers() {
 				}
 			}
 
+			// Determine the actual running service name
+			actualSvcName := meta.ServiceName
+			if aliases, ok := serviceNameAliases[name]; ok {
+				for _, alias := range aliases {
+					if s.isServiceRunning(alias) {
+						actualSvcName = alias
+						break
+					}
+				}
+			}
+
 			if _, dbErr := s.db.Exec(
 				`INSERT OR REPLACE INTO software (name, display_name, version, type, status, config_path, install_path, service_name, installed_at, updated_at)
 				 VALUES (?, ?, ?, ?, 1, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-				name, meta.DisplayName, dbVersion, meta.Type, meta.ConfigPath, meta.InstallPath, meta.ServiceName,
+				name, meta.DisplayName, dbVersion, meta.Type, meta.ConfigPath, meta.InstallPath, actualSvcName,
 			); dbErr != nil {
 				logger.Error().Err(dbErr).Str("software", name).Msg("failed to record software installation in DB")
 			}
@@ -631,6 +653,19 @@ func (s *SoftwareService) ListInstalled() ([]SoftwareListItem, error) {
 			}
 		} else if info.ServiceName != "" {
 			item.IsRunning = s.isServiceRunning(info.ServiceName)
+			// If not running under DB service name, probe aliases (e.g. mysql→mariadb)
+			if !item.IsRunning {
+				if aliases, ok := serviceNameAliases[info.Name]; ok {
+					for _, alias := range aliases {
+						if alias != info.ServiceName && s.isServiceRunning(alias) {
+							item.IsRunning = true
+							item.ServiceName = alias
+							_, _ = s.db.Exec("UPDATE software SET service_name = ? WHERE name = ?", alias, info.Name)
+							break
+						}
+					}
+				}
+			}
 		}
 		items = append(items, item)
 	}
@@ -704,6 +739,18 @@ func (s *SoftwareService) GetSoftwareInfo(name string) (*SoftwareListItem, error
 	item := &SoftwareListItem{SoftwareInfo: info}
 	if info.ServiceName != "" {
 		item.IsRunning = s.isServiceRunning(info.ServiceName)
+		if !item.IsRunning {
+			if aliases, ok := serviceNameAliases[name]; ok {
+				for _, alias := range aliases {
+					if alias != info.ServiceName && s.isServiceRunning(alias) {
+						item.IsRunning = true
+						item.ServiceName = alias
+						_, _ = s.db.Exec("UPDATE software SET service_name = ? WHERE name = ?", alias, name)
+						break
+					}
+				}
+			}
+		}
 	}
 	return item, nil
 }
@@ -1462,6 +1509,15 @@ func (s *SoftwareService) UpdateConfig(name, content string) error {
 	return nil
 }
 
+// serviceNameAliases maps a software key to alternative systemd service names
+// to try when the primary name fails (e.g., Ubuntu 24 drops mysql→mariadb alias).
+var serviceNameAliases = map[string][]string{
+	"mysql":    {"mariadb", "mysql", "mysqld"},
+	"pureftpd": {"pure-ftpd", "pureftpd"},
+	"redis":    {"redis-server", "redis"},
+	"apache":   {"apache2", "httpd"},
+}
+
 // resolveServiceName looks up the systemd service name for the given software.
 func (s *SoftwareService) resolveServiceName(name string) (string, error) {
 	// Handle version-specific PHP-FPM names (e.g., "php8.3-fpm", "php8.2-fpm")
@@ -1478,10 +1534,23 @@ func (s *SoftwareService) resolveServiceName(name string) (string, error) {
 		return phpFPMServiceName("8.3"), nil // fallback
 	}
 
-	// First try the database
+	// First try the database value
 	var svcName string
 	err := s.db.QueryRow("SELECT service_name FROM software WHERE name = ?", name).Scan(&svcName)
 	if err == nil && svcName != "" {
+		// Verify the DB service name actually resolves; if not, probe aliases
+		if s.isServiceRunning(svcName) {
+			return svcName, nil
+		}
+		if aliases, ok := serviceNameAliases[name]; ok {
+			for _, alias := range aliases {
+				if alias != svcName && s.isServiceKnown(alias) {
+					// Update the DB so future lookups are fast
+					_, _ = s.db.Exec("UPDATE software SET service_name = ? WHERE name = ?", alias, name)
+					return alias, nil
+				}
+			}
+		}
 		return svcName, nil
 	}
 
@@ -1515,6 +1584,16 @@ func (s *SoftwareService) isServiceRunning(serviceName string) bool {
 		return false
 	}
 	return strings.TrimSpace(res.Stdout) == "active"
+}
+
+// isServiceKnown checks if a systemd unit exists (active, inactive, or failed).
+func (s *SoftwareService) isServiceKnown(serviceName string) bool {
+	res, err := system.ExecWithTimeout(5*time.Second, "systemctl", "is-active", serviceName)
+	if err != nil {
+		return false
+	}
+	status := strings.TrimSpace(res.Stdout)
+	return status == "active" || status == "inactive" || status == "failed"
 }
 
 // ReloadService reloads a systemd service (graceful config reload).
