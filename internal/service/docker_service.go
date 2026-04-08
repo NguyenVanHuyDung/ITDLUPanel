@@ -7,6 +7,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -1591,4 +1593,80 @@ func stripDockerLogHeaders(data []byte) string {
 		return string(data)
 	}
 	return b.String()
+}
+
+// ---------------------------------------------------------------------------
+// Docker daemon management
+// ---------------------------------------------------------------------------
+
+// RestartDocker restarts the Docker daemon via systemctl.
+func (s *DockerService) RestartDocker() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return s.execSystemctl(ctx, "restart")
+}
+
+// StopDocker stops the Docker daemon via systemctl.
+func (s *DockerService) StopDocker() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return s.execSystemctl(ctx, "stop")
+}
+
+func (s *DockerService) execSystemctl(ctx context.Context, action string) error {
+	cmd := exec.CommandContext(ctx, "systemctl", action, "docker")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("systemctl %s docker failed: %s — %w", action, string(out), err)
+	}
+	return nil
+}
+
+// GetDaemonConfig reads /etc/docker/daemon.json and returns registry mirrors.
+func (s *DockerService) GetDaemonConfig() ([]string, error) {
+	data, err := os.ReadFile("/etc/docker/daemon.json")
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []string{}, nil
+		}
+		return nil, err
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+	mirrors, _ := cfg["registry-mirrors"].([]interface{})
+	result := make([]string, 0, len(mirrors))
+	for _, m := range mirrors {
+		if s, ok := m.(string); ok {
+			result = append(result, s)
+		}
+	}
+	return result, nil
+}
+
+// SaveDaemonConfig writes registry mirrors to /etc/docker/daemon.json,
+// preserving other fields if the file already exists.
+func (s *DockerService) SaveDaemonConfig(mirrors []string) error {
+	cfg := make(map[string]interface{})
+
+	// Read existing config if present
+	data, err := os.ReadFile("/etc/docker/daemon.json")
+	if err == nil {
+		json.Unmarshal(data, &cfg)
+	}
+
+	if len(mirrors) == 0 {
+		delete(cfg, "registry-mirrors")
+	} else {
+		cfg["registry-mirrors"] = mirrors
+	}
+
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	// Ensure directory exists
+	os.MkdirAll("/etc/docker", 0755)
+	return os.WriteFile("/etc/docker/daemon.json", out, 0644)
 }

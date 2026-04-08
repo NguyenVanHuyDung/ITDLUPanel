@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	apperrors "github.com/ITDLUPanel/panel/internal/pkg/errors"
 	"github.com/ITDLUPanel/panel/internal/pkg/response"
 	"github.com/ITDLUPanel/panel/internal/service"
 )
@@ -69,6 +70,10 @@ func (h *DockerHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFu
 
 		// System
 		docker.GET("/system/df", rbac("docker.read"), h.systemDf)
+		docker.POST("/system/restart", rbac("docker.manage"), h.restartDocker)
+		docker.POST("/system/stop", rbac("docker.manage"), h.stopDocker)
+		docker.GET("/system/config", rbac("docker.read"), h.getDaemonConfig)
+		docker.PUT("/system/config", rbac("docker.manage"), h.saveDaemonConfig)
 	}
 }
 
@@ -587,4 +592,44 @@ func (h *DockerHandler) systemDf(c *gin.Context) {
 		return
 	}
 	response.Success(c, du)
+}
+
+func (h *DockerHandler) restartDocker(c *gin.Context) {
+	if err := h.dockerService.RestartDocker(); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to restart Docker"))
+		return
+	}
+	response.Success(c, gin.H{"message": "Docker daemon restarted"})
+}
+
+func (h *DockerHandler) stopDocker(c *gin.Context) {
+	if err := h.dockerService.StopDocker(); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to stop Docker"))
+		return
+	}
+	response.Success(c, gin.H{"message": "Docker daemon stopped"})
+}
+
+func (h *DockerHandler) getDaemonConfig(c *gin.Context) {
+	mirrors, err := h.dockerService.GetDaemonConfig()
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read daemon config"))
+		return
+	}
+	response.Success(c, gin.H{"mirrors": mirrors})
+}
+
+func (h *DockerHandler) saveDaemonConfig(c *gin.Context) {
+	var req struct {
+		Mirrors []string `json:"mirrors"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "mirrors", Message: "mirrors must be an array of URLs"}})
+		return
+	}
+	if err := h.dockerService.SaveDaemonConfig(req.Mirrors); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to save daemon config"))
+		return
+	}
+	response.Success(c, gin.H{"message": "Daemon configuration saved. Restart Docker for changes to take effect."})
 }
