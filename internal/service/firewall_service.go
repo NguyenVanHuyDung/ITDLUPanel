@@ -212,10 +212,14 @@ func (s *FirewallService) ToggleRule(id int64, enabled bool) error {
 	return nil
 }
 
-// GetBlockedIPs returns a list of IPs blocked via iptables.
+// GetBlockedIPs returns a list of IPs blocked via the active firewall backend.
 func (s *FirewallService) GetBlockedIPs() ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	if s.isUFWActive() {
+		return s.getBlockedIPsUFW(ctx)
+	}
 
 	result, err := system.Exec(ctx, "iptables", "-L", "INPUT", "-n", "--line-numbers")
 	if err != nil {
@@ -243,7 +247,37 @@ func (s *FirewallService) GetBlockedIPs() ([]string, error) {
 	return blocked, nil
 }
 
-// BlockIP blocks an IP address via iptables.
+// getBlockedIPsUFW parses UFW status to find blocked IPs.
+func (s *FirewallService) getBlockedIPsUFW(ctx context.Context) ([]string, error) {
+	result, err := system.Exec(ctx, "ufw", "status")
+	if err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get ufw status")
+	}
+
+	var blocked []string
+	for _, line := range strings.Split(result.Stdout, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.Contains(line, "DENY") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+		// UFW format: "Anywhere   DENY IN   10.0.0.1" — IP-only deny rule
+		from := fields[len(fields)-1]
+		if fields[0] == "Anywhere" {
+			if net.ParseIP(from) != nil {
+				blocked = append(blocked, from)
+			} else if _, _, err := net.ParseCIDR(from); err == nil {
+				blocked = append(blocked, from)
+			}
+		}
+	}
+	return blocked, nil
+}
+
+// BlockIP blocks an IP address via the active firewall backend.
 func (s *FirewallService) BlockIP(ip string) error {
 	if net.ParseIP(ip) == nil {
 		if _, _, err := net.ParseCIDR(ip); err != nil {
@@ -254,7 +288,12 @@ func (s *FirewallService) BlockIP(ip string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if s.useFirewalld() {
+	if s.IsUFWInstalled() {
+		_, err := system.Exec(ctx, "ufw", "insert", "1", "deny", "from", ip)
+		if err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to block IP via UFW")
+		}
+	} else if s.useFirewalld() {
 		_, err := system.Exec(ctx, "firewall-cmd", "--permanent", "--add-rich-rule",
 			fmt.Sprintf("rule family='ipv4' source address='%s' drop", ip))
 		if err != nil {
@@ -273,7 +312,7 @@ func (s *FirewallService) BlockIP(ip string) error {
 	return nil
 }
 
-// UnblockIP removes an IP block via iptables.
+// UnblockIP removes an IP block via the active firewall backend.
 func (s *FirewallService) UnblockIP(ip string) error {
 	if net.ParseIP(ip) == nil {
 		if _, _, err := net.ParseCIDR(ip); err != nil {
@@ -284,7 +323,12 @@ func (s *FirewallService) UnblockIP(ip string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if s.useFirewalld() {
+	if s.IsUFWInstalled() {
+		_, err := system.Exec(ctx, "ufw", "delete", "deny", "from", ip)
+		if err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to unblock IP via UFW")
+		}
+	} else if s.useFirewalld() {
 		_, err := system.Exec(ctx, "firewall-cmd", "--permanent", "--remove-rich-rule",
 			fmt.Sprintf("rule family='ipv4' source address='%s' drop", ip))
 		if err != nil {
@@ -367,6 +411,30 @@ func (s *FirewallService) UpdateSettings(key string, value bool) error {
 
 // enableFirewall applies all enabled rules and saves.
 func (s *FirewallService) enableFirewall(ctx context.Context) error {
+	if s.IsUFWInstalled() {
+		// Enable UFW first
+		if _, err := system.Exec(ctx, "ufw", "--force", "enable"); err != nil {
+			return fmt.Errorf("failed to enable ufw: %w", err)
+		}
+		// Ensure all enabled DB rules are in UFW (idempotent)
+		rules, err := s.ListRules()
+		if err != nil {
+			return err
+		}
+		for _, r := range rules {
+			if r.Status == 1 {
+				if err := s.applyRuleUFW(ctx, r); err != nil {
+					logger.Error().Err(err).Int64("id", r.ID).Msg("failed to apply rule to UFW during enable")
+				}
+			}
+		}
+		if settings, _ := s.GetSettings(); settings.ICMPBlock {
+			_ = s.blockICMP(ctx)
+		}
+		logger.Info().Msg("firewall enabled via UFW")
+		return nil
+	}
+
 	rules, err := s.ListRules()
 	if err != nil {
 		return err
@@ -381,8 +449,7 @@ func (s *FirewallService) enableFirewall(ctx context.Context) error {
 	}
 
 	// Check ICMP setting — re-apply if needed
-	settings, _ := s.GetSettings()
-	if settings.ICMPBlock {
+	if settings, _ := s.GetSettings(); settings.ICMPBlock {
 		_ = s.blockICMP(ctx)
 	}
 
@@ -391,8 +458,16 @@ func (s *FirewallService) enableFirewall(ctx context.Context) error {
 	return nil
 }
 
-// disableFirewall flushes panel-managed iptables rules.
+// disableFirewall flushes panel-managed firewall rules.
 func (s *FirewallService) disableFirewall(ctx context.Context) error {
+	if s.IsUFWInstalled() {
+		if _, err := system.Exec(ctx, "ufw", "disable"); err != nil {
+			return fmt.Errorf("failed to disable ufw: %w", err)
+		}
+		logger.Info().Msg("firewall disabled via UFW")
+		return nil
+	}
+
 	rules, err := s.ListRules()
 	if err != nil {
 		return err
@@ -413,8 +488,19 @@ func (s *FirewallService) disableFirewall(ctx context.Context) error {
 	return nil
 }
 
-// blockICMP adds iptables rule to drop ICMP echo-request.
+// blockICMP adds a rule to drop ICMP echo-request.
 func (s *FirewallService) blockICMP(ctx context.Context) error {
+	if s.IsUFWInstalled() {
+		// UFW manages ICMP in /etc/ufw/before.rules — change ACCEPT to DROP
+		_, _ = system.Exec(ctx, "sed", "-i",
+			"s/-A ufw-before-input -p icmp --icmp-type echo-request -j ACCEPT/-A ufw-before-input -p icmp --icmp-type echo-request -j DROP/g",
+			"/etc/ufw/before.rules")
+		if s.isUFWActive() {
+			_, _ = system.Exec(ctx, "ufw", "reload")
+		}
+		logger.Info().Msg("ICMP echo-request blocked via UFW")
+		return nil
+	}
 	// Remove first to avoid duplicates
 	_, _ = system.Exec(ctx, "iptables", "-D", "INPUT", "-p", "icmp", "--icmp-type", "echo-request", "-j", "DROP")
 	_, err := system.Exec(ctx, "iptables", "-A", "INPUT", "-p", "icmp", "--icmp-type", "echo-request", "-j", "DROP")
@@ -428,6 +514,16 @@ func (s *FirewallService) blockICMP(ctx context.Context) error {
 
 // unblockICMP removes iptables ICMP drop rule.
 func (s *FirewallService) unblockICMP(ctx context.Context) error {
+	if s.IsUFWInstalled() {
+		_, _ = system.Exec(ctx, "sed", "-i",
+			"s/-A ufw-before-input -p icmp --icmp-type echo-request -j DROP/-A ufw-before-input -p icmp --icmp-type echo-request -j ACCEPT/g",
+			"/etc/ufw/before.rules")
+		if s.isUFWActive() {
+			_, _ = system.Exec(ctx, "ufw", "reload")
+		}
+		logger.Info().Msg("ICMP echo-request unblocked via UFW")
+		return nil
+	}
 	_, _ = system.Exec(ctx, "iptables", "-D", "INPUT", "-p", "icmp", "--icmp-type", "echo-request", "-j", "DROP")
 	s.saveIptables(ctx)
 	logger.Info().Msg("ICMP echo-request unblocked")
@@ -467,8 +563,8 @@ func (s *FirewallService) OpenPortsForSoftware(softwareName string) {
 			continue
 		}
 
-		// If firewall is disabled, don't apply to iptables (rule saved in DB only)
-		if !settings.Enabled {
+		// If firewall is disabled and UFW is not managing rules, undo the iptables apply
+		if !settings.Enabled && !s.IsUFWInstalled() {
 			// Remove from iptables since AddRule already applied it
 			_ = s.removeRule(rule)
 		}
@@ -572,22 +668,40 @@ func (s *FirewallService) useFirewalld() bool {
 	return strings.TrimSpace(result.Stdout) == "active"
 }
 
-// applyRule applies a firewall rule using iptables or firewalld.
+// isUFWActive checks whether UFW is installed and currently active.
+func (s *FirewallService) isUFWActive() bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	result, err := system.Exec(ctx, "ufw", "status")
+	if err != nil {
+		return false
+	}
+	return strings.Contains(result.Stdout, "Status: active")
+}
+
+// applyRule applies a firewall rule using the best available backend.
+// Priority: UFW (if installed) > firewalld (if active) > iptables.
 func (s *FirewallService) applyRule(rule *FirewallRule) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	if s.IsUFWInstalled() {
+		return s.applyRuleUFW(ctx, rule)
+	}
 	if s.useFirewalld() {
 		return s.applyRuleFirewalld(ctx, rule)
 	}
 	return s.applyRuleIptables(ctx, rule)
 }
 
-// removeRule removes a firewall rule using iptables or firewalld.
+// removeRule removes a firewall rule using the best available backend.
 func (s *FirewallService) removeRule(rule *FirewallRule) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	if s.IsUFWInstalled() {
+		return s.removeRuleUFW(ctx, rule)
+	}
 	if s.useFirewalld() {
 		return s.removeRuleFirewalld(ctx, rule)
 	}
@@ -708,6 +822,71 @@ func (s *FirewallService) removeRuleFirewalld(ctx context.Context, rule *Firewal
 	}
 
 	_, _ = system.Exec(ctx, "firewall-cmd", "--reload")
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// UFW backend
+// ---------------------------------------------------------------------------
+
+// buildUFWRuleSpec builds the argument list for a ufw allow/deny command.
+func (s *FirewallService) buildUFWRuleSpec(rule *FirewallRule) []string {
+	var args []string
+
+	if rule.Action == "deny" {
+		args = append(args, "deny")
+	} else {
+		args = append(args, "allow")
+	}
+
+	if rule.Direction == "out" {
+		args = append(args, "out")
+	}
+
+	if rule.Type == "ip" && rule.IP != "" {
+		// IP-based: ufw allow/deny from <ip> [to any port <port> proto <proto>]
+		args = append(args, "from", rule.IP)
+		if rule.Port != "" {
+			args = append(args, "to", "any", "port", rule.Port)
+			if rule.Protocol != "" {
+				args = append(args, "proto", rule.Protocol)
+			}
+		}
+	} else if rule.Type == "port" && rule.Port != "" {
+		if rule.IP != "" {
+			// Port + IP source: ufw allow/deny from <ip> to any port <port> proto <proto>
+			args = append(args, "from", rule.IP, "to", "any", "port", rule.Port)
+			if rule.Protocol != "" {
+				args = append(args, "proto", rule.Protocol)
+			}
+		} else {
+			// Port-only: ufw allow/deny <port>/<proto>
+			portProto := rule.Port
+			if rule.Protocol != "" {
+				portProto += "/" + rule.Protocol
+			}
+			args = append(args, portProto)
+		}
+	}
+
+	return args
+}
+
+func (s *FirewallService) applyRuleUFW(ctx context.Context, rule *FirewallRule) error {
+	args := s.buildUFWRuleSpec(rule)
+	_, err := system.Exec(ctx, "ufw", args...)
+	if err != nil {
+		return fmt.Errorf("ufw apply failed: %w", err)
+	}
+	return nil
+}
+
+func (s *FirewallService) removeRuleUFW(ctx context.Context, rule *FirewallRule) error {
+	args := append([]string{"delete"}, s.buildUFWRuleSpec(rule)...)
+	_, err := system.Exec(ctx, "ufw", args...)
+	if err != nil {
+		return fmt.Errorf("ufw remove failed: %w", err)
+	}
 	return nil
 }
 
