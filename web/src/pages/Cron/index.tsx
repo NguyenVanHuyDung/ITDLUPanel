@@ -6,6 +6,9 @@ import {
   CloudServerOutlined, SafetyCertificateOutlined, FolderOutlined,
   ClockCircleOutlined, CheckCircleOutlined, StopOutlined, SettingOutlined,
   InfoCircleOutlined, PlayCircleOutlined,
+  MailOutlined, HddOutlined, DesktopOutlined, ToolOutlined,
+  SyncOutlined, FileTextOutlined, SecurityScanOutlined, AlertOutlined,
+  ClearOutlined, MonitorOutlined, CodeOutlined, SwapOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import type { ApiResponse } from '@/types';
@@ -127,6 +130,7 @@ function parseCronToState(expr: string): ScheduleState | null {
 }
 
 const CRON_TEMPLATES: CronTemplate[] = [
+  // ── Backup ──
   {
     name: 'Backup All Databases',
     description: 'Backup every MySQL/MariaDB database (registered in panel DB)',
@@ -167,6 +171,7 @@ const CRON_TEMPLATES: CronTemplate[] = [
     type: 'shell', icon: <SafetyCertificateOutlined />, color: '#9C27B0',
     cliBackupType: 'panel', defaultMaxKeep: 4,
   },
+  // ── SSL ──
   {
     name: 'Renew SSL Certificates',
     description: 'Auto-renew Let\'s Encrypt SSL certificates',
@@ -174,12 +179,194 @@ const CRON_TEMPLATES: CronTemplate[] = [
     command: 'certbot renew --quiet --post-hook "systemctl reload nginx"',
     type: 'shell', icon: <SafetyCertificateOutlined />, color: '#0288D1',
   },
+  // ── Cleanup ──
   {
     name: 'Clear Temp & Cache',
     description: 'Clean system temp files and application caches',
     schedule: '0 4 * * *',
     command: 'rm -rf /tmp/phpmyadmin_extract /tmp/*.zip && apt-get clean -y 2>/dev/null; echo "Cleanup done"',
-    type: 'shell', icon: <ThunderboltOutlined />, color: '#607D8B',
+    type: 'shell', icon: <ClearOutlined />, color: '#607D8B',
+  },
+  {
+    name: 'Clear Old Logs',
+    description: 'Delete log files older than 30 days to free disk space',
+    schedule: '0 5 * * 0',
+    command: 'find /var/log -type f -name "*.log" -mtime +30 -delete && find /var/log -type f -name "*.gz" -mtime +30 -delete; echo "Old logs cleaned"',
+    type: 'shell', icon: <FileTextOutlined />, color: '#795548',
+  },
+  {
+    name: 'Purge Nginx Cache',
+    description: 'Clear Nginx proxy cache and temp files',
+    schedule: '0 3 * * 0',
+    command: 'rm -rf /var/cache/nginx/* /tmp/nginx_* 2>/dev/null && systemctl reload nginx; echo "Nginx cache purged"',
+    type: 'shell', icon: <ClearOutlined />, color: '#00897B',
+  },
+  {
+    name: 'Clean Docker Resources',
+    description: 'Remove unused Docker images, containers, volumes and networks',
+    schedule: '0 4 * * 0',
+    command: 'docker system prune -af --volumes 2>/dev/null; echo "Docker cleanup done"',
+    type: 'shell', icon: <ClearOutlined />, color: '#0db7ed',
+  },
+  {
+    name: 'Clear PHP OPcache',
+    description: 'Reset PHP OPcache to apply code changes',
+    schedule: '*/30 * * * *',
+    command: 'php -r "opcache_reset();" 2>/dev/null || echo "OPcache not available"; echo "OPcache cleared"',
+    type: 'shell', icon: <SyncOutlined />, color: '#8993BE',
+  },
+  // ── System Maintenance ──
+  {
+    name: 'System Update Check',
+    description: 'Check for available system package updates (apt)',
+    schedule: '0 6 * * 1',
+    command: 'apt-get update -qq && apt list --upgradable 2>/dev/null | head -20; echo "Update check done"',
+    type: 'shell', icon: <DesktopOutlined />, color: '#E65100',
+  },
+  {
+    name: 'Disk Usage Report',
+    description: 'Log top 15 largest directories for disk monitoring',
+    schedule: '0 7 * * *',
+    command: 'echo "=== Disk Usage Report ===" && df -h / && echo "" && du -sh /* 2>/dev/null | sort -rh | head -15',
+    type: 'shell', icon: <HddOutlined />, color: '#6D4C41',
+  },
+  {
+    name: 'Memory Usage Report',
+    description: 'Log memory and swap usage summary',
+    schedule: '0 */6 * * *',
+    command: 'echo "=== Memory Report ===" && free -h && echo "" && echo "Top 10 memory consumers:" && ps aux --sort=-%mem | head -11',
+    type: 'shell', icon: <MonitorOutlined />, color: '#AD1457',
+  },
+  {
+    name: 'Restart Nginx',
+    description: 'Graceful restart of Nginx web server',
+    schedule: '0 5 * * *',
+    command: 'systemctl reload nginx && echo "Nginx reloaded" || (systemctl restart nginx && echo "Nginx restarted")',
+    type: 'shell', icon: <SyncOutlined />, color: '#2E7D32',
+  },
+  {
+    name: 'Restart MySQL',
+    description: 'Restart MySQL/MariaDB database server',
+    schedule: '0 5 * * 0',
+    command: 'systemctl restart mysql 2>/dev/null || systemctl restart mariadb 2>/dev/null; echo "DB server restarted"',
+    type: 'shell', icon: <SyncOutlined />, color: '#4479A1',
+  },
+  {
+    name: 'Restart PHP-FPM',
+    description: 'Restart all PHP-FPM versions',
+    schedule: '0 5 * * 0',
+    command: 'for v in 7.4 8.0 8.1 8.2 8.3 8.4; do systemctl restart php${v}-fpm 2>/dev/null; done; echo "PHP-FPM restarted"',
+    type: 'shell', icon: <SyncOutlined />, color: '#8993BE',
+  },
+  {
+    name: 'Sync System Clock (NTP)',
+    description: 'Force-sync system time with NTP servers',
+    schedule: '0 */12 * * *',
+    command: 'timedatectl set-ntp true && chronyc makestep 2>/dev/null || ntpdate pool.ntp.org 2>/dev/null; echo "Time synced"',
+    type: 'shell', icon: <ClockCircleOutlined />, color: '#546E7A',
+  },
+  // ── Security ──
+  {
+    name: 'Scan for Rootkits',
+    description: 'Run rkhunter to check for rootkits (install rkhunter first)',
+    schedule: '0 3 * * 1',
+    command: 'rkhunter --update --quiet 2>/dev/null; rkhunter --check --skip-keypress --quiet 2>&1 | tail -20',
+    type: 'shell', icon: <SecurityScanOutlined />, color: '#D32F2F',
+  },
+  {
+    name: 'Check Failed SSH Logins',
+    description: 'Report failed SSH login attempts from auth log',
+    schedule: '0 8 * * *',
+    command: 'echo "=== Failed SSH Logins (24h) ===" && grep "Failed password" /var/log/auth.log 2>/dev/null | tail -20 || echo "No auth.log found"',
+    type: 'shell', icon: <AlertOutlined />, color: '#C62828',
+  },
+  {
+    name: 'Update Fail2Ban',
+    description: 'Restart Fail2Ban and show currently banned IPs',
+    schedule: '0 6 * * *',
+    command: 'systemctl restart fail2ban 2>/dev/null && fail2ban-client status sshd 2>/dev/null || echo "Fail2Ban not installed"',
+    type: 'shell', icon: <SecurityScanOutlined />, color: '#BF360C',
+  },
+  {
+    name: 'Check Open Ports',
+    description: 'List all listening ports and associated processes',
+    schedule: '0 9 * * 1',
+    command: 'echo "=== Open Ports ===" && ss -tlnp | grep LISTEN',
+    type: 'shell', icon: <SecurityScanOutlined />, color: '#F57C00',
+  },
+  // ── Database Maintenance ──
+  {
+    name: 'Optimize MySQL Tables',
+    description: 'Optimize all MySQL/MariaDB tables to reclaim space',
+    schedule: '0 4 * * 0',
+    command: 'mysqlcheck --all-databases --optimize -u root 2>&1 | tail -20; echo "MySQL optimize done"',
+    type: 'shell', icon: <ToolOutlined />, color: '#4479A1',
+  },
+  {
+    name: 'MySQL Slow Query Report',
+    description: 'Show recent slow queries from MySQL slow log',
+    schedule: '0 8 * * *',
+    command: 'echo "=== MySQL Slow Queries ===" && mysqldumpslow -s t /var/log/mysql/mysql-slow.log 2>/dev/null | head -30 || echo "Slow query log not found"',
+    type: 'shell', icon: <DatabaseOutlined />, color: '#F9A825',
+  },
+  {
+    name: 'Flush MySQL Logs',
+    description: 'Rotate MySQL binary logs to free disk space',
+    schedule: '0 2 * * 0',
+    command: 'mysql -u root -e "PURGE BINARY LOGS BEFORE DATE(NOW() - INTERVAL 7 DAY);" 2>&1; echo "MySQL logs flushed"',
+    type: 'shell', icon: <DatabaseOutlined />, color: '#00695C',
+  },
+  // ── Monitoring & Notifications ──
+  {
+    name: 'Service Health Check',
+    description: 'Check if Nginx, MySQL, and PHP-FPM are running',
+    schedule: '*/5 * * * *',
+    command: 'for svc in nginx mysql php8.2-fpm; do systemctl is-active --quiet $svc && echo "$svc: OK" || echo "$svc: DOWN!"; done',
+    type: 'shell', icon: <MonitorOutlined />, color: '#1B5E20',
+  },
+  {
+    name: 'Disk Space Alert',
+    description: 'Alert if disk usage exceeds 90%',
+    schedule: '*/30 * * * *',
+    command: 'USAGE=$(df / | awk "NR==2 {print \\$5}" | tr -d "%"); [ "$USAGE" -gt 90 ] && echo "WARNING: Disk usage at ${USAGE}%!" || echo "Disk OK: ${USAGE}%"',
+    type: 'shell', icon: <AlertOutlined />, color: '#E53935',
+  },
+  {
+    name: 'Website Uptime Check',
+    description: 'Check if a website is responding (change URL as needed)',
+    schedule: '*/10 * * * *',
+    command: 'HTTP_CODE=$(curl -o /dev/null -s -w "%{http_code}" https://localhost); [ "$HTTP_CODE" = "200" ] && echo "Site OK ($HTTP_CODE)" || echo "Site DOWN! ($HTTP_CODE)"',
+    type: 'shell', icon: <CloudServerOutlined />, color: '#1565C0',
+  },
+  // ── Logs & Rotation ──
+  {
+    name: 'Rotate Access Logs',
+    description: 'Compress and rotate Nginx access logs',
+    schedule: '0 0 * * *',
+    command: 'cd /var/log/nginx && for f in *.log; do [ -f "$f" ] && mv "$f" "${f}.$(date +%Y%m%d)" && gzip "${f}.$(date +%Y%m%d)" 2>/dev/null; done && systemctl reload nginx; echo "Logs rotated"',
+    type: 'shell', icon: <SwapOutlined />, color: '#37474F',
+  },
+  {
+    name: 'Journal Vacuum',
+    description: 'Clean up systemd journal logs older than 7 days',
+    schedule: '0 3 * * 0',
+    command: 'journalctl --vacuum-time=7d 2>&1; echo "Journal cleaned"',
+    type: 'shell', icon: <FileTextOutlined />, color: '#455A64',
+  },
+  // ── Custom Scripts ──
+  {
+    name: 'Custom Script',
+    description: 'Run a custom shell script at scheduled time',
+    schedule: '0 0 * * *',
+    command: '/bin/bash /root/scripts/my_script.sh',
+    type: 'shell', icon: <CodeOutlined />, color: '#424242',
+  },
+  {
+    name: 'Custom URL Request',
+    description: 'Send an HTTP GET request to a URL (webhook/health)',
+    schedule: '*/15 * * * *',
+    command: 'curl -fsS --max-time 30 "https://example.com/cron-ping" -o /dev/null && echo "Ping OK" || echo "Ping FAILED"',
+    type: 'url', icon: <CloudServerOutlined />, color: '#00838F',
   },
 ];
 
