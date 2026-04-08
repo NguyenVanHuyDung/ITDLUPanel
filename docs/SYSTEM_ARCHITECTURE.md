@@ -1,718 +1,377 @@
 # ITDLUPanel — System Architecture
 
-## 1. Tổng quan
+> **Version:** 0.1.0 · **Go 1.25** · **React 19** · **Last updated:** 2026-04-08
 
-**ITDLUPanel** là một web-based Linux server management panel, thiết kế cho môi trường đại học (Đại Học Đà Lạt). Panel cho phép quản trị viên quản lý toàn diện các dịch vụ trên server Linux thông qua giao diện web hiện đại.
+---
 
-### 1.1 Mục tiêu chính
-- Quản lý server Linux (Ubuntu 22/24, AlmaLinux) qua giao diện web
-- Hỗ trợ cài đặt và quản lý LAMP/LEMP/LOMP stack
-- Quản lý website, database, FTP, SSL, file, cron, firewall, Docker
-- Giao diện hiện đại, màu sắc phù hợp môi trường đại học (xanh dương, xanh lá)
-- Đa ngôn ngữ: Tiếng Anh & Tiếng Việt
-- Hệ thống plugin mở rộng (App Store)
-- Phân quyền RBAC cho nhiều user
+## 1. Overview
 
-### 1.2 Phạm vi
-- Quản lý **1 server** duy nhất (panel cài trên server nào quản lý server đó)
-- Hỗ trợ Docker management
-- Plugin-based App Store (cộng đồng có thể đóng góp)
-- Local backup trước, mở rộng remote backup (Google Drive, S3) sau
-- Tự động cấp và gia hạn Let's Encrypt SSL
-- Cài đặt qua bash script 1 lệnh (`curl | bash`)
+ITDLUPanel is a **single-binary Linux server management panel** built for Đại học Đà Lạt (Dalat University). The entire stack — Go backend, React frontend, and SQLite database — ships as one ~60 MB executable with zero external runtime dependencies.
 
-### 1.3 Đối tượng sử dụng
-- Quản trị hệ thống (IT Admin) của trường đại học
-- Giảng viên IT quản lý server lab
-- Sinh viên IT thực hành
+```
+┌──────────────────────────────────────────────────────────────┐
+│                    Browser (React 19 SPA)                     │
+│          Ant Design 6 · xterm.js · Monaco Editor              │
+│          Recharts · Zustand · React Query · i18n              │
+└────────────────┬──────────────────────┬──────────────────────┘
+                 │  REST API (~160)      │  WebSocket (2)
+                 │  HTTPS / JWT          │  PTY Terminal + Monitor
+                 ▼                       ▼
+┌──────────────────────────────────────────────────────────────┐
+│              Single Go Binary (go:embed)                      │
+│                                                               │
+│  ┌─────────┐  ┌──────────────┐  ┌──────────────────────┐     │
+│  │   Gin   │→ │  24 Handlers │→ │  33+ Services         │     │
+│  │  Router  │  │  (REST API)  │  │  14 Installers        │     │
+│  └─────────┘  └──────────────┘  │  4 Vhost Generators   │     │
+│  ┌─────────┐  ┌──────────────┐  └──────────┬───────────┘     │
+│  │   WS    │→ │  Terminal    │              │                  │
+│  │   Hub   │  │  Monitor     │              ▼                  │
+│  └─────────┘  └──────────────┘  ┌──────────────────────┐     │
+│  ┌─────────────────────────┐    │  SQLite (25 tables)   │     │
+│  │  Middleware Stack (11)  │    │  modernc.org/sqlite    │     │
+│  │  JWT·RBAC·Rate·CSRF·   │    └──────────────────────┘     │
+│  │  Audit·CORS·Compress   │                                   │
+│  └─────────────────────────┘                                  │
+└──────────────────────────┬───────────────────────────────────┘
+                           │  systemctl · exec · /proc
+                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│                   Linux Host (Ubuntu/Debian)                   │
+│    Nginx/Apache/OLS · PHP-FPM · MySQL/MariaDB · Redis         │
+│    Docker · Fail2ban · PureFTPd · Certbot                     │
+└──────────────────────────────────────────────────────────────┘
+```
 
 ---
 
 ## 2. Tech Stack
 
-| Layer | Technology | Lý do |
-|-------|-----------|-------|
-| **Backend** | Go (Golang) 1.22+ | Single binary, cross-compile, system-level performance |
-| **Frontend** | React 18 + TypeScript + Vite | SPA hiện đại, type-safe, build nhanh |
-| **UI Library** | Ant Design 5 / shadcn/ui + Tailwind CSS | Component library phong phú, dễ custom theme |
-| **Database** | SQLite (CGO-free via modernc.org/sqlite) | Nhẹ, zero-config, phù hợp single-server |
-| **State Management** | Zustand | Nhẹ, đơn giản, ít boilerplate |
-| **Terminal** | xterm.js + WebSocket | Web terminal hiện đại |
-| **Charts** | Recharts / ECharts | Biểu đồ monitoring |
-| **i18n** | react-i18next (FE) + go-i18n (BE) | Đa ngôn ngữ |
-| **HTTP Router** | Gin / Chi | Mature, performant Go router |
-| **WebSocket** | gorilla/websocket | Bi-directional realtime |
-| **Process Management** | Native Go (os/exec, syscall) | Quản lý service, daemon |
-| **Authentication** | JWT + bcrypt + TOTP | Stateless auth, 2FA |
-| **Build/Deploy** | Bash install script | Cài 1 lệnh giống aaPanel |
+### 2.1 Backend
+
+| Component | Technology | Version |
+|-----------|-----------|---------|
+| Language | Go | 1.25.0 |
+| HTTP Framework | Gin | 1.12.0 |
+| Database | SQLite (CGO-free) | modernc.org/sqlite 1.47.0 |
+| WebSocket | gorilla/websocket | 1.5.3 |
+| Auth / JWT | golang-jwt/jwt | 5.3.1 |
+| 2FA (TOTP) | pquerna/otp | 1.5.0 |
+| Password Hash | bcrypt | golang.org/x/crypto |
+| System Monitor | gopsutil | 3.24.5 |
+| Terminal PTY | creack/pty | 1.1.24 |
+| Logging | zerolog + lumberjack | 1.34.0 |
+| Validation | go-playground/validator | 10.30.1 |
+| Object Storage | minio-go | 7.0.100 |
+| OAuth2 | golang.org/x/oauth2 | 0.36.0 |
+| FTP Client | jlaffaye/ftp | 0.2.0 |
+
+### 2.2 Frontend
+
+| Component | Technology | Version |
+|-----------|-----------|---------|
+| Framework | React | 19.2.4 |
+| Language | TypeScript | 5.9.3 |
+| UI Library | Ant Design | 6.3.3 |
+| Build Tool | Vite | 8.0.1 |
+| CSS | Tailwind CSS | 4.2.2 |
+| State | Zustand | 5.0.12 |
+| Data Fetching | TanStack React Query | 5.91.2 |
+| HTTP Client | Axios | 1.13.6 |
+| Charts | Recharts | 3.8.0 |
+| Code Editor | Monaco Editor | 4.7.0 |
+| Terminal | xterm.js | 6.0.0 |
+| Routing | React Router | 6.30.3 |
+| i18n | i18next | 25.8.20 |
+| Date | Day.js | 1.11.20 |
 
 ---
 
-## 3. High-Level Architecture
+## 3. Backend Architecture
+
+### 3.1 Layered Design
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        CLIENT (Browser)                             │
-│  React SPA + TypeScript + Ant Design + xterm.js + Recharts         │
-│  ┌──────────┐ ┌──────────┐ ┌───────────┐ ┌───────────┐            │
-│  │ Dashboard │ │ Websites │ │ Terminal  │ │ Monitor   │  ...       │
-│  └──────────┘ └──────────┘ └───────────┘ └───────────┘            │
-└───────────────────────────┬─────────────────────────────────────────┘
-                            │ HTTPS / WSS
-                            ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                     ITDLU PANEL SERVER (Go)                         │
-│                                                                     │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    HTTP/WS Gateway                           │   │
-│  │  Gin Router + Middleware Chain                               │   │
-│  │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌───────┐ ┌───────┐  │   │
-│  │  │ Auth │ │ CORS │ │ Rate │ │ CSRF │ │Logging│ │Recovery│  │   │
-│  │  │  MW  │ │  MW  │ │Limit │ │  MW  │ │  MW   │ │  MW   │  │   │
-│  │  └──────┘ └──────┘ └──────┘ └──────┘ └───────┘ └───────┘  │   │
-│  └────────────────────────┬────────────────────────────────────┘   │
-│                           │                                         │
-│  ┌────────────────────────┼────────────────────────────────────┐   │
-│  │              API Layer (v1)                                  │   │
-│  │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌────────┐  │   │
-│  │  │ Auth │ │System│ │ Site │ │  DB  │ │ FTP  │ │Firewall│  │   │
-│  │  │ API  │ │ API  │ │ API  │ │ API  │ │ API  │ │  API   │  │   │
-│  │  └──────┘ └──────┘ └──────┘ └──────┘ └──────┘ └────────┘  │   │
-│  │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌────────┐  │   │
-│  │  │ File │ │ Cron │ │Docker│ │Plugin│ │Monitor│ │Settings│  │   │
-│  │  │ API  │ │ API  │ │ API  │ │ API  │ │  API  │ │  API   │  │   │
-│  │  └──────┘ └──────┘ └──────┘ └──────┘ └──────┘ └────────┘  │   │
-│  └────────────────────────┬────────────────────────────────────┘   │
-│                           │                                         │
-│  ┌────────────────────────┼────────────────────────────────────┐   │
-│  │            Service Layer (Business Logic)                    │   │
-│  │  ┌────────────┐ ┌────────────┐ ┌────────────┐              │   │
-│  │  │  Website    │ │  Database   │ │    FTP     │              │   │
-│  │  │  Service    │ │  Service    │ │  Service   │              │   │
-│  │  ├────────────┤ ├────────────┤ ├────────────┤              │   │
-│  │  │ Nginx Mgr  │ │ MySQL Mgr  │ │ PureFTP Mgr│              │   │
-│  │  │ Apache Mgr │ │ PgSQL Mgr  │ └────────────┘              │   │
-│  │  │ OLS Mgr    │ │ Redis Mgr  │                              │   │
-│  │  └────────────┘ └────────────┘                              │   │
-│  │  ┌────────────┐ ┌────────────┐ ┌────────────┐              │   │
-│  │  │  File      │ │  Cron      │ │  Docker    │              │   │
-│  │  │  Service   │ │  Service   │ │  Service   │              │   │
-│  │  └────────────┘ └────────────┘ └────────────┘              │   │
-│  │  ┌────────────┐ ┌────────────┐ ┌────────────┐              │   │
-│  │  │  Security  │ │  Monitor   │ │  Backup    │              │   │
-│  │  │  Service   │ │  Service   │ │  Service   │              │   │
-│  │  └────────────┘ └────────────┘ └────────────┘              │   │
-│  │  ┌────────────┐ ┌────────────┐ ┌────────────┐              │   │
-│  │  │  SSL/ACME  │ │  Plugin    │ │  User/RBAC │              │   │
-│  │  │  Service   │ │  Engine    │ │  Service   │              │   │
-│  │  └────────────┘ └────────────┘ └────────────┘              │   │
-│  └────────────────────────┬────────────────────────────────────┘   │
-│                           │                                         │
-│  ┌────────────────────────┼────────────────────────────────────┐   │
-│  │              Core Infrastructure                             │   │
-│  │  ┌─────────┐ ┌──────────┐ ┌───────────┐ ┌──────────────┐   │   │
-│  │  │ SQLite  │ │  Task    │ │  Event    │ │   Config     │   │   │
-│  │  │   DB    │ │  Queue   │ │   Bus     │ │  Manager     │   │   │
-│  │  └─────────┘ └──────────┘ └───────────┘ └──────────────┘   │   │
-│  │  ┌─────────┐ ┌──────────┐ ┌───────────┐ ┌──────────────┐   │   │
-│  │  │  Log    │ │  Shell   │ │ WebSocket │ │   i18n       │   │   │
-│  │  │ Manager │ │ Executor │ │  Hub      │ │  Manager     │   │   │
-│  │  └─────────┘ └──────────┘ └───────────┘ └──────────────┘   │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
-                            │
-            ┌───────────────┼────────────────────┐
-            ▼               ▼                    ▼
-    ┌──────────────┐ ┌──────────────┐ ┌──────────────────┐
-    │ Linux System │ │   Services   │ │   File System    │
-    │   Kernel     │ │              │ │                  │
-    │  - systemctl │ │ - Nginx      │ │ /ITDLUPanel/     │
-    │  - iptables  │ │ - Apache     │ │  ├── server/     │
-    │  - crontab   │ │ - OLS        │ │  ├── backup/     │
-    │  - proc/sys  │ │ - MySQL      │ │  ├── logs/       │
-    │  - users     │ │ - PHP-FPM    │ │  └── wwwroot/    │
-    └──────────────┘ │ - Pure-FTPd  │ └──────────────────┘
-                     │ - Redis      │
-                     │ - Docker     │
-                     └──────────────┘
+HTTP Request
+    │
+    ▼
+┌──────────────────────────────┐
+│  Middleware Stack (11 layers) │
+│  Recovery → Logger → Security │
+│  CORS → Compress → Language   │
+│  RateLimit → CSRF → Audit     │
+│  Auth(JWT) → RBAC             │
+└──────────────┬───────────────┘
+               ▼
+┌──────────────────────────────┐
+│  API Handlers (24 files)      │
+│  auth · site · database ·     │
+│  docker · file · security ... │
+└──────────────┬───────────────┘
+               ▼
+┌──────────────────────────────┐
+│  Service Layer (33 services)  │
+│  Business logic, validation,  │
+│  system calls, Docker API     │
+└──────────────┬───────────────┘
+               ▼
+┌──────────────────────────────┐
+│  Data Layer                   │
+│  SQLite (25 tables)           │
+│  File system · Docker socket  │
+│  systemctl · /proc · crontab  │
+└──────────────────────────────┘
 ```
 
----
-
-## 4. Kiến trúc Chi tiết Các Layer
-
-### 4.1 HTTP/WebSocket Gateway
+### 3.2 Source Layout
 
 ```
-Request Flow:
-  HTTP Request
-      ↓
-  Recovery Middleware (panic recovery)
-      ↓
-  Logging Middleware (request/response log)
-      ↓
-  CORS Middleware (cross-origin control)
-      ↓
-  Rate Limit Middleware (per-IP throttling)
-      ↓
-  Auth Middleware (JWT validation + RBAC check)
-      ↓
-  CSRF Middleware (double-submit cookie)
-      ↓
-  Route Handler → Service → Response
-      ↓
-  Audit Middleware (log mutations)
+internal/
+├── api/v1/               # 24 REST handler files (9,814 LOC)
+│   ├── auth.go              Login, register, 2FA, token refresh
+│   ├── backup.go            Backup CRUD, restore, download
+│   ├── cloud_storage.go     S3, Google Drive, OneDrive
+│   ├── cron.go              Cron job CRUD, run, toggle
+│   ├── dashboard.go         System stats aggregation
+│   ├── database.go          MySQL/MariaDB management
+│   ├── docker.go            Containers, images, networks, volumes, daemon
+│   ├── docker_compose.go    Docker Compose projects
+│   ├── file.go              File browser, editor, upload/download
+│   ├── ftp.go               FTP account management
+│   ├── ftp_storage.go       FTP storage backends
+│   ├── log.go               System & access logs
+│   ├── monitor.go           Metrics API
+│   ├── notification.go      Notification channels & rules
+│   ├── plugin.go            Plugin management
+│   ├── redis.go             Redis management
+│   ├── role.go              RBAC role management
+│   ├── security.go          Firewall, SSH, Fail2ban
+│   ├── settings.go          Panel settings
+│   ├── site.go              Website management
+│   ├── software.go          Software install/uninstall
+│   ├── ssl.go               SSL certificates
+│   ├── task.go              Background task status
+│   └── user.go              User CRUD, profile, 2FA
+├── api/ws/                # 2 WebSocket handlers
+│   ├── terminal.go          PTY terminal sessions
+│   └── monitor.go           Real-time system metrics
+├── app/                   # Application core
+│   ├── app.go               Bootstrap, initialization, shutdown
+│   ├── router.go            Route registration & service wiring
+│   ├── auth_middleware.go   JWT verification, RBAC enforcement
+│   └── middleware.go        CORS, security, rate limit, compression
+├── service/               # Business logic (33 services, 23,437 LOC)
+│   ├── installer/           14 software installers
+│   └── vhost/               4 vhost generators (Nginx, Apache, OLS)
+├── database/              # SQLite, models, 14 migrations
+├── config/                # JSON config reader/writer
+├── pkg/                   # Shared utilities (crypto, logger, errors, etc.)
+├── i18n/                  # Backend EN/VI translations
+├── task/                  # Background task queue with progress tracking
+├── websocket/             # WS connection hub & events
+├── system/                # Shell execution, OS detection
+└── plugin/                # Plugin interface & manager
 ```
 
-**Middleware Chain chạy theo thứ tự trên cho mọi request. Auth middleware skip các route public (login, health check).**
+**Total: 112 Go files · 43,314 lines of code**
 
-### 4.2 API Layer
+### 3.3 Middleware Stack
 
-Tất cả API endpoints được prefix bằng `/api/v1/`. API layer chỉ làm:
-- Parse request parameters
-- Validate input
-- Gọi Service layer
-- Format response (chuẩn JSON)
+| Order | Middleware | Purpose |
+|-------|-----------|---------|
+| 1 | Recovery | Panic recovery with stack trace |
+| 2 | Logger | Structured request logging (zerolog) |
+| 3 | SecurityHeaders | X-Frame-Options, CSP, X-Content-Type |
+| 4 | CORS | Cross-origin resource sharing |
+| 5 | Compression | gzip response compression |
+| 6 | Language | Accept-Language detection for i18n |
+| 7 | RateLimit | 300 requests/minute per IP |
+| 8 | CSRF | Cookie + header token validation |
+| 9 | Audit | Write operation audit logging |
+| 10 | Auth | JWT token validation (HS256) |
+| 11 | RBAC | Permission-based access control |
 
-**Không chứa business logic trong API handlers.**
+### 3.4 Authentication & Authorization
 
-### 4.3 Service Layer
+- **JWT tokens**: Access (15 min) + Refresh (7 days), HS256 signing
+- **2FA**: TOTP (RFC 6238) via pquerna/otp with QR code provisioning
+- **Password**: bcrypt cost=12
+- **Three RBAC roles**: Admin (full), Operator (scoped), Viewer (read-only)
+- **Permission namespaces**: `sites.*`, `databases.*`, `files.*`, `docker.*`, `cron.*`, `logs.*`, `backup.*`, `terminal.access`, `security.*`, `software.*`, `ssl.*`
 
-Business logic tập trung ở đây. Mỗi service:
-- Nhận input đã validate từ API layer
-- Thực hiện logic nghiệp vụ
-- Gọi Database layer hoặc Shell executor
-- Return kết quả hoặc error
+### 3.5 Docker Integration
 
-**Services không biết về HTTP — chỉ làm việc với Go types.**
+Docker management communicates via Unix socket (`/var/run/docker.sock`) using Docker API v1.41:
 
-### 4.4 Core Infrastructure
+- **46+ endpoints**: Containers (CRUD, start/stop, logs, stats, exec), Images (list, pull, remove, search), Networks, Volumes, Compose, Daemon config
+- **OneClick Install**: 38 pre-configured application templates
+- **Cloud Image**: 24 featured Docker Hub images with category filter + search
 
-| Component | Trách nhiệm |
-|-----------|-------------|
-| **SQLite DB** | Lưu trữ dữ liệu (users, sites, databases, tasks...) |
-| **Task Queue** | Hàng đợi tác vụ nền (install software, backup, restore) |
-| **Event Bus** | Pub/sub nội bộ cho cross-service communication |
-| **Config Manager** | Đọc/ghi panel.json, cache config, reload |
-| **Log Manager** | Structured logging (zerolog), file rotation |
-| **Shell Executor** | Chạy system commands an toàn (chống injection) |
-| **WebSocket Hub** | Quản lý connections, broadcast events |
-| **i18n Manager** | Load locale files, translate messages |
+### 3.6 Background Task System
 
----
-
-## 5. Background Task System
+Long-running operations run asynchronously with real-time progress:
 
 ```
-Architecture:
-  ┌─────────────────────────────────────────────┐
-  │              ITDLUPanel Process              │
-  │                                             │
-  │  ┌─────────────┐    ┌───────────────────┐   │
-  │  │  HTTP Server │    │  Task Worker Pool │   │
-  │  │  (Gin)      │    │  (3 goroutines)   │   │
-  │  │             │    │                   │   │
-  │  │  POST /task ─────▶  Pick from queue  │   │
-  │  │             │    │  Execute task     │   │
-  │  │  WS /events ◀────  Broadcast status  │   │
-  │  └─────────────┘    └───────────────────┘   │
-  │                            │                │
-  │                     ┌──────┴──────┐         │
-  │                     │  SQLite DB  │         │
-  │                     │ (task queue)│         │
-  │                     └─────────────┘         │
-  └─────────────────────────────────────────────┘
-
-Flow:
-  1. API handler tạo task record (status=pending) trong DB
-  2. Task worker goroutine pick pending task (FIFO)
-  3. Worker execute task, cập nhật progress trong DB
-  4. WebSocket hub broadcast progress tới connected clients
-  5. Hoàn thành: update status=completed, gửi notification
-
-Concurrency:
-  - Max 3 concurrent tasks (configurable)
-  - Queue FIFO cho pending tasks
-  - Critical tasks (install software) được ưu tiên
+API Request → Create Task (SQLite) → Push to Queue → Worker executes
+                                                          │
+                                                          ▼
+                                              WebSocket progress updates
+                                              → Browser progress bar
 ```
 
 ---
 
-## 6. Plugin Architecture
+## 4. Frontend Architecture
 
-```
-Plugin Structure:
-  /ITDLUPanel/server/data/plugins/{plugin_name}/
-  ├── plugin.json          # Manifest (metadata, permissions, routes, hooks)
-  ├── main.so              # Go plugin binary (hoặc subprocess binary)
-  ├── static/              # Plugin static assets (CSS, JS, images)
-  └── templates/           # Plugin HTML templates
+### 4.1 Page Modules (17 pages, lazy-loaded)
 
-Plugin Interface (Go):
-  type Plugin interface {
-      Init(ctx PluginContext) error       // Khởi tạo plugin
-      Routes() []Route                    // Đăng ký API routes
-      Hooks() map[string]HookFunc         // Đăng ký event hooks
-      Cleanup() error                     // Cleanup khi disable/uninstall
-  }
+| Page | Components | Description |
+|------|-----------|-------------|
+| Dashboard | 1 | System overview, live charts, quick actions |
+| Websites | 2 | Site CRUD, domain aliases, PHP switching, statistics |
+| Databases | 1 | MySQL/MariaDB CRUD, backup/restore |
+| Files | 15 | File browser, Monaco editor, bookmarks, compress/decompress |
+| Terminal | 1 | Multi-tab xterm.js terminal via WebSocket |
+| Docker | 10 | Containers, images, networks, volumes, compose, one-click, cloud |
+| Security | 1 | SSH config, Fail2ban, security hardening |
+| Firewall | 1 | Firewall rules management |
+| Monitor | 3 | Real-time + historical system metrics |
+| Cron | 1 | Cron CRUD with 30 templates, schedule builder |
+| Logs | 1 | Panel, SSH, website, audit logs |
+| AppStore | 2 | Software install/uninstall with progress |
+| Storage | 1 | Storage backend management |
+| FTP | 1 | FTP account CRUD |
+| Users | 1 | User management with RBAC |
+| Settings | 2 | Panel settings, notifications |
+| Login | 1 | Authentication + 2FA |
 
-Plugin Manifest (plugin.json):
-  {
-    "name": "my-plugin",
-    "version": "1.0.0",
-    "description": "Mô tả plugin",
-    "author": "Author",
-    "min_panel_version": "1.0.0",
-    "permissions": ["files.read", "sites.read"],
-    "routes": [
-      { "method": "GET", "path": "/my-endpoint", "handler": "MyHandler" }
-    ],
-    "hooks": ["on_site_created", "on_backup_completed"],
-    "settings": {
-      "key1": { "type": "string", "default": "value", "label": "Setting 1" }
-    }
-  }
+### 4.2 State Management (Zustand)
 
-Loading Strategy:
-  - Ưu tiên: Go plugin (.so) cho performance
-  - Fallback: REST-based subprocess cho tính tương thích
-  - Plugin routes được mount tại /api/v1/plugins/{name}/...
-  - Hooks được gọi qua Event Bus khi sự kiện xảy ra
-```
+| Store | Purpose |
+|-------|---------|
+| `auth` | JWT tokens, user profile, login/logout |
+| `theme` | Dark/light mode, palette colors |
+| `settings` | Panel config (language, port, paths) |
+| `task` | Background task progress tracking |
+| `notification` | Notification channels, unread count |
 
----
+### 4.3 Shared Components (15)
 
-## 7. Security Architecture
+12 software management modals (PHP, Nginx, Apache, OLS, MariaDB, Redis, phpMyAdmin, FTP, S3, Google Drive, OneDrive, FTP Storage) + RequireSoftware, PermissionTree, MessagesBox.
 
-```
-Authentication Flow:
-  ┌────────┐     POST /auth/login      ┌──────────┐
-  │ Client │ ──────────────────────▶  │  Server  │
-  │        │   {username, password}    │          │
-  │        │                           │ 1. Rate limit check
-  │        │                           │ 2. bcrypt verify
-  │        │                           │ 3. Check 2FA enabled?
-  │        │ ◀──────────────────────── │          │
-  │        │   {require_2fa: true}     │          │
-  │        │                           │          │
-  │        │  POST /auth/2fa/verify    │          │
-  │        │ ──────────────────────▶  │          │
-  │        │   {totp_code}             │ 4. Verify TOTP
-  │        │ ◀──────────────────────── │          │
-  │        │   {access_token,          │ 5. Issue JWT pair
-  │        │    refresh_token(cookie)} │          │
-  └────────┘                           └──────────┘
+### 4.4 Theming
 
-Token Strategy:
-  - Access Token:  JWT, 15 min TTL, in Authorization header
-  - Refresh Token: JWT, 7 day TTL, in httpOnly secure cookie
-  - CSRF Token:    Random hex, in X-CSRF-Token header
-
-Security Layers (Defense in Depth):
-  Layer 1: TLS 1.2+ (HTTPS cho panel)
-  Layer 2: Rate limiting (per-IP, exponential backoff)
-  Layer 3: JWT authentication (short-lived access tokens)
-  Layer 4: RBAC authorization (role-based permission check)
-  Layer 5: CSRF protection (double-submit cookie)
-  Layer 6: Input validation & sanitization (every endpoint)
-  Layer 7: Path traversal prevention (file operations)
-  Layer 8: SQL injection prevention (parameterized queries only)
-  Layer 9: XSS prevention (React auto-escaping + CSP headers)
-  Layer 10: Audit logging (all mutations tracked)
-  Layer 11: IP whitelist (optional, configurable)
-
-Password Storage: bcrypt (cost=12)
-2FA: TOTP RFC 6238 (30-second window)
-Shell Execution: Allowlist-based, no string interpolation
+Inline CSS-in-JS via `usePalette()` hook. No CSS files — all components use the palette object:
+```typescript
+{ text, textMuted, accent, card, cardBorder, headerBg, green, red, purple, cyan, amber }
 ```
 
 ---
 
-## 8. RBAC Permission Model
+## 5. Database Schema
 
-```
-Roles:
-  ┌──────────┬──────────────────────────────────────────────────────┐
-  │  admin   │ Toàn quyền: system, software, users, settings,     │
-  │          │ plugins + tất cả quyền của operator                  │
-  ├──────────┼──────────────────────────────────────────────────────┤
-  │ operator │ Quản lý: sites, databases, ftp, files, cron,       │
-  │          │ docker, firewall, backup, terminal                   │
-  ├──────────┼──────────────────────────────────────────────────────┤
-  │  viewer  │ Chỉ xem: dashboard, monitor, logs                   │
-  └──────────┴──────────────────────────────────────────────────────┘
+**SQLite** with **25 tables** across 14 migrations:
 
-Granular Permissions:
-  system.*           → admin only
-  software.*         → admin only
-  users.*            → admin only
-  settings.*         → admin only
-  plugins.*          → admin only
-  sites.read / sites.write / sites.delete
-  databases.read / databases.write / databases.delete
-  ftp.read / ftp.write / ftp.delete
-  files.read / files.write / files.delete
-  cron.read / cron.write / cron.delete
-  docker.read / docker.write / docker.delete
-  firewall.read / firewall.write
-  monitor.read
-  logs.read / logs.delete
-  backup.read / backup.write / backup.delete
-  terminal.access
-```
+### Core
 
----
+| Table | Purpose |
+|-------|---------|
+| `users` | Accounts (username, email, bcrypt hash, 2FA secret) |
+| `roles` | RBAC roles with JSON permissions |
+| `user_roles` | User ↔ Role mapping |
+| `user_sites` | User ↔ Site access scoping |
+| `user_resources` | Per-user resource quotas |
+| `settings` | Key-value panel settings |
+| `schema_migrations` | Migration tracking |
 
-## 9. Directory Structure
+### Application
 
-### 9.1 Runtime (Production)
-
-```
-/ITDLUPanel/                          # Root installation
-├── server/                           # Core application
-│   ├── itdlupanel                    # Main binary (Go compiled)
-│   ├── panel.pid                     # PID file
-│   ├── config/                       # Configuration
-│   │   ├── panel.json                # Main config (port, SSL, language...)
-│   │   ├── admin_path.conf           # Custom admin path
-│   │   └── firewall.json             # Firewall rules
-│   ├── data/                         # Runtime data
-│   │   ├── panel.db                  # SQLite database
-│   │   ├── ssl/                      # Panel SSL certs
-│   │   │   ├── private.key
-│   │   │   └── certificate.pem
-│   │   └── plugins/                  # Installed plugins
-│   │       └── {plugin_name}/
-│   │           ├── plugin.json       # Plugin manifest
-│   │           ├── main.so           # Plugin binary
-│   │           └── static/           # Plugin assets
-│   ├── web/                          # Frontend static files (React build)
-│   │   ├── index.html
-│   │   ├── assets/
-│   │   └── locales/
-│   │       ├── en.json
-│   │       └── vi.json
-│   ├── vhost/                        # Web server virtual host configs
-│   │   ├── nginx/
-│   │   ├── apache/
-│   │   └── openlitespeed/
-│   └── scripts/                      # Shell scripts for service management
-│       ├── install_nginx.sh
-│       ├── install_mysql.sh
-│       └── ...
-├── backup/                           # Backups storage
-│   ├── site/
-│   ├── database/
-│   └── panel/
-├── logs/                             # All logs
-│   ├── panel.log
-│   ├── task.log
-│   └── audit.log
-└── wwwroot/                          # Website document roots
-    ├── example.com/
-    └── default/
-```
-
-### 9.2 Source Code (Development)
-
-```
-ITDLUPanel/
-├── cmd/                              # Entry points
-│   └── panel/
-│       └── main.go                   # Main entry point
-├── internal/                         # Private application code
-│   ├── app/                          # Application bootstrap
-│   │   ├── app.go                    # App initialization
-│   │   ├── router.go                 # Route registration
-│   │   └── middleware.go             # Middleware chain
-│   ├── config/                       # Configuration management
-│   │   └── config.go
-│   ├── database/                     # Database layer
-│   │   ├── sqlite.go
-│   │   ├── migrations/               # Schema migrations
-│   │   └── models/                   # Data models
-│   ├── api/                          # HTTP handlers (controllers)
-│   │   ├── v1/                       # API version 1
-│   │   │   ├── auth.go
-│   │   │   ├── dashboard.go
-│   │   │   ├── site.go
-│   │   │   ├── database.go
-│   │   │   ├── ftp.go
-│   │   │   ├── file.go
-│   │   │   ├── cron.go
-│   │   │   ├── firewall.go
-│   │   │   ├── docker.go
-│   │   │   ├── monitor.go
-│   │   │   ├── security.go
-│   │   │   ├── log.go
-│   │   │   ├── terminal.go
-│   │   │   ├── backup.go
-│   │   │   ├── plugin.go
-│   │   │   ├── settings.go
-│   │   │   └── user.go
-│   │   └── ws/                       # WebSocket handlers
-│   │       ├── terminal.go
-│   │       └── monitor.go
-│   ├── service/                      # Business logic
-│   │   ├── auth_service.go
-│   │   ├── site_service.go
-│   │   ├── database_service.go
-│   │   ├── ftp_service.go
-│   │   ├── file_service.go
-│   │   ├── cron_service.go
-│   │   ├── firewall_service.go
-│   │   ├── docker_service.go
-│   │   ├── monitor_service.go
-│   │   ├── security_service.go
-│   │   ├── backup_service.go
-│   │   ├── ssl_service.go
-│   │   ├── plugin_service.go
-│   │   ├── task_service.go
-│   │   ├── user_service.go
-│   │   └── log_service.go
-│   ├── system/                       # System-level operations
-│   │   ├── shell.go                  # Safe shell command executor
-│   │   ├── process.go                # Process management
-│   │   ├── service_manager.go        # systemctl wrapper
-│   │   ├── package_manager.go        # apt/yum wrapper
-│   │   ├── network.go                # Network utilities
-│   │   └── os_detect.go              # OS detection
-│   ├── task/                         # Background task system
-│   │   ├── worker.go
-│   │   ├── queue.go
-│   │   └── scheduler.go
-│   ├── plugin/                       # Plugin engine
-│   │   ├── loader.go
-│   │   ├── manager.go
-│   │   ├── registry.go
-│   │   └── api.go
-│   ├── websocket/                    # WebSocket management
-│   │   ├── hub.go
-│   │   ├── terminal.go
-│   │   └── events.go
-│   ├── i18n/                         # Internationalization
-│   │   ├── i18n.go
-│   │   └── locales/
-│   └── pkg/                          # Shared utilities
-│       ├── logger/
-│       ├── crypto/
-│       ├── validator/
-│       ├── response/
-│       └── errors/
-├── web/                              # Frontend (React)
-│   ├── package.json
-│   ├── vite.config.ts
-│   ├── tsconfig.json
-│   ├── tailwind.config.ts
-│   └── src/
-│       ├── main.tsx
-│       ├── App.tsx
-│       ├── router/
-│       ├── layouts/
-│       │   ├── MainLayout.tsx
-│       │   └── AuthLayout.tsx
-│       ├── pages/
-│       │   ├── Login/
-│       │   ├── Dashboard/
-│       │   ├── Website/
-│       │   ├── Database/
-│       │   ├── FTP/
-│       │   ├── Files/
-│       │   ├── Docker/
-│       │   ├── Monitor/
-│       │   ├── Security/
-│       │   ├── Logs/
-│       │   ├── Terminal/
-│       │   ├── Cron/
-│       │   ├── AppStore/
-│       │   ├── Settings/
-│       │   └── Users/
-│       ├── components/
-│       ├── hooks/
-│       ├── stores/
-│       ├── services/
-│       ├── i18n/
-│       ├── types/
-│       └── utils/
-├── scripts/                          # Build & install scripts
-│   ├── install.sh
-│   ├── build.sh
-│   ├── service/
-│   │   └── itdlupanel.service
-│   └── installers/
-│       ├── nginx.sh
-│       ├── apache.sh
-│       ├── mysql.sh
-│       ├── php.sh
-│       └── ...
-├── go.mod
-├── go.sum
-├── Makefile
-└── README.md
-```
+| Table | Purpose |
+|-------|---------|
+| `sites` | Websites (domain, root, PHP version, web server) |
+| `domains` | Domain aliases per site |
+| `databases` | MySQL/MariaDB databases |
+| `ftps` | FTP accounts |
+| `crons` | Cron jobs (schedule, command, status) |
+| `tasks` | Background tasks |
+| `software` | Installed software registry |
+| `plugins` | Plugin metadata |
+| `backups` | Backup records |
+| `firewall_rules` | Firewall rules |
+| `firewall_settings` | Firewall global settings |
+| `ftp_storages` | FTP storage configs |
+| `cloud_storages` | S3/GDrive/OneDrive configs |
+| `audit_logs` | Write operation audit trail |
+| `docker_containers` | Docker container metadata |
+| `notification_channels` | Email/Telegram/Webhook channels |
+| `notification_rules` | Alert rules and triggers |
+| `notification_logs` | Notification delivery history |
 
 ---
 
-## 10. UI/UX Architecture
+## 6. API Summary
 
-### 10.1 Design System
+**~160 REST endpoints** + **2 WebSocket endpoints**:
 
-```
-Color Palette (DLU University Theme):
-  Primary:    #1565C0 (Xanh dương đậm)
-  Secondary:  #2E7D32 (Xanh lá đậm)
-  Accent:     #0288D1 (Xanh dương nhạt)
-  Background: #F5F7FA (Xám nhạt)
-  Sidebar:    #1B2A4A (Xanh đen)
-  Surface:    #FFFFFF (Trắng)
-  Success:    #4CAF50
-  Warning:    #FF9800
-  Error:      #F44336
-  Text:       #1A1A2E (primary), #64748B (secondary)
-
-Typography:
-  Font: Inter (UI), JetBrains Mono (code/terminal)
-  Headings: 600 weight
-  Body: 400 weight
-
-Spacing: 4px base unit (4, 8, 12, 16, 24, 32, 48)
-Border Radius: 6px (cards), 8px (modals), 4px (buttons)
-```
-
-### 10.2 Layout Structure
-
-```
-┌─────────────────────────────────────────────┐
-│ 🎓 ITDLUPanel   │  Search  │ 🌐 │ 👤 Admin │
-├────────────┬────────────────────────────────┤
-│            │                                │
-│  🏠 Home   │    Page Title                  │
-│  🌐 Sites  │    ┌──────────────────────┐    │
-│  💾 DB     │    │                      │    │
-│  📁 FTP    │    │    Page Content      │    │
-│  📂 Files  │    │                      │    │
-│  🐳 Docker │    │                      │    │
-│  📊 Monitor│    │                      │    │
-│  🔒 Security│   │                      │    │
-│  📋 Logs   │    │                      │    │
-│  💻 Terminal│   │                      │    │
-│  ⏰ Cron   │    │                      │    │
-│  🏪 Store  │    └──────────────────────┘    │
-│  ⚙️ Settings│                               │
-│  👥 Users  │                                │
-│  🚪 Logout │                                │
-└────────────┴────────────────────────────────┘
-
-Sidebar: 250px (desktop), collapsible (tablet), hidden (mobile)
-Header: 56px height
-Content: flex-grow, with padding 24px
-```
-
-### 10.3 First-Time Setup Wizard
-
-```
-Step 1: Chọn Web Server Stack
-  ┌─────────────────────────────────────────┐
-  │  Chọn stack cho server của bạn:         │
-  │                                         │
-  │  [✓] LEMP (Linux + Nginx + MySQL + PHP) │  ← Recommended
-  │  [ ] LAMP (Linux + Apache + MySQL + PHP)│
-  │  [ ] LOMP (Linux + OLS + MySQL + PHP)   │
-  └─────────────────────────────────────────┘
-
-Step 2: Chọn phiên bản
-  ┌─────────────────────────────────────────┐
-  │  Webserver: Nginx 1.24                  │
-  │  Database:  [MariaDB 10.11 ▾]           │
-  │  PHP:       [PHP 8.2 ▾]                 │
-  │  ☑ phpMyAdmin                           │
-  │  ☑ Pure-FTPd                            │
-  │  ☐ Redis                                │
-  └─────────────────────────────────────────┘
-
-Step 3: Xác nhận & Cài đặt
-  ┌─────────────────────────────────────────┐
-  │  Installing LEMP Stack...               │
-  │  ████████████░░░░░░░░ 62%               │
-  │                                         │
-  │  ✅ Nginx 1.24         installed        │
-  │  ✅ MariaDB 10.11      installed        │
-  │  🔄 PHP 8.2            installing...    │
-  │  ⏳ phpMyAdmin          waiting         │
-  │  ⏳ Pure-FTPd           waiting         │
-  └─────────────────────────────────────────┘
-```
+| Module | Endpoints | Permission |
+|--------|-----------|------------|
+| Auth | 9 | Public + JWT |
+| Dashboard | 2 | JWT |
+| Sites | 14 | `sites.*` |
+| Databases | 8 | `databases.*` |
+| Files | 17 | `files.*` |
+| Docker | 46+ | `docker.*` |
+| Security | 12 | `security.*` |
+| Software | 14 | `software.*` |
+| Monitor | 5 + WS | JWT |
+| Terminal | WS | `terminal.access` |
+| Cron | 8 | `cron.*` |
+| Logs | 7 | `logs.*` |
+| SSL | 9 | `ssl.*` |
+| Backups | 6 | `backup.*` |
+| Storage | 8 | Admin |
+| Users/Roles | 11 | Admin |
+| Notifications | 8 | Admin |
+| Settings/Tasks | 7 | JWT |
 
 ---
 
-## 11. Deployment & Distribution
+## 7. Security
 
-### 11.1 Build Strategy
-
-```
-Build Process:
-  1. Frontend: npm run build → web/dist/ (static files)
-  2. Backend: go build → embed web/dist/ vào binary (Go embed.FS)
-  3. Output: single binary "itdlupanel" (~30-50MB)
-
-Cross-Compile Targets:
-  - linux/amd64 (Ubuntu, AlmaLinux trên x86_64)
-  - linux/arm64 (Ubuntu trên ARM)
-
-Distribution:
-  - Binary + install script hosted trên release server
-  - Install: curl -sSO https://install.itdlupanel.com/install.sh && bash install.sh
-```
-
-### 11.2 Systemd Integration
-
-```ini
-[Unit]
-Description=ITDLUPanel - Linux Server Management Panel
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/ITDLUPanel/server/itdlupanel
-WorkingDirectory=/ITDLUPanel/server
-Restart=always
-RestartSec=5
-User=root
-Environment=PANEL_ENV=production
-
-[Install]
-WantedBy=multi-user.target
-```
-
-### 11.3 OS Compatibility
-
-```
-┌──────────────┬──────────────┬───────────────┐
-│   Feature    │ Ubuntu 22/24 │  AlmaLinux    │
-├──────────────┼──────────────┼───────────────┤
-│ Pkg Manager  │ apt          │ dnf/yum       │
-│ Firewall     │ ufw/iptables │ firewalld     │
-│ Service Mgr  │ systemctl    │ systemctl     │
-│ PHP Repo     │ ppa:ondrej   │ remi-release  │
-│ MySQL/MariaDB│ apt install  │ dnf install   │
-│ Init System  │ systemd      │ systemd       │
-└──────────────┴──────────────┴───────────────┘
-
-Strategy: OS detection at startup → load OS-specific config/scripts
-```
+| Feature | Implementation |
+|---------|---------------|
+| Authentication | JWT HS256 (15-min access + 7-day refresh) |
+| 2FA | TOTP (RFC 6238) |
+| Password | bcrypt cost=12 |
+| CSRF | Cookie + X-CSRF-Token header |
+| Rate Limiting | 300 req/min per IP |
+| Audit Trail | All writes → `audit_logs` |
+| RBAC | Admin / Operator / Viewer |
+| Security Headers | X-Frame-Options, CSP, X-Content-Type-Options |
+| TLS | Built-in HTTPS |
 
 ---
 
-## 12. Performance Considerations
+## 8. Supported Software
 
-| Aspect | Strategy |
-|--------|----------|
-| **Concurrency** | Go goroutine-per-request (~100K concurrent) |
-| **Database** | SQLite WAL mode, connection pooling, prepared statements |
-| **API Response** | Gzip compression middleware |
-| **Static Files** | Embedded in binary, served with cache headers (1 year) |
-| **Real-time** | WebSocket (no HTTP polling) |
-| **System Metrics** | Cached with 2-second refresh interval |
-| **File Operations** | Streaming (no full file in memory for large files) |
-| **Background Tasks** | Goroutine pool (max 3), prevents overload |
+| Software | Install | Configure | Monitor | Versions |
+|----------|---------|-----------|---------|----------|
+| Nginx | ✅ | ✅ | ✅ | Latest |
+| Apache | ✅ | ✅ | ✅ | 2.4 |
+| OpenLiteSpeed | ✅ | ✅ | ✅ | Latest |
+| PHP | ✅ | ✅ | ✅ | 7.4, 8.0–8.4 |
+| MySQL | ✅ | ✅ | ✅ | 5.7, 8.0 |
+| MariaDB | ✅ | ✅ | ✅ | 10.x, 11.x |
+| Redis | ✅ | ✅ | ✅ | Latest |
+| phpMyAdmin | ✅ | — | — | Latest |
+| PureFTPd | ✅ | ✅ | — | Latest |
+| Docker | Detect | ✅ | ✅ | Engine |
+
+### Storage Modules
+
+| Module | Purpose |
+|--------|---------|
+| FTP Storage | Remote FTP backup destination |
+| S3 / MinIO | S3-compatible object storage |
+| Google Drive | Google Drive backup via OAuth2 |
+| OneDrive | OneDrive backup via OAuth2 |

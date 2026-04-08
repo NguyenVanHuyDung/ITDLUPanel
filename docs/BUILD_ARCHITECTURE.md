@@ -1,58 +1,56 @@
 # ITDLUPanel — Build Architecture
 
-## Tại sao Go + React lại thành 1 file binary duy nhất?
-
-ITDLUPanel sử dụng tính năng **`embed`** của Go (từ Go 1.16+) để **nhúng toàn bộ frontend React đã build** vào bên trong file binary Go tại thời điểm biên dịch. Kết quả là **một file duy nhất** chứa cả backend API lẫn frontend UI — không cần Node.js, không cần thư mục static riêng, không cần reverse proxy.
+> How Go + React becomes a single binary
 
 ---
 
-## Quy trình build — 2 giai đoạn
+## 1. Overview
+
+ITDLUPanel compiles into a **single static binary** (~60 MB) that includes:
+- Go HTTP server (Gin)
+- Compiled React SPA (HTML/JS/CSS)
+- SQLite engine (CGO-free, pure Go)
+- All dependencies statically linked
+
+**Zero runtime dependencies** — the binary runs on any Linux system without Go, Node.js, or any library installed.
+
+---
+
+## 2. Build Pipeline
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│            GIAI ĐOẠN 1: Build Frontend (React)             │
-├────────────────────────────────────────────────────────────┤
-│                                                            │
-│  cd web/                                                   │
-│  npm ci            ← Cài dependencies                      │
-│  npm run build     ← Vite build React → web/dist/          │
-│                                                            │
-│  Kết quả:                                                  │
-│  web/dist/                                                 │
-│  ├── index.html         (entry point SPA)                  │
-│  ├── assets/                                               │
-│  │   ├── index-xxx.js   (React bundle, ~500KB)             │
-│  │   ├── index-xxx.css  (styles)                           │
-│  │   └── ...            (chunks, fonts, images)            │
-│  └── favicon.ico                                           │
-│                                                            │
-└────────────────────────────────────────────────────────────┘
-                          ↓
-┌────────────────────────────────────────────────────────────┐
-│         GIAI ĐOẠN 2: Build Backend (Go + Embed)            │
-├────────────────────────────────────────────────────────────┤
-│                                                            │
-│  go build ./cmd/panel                                      │
-│                                                            │
-│  Go compiler đọc directive //go:embed trong web.go         │
-│  → Nhúng toàn bộ web/dist/ vào binary                      │
-│  → Binary ~15MB chứa cả Go code + React assets             │
-│                                                            │
-└────────────────────────────────────────────────────────────┘
-                          ↓
-                   itdlupanel (binary)
-                   Chạy được trên bất kỳ Linux nào
-                   Không cần cài thêm gì
+┌─────────────────────────────────────────────────────────┐
+│ Phase 1: Frontend Build                                  │
+│                                                          │
+│  web/src/*.tsx ─── TypeScript ──► Vite 8 ──► web/dist/  │
+│                    React 19        Build      ├── index.html
+│                    Ant Design 6               ├── assets/*.js
+│                                               └── assets/*.css
+└──────────────────────┬──────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────┐
+│ Phase 2: Go Embed & Compile                              │
+│                                                          │
+│  web.go:                                                 │
+│    //go:embed all:web/dist                              │
+│    var WebDistFS embed.FS                                │
+│                                                          │
+│  go build ──► Embeds web/dist/ into binary              │
+│              ──► Compiles all Go code                     │
+│              ──► Links SQLite (pure Go)                   │
+│              ──► Output: bin/itdlupanel (~60MB)          │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Cách hoạt động chi tiết
+## 3. Key Files
 
-### 1. File nhúng frontend — `web.go`
+### `web.go` — Frontend Embedding
 
 ```go
-package panel
+package main
 
 import "embed"
 
@@ -60,171 +58,158 @@ import "embed"
 var WebDistFS embed.FS
 ```
 
-- Directive `//go:embed all:web/dist` ra lệnh cho Go compiler **đóng gói toàn bộ thư mục `web/dist/`** vào binary
-- `WebDistFS` trở thành một **virtual filesystem** — truy cập file giống như đọc từ ổ đĩa, nhưng thực tế đọc từ bộ nhớ
-- Từ khóa `all:` đảm bảo cả file ẩn (dotfiles) cũng được nhúng
+Go's `embed` directive includes the entire `web/dist/` directory into the compiled binary at build time. At runtime, the SPA is served directly from memory.
 
-### 2. Entry point — `cmd/panel/main.go`
+### `Makefile`
 
-```go
-func main() {
-    // Load config, mở SQLite DB, khởi tạo services
-    application, err := app.New(configPath)
+```makefile
+VERSION ?= 0.1.0
+BUILD_TIME := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS := -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME)
 
-    // Chạy HTTP server
-    srv := &http.Server{
-        Addr:    ":" + port,
-        Handler: application.Router,  // Gin engine
-    }
-    srv.ListenAndServeTLS(certFile, keyFile)
-}
+build:
+    CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/itdlupanel ./cmd/panel
+
+build-linux-amd64:
+    GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/itdlupanel-linux-amd64 ./cmd/panel
 ```
 
-### 3. Router phục vụ cả API + SPA — `internal/app/router.go`
+- **CGO_ENABLED=0**: Pure Go compilation — no C compiler needed, fully static binary
+- **LDFLAGS**: Injects version and build time at compile
 
-```go
-func setupSPAHandler(engine *gin.Engine) {
-    // Tạo sub-filesystem từ embedded FS
-    distFS, _ := fs.Sub(panel.WebDistFS, "web/dist")
-    fileServer := http.FileServer(http.FS(distFS))
+### `Dockerfile` — Multi-Stage Build
 
-    engine.NoRoute(func(c *gin.Context) {
-        path := c.Request.URL.Path
+```dockerfile
+# Stage 1: Build frontend
+FROM node:22-alpine AS frontend
+WORKDIR /app
+COPY web/package*.json ./
+RUN npm ci --production=false
+COPY web/ ./
+RUN npx vite build
 
-        // /api/* → trả JSON 404
-        if strings.HasPrefix(path, "/api/") {
-            c.JSON(404, gin.H{"message": "API not found"})
-            return
-        }
+# Stage 2: Build backend
+FROM golang:1.25-alpine AS backend
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+COPY --from=frontend /app/dist web/dist
+RUN CGO_ENABLED=0 go build -ldflags "..." -o itdlupanel ./cmd/panel
 
-        // Thử serve file tĩnh (JS, CSS, image)
-        if f, err := distFS.Open(cleanPath); err == nil {
-            f.Close()
-            fileServer.ServeHTTP(c.Writer, c.Request)
-            return
-        }
-
-        // Fallback: trả index.html cho React Router xử lý
-        c.Request.URL.Path = "/"
-        fileServer.ServeHTTP(c.Writer, c.Request)
-    })
-}
+# Stage 3: Minimal runtime
+FROM alpine:3.21
+RUN apk add --no-cache ca-certificates tzdata
+COPY --from=backend /app/itdlupanel /usr/local/bin/
+EXPOSE 8888
+CMD ["itdlupanel"]
 ```
 
-**Logic routing:**
-
-| Request | Xử lý bởi | Ví dụ |
-|---------|-----------|-------|
-| `/api/v1/*` | Go handler | `GET /api/v1/sites` → SiteHandler |
-| `/assets/*.js` | Embedded FS | `index-B3qT.js` từ web/dist/ |
-| `/itdlu` | React SPA | index.html → React Router render |
-| `/itdlu/websites` | React SPA | index.html → React Router render |
+**Final image size: ~15 MB** (Alpine + static binary)
 
 ---
 
-## Cấu trúc bên trong binary
+## 4. Frontend Build Details
 
+| Tool | Purpose |
+|------|---------|
+| Vite 8 | Fast bundler with tree-shaking |
+| TypeScript 5.9 | Type checking (non-blocking: `tsc -b` errors don't block Vite) |
+| React 19 | UI framework |
+| Ant Design 6 | Component library |
+| Tailwind CSS 4 | Utility CSS (minimal usage — most styling is inline) |
+
+**Build command:**
+```bash
+cd web && npx vite build    # Outputs to web/dist/
 ```
-itdlupanel (15MB, statically linked ELF binary)
-│
-├── Go Runtime
-│
-├── Go Application Code
-│   ├── cmd/panel/         → main(), CLI commands
-│   ├── internal/app/      → Router, bootstrap
-│   ├── internal/api/v1/   → 20+ API handlers
-│   ├── internal/service/  → Business logic
-│   └── internal/model/    → Data models
-│
-├── Go Dependencies (vendored)
-│   ├── gin (HTTP framework)
-│   ├── sqlite (embedded database)
-│   ├── jwt (authentication)
-│   ├── websocket (terminal, monitoring)
-│   └── acme (Let's Encrypt)
-│
-└── Embedded Filesystem (web/dist/)    ← React được nhúng ở đây
-    ├── index.html
-    └── assets/
-        ├── index-xxx.js    (React app)
-        ├── index-xxx.css   (styles)
-        ├── Websites-xxx.js (lazy-loaded page)
-        ├── AppStore-xxx.js (lazy-loaded page)
-        └── ...
+
+> **Note:** `npm run build` runs `tsc -b && vite build`. Pre-existing TS errors may block `tsc`. Use `npx vite build` directly if needed.
+
+**Output structure:**
+```
+web/dist/
+├── index.html              # SPA entry point
+└── assets/
+    ├── index-*.js          # Main bundle (~611 KB gzipped: ~194 KB)
+    ├── jsx-runtime-*.js    # React runtime
+    ├── Docker-*.js         # Docker page (code-split)
+    ├── AppStore-*.js       # App store page
+    ├── Websites-*.js       # Website management
+    ├── editor.api2-*.js    # Monaco Editor (~3.6 MB, lazy-loaded)
+    ├── xterm-*.js          # Terminal (~346 KB, lazy-loaded)
+    └── ...                 # ~70 code-split chunks
 ```
 
 ---
 
-## Lệnh build đầy đủ
+## 5. Backend Build Details
+
+| Tool | Purpose |
+|------|---------|
+| Go 1.25 | Compiler |
+| modernc.org/sqlite | Pure-Go SQLite (no CGO) |
+| go:embed | Static file embedding |
+| ldflags | Version injection |
+
+**Build command:**
+```bash
+export PATH=/usr/local/go/bin:$PATH
+CGO_ENABLED=0 go build -ldflags "-X main.version=0.1.0 -X main.buildTime=..." -o bin/itdlupanel ./cmd/panel
+```
+
+**Binary contents:**
+- Go HTTP server (Gin router + middleware + handlers)
+- 33 service implementations
+- 14 software installers
+- SQLite engine (pure Go)
+- Embedded React SPA (~12 MB compressed)
+- i18n translations (EN + VI)
+
+---
+
+## 6. Development Workflow
+
+### Quick Iteration
 
 ```bash
-# Build thủ công
-cd /root/ITDLUPanel
-cd web && npm ci && npm run build && cd ..   # Bước 1: React
-CGO_ENABLED=0 go build \                     # Bước 2: Go + Embed
-    -ldflags "-s -w -X main.version=2.0.0" \
-    -o bin/itdlupanel \
-    ./cmd/panel
+# Terminal 1: Frontend dev server with hot reload
+cd web && npm run dev    # → http://localhost:3000 (proxies /api to :8888)
 
-# Hoặc dùng publish script
-cd publish/v2 && bash publish.sh --arch amd64
+# Terminal 2: Backend
+make build && ./bin/itdlupanel -config config/panel.json
 ```
 
-**Giải thích flags:**
+### Production Build
 
-| Flag | Ý nghĩa |
-|------|---------|
-| `CGO_ENABLED=0` | Không dùng C bindings → binary static, chạy mọi Linux |
-| `-s -w` | Bỏ symbol table + debug info → giảm kích thước |
-| `-X main.version=2.0.0` | Inject version string vào binary lúc compile |
-| `./cmd/panel` | Compile từ package main trong cmd/panel/ |
+```bash
+# Full build (frontend → embed → binary)
+cd web && npm ci && npx vite build && cd ..
+make build
+
+# Start
+nohup ./bin/itdlupanel -config config/panel.json > logs/panel.log 2>&1 &
+```
+
+### Cross-Compilation
+
+```bash
+# Linux AMD64 (servers)
+GOOS=linux GOARCH=amd64 make build-linux-amd64
+
+# Linux ARM64 (Raspberry Pi, ARM servers)
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o bin/itdlupanel-arm64 ./cmd/panel
+```
 
 ---
 
-## Tại sao kiến trúc này tốt?
+## 7. Why This Architecture?
 
-| Ưu điểm | Giải thích |
+| Decision | Rationale |
 |----------|-----------|
-| **Deploy đơn giản** | Copy 1 file, chạy ngay. Không cần cài Node.js, nginx, hay serve static |
-| **Không dependency** | Binary static, không cần glibc. Chạy trên Alpine, Ubuntu, CentOS,... |
-| **Version đồng bộ** | Frontend & backend luôn cùng phiên bản vì ở chung binary |
-| **Hiệu suất cao** | Embedded FS đọc từ memory, nhanh hơn đọc từ disk |
-| **Bảo mật** | Không expose thư mục static ra ngoài, frontend chỉ truy cập qua Go server |
-| **Atomic update** | Thay 1 file = cập nhật cả frontend lẫn backend |
-
----
-
-## So sánh với cách deploy truyền thống
-
-```
-Cách truyền thống:                    ITDLUPanel:
-┌──────────────┐                      ┌──────────────────┐
-│   Nginx      │ ←── static files     │                  │
-│   (port 80)  │                      │   itdlupanel     │
-├──────────────┤                      │   (port 8888)    │
-│ proxy_pass   │                      │                  │
-│   ↓          │                      │  Go server       │
-│ Node/Go API  │ ←── port 3000        │  + Embedded SPA  │
-│ (port 3000)  │                      │  + SQLite DB     │
-├──────────────┤                      │  + WebSocket     │
-│   Database   │ ←── port 5432        │                  │
-│  (Postgres)  │                      │  = 1 file, 1 port│
-└──────────────┘                      └──────────────────┘
-   4 processes                           1 process
-   3 ports                               1 port
-   3 config files                        1 config file
-```
-
----
-
-## File liên quan
-
-| File | Vai trò |
-|------|---------|
-| `web.go` | Khai báo `//go:embed` để nhúng frontend |
-| `cmd/panel/main.go` | Entry point, khởi động server |
-| `internal/app/router.go` | Setup SPA handler cho embedded FS |
-| `internal/app/app.go` | Bootstrap: config → DB → router → services |
-| `web/` | Source code React (TypeScript + Vite) |
-| `web/dist/` | Frontend build output (được embed vào binary) |
-| `publish/v2/publish.sh` | Script build + đóng gói release |
+| Single binary | Zero-dependency deployment; copy and run |
+| go:embed | No separate file server; SPA always matches API version |
+| CGO_ENABLED=0 | Static linking; cross-compile anywhere |
+| Pure-Go SQLite | No C compiler needed; works on all platforms |
+| Vite (not webpack) | 10x faster builds; native ES modules |
+| Code splitting | Monaco Editor (3.6 MB) only loads when editing files |
