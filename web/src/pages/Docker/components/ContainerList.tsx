@@ -327,7 +327,7 @@ export default function ContainerList({ onRefresh }: { onRefresh?: () => void })
       >
         {detailData && (
           <Descriptions column={1} bordered size="small">
-            <Descriptions.Item label="ID">{detailData.id}</Descriptions.Item>
+            <Descriptions.Item label="ID"><span style={{ fontFamily: "'SFMono-Regular', Consolas, monospace", fontSize: 12 }}>{detailData.id}</span></Descriptions.Item>
             <Descriptions.Item label="Name">{detailData.name}</Descriptions.Item>
             <Descriptions.Item label="Image">{detailData.image}</Descriptions.Item>
             <Descriptions.Item label="Status">

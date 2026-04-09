@@ -71,6 +71,7 @@ export default function Settings() {
       const mirrorList = mirrors.split('\n').map(m => m.trim()).filter(Boolean);
       await api.put('/docker/system/config', { mirrors: mirrorList });
       message.success('Registry mirrors saved. Restart Docker for changes to take effect.');
+      fetchConfig();
     } catch {
       message.error('Failed to save mirror configuration');
     } finally {
