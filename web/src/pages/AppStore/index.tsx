@@ -1173,6 +1173,18 @@ export default function AppStore() {
                 const installedVers = installTarget?.installed_versions ?? [];
                 const defaultVer = installTarget?.default_version;
                 const isNginx = installTarget?.name === 'nginx';
+                const isMySQL = installTarget?.name === 'mysql';
+
+                const mysqlLabels: Record<string, string> = {
+                  'mariadb-11.4': 'MariaDB 11.4 LTS (2024–2029)',
+                  'mariadb-11.6': 'MariaDB 11.6 (Latest Stable)',
+                  'mariadb-10.11': 'MariaDB 10.11 LTS (2023–2028)',
+                  'mariadb-10.6': 'MariaDB 10.6 LTS (2021–2026)',
+                  'mysql-8.4': 'MySQL 8.4 LTS (2024–2032)',
+                  'mysql-8.0': 'MySQL 8.0 LTS (2018–2026)',
+                  'mysql-9.0': 'MySQL 9.0 Innovation (Short-term)',
+                };
+
                 return versions.map((v) => {
                   let label = `v${v}`;
                   if (isNginx) {
@@ -1182,6 +1194,8 @@ export default function AppStore() {
                       const minor = parseInt(v.split('.')[1] ?? '0', 10);
                       label = `v${v} ${minor % 2 === 0 ? '(Stable Branch)' : '(Mainline Branch)'}`;
                     }
+                  } else if (isMySQL) {
+                    label = mysqlLabels[v] || v;
                   }
                   if (v === defaultVer && !installedVers.includes(v)) label += ' ★';
                   if (installedVers.includes(v)) label += ' (Installed)';

@@ -58,7 +58,7 @@ var knownSoftware = map[string]softwareMeta{
 		ServiceName:    "mysql",
 		ConfigPath:     "/ITDLUPanel/server/mysql/conf/my.cnf",
 		InstallPath:    "/ITDLUPanel/server/mysql",
-		DefaultVersion: "mysql-8.0",
+		DefaultVersion: "mariadb-11.4",
 	},
 	"php": {
 		DisplayName:    "PHP",
