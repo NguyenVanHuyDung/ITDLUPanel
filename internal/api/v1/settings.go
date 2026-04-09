@@ -199,12 +199,13 @@ func (h *SettingsHandler) SetPanelName(c *gin.Context) {
 		return
 	}
 
-	if err := h.settingsService.SetPanelName(req.Name); err != nil {
+	sanitized, err := h.settingsService.SetPanelName(req.Name)
+	if err != nil {
 		response.Error(c, err)
 		return
 	}
 
-	response.Success(c, gin.H{"message": "panel name updated", "name": req.Name})
+	response.Success(c, gin.H{"message": "panel name updated", "name": sanitized})
 }
 
 type setTimezoneRequest struct {

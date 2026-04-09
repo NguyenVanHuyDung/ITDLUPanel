@@ -371,10 +371,10 @@ export default function Settings() {
         {sectionTitle(<SetIcon.Gear size={20} color={p.accent} />, t('settings.general'))}
         <Form form={generalForm} layout="vertical" onFinish={handleSaveGeneral}>
           <Form.Item
-            label={<span style={{ fontWeight: 500 }}>Panel Name</span>}
+            label={<span style={{ fontWeight: 500 }}>{t('settings.panel_name')}</span>}
             name="panel_name"
-            rules={[{ required: true, message: 'Panel name is required' }]}
-            extra={<span style={{ fontSize: 11, color: p.textMuted }}>Display name shown in the browser tab and header</span>}
+            rules={[{ required: true, message: t('settings.panel_name_required') }]}
+            extra={<span style={{ fontSize: 11, color: p.textMuted }}>{t('settings.panel_name_hint')}</span>}
           >
             <Input placeholder="My Server Panel" maxLength={100} />
           </Form.Item>
@@ -384,18 +384,18 @@ export default function Settings() {
               { value: 'vi', label: '🇻🇳 Tiếng Việt' },
             ]} />
           </Form.Item>
-          <Form.Item label={<span style={{ fontWeight: 500 }}>Timezone</span>} name="timezone">
+          <Form.Item label={<span style={{ fontWeight: 500 }}>{t('settings.timezone')}</span>} name="timezone">
             <Select
               showSearch
               optionFilterProp="label"
               options={timezones.map(tz => ({ value: tz, label: tz }))}
-              placeholder="Select timezone"
+              placeholder={t('settings.timezone_placeholder')}
             />
           </Form.Item>
           <Form.Item
-            label={<span style={{ fontWeight: 500 }}>Session Timeout (minutes)</span>}
+            label={<span style={{ fontWeight: 500 }}>{t('settings.session_timeout')}</span>}
             name="session_timeout"
-            rules={[{ required: true, message: 'Session timeout is required' }]}
+            rules={[{ required: true, message: t('settings.session_timeout_required') }]}
           >
             <InputNumber min={5} max={10080} style={{ width: '100%' }} addonAfter="min" />
           </Form.Item>
@@ -418,7 +418,7 @@ export default function Settings() {
       {/* Network Info - Grid Cards */}
       <Spin spinning={serverInfoLoading}>
         <div style={{ ...sectionBox, maxWidth: 'none' }}>
-          {sectionTitle(<SetIcon.Globe size={20} color={p.accent} />, 'Server Network', (
+          {sectionTitle(<SetIcon.Globe size={20} color={p.accent} />, t('settings.server_network'), (
             <button onClick={() => { fetchServerInfo(); fetchPanelInfo(); }} style={btnOutline}>
               <ReloadOutlined /> {t('common.refresh')}
             </button>
@@ -427,11 +427,11 @@ export default function Settings() {
             <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(260px, 1fr))`, gap: 10 }}>
               {gridCard(
                 <SetIcon.Server size={18} color={p.accent} />, p.accent,
-                'Hostname', serverInfo.hostname || '—',
+                t('settings.hostname'), serverInfo.hostname || '—',
               )}
               {serverInfo.public_ip && gridCard(
                 <SetIcon.Globe size={18} color={p.green} />, p.green,
-                'Public IP',
+                t('settings.public_ip'),
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   {serverInfo.public_ip}
                   <button onClick={() => copyToClipboard(serverInfo.public_ip || '')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: p.textMuted, display: 'flex' }}>
@@ -441,7 +441,7 @@ export default function Settings() {
               )}
               {serverInfo.local_ips?.map((ip, i) => gridCard(
                 <SetIcon.Wifi size={18} color={p.accent} />, p.accent,
-                `Local IP${serverInfo.local_ips && serverInfo.local_ips.length > 1 ? ` #${i + 1}` : ''}`,
+                `${t('settings.local_ip')}${serverInfo.local_ips && serverInfo.local_ips.length > 1 ? ` #${i + 1}` : ''}`,
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   {ip}
                   <button onClick={() => copyToClipboard(ip)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: p.textMuted, display: 'flex' }}>
@@ -459,17 +459,17 @@ export default function Settings() {
       {/* Panel Runtime Info - Grid Cards */}
       <Spin spinning={infoLoading}>
         <div style={{ ...sectionBox, maxWidth: 'none' }}>
-          {sectionTitle(<SetIcon.Info size={20} color={p.accent} />, 'Panel Information')}
+          {sectionTitle(<SetIcon.Info size={20} color={p.accent} />, t('settings.panel_info'))}
           {panelInfo ? (
             <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(260px, 1fr))`, gap: 10 }}>
               {gridCard(
                 <SetIcon.Gear size={18} color={p.accent} />, p.accent,
-                'Panel Name',
+                t('settings.panel_name'),
                 <span style={{ color: p.accent }}>{panelInfo.panel_name || 'ITDLUPanel'}</span>,
               )}
               {gridCard(
                 <SetIcon.Info size={18} color={p.accent} />, p.accent,
-                'Version',
+                t('settings.version'),
                 <span style={{
                   fontSize: 12, fontWeight: 500, padding: '1px 8px', borderRadius: 99,
                   background: `${p.accent}15`, color: p.accent,
@@ -477,13 +477,13 @@ export default function Settings() {
               )}
               {gridCard(
                 <SetIcon.Clock size={18} color={p.green} />, p.green,
-                'Uptime',
+                t('settings.uptime'),
                 <span style={{ color: p.green }}>{panelInfo.uptime}</span>,
               )}
               {gridCard(
                 <SetIcon.Shield size={18} color={panelInfo.ssl_enabled ? p.green : p.amber} />,
                 panelInfo.ssl_enabled ? p.green : p.amber,
-                'Port',
+                t('settings.port'),
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <code style={{ fontFamily: 'monospace', fontWeight: 600 }}>{panelInfo.port}</code>
                   <span style={{
@@ -497,15 +497,15 @@ export default function Settings() {
               )}
               {gridCard(
                 <SetIcon.Server size={18} color={p.textMuted} />, p.textMuted,
-                'Go Version', panelInfo.go_version || '—',
+                t('settings.go_version'), panelInfo.go_version || '—',
               )}
               {gridCard(
                 <SetIcon.Globe size={18} color={p.textMuted} />, p.textMuted,
-                'OS / Arch', panelInfo.os || '—',
+                t('settings.os_arch'), panelInfo.os || '—',
               )}
               {panelInfo.started_at && gridCard(
                 <SetIcon.Clock size={18} color={p.textMuted} />, p.textMuted,
-                'Started At', formatDateTime(panelInfo.started_at),
+                t('settings.started_at'), formatDateTime(panelInfo.started_at),
               )}
             </div>
           ) : (
@@ -596,9 +596,9 @@ export default function Settings() {
         {sectionTitle(<SetIcon.Shield size={20} color={p.accent} />, t('settings.security', 'Security'))}
         <Form form={securityForm} layout="vertical" onFinish={handleSaveSecurity}>
           <Form.Item
-            label={<span style={{ fontWeight: 500 }}>Admin Path</span>}
+            label={<span style={{ fontWeight: 500 }}>{t('settings.admin_path')}</span>}
             name="admin_path"
-            extra={<span style={{ fontSize: 11, color: p.textMuted }}>Custom URL path to access the panel (e.g. /admin)</span>}
+            extra={<span style={{ fontSize: 11, color: p.textMuted }}>{t('settings.admin_path_hint')}</span>}
           >
             <Input placeholder="/" addonBefore="/" />
           </Form.Item>

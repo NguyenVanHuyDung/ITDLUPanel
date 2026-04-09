@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -189,6 +190,8 @@ func (s *SettingsService) GetPanelInfo() (*PanelInfo, error) {
 }
 
 // SetAdminPath validates and updates the custom admin URL path.
+var validAdminPathRe = regexp.MustCompile(`^/[a-zA-Z0-9._~\-/]*$`)
+
 func (s *SettingsService) SetAdminPath(path string) error {
 	if path == "" {
 		path = "/"
@@ -196,8 +199,10 @@ func (s *SettingsService) SetAdminPath(path string) error {
 	if !strings.HasPrefix(path, "/") {
 		return apperrors.New(apperrors.ErrValidation, "admin path must start with /")
 	}
-	// Disallow common dangerous patterns
-	if strings.Contains(path, "..") || strings.Contains(path, " ") {
+	if path != "/" && !validAdminPathRe.MatchString(path) {
+		return apperrors.New(apperrors.ErrValidation, "admin path may only contain letters, digits, hyphens, underscores, dots, and slashes")
+	}
+	if strings.Contains(path, "..") {
 		return apperrors.New(apperrors.ErrValidation, "admin path contains invalid characters")
 	}
 
@@ -254,17 +259,20 @@ func (s *SettingsService) GetServerInfo() (*ServerInfo, error) {
 }
 
 // SetPanelName updates the panel display name.
-func (s *SettingsService) SetPanelName(name string) error {
+var htmlTagRe = regexp.MustCompile(`<[^>]*>`)
+
+func (s *SettingsService) SetPanelName(name string) (string, error) {
 	name = strings.TrimSpace(name)
+	name = htmlTagRe.ReplaceAllString(name, "")
 	if name == "" {
-		return apperrors.New(apperrors.ErrValidation, "panel name cannot be empty")
+		return "", apperrors.New(apperrors.ErrValidation, "panel name cannot be empty")
 	}
 	if len(name) > 100 {
-		return apperrors.New(apperrors.ErrValidation, "panel name must be 100 characters or less")
+		return "", apperrors.New(apperrors.ErrValidation, "panel name must be 100 characters or less")
 	}
 
 	if err := s.settings.Set("panel_name", name); err != nil {
-		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to update panel name")
+		return "", apperrors.Wrap(err, apperrors.ErrInternal, "failed to update panel name")
 	}
 
 	cfg := config.Get()
@@ -274,7 +282,7 @@ func (s *SettingsService) SetPanelName(name string) error {
 	}
 
 	logger.Info().Str("name", name).Msg("panel name updated")
-	return nil
+	return name, nil
 }
 
 // SetTimezone updates the server timezone setting and applies it to the process and system.
