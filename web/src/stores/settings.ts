@@ -16,6 +16,7 @@ interface SettingsState {
   loaded: boolean;
   fetchSettings: () => Promise<void>;
   setTimezone: (tz: string) => void;
+  setPanelName: (name: string) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -28,9 +29,11 @@ export const useSettingsStore = create<SettingsState>()(
         try {
           const { data } = await api.get<ApiResponse<PanelSettings>>('/settings');
           const s = data.data;
+          const name = s.panel_name || 'ITDLUPanel';
+          document.title = name;
           set({
             timezone: s.timezone || 'UTC',
-            panelName: s.panel_name || 'ITDLUPanel',
+            panelName: name,
             loaded: true,
           });
         } catch {
@@ -38,6 +41,10 @@ export const useSettingsStore = create<SettingsState>()(
         }
       },
       setTimezone: (tz: string) => set({ timezone: tz }),
+      setPanelName: (name: string) => {
+        document.title = name;
+        set({ panelName: name });
+      },
     }),
     {
       name: 'itdlu-settings',

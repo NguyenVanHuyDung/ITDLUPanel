@@ -207,14 +207,16 @@ export default function Settings() {
   const handleSaveGeneral = async (values: { panel_name: string; language: string; timezone: string; session_timeout: number }) => {
     setSaveLoading(true);
     try {
-      await api.put('/settings/panel-name', { name: values.panel_name });
+      const { data: nameResp } = await api.put<ApiResponse<{ name: string }>>('/settings/panel-name', { name: values.panel_name });
       await api.put('/settings/timezone', { timezone: values.timezone });
       await api.put('/settings/session-timeout', { timeout: values.session_timeout * 60 });
       if (values.language && values.language !== i18n.language) {
         await api.put('/settings/language', { lang: values.language });
         i18n.changeLanguage(values.language);
       }
-      useSettingsStore.getState().setTimezone(values.timezone);
+      const store = useSettingsStore.getState();
+      store.setTimezone(values.timezone);
+      store.setPanelName(nameResp.data.name || values.panel_name);
       message.success(t('common.success'));
       fetchPanelInfo();
     } catch {

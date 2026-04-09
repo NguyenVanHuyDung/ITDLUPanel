@@ -81,8 +81,8 @@ export default function MainLayout() {
   // Connect WebSocket for real-time task updates
   useTaskWebSocket();
 
-  // Load global settings (timezone, etc.)
-  const { fetchSettings: fetchAppSettings } = useSettingsStore();
+  // Load global settings (timezone, panel name, etc.)
+  const { fetchSettings: fetchAppSettings, panelName } = useSettingsStore();
   useEffect(() => { fetchAppSettings(); }, [fetchAppSettings]);
 
   const fetchSysInfo = useCallback(async () => {
@@ -174,7 +174,7 @@ export default function MainLayout() {
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <img
             src="/favicon.svg"
-            alt="ITDLUPanel"
+            alt={panelName}
             style={{
               width: collapsed && !isMobile ? 28 : 24,
               height: collapsed && !isMobile ? 28 : 24,
@@ -183,7 +183,7 @@ export default function MainLayout() {
           />
           {(!collapsed || isMobile) && (
             <Text strong style={{ color: isDark ? '#fff' : '#1A1A2E', fontSize: 18, marginLeft: 10 }}>
-              ITDLUPanel
+              {panelName}
             </Text>
           )}
         </div>
@@ -364,7 +364,7 @@ export default function MainLayout() {
           <a href="https://dlu.edu.vn" target="_blank" rel="noreferrer" style={{ color: '#1565C0', fontWeight: 500 }}>
             Đại học Đà Lạt
           </a>
-          <span> — ITDLUPanel v{sysInfo?.panel_version || '1.0.0'}</span>
+          <span> — {panelName} v{sysInfo?.panel_version || '1.0.0'}</span>
           {!isMobile && (
             <>
               <span style={{ margin: '0 8px', color: '#CBD5E1' }}>|</span>

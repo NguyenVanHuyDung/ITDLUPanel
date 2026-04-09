@@ -4,6 +4,7 @@ import { Card, Form, Input, Button, Typography, message, Dropdown, Space } from 
 import { UserOutlined, LockOutlined, SafetyOutlined, TranslationOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/stores/auth';
+import { useSettingsStore } from '@/stores/settings';
 import api from '@/services/api';
 import type { LoginResponse, ApiResponse } from '@/types';
 import type { MenuProps } from 'antd';
@@ -17,6 +18,7 @@ export default function Login() {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const { setAuth, setPermissions } = useAuthStore();
+  const { panelName } = useSettingsStore();
   const [form] = Form.useForm();
 
   const fetchPermissions = async (token: string) => {
@@ -89,7 +91,7 @@ export default function Login() {
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <div style={{ fontSize: 48, marginBottom: 8 }}>🎓</div>
           <Title level={3} style={{ margin: 0, color: '#1565C0' }}>
-            ITDLUPanel
+            {panelName}
           </Title>
           <Text type="secondary">{t('auth.login_subtitle')}</Text>
         </div>
