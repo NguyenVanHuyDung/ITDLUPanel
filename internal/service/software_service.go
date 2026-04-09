@@ -66,7 +66,7 @@ var knownSoftware = map[string]softwareMeta{
 		ServiceName:    "php-fpm",
 		ConfigPath:     "/ITDLUPanel/server/php/conf/php.ini",
 		InstallPath:    "/ITDLUPanel/server/php",
-		DefaultVersion: "8.3",
+		DefaultVersion: "8.4",
 	},
 	"redis": {
 		DisplayName:    "Redis",
@@ -705,20 +705,25 @@ func (s *SoftwareService) ListAvailable() []AvailableSoftware {
 
 // detectInstalledPHPVersions returns which PHP-FPM versions have binaries on disk.
 func (s *SoftwareService) detectInstalledPHPVersions() []string {
-	candidates := []string{"7.4", "8.0", "8.1", "8.2", "8.3", "8.4"}
+	// Use the installer's version list as the source of truth
+	phpInst, ok := s.registry.Get("php")
+	var candidates []string
+	if ok {
+		candidates = phpInst.GetVersions()
+	} else {
+		candidates = []string{"8.4", "8.3", "8.2", "8.1", "8.0", "7.4"}
+	}
 	var installed []string
 	osInfo := system.GetOSInfo()
 	for _, v := range candidates {
 		found := false
 		if osInfo.PkgManager == "dnf" {
-			// RHEL Remi path
 			remiVer := strings.ReplaceAll(v, ".", "")
 			bin := fmt.Sprintf("/opt/remi/php%s/root/usr/sbin/php-fpm", remiVer)
 			if _, err := os.Stat(bin); err == nil {
 				found = true
 			}
 		} else {
-			// Debian/Ubuntu path
 			bin := fmt.Sprintf("/usr/sbin/php-fpm%s", v)
 			if _, err := os.Stat(bin); err == nil {
 				found = true

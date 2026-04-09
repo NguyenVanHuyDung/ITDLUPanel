@@ -1174,6 +1174,7 @@ export default function AppStore() {
                 const defaultVer = installTarget?.default_version;
                 const isNginx = installTarget?.name === 'nginx';
                 const isMySQL = installTarget?.name === 'mysql';
+                const isPHP = installTarget?.name === 'php';
 
                 const mysqlLabels: Record<string, string> = {
                   'mariadb-11.4': 'MariaDB 11.4 LTS (2024–2029)',
@@ -1183,6 +1184,15 @@ export default function AppStore() {
                   'mysql-8.4': 'MySQL 8.4 LTS (2024–2032)',
                   'mysql-8.0': 'MySQL 8.0 LTS (2018–2026)',
                   'mysql-9.0': 'MySQL 9.0 Innovation (Short-term)',
+                };
+
+                const phpLabels: Record<string, string> = {
+                  '8.4': 'PHP 8.4 — Active Support',
+                  '8.3': 'PHP 8.3 — Active Support',
+                  '8.2': 'PHP 8.2 — Security Fixes Only',
+                  '8.1': 'PHP 8.1 — Security Fixes Only',
+                  '8.0': 'PHP 8.0 — EOL (Legacy)',
+                  '7.4': 'PHP 7.4 — EOL (Legacy)',
                 };
 
                 return versions.map((v) => {
@@ -1196,6 +1206,8 @@ export default function AppStore() {
                     }
                   } else if (isMySQL) {
                     label = mysqlLabels[v] || v;
+                  } else if (isPHP) {
+                    label = phpLabels[v] || `PHP ${v}`;
                   }
                   if (v === defaultVer && !installedVers.includes(v)) label += ' ★';
                   if (installedVers.includes(v)) label += ' (Installed)';

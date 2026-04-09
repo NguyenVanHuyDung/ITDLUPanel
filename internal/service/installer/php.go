@@ -144,7 +144,7 @@ func (i *PHPInstaller) Install(ctx context.Context, version string, progress fun
 	osInfo := system.GetOSInfo()
 
 	if version == "" {
-		version = "8.2"
+		version = "8.4"
 	}
 
 	progress(5)
@@ -153,21 +153,8 @@ func (i *PHPInstaller) Install(ctx context.Context, version string, progress fun
 	// Add third-party PHP repository for multi-version support
 	if osInfo.PkgManager == "apt" {
 		progress(10)
-		if osInfo.ID == "debian" {
-			// Debian: use Sury PHP repo
-			system.Exec(ctx, "apt", "install", "-y", "software-properties-common", "apt-transport-https", "lsb-release", "ca-certificates", "curl")
-			system.Exec(ctx, "bash", "-c", "curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --batch --yes --dearmor -o /usr/share/keyrings/deb.sury.org-php.gpg")
-			codename := getDistroCodename()
-			repoLine := fmt.Sprintf("deb [signed-by=/usr/share/keyrings/deb.sury.org-php.gpg] https://packages.sury.org/php/ %s main", codename)
-			os.WriteFile("/etc/apt/sources.list.d/php-sury.list", []byte(repoLine+"\n"), 0644)
-		} else {
-			// Ubuntu: use ondrej PPA
-			if _, err := system.Exec(ctx, "apt", "install", "-y", "software-properties-common"); err != nil {
-				logger.Warn().Err(err).Msg("failed to install software-properties-common")
-			}
-			if _, err := system.Exec(ctx, "add-apt-repository", "-y", "ppa:ondrej/php"); err != nil {
-				logger.Warn().Err(err).Msg("failed to add ondrej/php PPA")
-			}
+		if err := setupPHPRepoAPT(ctx, osInfo); err != nil {
+			logger.Warn().Err(err).Msg("failed to setup PHP repo (will try distro packages)")
 		}
 
 		progress(25)
@@ -177,33 +164,15 @@ func (i *PHPInstaller) Install(ctx context.Context, version string, progress fun
 	} else {
 		// RHEL-based: install EPEL and Remi repo for multi-version PHP
 		progress(15)
-		if _, err := system.Exec(ctx, "dnf", "install", "-y", "epel-release"); err != nil {
-			logger.Warn().Err(err).Msg("failed to install epel-release")
-		}
-		// Install remi repo
-		remiURL := "https://rpms.remirepo.net/enterprise/remi-release-" + getMajorVersion(osInfo.VersionID) + ".rpm"
-		if _, err := system.Exec(ctx, "dnf", "install", "-y", remiURL); err != nil {
-			logger.Warn().Err(err).Msg("failed to install remi-release (may already be installed)")
-		}
-		// Enable remi PHP module for the requested version
-		remiModule := fmt.Sprintf("php:remi-%s", version)
-		system.Exec(ctx, "dnf", "module", "reset", "-y", "php")
-		if _, err := system.Exec(ctx, "dnf", "module", "enable", "-y", remiModule); err != nil {
-			logger.Warn().Err(err).Msg("failed to enable remi php module")
+		if err := setupPHPRepoDNF(ctx, osInfo, version); err != nil {
+			logger.Warn().Err(err).Msg("failed to setup Remi PHP repo")
 		}
 		progress(25)
 	}
 
 	// Build package list: php{version}-{ext}
 	progress(30)
-	packages := make([]string, 0, len(defaultPHPExtensions))
-	for _, ext := range defaultPHPExtensions {
-		if osInfo.PkgManager == "apt" {
-			packages = append(packages, fmt.Sprintf("php%s-%s", version, ext))
-		} else {
-			packages = append(packages, fmt.Sprintf("php%s-php-%s", version, ext))
-		}
-	}
+	packages := buildPHPPackageList(osInfo, version, defaultPHPExtensions)
 
 	progress(40)
 	args := append([]string{"install", "-y"}, packages...)
@@ -214,10 +183,7 @@ func (i *PHPInstaller) Install(ctx context.Context, version string, progress fun
 	progress(80)
 
 	// Enable and start php-fpm
-	serviceName := fmt.Sprintf("php%s-fpm", version)
-	if osInfo.PkgManager == "dnf" {
-		serviceName = fmt.Sprintf("php%s-php-fpm", version)
-	}
+	serviceName := phpFPMServiceNameForOS(osInfo, version)
 
 	if _, err := system.ExecWithTimeout(30*time.Second, "systemctl", "enable", serviceName); err != nil {
 		logger.Warn().Err(err).Str("service", serviceName).Msg("failed to enable php-fpm")
@@ -255,6 +221,86 @@ func (i *PHPInstaller) Install(ctx context.Context, version string, progress fun
 	return nil
 }
 
+// setupPHPRepoAPT configures the ondrej/sury PHP repository for Debian/Ubuntu.
+func setupPHPRepoAPT(ctx context.Context, osInfo *system.OSInfo) error {
+	if osInfo.ID == "debian" {
+		// Debian: use packages.sury.org with signed keyring
+		system.Exec(ctx, "apt", "install", "-y", "software-properties-common",
+			"apt-transport-https", "lsb-release", "ca-certificates", "curl")
+		if _, err := system.Exec(ctx, "bash", "-c",
+			"curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --batch --yes --dearmor -o /usr/share/keyrings/deb.sury.org-php.gpg"); err != nil {
+			return fmt.Errorf("fetch sury GPG key: %w", err)
+		}
+		codename := getDistroCodename()
+		repoLine := fmt.Sprintf("deb [signed-by=/usr/share/keyrings/deb.sury.org-php.gpg] https://packages.sury.org/php/ %s main", codename)
+		return os.WriteFile("/etc/apt/sources.list.d/php-sury.list", []byte(repoLine+"\n"), 0644)
+	}
+
+	// Ubuntu: use ondrej/php PPA
+	if _, err := system.Exec(ctx, "apt", "install", "-y", "software-properties-common"); err != nil {
+		logger.Warn().Err(err).Msg("failed to install software-properties-common")
+	}
+	if _, err := system.Exec(ctx, "add-apt-repository", "-y", "ppa:ondrej/php"); err != nil {
+		return fmt.Errorf("add ondrej PPA: %w", err)
+	}
+	return nil
+}
+
+// setupPHPRepoDNF configures the Remi repository for RHEL-based distros.
+func setupPHPRepoDNF(ctx context.Context, osInfo *system.OSInfo, version string) error {
+	EnsureEPEL(ctx, osInfo)
+
+	// Determine the correct Remi RPM URL based on distro
+	remiURL := remiReleaseURL(osInfo)
+	if _, err := system.Exec(ctx, "dnf", "install", "-y", remiURL); err != nil {
+		logger.Warn().Err(err).Msg("remi-release install (may already be present)")
+	}
+
+	// Enable the specific PHP version via dnf module stream
+	remiModule := fmt.Sprintf("php:remi-%s", version)
+	system.Exec(ctx, "dnf", "module", "reset", "-y", "php")
+	if _, err := system.Exec(ctx, "dnf", "module", "enable", "-y", remiModule); err != nil {
+		return fmt.Errorf("enable remi module %s: %w", remiModule, err)
+	}
+	return nil
+}
+
+// remiReleaseURL returns the correct Remi release RPM URL for the given OS.
+func remiReleaseURL(osInfo *system.OSInfo) string {
+	major := getMajorVersion(osInfo.VersionID)
+	switch osInfo.ID {
+	case "fedora":
+		return "https://rpms.remirepo.net/fedora/remi-release-" + major + ".rpm"
+	default:
+		// RHEL, CentOS, AlmaLinux, Rocky Linux — all use enterprise URL
+		return "https://rpms.remirepo.net/enterprise/remi-release-" + major + ".rpm"
+	}
+}
+
+// buildPHPPackageList builds the list of packages to install for a PHP version.
+func buildPHPPackageList(osInfo *system.OSInfo, version string, extensions []string) []string {
+	packages := make([]string, 0, len(extensions))
+	for _, ext := range extensions {
+		if osInfo.PkgManager == "apt" {
+			packages = append(packages, fmt.Sprintf("php%s-%s", version, ext))
+		} else {
+			// Remi package naming: php{ver_no_dot}-php-{ext}
+			remiVer := strings.ReplaceAll(version, ".", "")
+			packages = append(packages, fmt.Sprintf("php%s-php-%s", remiVer, ext))
+		}
+	}
+	return packages
+}
+
+// phpFPMServiceNameForOS returns the correct php-fpm systemd service name.
+func phpFPMServiceNameForOS(osInfo *system.OSInfo, version string) string {
+	if osInfo.PkgManager == "dnf" {
+		remiVer := strings.ReplaceAll(version, ".", "")
+		return fmt.Sprintf("php%s-php-fpm", remiVer)
+	}
+	return fmt.Sprintf("php%s-fpm", version)
+}
+
 func (i *PHPInstaller) Uninstall(ctx context.Context) error {
 	osInfo := system.GetOSInfo()
 
@@ -271,14 +317,9 @@ func (i *PHPInstaller) Uninstall(ctx context.Context) error {
 
 	// Stop all known php-fpm versions
 	for _, ver := range i.GetVersions() {
-		// Try both Debian and RHEL service naming
-		for _, svc := range []string{
-			fmt.Sprintf("php%s-fpm", ver),
-			fmt.Sprintf("php%s-php-fpm", ver),
-		} {
-			_, _ = system.Exec(ctx, "systemctl", "stop", svc)
-			_, _ = system.Exec(ctx, "systemctl", "disable", svc)
-		}
+		svc := phpFPMServiceNameForOS(osInfo, ver)
+		_, _ = system.Exec(ctx, "systemctl", "stop", svc)
+		_, _ = system.Exec(ctx, "systemctl", "disable", svc)
 	}
 
 	if osInfo.PkgManager == "apt" {
@@ -340,16 +381,23 @@ func listInstalledPHPPackages(ctx context.Context) []string {
 
 // UninstallVersion removes a single PHP version without affecting other installed versions.
 func (i *PHPInstaller) UninstallVersion(ctx context.Context, version string) error {
-	// Try both Debian and RHEL service naming
-	for _, svc := range []string{
-		fmt.Sprintf("php%s-fpm", version),
-		fmt.Sprintf("php%s-php-fpm", version),
-	} {
-		_, _ = system.Exec(ctx, "systemctl", "stop", svc)
-		_, _ = system.Exec(ctx, "systemctl", "disable", svc)
-	}
-
 	osInfo := system.GetOSInfo()
+
+	// Stop and disable FPM service using OS-correct naming
+	svc := phpFPMServiceNameForOS(osInfo, version)
+	_, _ = system.Exec(ctx, "systemctl", "stop", svc)
+	_, _ = system.Exec(ctx, "systemctl", "disable", svc)
+	// Also try the other naming convention as fallback
+	if osInfo.PkgManager == "dnf" {
+		altSvc := fmt.Sprintf("php%s-fpm", version)
+		_, _ = system.Exec(ctx, "systemctl", "stop", altSvc)
+		_, _ = system.Exec(ctx, "systemctl", "disable", altSvc)
+	} else {
+		remiVer := strings.ReplaceAll(version, ".", "")
+		altSvc := fmt.Sprintf("php%s-php-fpm", remiVer)
+		_, _ = system.Exec(ctx, "systemctl", "stop", altSvc)
+		_, _ = system.Exec(ctx, "systemctl", "disable", altSvc)
+	}
 
 	if osInfo.PkgManager == "apt" {
 		FixDpkg(ctx)
@@ -462,20 +510,22 @@ func (i *PHPInstaller) IsInstalled() bool {
 }
 
 func (i *PHPInstaller) GetVersions() []string {
-	return []string{"7.4", "8.1", "8.2", "8.3"}
+	// Ordered: latest recommended first.
+	// PHP lifecycle: Active Support → Security Fixes → EOL
+	return []string{
+		"8.4", // Active support (GA Dec 2024)
+		"8.3", // Active support (GA Nov 2023)
+		"8.2", // Security fixes only (GA Dec 2022)
+		"8.1", // Security fixes only (GA Nov 2021)
+		"8.0", // EOL (Nov 2023) — still available via ondrej/remi
+		"7.4", // EOL (Nov 2022) — legacy support
+	}
 }
 
 // InstallExtensions installs additional PHP extensions for a specific version.
 func (i *PHPInstaller) InstallExtensions(ctx context.Context, version string, exts []string) error {
 	osInfo := system.GetOSInfo()
-	packages := make([]string, 0, len(exts))
-	for _, ext := range exts {
-		if osInfo.PkgManager == "apt" {
-			packages = append(packages, fmt.Sprintf("php%s-%s", version, ext))
-		} else {
-			packages = append(packages, fmt.Sprintf("php%s-php-%s", version, ext))
-		}
-	}
+	packages := buildPHPPackageList(osInfo, version, exts)
 	args := append([]string{"install", "-y"}, packages...)
 	if _, err := system.Exec(ctx, osInfo.PkgManager, args...); err != nil {
 		return fmt.Errorf("failed to install php extensions: %w", err)
@@ -495,7 +545,7 @@ func optimizePHPFPM(version string) {
 		remiVer := strings.ReplaceAll(version, ".", "")
 		wwwConf = fmt.Sprintf("/etc/opt/remi/php%s/php-fpm.d/www.conf", remiVer)
 		phpIni = fmt.Sprintf("/etc/opt/remi/php%s/php.ini", remiVer)
-		svcName = fmt.Sprintf("php%s-php-fpm", version)
+		svcName = fmt.Sprintf("php%s-php-fpm", remiVer)
 	}
 
 	// Optimize www.conf pool settings
