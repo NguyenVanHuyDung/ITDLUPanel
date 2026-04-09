@@ -877,8 +877,10 @@ func optimizeNginxConf() {
 	}
 
 	modulesInclude := ""
+	sitesInclude := ""
 	if osInfo.PkgManager == "apt" {
 		modulesInclude = "include /etc/nginx/modules-enabled/*.conf;\n"
+		sitesInclude = "\n    include /etc/nginx/sites-enabled/*;"
 	}
 
 	optimizedConf := fmt.Sprintf(`user %s;
@@ -930,10 +932,9 @@ http {
     fastcgi_cache_path /tmp/nginx-cache levels=1:2 keys_zone=WORDPRESS:100m inactive=60m max_size=512m;
     fastcgi_cache_key "$scheme$request_method$host$request_uri";
 
-    include /etc/nginx/conf.d/*.conf;
-    include /etc/nginx/sites-enabled/*;
+    include /etc/nginx/conf.d/*.conf;%s
 }
-`, nginxUser, modulesInclude)
+`, nginxUser, modulesInclude, sitesInclude)
 
 	if err := os.WriteFile(nginxConfPath, []byte(optimizedConf), 0644); err != nil {
 		logger.Warn().Err(err).Msg("failed to write optimized nginx.conf")

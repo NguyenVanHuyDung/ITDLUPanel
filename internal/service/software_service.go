@@ -2843,10 +2843,11 @@ type MariaDBOptimization struct {
 
 func (s *SoftwareService) getMariaDBTuningPath() string {
 	mysqlConf := filepath.Join(installer.ServerBaseDir, "mysql", "conf")
-	// Check MariaDB path first, then MySQL
+	// Check all possible locations: RHEL flat, then MariaDB/MySQL subdirs
 	paths := []string{
-		filepath.Join(mysqlConf, "mariadb.conf.d", "99-itdlu-tuning.cnf"),
-		filepath.Join(mysqlConf, "mysql.conf.d", "99-itdlu-tuning.cnf"),
+		filepath.Join(mysqlConf, "99-itdlu-tuning.cnf"),                       // RHEL: /etc/my.cnf.d/99-itdlu-tuning.cnf
+		filepath.Join(mysqlConf, "mariadb.conf.d", "99-itdlu-tuning.cnf"),     // Debian MariaDB
+		filepath.Join(mysqlConf, "mysql.conf.d", "99-itdlu-tuning.cnf"),       // Debian MySQL
 	}
 	for _, p := range paths {
 		if _, err := os.Stat(p); err == nil {
@@ -2854,6 +2855,10 @@ func (s *SoftwareService) getMariaDBTuningPath() string {
 		}
 	}
 	// Check version from DB to determine default
+	osInfo := system.GetOSInfo()
+	if osInfo.PkgManager == "dnf" {
+		return filepath.Join(mysqlConf, "99-itdlu-tuning.cnf")
+	}
 	var version string
 	s.db.QueryRow("SELECT version FROM software WHERE name = 'mysql'").Scan(&version)
 	if strings.Contains(version, "mariadb") {

@@ -437,7 +437,7 @@ func (s *DatabaseService) SetDiskQuota(id int64, quotaBytes int64) error {
 // ServiceAction performs start/stop/restart/reload on the MySQL/MariaDB service.
 func (s *DatabaseService) ServiceAction(action string) error {
 	ctx := context.Background()
-	svcNames := []string{"mariadb", "mysql"}
+	svcNames := []string{"mariadb", "mysql", "mysqld"}
 	var svc string
 	for _, n := range svcNames {
 		if r, _ := system.Exec(ctx, "systemctl", "is-enabled", n); r != nil && (strings.TrimSpace(r.Stdout) == "enabled" || strings.TrimSpace(r.Stdout) == "disabled") {

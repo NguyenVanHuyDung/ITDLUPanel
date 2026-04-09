@@ -19,6 +19,7 @@ import (
 
 	"github.com/ITDLUPanel/panel/internal/config"
 	"github.com/ITDLUPanel/panel/internal/pkg/logger"
+	"github.com/ITDLUPanel/panel/internal/service/installer"
 	"github.com/ITDLUPanel/panel/internal/system"
 )
 
@@ -469,21 +470,45 @@ func (s *MonitorService) KillProcess(pid int32) error {
 
 // GetServiceStatuses returns the status of managed system services.
 func (s *MonitorService) GetServiceStatuses() ([]ServiceStatus, error) {
+	osInfo := system.GetOSInfo()
+	isDNF := osInfo.PkgManager == "dnf"
+
 	services := []string{
 		"nginx",
-		"apache2",
-		"httpd",
-		"mysql",
-		"mariadb",
-		"pure-ftpd",
-		"redis-server",
 		"docker",
 	}
 
-	// Add common PHP-FPM versions
-	phpVersions := []string{"7.4", "8.0", "8.1", "8.2", "8.3", "8.4"}
-	for _, v := range phpVersions {
-		services = append(services, fmt.Sprintf("php%s-fpm", v))
+	// Apache: service name varies by OS
+	if isDNF {
+		services = append(services, "httpd")
+	} else {
+		services = append(services, "apache2")
+	}
+
+	// MySQL/MariaDB: try all aliases
+	services = append(services, "mariadb", "mysql")
+	if isDNF {
+		services = append(services, "mysqld")
+	}
+
+	// FTP
+	services = append(services, "pure-ftpd")
+
+	// Redis: service name varies by OS
+	if isDNF {
+		services = append(services, "redis")
+	} else {
+		services = append(services, "redis-server")
+	}
+
+	// PHP-FPM: derive versions from installer, use OS-correct service names
+	for _, v := range installer.PHPInstallerVersions() {
+		if isDNF {
+			remiVer := strings.ReplaceAll(v, ".", "")
+			services = append(services, fmt.Sprintf("php%s-php-fpm", remiVer))
+		} else {
+			services = append(services, fmt.Sprintf("php%s-fpm", v))
+		}
 	}
 
 	var statuses []ServiceStatus
