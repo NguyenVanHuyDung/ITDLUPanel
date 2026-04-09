@@ -86,7 +86,7 @@ export default function NotificationsTab() {
   const [testing, setTesting] = useState<number | null>(null);
   const [testingEvent, setTestingEvent] = useState<string | null>(null);
   const [section, setSection] = useState<'channels' | 'rules' | 'logs'>('channels');
-  const [activeRuleChannel, setActiveRuleChannel] = useState<number | null>(null);
+  const [activeRuleChannel, setActiveRuleChannel] = useState<number | null>(null); // kept for potential future use
 
   // Template editor state
   const [tplModal, setTplModal] = useState(false);
@@ -610,16 +610,10 @@ export default function NotificationsTab() {
   };
 
   /* ================================================================ */
-  /*  RENDER: Rules — modern card-based design                         */
+  /*  RENDER: Rules — matrix view (events × channels)                  */
   /* ================================================================ */
   const renderRules = () => {
     const activeChannels = channels.filter((c) => c.is_enabled);
-
-    // Auto-select first channel if none selected
-    const selCh = activeChannels.find((c) => c.id === activeRuleChannel) ?? activeChannels[0] ?? null;
-    if (selCh && activeRuleChannel !== selCh.id) {
-      setTimeout(() => setActiveRuleChannel(selCh.id), 0);
-    }
 
     // Severity dot color
     const sevDot = (ev: string): string => {
@@ -628,9 +622,50 @@ export default function NotificationsTab() {
       return map[sev ?? ''] ?? p.textMuted;
     };
 
-    // Count enabled rules for a channel within a category
-    const categoryEnabledCount = (cat: EventCategory, chId: number) =>
-      cat.events.filter((ev) => isRuleEnabled(chId, ev)).length;
+    // Summary per channel
+    const channelEnabledCount = (chId: number) =>
+      rules.filter((r) => r.channel_id === chId && r.is_enabled).length;
+
+    // Batch toggle: enable/disable all events for a channel
+    const toggleAllForChannel = async (chId: number, enable: boolean) => {
+      const allEvents = EVENT_CATEGORIES.flatMap((cat) => cat.events);
+      const batch = allEvents.map((ev) => ({
+        channel_id: chId,
+        event_type: ev,
+        is_enabled: enable,
+      }));
+      // Preserve rules for other channels
+      const otherRules = rules
+        .filter((r) => r.channel_id !== chId)
+        .map((r) => ({ channel_id: r.channel_id, event_type: r.event_type, is_enabled: r.is_enabled }));
+      try {
+        await updateRules([...otherRules, ...batch]);
+        await fetchRules();
+        message.success(enable ? 'All enabled' : 'All disabled');
+      } catch { message.error('Failed'); }
+    };
+
+    // Batch toggle: enable/disable all channels for an event
+    const toggleAllForEvent = async (ev: string, enable: boolean) => {
+      const batch = activeChannels.map((ch) => ({
+        channel_id: ch.id,
+        event_type: ev,
+        is_enabled: enable,
+      }));
+      const otherRules = rules
+        .filter((r) => !activeChannels.some((ch) => ch.id === r.channel_id) || r.event_type !== ev)
+        .map((r) => ({ channel_id: r.channel_id, event_type: r.event_type, is_enabled: r.is_enabled }));
+      try {
+        await updateRules([...otherRules, ...batch]);
+        await fetchRules();
+      } catch { message.error('Failed'); }
+    };
+
+    // Check if all channels are enabled for an event
+    const allChannelsEnabled = (ev: string) =>
+      activeChannels.length > 0 && activeChannels.every((ch) => isRuleEnabled(ch.id, ev));
+
+    const colWidth = activeChannels.length <= 2 ? 100 : 80;
 
     return (
       <div style={sectionBox}>
@@ -639,252 +674,228 @@ export default function NotificationsTab() {
         {activeChannels.length === 0 ? (
           <Empty description="Create and enable a channel first" />
         ) : (
-          <>
-            {/* ---- Channel selector pills ---- */}
-            <div style={{
-              display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap',
+          <div style={{ overflowX: 'auto' }}>
+            {/* ---- Matrix table ---- */}
+            <table style={{
+              width: '100%',
+              borderCollapse: 'separate',
+              borderSpacing: 0,
+              fontSize: 13,
             }}>
-              {activeChannels.map((ch) => {
-                const isActive = selCh?.id === ch.id;
-                const enabledCount = rules.filter((r) => r.channel_id === ch.id && r.is_enabled).length;
-                return (
-                  <button
-                    key={ch.id}
-                    onClick={() => setActiveRuleChannel(ch.id)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8,
-                      padding: '8px 16px',
-                      borderRadius: 10,
-                      border: isActive ? `2px solid ${p.accent}` : `1px solid ${p.cardBorder}`,
-                      background: isActive
-                        ? (isDark ? 'rgba(24,144,255,0.12)' : 'rgba(24,144,255,0.06)')
-                        : (isDark ? p.card : '#fff'),
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      outline: 'none',
-                      boxShadow: isActive ? `0 0 0 3px ${isDark ? 'rgba(24,144,255,0.15)' : 'rgba(24,144,255,0.1)'}` : 'none',
-                    }}
-                  >
-                    <span style={{ fontSize: 18 }}>{ch.type === 'email' ? '📧' : '📨'}</span>
-                    <span style={{ fontWeight: isActive ? 700 : 500, color: isActive ? p.accent : p.text, fontSize: 13 }}>
-                      {ch.name}
-                    </span>
-                    <span style={{
-                      fontSize: 11, fontWeight: 600,
-                      padding: '2px 8px', borderRadius: 10,
-                      background: isDark ? p.codeBg : '#f0f0f0',
-                      color: enabledCount > 0 ? p.green : p.textMuted,
-                    }}>
-                      {enabledCount}/{eventTypes.length}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* ---- Category groups ---- */}
-            {selCh && EVENT_CATEGORIES.map((cat) => {
-              const enabledInCat = categoryEnabledCount(cat, selCh.id);
-              const totalInCat = cat.events.length;
-
-              return (
-                <div key={cat.key} style={{ marginBottom: 16 }}>
-                  {/* Category header */}
-                  <div style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '10px 14px',
-                    borderRadius: '10px 10px 0 0',
-                    background: isDark
-                      ? `linear-gradient(135deg, ${cat.gradient[0]}18, ${cat.gradient[1]}10)`
-                      : `linear-gradient(135deg, ${cat.gradient[0]}12, ${cat.gradient[1]}08)`,
-                    borderBottom: `1px solid ${isDark ? p.cardBorder : cat.gradient[0] + '22'}`,
+              {/* Header: channel columns */}
+              <thead>
+                <tr>
+                  <th style={{
+                    textAlign: 'left', padding: '10px 12px',
+                    borderBottom: `2px solid ${p.cardBorder}`,
+                    color: p.textMuted, fontSize: 12, fontWeight: 600,
+                    position: 'sticky', left: 0, zIndex: 2,
+                    background: isDark ? p.card : '#fff',
+                    minWidth: isMobile ? 140 : 200,
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 16 }}>{cat.icon}</span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: p.text }}>{cat.label}</span>
-                    </div>
-                    <span style={{
-                      fontSize: 11, fontWeight: 600,
-                      padding: '2px 10px', borderRadius: 10,
-                      background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                      color: enabledInCat === totalInCat ? p.green : enabledInCat > 0 ? p.amber : p.textMuted,
+                    Event
+                  </th>
+                  {activeChannels.map((ch) => (
+                    <th key={ch.id} style={{
+                      textAlign: 'center', padding: '8px 6px',
+                      borderBottom: `2px solid ${p.cardBorder}`,
+                      minWidth: colWidth,
                     }}>
-                      {enabledInCat}/{totalInCat} active
-                    </span>
-                  </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                        <span style={{ fontSize: 18 }}>{ch.type === 'email' ? '📧' : '📨'}</span>
+                        <span style={{
+                          fontSize: 11, fontWeight: 600, color: p.text,
+                          maxWidth: colWidth, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
+                          {ch.name}
+                        </span>
+                        <span style={{
+                          fontSize: 10, fontWeight: 600,
+                          padding: '1px 6px', borderRadius: 8,
+                          background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                          color: channelEnabledCount(ch.id) > 0 ? p.green : p.textMuted,
+                        }}>
+                          {channelEnabledCount(ch.id)}/{EVENT_CATEGORIES.flatMap((c) => c.events).length}
+                        </span>
+                        {/* Column toggle all */}
+                        <div style={{ display: 'flex', gap: 2 }}>
+                          <Tooltip title="Enable all">
+                            <Button
+                              size="small" type="text"
+                              onClick={() => toggleAllForChannel(ch.id, true)}
+                              style={{ fontSize: 10, padding: '0 4px', height: 20, color: p.green }}
+                            >All</Button>
+                          </Tooltip>
+                          <Tooltip title="Disable all">
+                            <Button
+                              size="small" type="text"
+                              onClick={() => toggleAllForChannel(ch.id, false)}
+                              style={{ fontSize: 10, padding: '0 4px', height: 20, color: p.textMuted }}
+                            >None</Button>
+                          </Tooltip>
+                        </div>
+                      </div>
+                    </th>
+                  ))}
+                  {/* "All" column header */}
+                  {activeChannels.length > 1 && (
+                    <th style={{
+                      textAlign: 'center', padding: '8px 6px',
+                      borderBottom: `2px solid ${p.cardBorder}`,
+                      minWidth: 60,
+                    }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: p.textMuted }}>All</div>
+                    </th>
+                  )}
+                </tr>
+              </thead>
 
-                  {/* Event cards */}
-                  <div style={{
-                    border: `1px solid ${p.cardBorder}`,
-                    borderTop: 'none',
-                    borderRadius: '0 0 10px 10px',
-                    overflow: 'hidden',
-                  }}>
-                    {cat.events.map((ev, idx) => {
+              <tbody>
+                {EVENT_CATEGORIES.map((cat) => (
+                  <React.Fragment key={cat.key}>
+                    {/* Category header row */}
+                    <tr>
+                      <td
+                        colSpan={activeChannels.length + (activeChannels.length > 1 ? 2 : 1)}
+                        style={{
+                          padding: '10px 12px 6px',
+                          background: isDark
+                            ? `linear-gradient(135deg, ${cat.gradient[0]}12, ${cat.gradient[1]}08)`
+                            : `linear-gradient(135deg, ${cat.gradient[0]}0a, ${cat.gradient[1]}06)`,
+                          borderTop: `1px solid ${p.cardBorder}`,
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 15 }}>{cat.icon}</span>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: p.text }}>{cat.label}</span>
+                        </div>
+                      </td>
+                    </tr>
+
+                    {/* Event rows */}
+                    {cat.events.map((ev) => {
                       const info = eventLabel(ev);
                       const isCritical = criticalTypes.includes(ev);
-                      const enabled = isRuleEnabled(selCh.id, ev);
-                      const customized = hasCustomTemplate(selCh.id, ev);
-                      const testKey = `${selCh.id}-${ev}`;
-                      const isLast = idx === cat.events.length - 1;
+                      const anyEnabled = activeChannels.some((ch) => isRuleEnabled(ch.id, ev));
 
                       return (
-                        <div
+                        <tr
                           key={ev}
-                          style={{
-                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            padding: isMobile ? '10px 12px' : '10px 16px',
-                            gap: 8,
-                            borderBottom: isLast ? 'none' : `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}`,
-                            background: isDark ? p.card : '#fff',
-                            transition: 'background 0.15s',
-                            flexWrap: 'wrap',
-                          }}
+                          style={{ transition: 'background 0.15s' }}
                           onMouseEnter={(e) => {
                             (e.currentTarget as HTMLElement).style.background = isDark ? p.rowHover : '#fafbfc';
                           }}
                           onMouseLeave={(e) => {
-                            (e.currentTarget as HTMLElement).style.background = isDark ? p.card : '#fff';
+                            (e.currentTarget as HTMLElement).style.background = 'transparent';
                           }}
                         >
-                          {/* Left: status dot + info */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
-                            <div style={{
-                              width: 8, height: 8, borderRadius: '50%',
-                              background: enabled ? sevDot(ev) : (isDark ? '#444' : '#d9d9d9'),
-                              flexShrink: 0,
-                              boxShadow: enabled ? `0 0 6px ${sevDot(ev)}40` : 'none',
-                              transition: 'all 0.2s',
-                            }} />
-                            <div style={{ minWidth: 0 }}>
+                          {/* Event label cell */}
+                          <td style={{
+                            padding: isMobile ? '8px 10px' : '8px 12px',
+                            borderBottom: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}`,
+                            position: 'sticky', left: 0, zIndex: 1,
+                            background: isDark ? p.card : '#fff',
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                               <div style={{
-                                display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+                                width: 7, height: 7, borderRadius: '50%',
+                                background: anyEnabled ? sevDot(ev) : (isDark ? '#444' : '#d9d9d9'),
+                                flexShrink: 0,
+                                boxShadow: anyEnabled ? `0 0 5px ${sevDot(ev)}40` : 'none',
+                              }} />
+                              <span style={{ fontSize: 13 }}>{info.emoji}</span>
+                              <span style={{
+                                fontSize: 12, fontWeight: 600,
+                                color: anyEnabled ? p.text : p.textMuted,
                               }}>
-                                <span style={{ fontSize: 14 }}>{info.emoji}</span>
+                                {info.label}
+                              </span>
+                              {isCritical && (
                                 <span style={{
-                                  fontSize: 13, fontWeight: 600, color: enabled ? p.text : p.textMuted,
-                                  transition: 'color 0.2s',
+                                  fontSize: 9, fontWeight: 700, letterSpacing: 0.5,
+                                  padding: '1px 5px', borderRadius: 3,
+                                  background: isDark ? 'rgba(255,77,79,0.15)' : '#fff1f0',
+                                  color: p.red, textTransform: 'uppercase',
                                 }}>
-                                  {info.label}
+                                  Critical
                                 </span>
-                                {isCritical && (
-                                  <span style={{
-                                    fontSize: 10, fontWeight: 700, letterSpacing: 0.5,
-                                    padding: '1px 6px', borderRadius: 4,
-                                    background: isDark ? 'rgba(255,77,79,0.15)' : '#fff1f0',
-                                    color: p.red,
-                                    textTransform: 'uppercase',
-                                  }}>
-                                    Critical
-                                  </span>
-                                )}
-                                {customized && (
-                                  <span style={{
-                                    fontSize: 10, fontWeight: 600,
-                                    padding: '1px 6px', borderRadius: 4,
-                                    background: isDark ? 'rgba(82,196,26,0.12)' : '#f6ffed',
-                                    color: p.green,
-                                  }}>
-                                    Custom
-                                  </span>
-                                )}
-                              </div>
-                              {!isMobile && (
-                                <div style={{ fontSize: 11, color: p.textMuted, marginTop: 1 }}>
-                                  {info.desc}
-                                </div>
                               )}
                             </div>
-                          </div>
+                            {!isMobile && (
+                              <div style={{ fontSize: 10, color: p.textMuted, marginTop: 2, marginLeft: 28 }}>
+                                {info.desc}
+                              </div>
+                            )}
+                          </td>
 
-                          {/* Right: actions */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 8, flexShrink: 0 }}>
-                            <Tooltip title="Edit template">
-                              <Button
+                          {/* Channel switch cells */}
+                          {activeChannels.map((ch) => {
+                            const enabled = isRuleEnabled(ch.id, ev);
+                            const customized = hasCustomTemplate(ch.id, ev);
+                            const testKey = `${ch.id}-${ev}`;
+
+                            return (
+                              <td key={ch.id} style={{
+                                textAlign: 'center', padding: '6px 4px',
+                                borderBottom: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}`,
+                                verticalAlign: 'middle',
+                              }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                                  <Switch
+                                    size="small"
+                                    checked={enabled}
+                                    onChange={(checked) => handleRuleToggle(ch.id, ev, checked)}
+                                  />
+                                  <div style={{ display: 'flex', gap: 2 }}>
+                                    {customized && (
+                                      <span style={{
+                                        fontSize: 8, fontWeight: 600,
+                                        padding: '0 3px', borderRadius: 3,
+                                        background: isDark ? 'rgba(82,196,26,0.12)' : '#f6ffed',
+                                        color: p.green,
+                                      }}>TPL</span>
+                                    )}
+                                    <Tooltip title="Edit template">
+                                      <FormOutlined
+                                        style={{ fontSize: 11, color: customized ? p.green : p.textMuted, cursor: 'pointer' }}
+                                        onClick={() => openTemplateEditor(ch.id, ev)}
+                                      />
+                                    </Tooltip>
+                                    <Tooltip title={`Test "${info.label}" → ${ch.name}`}>
+                                      <ExperimentOutlined
+                                        style={{ fontSize: 11, color: p.accent, cursor: 'pointer', opacity: testingEvent === testKey ? 0.5 : 1 }}
+                                        onClick={() => handleTestEvent(ch.id, ev)}
+                                      />
+                                    </Tooltip>
+                                  </div>
+                                </div>
+                              </td>
+                            );
+                          })}
+
+                          {/* "All" toggle cell */}
+                          {activeChannels.length > 1 && (
+                            <td style={{
+                              textAlign: 'center', padding: '6px 4px',
+                              borderBottom: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}`,
+                              verticalAlign: 'middle',
+                            }}>
+                              <Switch
                                 size="small"
-                                type="text"
-                                icon={<FormOutlined style={{ fontSize: 13, color: customized ? p.green : p.textMuted }} />}
-                                onClick={() => openTemplateEditor(selCh.id, ev)}
-                                style={{ borderRadius: 6, width: 28, height: 28 }}
+                                checked={allChannelsEnabled(ev)}
+                                onChange={(checked) => toggleAllForEvent(ev, checked)}
+                                style={{ opacity: 0.8 }}
                               />
-                            </Tooltip>
-                            <Tooltip title={`Test "${info.label}"`}>
-                              <Button
-                                size="small"
-                                type="text"
-                                icon={<ExperimentOutlined style={{ fontSize: 13, color: p.accent }} />}
-                                loading={testingEvent === testKey}
-                                onClick={() => handleTestEvent(selCh.id, ev)}
-                                style={{ borderRadius: 6, width: 28, height: 28 }}
-                              />
-                            </Tooltip>
-                            <Switch
-                              size="small"
-                              checked={enabled}
-                              onChange={(checked) => handleRuleToggle(selCh.id, ev, checked)}
-                            />
-                          </div>
-                        </div>
+                            </td>
+                          )}
+                        </tr>
                       );
                     })}
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* ---- Quick actions bar ---- */}
-            {selCh && (
-              <div style={{
-                display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap',
-              }}>
-                <Button
-                  size="small"
-                  type="link"
-                  onClick={async () => {
-                    const allRules = eventTypes.map((et) => ({
-                      channel_id: selCh.id,
-                      event_type: et.type,
-                      is_enabled: true,
-                    }));
-                    try { await updateRules(allRules); await fetchRules(); message.success('All events enabled'); } catch { message.error('Failed'); }
-                  }}
-                  style={{ fontSize: 12, padding: '0 4px' }}
-                >
-                  Enable All
-                </Button>
-                <Button
-                  size="small"
-                  type="link"
-                  onClick={async () => {
-                    const allRules = eventTypes.map((et) => ({
-                      channel_id: selCh.id,
-                      event_type: et.type,
-                      is_enabled: false,
-                    }));
-                    try { await updateRules(allRules); await fetchRules(); message.success('All events disabled'); } catch { message.error('Failed'); }
-                  }}
-                  style={{ fontSize: 12, padding: '0 4px', color: p.textMuted }}
-                >
-                  Disable All
-                </Button>
-                <Button
-                  size="small"
-                  type="link"
-                  onClick={async () => {
-                    const criticalRules = eventTypes.map((et) => ({
-                      channel_id: selCh.id,
-                      event_type: et.type,
-                      is_enabled: criticalTypes.includes(et.type),
-                    }));
-                    try { await updateRules(criticalRules); await fetchRules(); message.success('Critical events only'); } catch { message.error('Failed'); }
-                  }}
-                  style={{ fontSize: 12, padding: '0 4px' }}
-                >
-                  Critical Only
-                </Button>
-              </div>
-            )}
-          </>
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     );
