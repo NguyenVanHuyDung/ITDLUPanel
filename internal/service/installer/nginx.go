@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -395,7 +396,17 @@ func (i *NginxInstaller) IsInstalled() bool {
 }
 
 func (i *NginxInstaller) GetVersions() []string {
-	return []string{"stable", "mainline", "1.28", "1.27", "1.26", "1.25"}
+	// Ordered: recommended first.
+	// Even minor = stable branch, odd minor = mainline branch.
+	return []string{
+		"stable",   // latest stable release (recommended)
+		"1.28",     // stable
+		"1.26",     // stable (LTS-like, widely deployed)
+		"1.24",     // stable (legacy, still in use)
+		"mainline", // latest mainline (cutting-edge)
+		"1.27",     // mainline
+		"1.25",     // mainline (older)
+	}
 }
 
 // setupNginxRepo configures the nginx.org apt repository for the given repo type.
@@ -619,6 +630,12 @@ func GetAvailableNginxVersions(ctx context.Context) (*NginxAvailableVersions, er
 			distroID = "ubuntu"
 		}
 
+		// Detect architecture for the Packages file URL
+		arch := "amd64"
+		if a := runtime.GOARCH; a == "arm64" {
+			arch = "arm64"
+		}
+
 		// Fetch both repos in parallel
 		var wg sync.WaitGroup
 		var stableVersions, mainlineVersions []NginxVersionInfo
@@ -626,12 +643,12 @@ func GetAvailableNginxVersions(ctx context.Context) (*NginxAvailableVersions, er
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			url := fmt.Sprintf("http://nginx.org/packages/%s/dists/%s/nginx/binary-amd64/Packages", distroID, codename)
+			url := fmt.Sprintf("http://nginx.org/packages/%s/dists/%s/nginx/binary-%s/Packages", distroID, codename, arch)
 			stableVersions = fetchNginxRepoVersions(ctx, url, "stable")
 		}()
 		go func() {
 			defer wg.Done()
-			url := fmt.Sprintf("http://nginx.org/packages/mainline/%s/dists/%s/nginx/binary-amd64/Packages", distroID, codename)
+			url := fmt.Sprintf("http://nginx.org/packages/mainline/%s/dists/%s/nginx/binary-%s/Packages", distroID, codename, arch)
 			mainlineVersions = fetchNginxRepoVersions(ctx, url, "mainline")
 		}()
 		wg.Wait()

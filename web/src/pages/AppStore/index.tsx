@@ -34,6 +34,7 @@ interface AvailableSoftware {
   type: string;
   category?: string;
   versions: string[];
+  default_version?: string;
   installed?: boolean;
   installed_versions?: string[];
   multi_version?: boolean;
@@ -274,7 +275,11 @@ export default function AppStore() {
     const availableVersions = sw.multi_version
       ? sw.versions.filter(v => !(sw.installed_versions ?? []).includes(v))
       : sw.versions;
-    setInstallVersion(availableVersions[availableVersions.length - 1] ?? '');
+    // Use backend-provided default (first = recommended), fall back to first available
+    const defaultVer = sw.default_version && availableVersions.includes(sw.default_version)
+      ? sw.default_version
+      : (availableVersions[0] ?? '');
+    setInstallVersion(defaultVer);
     setInstallModalOpen(true);
   };
 
@@ -1166,11 +1171,22 @@ export default function AppStore() {
               options={(() => {
                 const versions = installTarget?.versions ?? [];
                 const installedVers = installTarget?.installed_versions ?? [];
-                return versions.map((v) => ({
-                  value: v,
-                  label: installedVers.includes(v) ? `v${v} (Installed)` : `v${v}`,
-                  disabled: installedVers.includes(v),
-                }));
+                const defaultVer = installTarget?.default_version;
+                const isNginx = installTarget?.name === 'nginx';
+                return versions.map((v) => {
+                  let label = `v${v}`;
+                  if (isNginx) {
+                    if (v === 'stable') label = 'Stable (Latest Stable Release)';
+                    else if (v === 'mainline') label = 'Mainline (Latest Development)';
+                    else {
+                      const minor = parseInt(v.split('.')[1] ?? '0', 10);
+                      label = `v${v} ${minor % 2 === 0 ? '(Stable Branch)' : '(Mainline Branch)'}`;
+                    }
+                  }
+                  if (v === defaultVer && !installedVers.includes(v)) label += ' ★';
+                  if (installedVers.includes(v)) label += ' (Installed)';
+                  return { value: v, label, disabled: installedVers.includes(v) };
+                });
               })()}
             />
           </div>

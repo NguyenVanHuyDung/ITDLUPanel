@@ -457,11 +457,14 @@ function VersionTab() {
 
   const renderVersionList = (versions: VersionInfo[]) => {
     if (!versions?.length) return <Text style={{ color: TEXT_SECONDARY, fontSize: 13 }}>No versions available</Text>;
+    // First "latest" or first in stable list = recommended
+    const recommendedVer = versions.find(v => v.status === 'latest')?.version || versions[0]?.version;
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {versions.map((v) => {
           const isCurrent = isCurrentVersion(v.version);
           const isSelected = selected === v.version;
+          const isRecommended = v.version === recommendedVer && activeTab === 'stable';
           return (
             <div
               key={v.version}
@@ -482,6 +485,14 @@ function VersionTab() {
                       {v.version}
                     </Text>
                     {statusBadge(v.status)}
+                    {isRecommended && (
+                      <span style={{
+                        fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4,
+                        background: '#FFF8E1', color: '#F9A825',
+                      }}>
+                        ★ RECOMMENDED
+                      </span>
+                    )}
                     {isCurrent && (
                       <span style={{
                         fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4,

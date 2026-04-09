@@ -198,6 +198,7 @@ type AvailableSoftware struct {
 	Type              string   `json:"type"`
 	Installed         bool     `json:"installed"`
 	Versions          []string `json:"versions"`
+	DefaultVersion    string   `json:"default_version"`
 	InstalledVersions []string `json:"installed_versions,omitempty"`
 	MultiVersion      bool     `json:"multi_version,omitempty"`
 }
@@ -679,12 +680,18 @@ func (s *SoftwareService) ListAvailable() []AvailableSoftware {
 	for _, name := range names {
 		inst, _ := s.registry.Get(name)
 		meta := knownSoftware[name]
+		versions := inst.GetVersions()
+		defaultVer := ""
+		if len(versions) > 0 {
+			defaultVer = versions[0]
+		}
 		item := AvailableSoftware{
-			Name:        name,
-			DisplayName: meta.DisplayName,
-			Type:        meta.Type,
-			Installed:   inst.IsInstalled(),
-			Versions:    inst.GetVersions(),
+			Name:           name,
+			DisplayName:    meta.DisplayName,
+			Type:           meta.Type,
+			Installed:      inst.IsInstalled(),
+			Versions:       versions,
+			DefaultVersion: defaultVer,
 		}
 		// PHP supports multi-version: detect which versions are installed
 		if name == "php" {
