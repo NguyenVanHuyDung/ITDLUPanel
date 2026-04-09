@@ -297,10 +297,9 @@ func (i *OLSInstaller) UninstallLSPHP(ctx context.Context, version string) error
 // GetInstalledLSPHPVersions detects installed LSPHP versions.
 func GetInstalledLSPHPVersions() []string {
 	var versions []string
-	for _, ver := range []string{"74", "81", "82", "83"} {
+	for _, ver := range []string{"84", "83", "82", "81", "80", "74"} {
 		binPath := fmt.Sprintf("/usr/local/lsws/lsphp%s/bin/lsphp", ver)
 		if _, err := os.Stat(binPath); err == nil {
-			// Convert "82" to "8.2"
 			if len(ver) == 2 {
 				versions = append(versions, string(ver[0])+"."+string(ver[1]))
 			}

@@ -74,7 +74,7 @@ var knownSoftware = map[string]softwareMeta{
 		ServiceName:    "redis-server",
 		ConfigPath:     "/ITDLUPanel/server/redis/conf/redis.conf",
 		InstallPath:    "/ITDLUPanel/server/redis",
-		DefaultVersion: "stable",
+		DefaultVersion: "7.2",
 	},
 	"pureftpd": {
 		DisplayName:    "Pure-FTPd",
@@ -681,8 +681,8 @@ func (s *SoftwareService) ListAvailable() []AvailableSoftware {
 		inst, _ := s.registry.Get(name)
 		meta := knownSoftware[name]
 		versions := inst.GetVersions()
-		defaultVer := ""
-		if len(versions) > 0 {
+		defaultVer := meta.DefaultVersion
+		if defaultVer == "" && len(versions) > 0 {
 			defaultVer = versions[0]
 		}
 		item := AvailableSoftware{

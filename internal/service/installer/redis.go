@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ITDLUPanel/panel/internal/pkg/logger"
@@ -23,10 +24,22 @@ func (i *RedisInstaller) Name() string { return "redis" }
 func (i *RedisInstaller) Install(ctx context.Context, version string, progress func(int)) error {
 	osInfo := system.GetOSInfo()
 
+	if version == "" {
+		version = "7.2"
+	}
+
 	progress(5)
 	logger.Info().Str("version", version).Msg("installing redis")
 
+	// Setup official Redis repo for specific version installs
 	progress(10)
+	if version != "distro" {
+		if err := setupRedisRepo(ctx, osInfo); err != nil {
+			logger.Warn().Err(err).Msg("failed to setup Redis repo, falling back to distro packages")
+		}
+	}
+
+	progress(20)
 	if err := RefreshPackageIndex(ctx, osInfo); err != nil {
 		logger.Warn().Err(err).Msg("package index refresh had warnings")
 	}
@@ -39,8 +52,27 @@ func (i *RedisInstaller) Install(ctx context.Context, version string, progress f
 		serviceName = "redis"
 	}
 
-	if _, err := system.Exec(ctx, osInfo.PkgManager, "install", "-y", pkg); err != nil {
-		return fmt.Errorf("failed to install redis: %w", err)
+	// Version-pinned install from official repo
+	if version != "distro" && osInfo.PkgManager == "apt" {
+		pinned := installRedisVersionAPT(ctx, version)
+		if !pinned {
+			logger.Warn().Str("version", version).Msg("version pinning failed, installing latest available")
+			if _, err := system.Exec(ctx, "apt", "install", "-y", pkg); err != nil {
+				return fmt.Errorf("failed to install redis: %w", err)
+			}
+		}
+	} else if version != "distro" && osInfo.PkgManager == "dnf" {
+		pinned := installRedisVersionDNF(ctx, version)
+		if !pinned {
+			logger.Warn().Str("version", version).Msg("version pinning failed, installing latest available")
+			if _, err := system.Exec(ctx, "dnf", "install", "-y", pkg); err != nil {
+				return fmt.Errorf("failed to install redis: %w", err)
+			}
+		}
+	} else {
+		if _, err := system.Exec(ctx, osInfo.PkgManager, "install", "-y", pkg); err != nil {
+			return fmt.Errorf("failed to install redis: %w", err)
+		}
 	}
 
 	progress(70)
@@ -54,7 +86,6 @@ func (i *RedisInstaller) Install(ctx context.Context, version string, progress f
 
 	confDir := "/etc/redis"
 	if osInfo.PkgManager == "dnf" {
-		// RHEL: config is at /etc/redis/ or /etc/redis.conf; data at /var/lib/redis
 		if _, err := os.Stat("/etc/redis"); os.IsNotExist(err) {
 			os.MkdirAll("/etc/redis", 0755)
 		}
@@ -65,7 +96,6 @@ func (i *RedisInstaller) Install(ctx context.Context, version string, progress f
 		{Name: "logs", Target: "/var/log/redis"},
 	})
 
-	// Log path differs between Ubuntu and RHEL
 	redisLog := "/var/log/redis/redis-server.log"
 	if osInfo.PkgManager == "dnf" {
 		redisLog = "/var/log/redis/redis.log"
@@ -75,26 +105,117 @@ func (i *RedisInstaller) Install(ctx context.Context, version string, progress f
 	})
 
 	progress(100)
-	logger.Info().Msg("redis installed successfully")
+	logger.Info().Str("version", version).Msg("redis installed successfully")
 	return nil
+}
+
+// setupRedisRepo adds the official packages.redis.io repository.
+func setupRedisRepo(ctx context.Context, osInfo *system.OSInfo) error {
+	if osInfo.PkgManager == "apt" {
+		// Install prerequisites
+		system.Exec(ctx, "apt", "install", "-y", "curl", "gnupg", "lsb-release")
+
+		// Import GPG key
+		if _, err := system.Exec(ctx, "bash", "-c",
+			"curl -fsSL https://packages.redis.io/gpg | gpg --batch --yes --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg"); err != nil {
+			return fmt.Errorf("fetch Redis GPG key: %w", err)
+		}
+
+		// Add repo
+		codename := getDistroCodename()
+		repoLine := fmt.Sprintf(
+			"deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb %s main",
+			codename)
+		return os.WriteFile("/etc/apt/sources.list.d/redis.list", []byte(repoLine+"\n"), 0644)
+	}
+
+	// DNF: official Redis repo for RHEL/CentOS/AlmaLinux/Rocky
+	EnsureEPEL(ctx, osInfo)
+	repoContent := `[Redis]
+name=Redis
+baseurl=https://packages.redis.io/rpm/rhel$releasever/$basearch
+enabled=1
+gpgcheck=1
+gpgkey=https://packages.redis.io/gpg
+`
+	return os.WriteFile("/etc/yum.repos.d/redis.repo", []byte(repoContent), 0644)
+}
+
+// installRedisVersionAPT installs a specific Redis major version via APT pinning.
+func installRedisVersionAPT(ctx context.Context, version string) bool {
+	// Try to install with version prefix match: redis-server=6:{major}.{minor}.*
+	// The official Redis APT repo uses epoch 6: for packages
+	prefixes := []string{
+		fmt.Sprintf("6:%s.", version),  // exact major.minor match
+		fmt.Sprintf("5:%s.", version),  // older epoch
+		fmt.Sprintf("%s.", version),    // no epoch
+	}
+
+	for _, prefix := range prefixes {
+		// List available versions matching this prefix
+		res, err := system.Exec(ctx, "bash", "-c",
+			fmt.Sprintf("apt-cache madison redis-server 2>/dev/null | grep '%s' | head -1 | awk '{print $3}'", prefix))
+		if err != nil || strings.TrimSpace(res.Stdout) == "" {
+			continue
+		}
+		exactVer := strings.TrimSpace(res.Stdout)
+		logger.Info().Str("exact_version", exactVer).Msg("found Redis version to pin")
+
+		if _, err := system.Exec(ctx, "apt", "install", "-y",
+			fmt.Sprintf("redis-server=%s", exactVer),
+			fmt.Sprintf("redis-tools=%s", exactVer)); err == nil {
+			return true
+		}
+	}
+
+	// Fallback: try plain install (repo should have the right version)
+	if _, err := system.Exec(ctx, "apt", "install", "-y", "redis-server"); err == nil {
+		return true
+	}
+	return false
+}
+
+// installRedisVersionDNF installs a specific Redis major version via DNF.
+func installRedisVersionDNF(ctx context.Context, version string) bool {
+	// Try version-specific install
+	res, err := system.Exec(ctx, "bash", "-c",
+		fmt.Sprintf("dnf list available redis --showduplicates 2>/dev/null | grep '%s\\.' | tail -1 | awk '{print $2}'", version))
+	if err == nil && strings.TrimSpace(res.Stdout) != "" {
+		exactVer := strings.TrimSpace(res.Stdout)
+		logger.Info().Str("exact_version", exactVer).Msg("found Redis version to pin")
+
+		if _, err := system.Exec(ctx, "dnf", "install", "-y",
+			fmt.Sprintf("redis-%s", exactVer)); err == nil {
+			return true
+		}
+	}
+
+	// Fallback: plain install
+	if _, err := system.Exec(ctx, "dnf", "install", "-y", "redis"); err == nil {
+		return true
+	}
+	return false
+}
+
+// cleanupRedisRepo removes the official Redis repository.
+func cleanupRedisRepo() {
+	for _, f := range []string{
+		"/etc/apt/sources.list.d/redis.list",
+		"/usr/share/keyrings/redis-archive-keyring.gpg",
+		"/etc/yum.repos.d/redis.repo",
+	} {
+		_ = os.Remove(f)
+	}
 }
 
 func (i *RedisInstaller) Uninstall(ctx context.Context) error {
 	osInfo := system.GetOSInfo()
 
-	if osInfo.PkgManager == "apt" {
-		CleanupServerDir("redis",
-			SymlinkDef{Name: "conf", Target: "/etc/redis"},
-			SymlinkDef{Name: "data", Target: "/var/lib/redis"},
-			SymlinkDef{Name: "logs", Target: "/var/log/redis"},
-		)
-	} else {
-		CleanupServerDir("redis",
-			SymlinkDef{Name: "conf", Target: "/etc/redis"},
-			SymlinkDef{Name: "data", Target: "/var/lib/redis"},
-			SymlinkDef{Name: "logs", Target: "/var/log/redis"},
-		)
-	}
+	CleanupServerDir("redis",
+		SymlinkDef{Name: "conf", Target: "/etc/redis"},
+		SymlinkDef{Name: "data", Target: "/var/lib/redis"},
+		SymlinkDef{Name: "logs", Target: "/var/log/redis"},
+	)
 	CleanupLogLinks("redis")
 
 	for _, svc := range []string{"redis-server", "redis"} {
@@ -102,7 +223,6 @@ func (i *RedisInstaller) Uninstall(ctx context.Context) error {
 		_, _ = system.Exec(ctx, "systemctl", "disable", svc)
 	}
 
-	// Fix any interrupted dpkg state
 	if osInfo.PkgManager == "apt" {
 		FixDpkg(ctx)
 	}
@@ -125,6 +245,9 @@ func (i *RedisInstaller) Uninstall(ctx context.Context) error {
 		_, _ = system.Exec(ctx, "apt", "autoremove", "-y")
 	}
 
+	// Clean up official repo if present
+	cleanupRedisRepo()
+
 	logger.Info().Msg("redis uninstalled successfully")
 	return nil
 }
@@ -139,5 +262,28 @@ func (i *RedisInstaller) IsInstalled() bool {
 }
 
 func (i *RedisInstaller) GetVersions() []string {
-	return []string{"stable"}
+	// Redis lifecycle: Active → Maintenance → EOL
+	return []string{
+		"7.4", // Latest stable (active development)
+		"7.2", // LTS (maintained until 2028)
+		"6.2", // Legacy (EOL 2025)
+	}
+}
+
+// DetectRedisVersion returns the installed Redis version string (e.g., "7.2.6").
+func DetectRedisVersion() string {
+	res, err := system.ExecWithTimeout(5*time.Second, "redis-server", "--version")
+	if err != nil {
+		return ""
+	}
+	// Output: "Redis server v=7.2.6 sha=..." → extract version
+	out := strings.TrimSpace(res.Stdout)
+	if idx := strings.Index(out, "v="); idx >= 0 {
+		ver := out[idx+2:]
+		if sp := strings.IndexByte(ver, ' '); sp >= 0 {
+			ver = ver[:sp]
+		}
+		return ver
+	}
+	return ""
 }

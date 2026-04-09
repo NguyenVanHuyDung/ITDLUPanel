@@ -1175,6 +1175,8 @@ export default function AppStore() {
                 const isNginx = installTarget?.name === 'nginx';
                 const isMySQL = installTarget?.name === 'mysql';
                 const isPHP = installTarget?.name === 'php';
+                const isRedis = installTarget?.name === 'redis';
+                const swName = installTarget?.name ?? '';
 
                 const mysqlLabels: Record<string, string> = {
                   'mariadb-11.4': 'MariaDB 11.4 LTS (2024–2029)',
@@ -1195,6 +1197,20 @@ export default function AppStore() {
                   '7.4': 'PHP 7.4 — EOL (Legacy)',
                 };
 
+                const redisLabels: Record<string, string> = {
+                  '7.4': 'Redis 7.4 — Latest Stable',
+                  '7.2': 'Redis 7.2 LTS (2024–2028)',
+                  '6.2': 'Redis 6.2 — EOL (Legacy)',
+                };
+
+                const singleVersionLabels: Record<string, Record<string, string>> = {
+                  apache: { '2.4': 'Apache 2.4 (Current Stable)' },
+                  openlitespeed: { stable: 'OpenLiteSpeed (Latest Stable)' },
+                  pureftpd: { stable: 'Pure-FTPd (Latest Stable)' },
+                  ftp_storage: { stable: 'FTP Storage (lftp)' },
+                  docker: { stable: 'Docker CE (Latest Stable)' },
+                };
+
                 return versions.map((v) => {
                   let label = `v${v}`;
                   if (isNginx) {
@@ -1208,6 +1224,10 @@ export default function AppStore() {
                     label = mysqlLabels[v] || v;
                   } else if (isPHP) {
                     label = phpLabels[v] || `PHP ${v}`;
+                  } else if (isRedis) {
+                    label = redisLabels[v] || `Redis ${v}`;
+                  } else if (singleVersionLabels[swName]?.[v]) {
+                    label = singleVersionLabels[swName][v];
                   }
                   if (v === defaultVer && !installedVers.includes(v)) label += ' ★';
                   if (installedVers.includes(v)) label += ' (Installed)';
