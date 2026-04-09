@@ -1,6 +1,6 @@
 .PHONY: build dev test lint clean build-linux-amd64 build-linux-arm64 build-all
 
-VERSION  := 0.1.0
+VERSION  := 4.0.0
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS  := -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME)
 

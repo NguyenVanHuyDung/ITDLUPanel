@@ -103,9 +103,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Set panel version from build info if config doesn't have one
+	// Always use the build-time version as the source of truth
 	cfg := config.Get()
-	if cfg.Panel.Version == "" && version != "" {
+	if version != "" {
 		cfg.Panel.Version = version
 	}
 
