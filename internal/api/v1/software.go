@@ -455,17 +455,22 @@ func (h *SoftwareHandler) getNginxAvailableVersions(c *gin.Context) {
 	response.Success(c, versions)
 }
 
-var validPHPVersions = map[string]bool{
-	"7.4": true,
-	"8.1": true,
-	"8.2": true,
-	"8.3": true,
+// validPHPVersion checks whether a PHP version string is known to the installer.
+// It derives the set dynamically so new versions added to the PHP installer are
+// automatically accepted without updating a second list.
+func validPHPVersion(version string) bool {
+	for _, v := range installer.PHPInstallerVersions() {
+		if v == version {
+			return true
+		}
+	}
+	return false
 }
 
 // getPHPExtensions returns available extensions with install status.
 func (h *SoftwareHandler) getPHPExtensions(c *gin.Context) {
 	version := c.Param("version")
-	if !validPHPVersions[version] {
+	if !validPHPVersion(version) {
 		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
 		return
 	}
@@ -488,7 +493,7 @@ func (h *SoftwareHandler) getPHPExtensions(c *gin.Context) {
 // installPHPExtension installs PHP extensions for a version.
 func (h *SoftwareHandler) installPHPExtension(c *gin.Context) {
 	version := c.Param("version")
-	if !validPHPVersions[version] {
+	if !validPHPVersion(version) {
 		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
 		return
 	}
@@ -518,7 +523,7 @@ func (h *SoftwareHandler) installPHPExtension(c *gin.Context) {
 // uninstallPHPExtension removes PHP extensions for a version.
 func (h *SoftwareHandler) uninstallPHPExtension(c *gin.Context) {
 	version := c.Param("version")
-	if !validPHPVersions[version] {
+	if !validPHPVersion(version) {
 		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
 		return
 	}
@@ -548,7 +553,7 @@ func (h *SoftwareHandler) uninstallPHPExtension(c *gin.Context) {
 // getPHPConfig returns PHP config settings for a version.
 func (h *SoftwareHandler) getPHPConfig(c *gin.Context) {
 	version := c.Param("version")
-	if !validPHPVersions[version] {
+	if !validPHPVersion(version) {
 		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
 		return
 	}
@@ -564,7 +569,7 @@ func (h *SoftwareHandler) getPHPConfig(c *gin.Context) {
 // setPHPConfig updates PHP config settings for a version.
 func (h *SoftwareHandler) setPHPConfig(c *gin.Context) {
 	version := c.Param("version")
-	if !validPHPVersions[version] {
+	if !validPHPVersion(version) {
 		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
 		return
 	}
@@ -587,7 +592,7 @@ func (h *SoftwareHandler) setPHPConfig(c *gin.Context) {
 // getPHPOPcache returns PHP OPcache config settings for a version.
 func (h *SoftwareHandler) getPHPOPcache(c *gin.Context) {
 	version := c.Param("version")
-	if !validPHPVersions[version] {
+	if !validPHPVersion(version) {
 		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
 		return
 	}
@@ -603,7 +608,7 @@ func (h *SoftwareHandler) getPHPOPcache(c *gin.Context) {
 // setPHPOPcache updates PHP OPcache config settings for a version.
 func (h *SoftwareHandler) setPHPOPcache(c *gin.Context) {
 	version := c.Param("version")
-	if !validPHPVersions[version] {
+	if !validPHPVersion(version) {
 		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
 		return
 	}
@@ -626,7 +631,7 @@ func (h *SoftwareHandler) setPHPOPcache(c *gin.Context) {
 // getPHPConfigFile returns the raw php.ini content for a PHP version.
 func (h *SoftwareHandler) getPHPConfigFile(c *gin.Context) {
 	version := c.Param("version")
-	if !validPHPVersions[version] {
+	if !validPHPVersion(version) {
 		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
 		return
 	}
@@ -641,7 +646,7 @@ func (h *SoftwareHandler) getPHPConfigFile(c *gin.Context) {
 // setPHPConfigFile saves raw php.ini content for a PHP version.
 func (h *SoftwareHandler) setPHPConfigFile(c *gin.Context) {
 	version := c.Param("version")
-	if !validPHPVersions[version] {
+	if !validPHPVersion(version) {
 		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
 		return
 	}
@@ -662,7 +667,7 @@ func (h *SoftwareHandler) setPHPConfigFile(c *gin.Context) {
 // getPHPErrorLog returns the last N lines of PHP-FPM error log for a version.
 func (h *SoftwareHandler) getPHPErrorLog(c *gin.Context) {
 	version := c.Param("version")
-	if !validPHPVersions[version] {
+	if !validPHPVersion(version) {
 		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
 		return
 	}
@@ -683,7 +688,7 @@ func (h *SoftwareHandler) getPHPErrorLog(c *gin.Context) {
 // getPHPFPMConfig returns FPM pool configuration for a PHP version.
 func (h *SoftwareHandler) getPHPFPMConfig(c *gin.Context) {
 	version := c.Param("version")
-	if !validPHPVersions[version] {
+	if !validPHPVersion(version) {
 		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
 		return
 	}
@@ -698,7 +703,7 @@ func (h *SoftwareHandler) getPHPFPMConfig(c *gin.Context) {
 // setPHPFPMConfig updates FPM pool configuration for a PHP version.
 func (h *SoftwareHandler) setPHPFPMConfig(c *gin.Context) {
 	version := c.Param("version")
-	if !validPHPVersions[version] {
+	if !validPHPVersion(version) {
 		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
 		return
 	}
@@ -717,7 +722,7 @@ func (h *SoftwareHandler) setPHPFPMConfig(c *gin.Context) {
 // getPHPDisableFunctions returns the disable_functions list for a PHP version.
 func (h *SoftwareHandler) getPHPDisableFunctions(c *gin.Context) {
 	version := c.Param("version")
-	if !validPHPVersions[version] {
+	if !validPHPVersion(version) {
 		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
 		return
 	}
@@ -732,7 +737,7 @@ func (h *SoftwareHandler) getPHPDisableFunctions(c *gin.Context) {
 // setPHPDisableFunctions updates the disable_functions list for a PHP version.
 func (h *SoftwareHandler) setPHPDisableFunctions(c *gin.Context) {
 	version := c.Param("version")
-	if !validPHPVersions[version] {
+	if !validPHPVersion(version) {
 		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
 		return
 	}
@@ -753,7 +758,7 @@ func (h *SoftwareHandler) setPHPDisableFunctions(c *gin.Context) {
 // getPHPFPMStatus returns FPM process statistics for a PHP version.
 func (h *SoftwareHandler) getPHPFPMStatus(c *gin.Context) {
 	version := c.Param("version")
-	if !validPHPVersions[version] {
+	if !validPHPVersion(version) {
 		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
 		return
 	}
@@ -768,7 +773,7 @@ func (h *SoftwareHandler) getPHPFPMStatus(c *gin.Context) {
 // getPHPSlowLog returns the PHP-FPM slow log content.
 func (h *SoftwareHandler) getPHPSlowLog(c *gin.Context) {
 	version := c.Param("version")
-	if !validPHPVersions[version] {
+	if !validPHPVersion(version) {
 		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
 		return
 	}
@@ -805,7 +810,7 @@ func (h *SoftwareHandler) getPHPSlowLog(c *gin.Context) {
 // setPHPSlowLogConfig enables/disables the slow log and sets timeout.
 func (h *SoftwareHandler) setPHPSlowLogConfig(c *gin.Context) {
 	version := c.Param("version")
-	if !validPHPVersions[version] {
+	if !validPHPVersion(version) {
 		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
 		return
 	}
@@ -827,7 +832,7 @@ func (h *SoftwareHandler) setPHPSlowLogConfig(c *gin.Context) {
 // getPHPInfo returns phpinfo output for a PHP version.
 func (h *SoftwareHandler) getPHPInfo(c *gin.Context) {
 	version := c.Param("version")
-	if !validPHPVersions[version] {
+	if !validPHPVersion(version) {
 		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid PHP version: "+version))
 		return
 	}

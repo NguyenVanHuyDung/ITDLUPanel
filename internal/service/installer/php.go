@@ -510,6 +510,13 @@ func (i *PHPInstaller) IsInstalled() bool {
 }
 
 func (i *PHPInstaller) GetVersions() []string {
+	return PHPInstallerVersions()
+}
+
+// PHPInstallerVersions returns the list of supported PHP versions.
+// It is a package-level function so callers outside the installer (e.g.,
+// API validation) can access the version list without an instance.
+func PHPInstallerVersions() []string {
 	// Ordered: latest recommended first.
 	// PHP lifecycle: Active Support → Security Fixes → EOL
 	return []string{

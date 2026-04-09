@@ -873,8 +873,13 @@ func (s *SoftwareService) GetInstaller(name string) (installer.Installer, bool) 
 }
 
 // phpConfBase is the base directory for PHP configuration files managed by the panel.
-// It symlinks to /etc/php so both paths resolve identically.
+// On APT it symlinks to /etc/php; on DNF (Remi) it symlinks to /etc/opt/remi.
 const phpConfBase = "/ITDLUPanel/server/php/conf"
+
+// phpRemiVer converts a dotted version "8.4" to the Remi directory format "php84".
+func phpRemiVer(version string) string {
+	return "php" + strings.ReplaceAll(version, ".", "")
+}
 
 // phpFPMServiceName returns the systemd service name for PHP-FPM on the current OS.
 // RHEL Remi uses "php{ver}-php-fpm" (e.g., php83-php-fpm), while
@@ -882,25 +887,61 @@ const phpConfBase = "/ITDLUPanel/server/php/conf"
 func phpFPMServiceName(version string) string {
 	osInfo := system.GetOSInfo()
 	if osInfo.PkgManager == "dnf" {
-		ver := strings.ReplaceAll(version, ".", "")
-		return fmt.Sprintf("php%s-php-fpm", ver)
+		return fmt.Sprintf("%s-php-fpm", phpRemiVer(version))
 	}
 	return fmt.Sprintf("php%s-fpm", version)
 }
 
+// phpConfDir returns the versioned config directory inside phpConfBase.
+// APT: /ITDLUPanel/server/php/conf/8.4  (symlink to /etc/php/8.4)
+// DNF: /ITDLUPanel/server/php/conf/php84 (symlink to /etc/opt/remi/php84)
+func phpConfDir(version string) string {
+	osInfo := system.GetOSInfo()
+	if osInfo.PkgManager == "dnf" {
+		return fmt.Sprintf("%s/%s", phpConfBase, phpRemiVer(version))
+	}
+	return fmt.Sprintf("%s/%s", phpConfBase, version)
+}
+
 // phpFPMIni returns the path to the FPM php.ini for the given version.
+// APT: {conf}/8.4/fpm/php.ini   DNF: {conf}/php84/php.ini
 func phpFPMIni(version string) string {
+	osInfo := system.GetOSInfo()
+	if osInfo.PkgManager == "dnf" {
+		return fmt.Sprintf("%s/%s/php.ini", phpConfBase, phpRemiVer(version))
+	}
 	return fmt.Sprintf("%s/%s/fpm/php.ini", phpConfBase, version)
 }
 
 // phpCLIIni returns the path to the CLI php.ini for the given version.
+// APT: {conf}/8.4/cli/php.ini   DNF: {conf}/php84/php.ini (same file)
 func phpCLIIni(version string) string {
+	osInfo := system.GetOSInfo()
+	if osInfo.PkgManager == "dnf" {
+		// Remi shares one php.ini for both FPM and CLI
+		return fmt.Sprintf("%s/%s/php.ini", phpConfBase, phpRemiVer(version))
+	}
 	return fmt.Sprintf("%s/%s/cli/php.ini", phpConfBase, version)
 }
 
 // phpFPMPoolConf returns the path to the FPM www.conf pool config.
+// APT: {conf}/8.4/fpm/pool.d/www.conf   DNF: {conf}/php84/php-fpm.d/www.conf
 func phpFPMPoolConf(version string) string {
+	osInfo := system.GetOSInfo()
+	if osInfo.PkgManager == "dnf" {
+		return fmt.Sprintf("%s/%s/php-fpm.d/www.conf", phpConfBase, phpRemiVer(version))
+	}
 	return fmt.Sprintf("%s/%s/fpm/pool.d/www.conf", phpConfBase, version)
+}
+
+// phpSlowLogPath returns the default slow log path for the given PHP version.
+func phpSlowLogPath(version string) string {
+	osInfo := system.GetOSInfo()
+	if osInfo.PkgManager == "dnf" {
+		remiVer := phpRemiVer(version)
+		return fmt.Sprintf("/var/opt/remi/%s/log/php-fpm/www-slow.log", remiVer)
+	}
+	return fmt.Sprintf("/var/log/php%s-fpm.log.slow", version)
 }
 
 // PHPConfig represents configurable PHP settings.
@@ -1208,13 +1249,25 @@ func (s *SoftwareService) GetPHPErrorLog(version string, lines int) (string, str
 		lines = 1000
 	}
 
+	osInfo := system.GetOSInfo()
+
 	// Try common log paths — centralized logs first, then system paths
 	candidates := []string{
 		filepath.Join(installer.LogsBaseDir, fmt.Sprintf("php%s-fpm.log", version)),
-		fmt.Sprintf("/var/log/php%s-fpm.log", version),
-		fmt.Sprintf("/var/log/php-fpm/php%s-fpm.log", version),
-		"/var/log/syslog",
 	}
+	if osInfo.PkgManager == "dnf" {
+		remiVer := "php" + strings.ReplaceAll(version, ".", "")
+		candidates = append(candidates,
+			fmt.Sprintf("/var/opt/remi/%s/log/php-fpm/error.log", remiVer),
+			"/var/log/php-fpm/error.log",
+		)
+	} else {
+		candidates = append(candidates,
+			fmt.Sprintf("/var/log/php%s-fpm.log", version),
+			fmt.Sprintf("/var/log/php-fpm/php%s-fpm.log", version),
+		)
+	}
+	candidates = append(candidates, "/var/log/syslog")
 
 	for _, logPath := range candidates {
 		if _, err := os.Stat(logPath); err == nil {
@@ -2476,25 +2529,73 @@ func (s *SoftwareService) GetAvailablePHPVersions() ([]string, error) {
 		return nil, fmt.Errorf("failed to read %s: %w", phpConfBase, err)
 	}
 
+	osInfo := system.GetOSInfo()
+	isDNF := osInfo.PkgManager == "dnf"
+
 	var versions []string
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
 		}
-		ver := e.Name()
-		sockPath := fmt.Sprintf("/run/php/php%s-fpm.sock", ver)
-		if _, err := os.Stat(sockPath); err == nil {
-			versions = append(versions, ver)
-			continue
+		name := e.Name()
+
+		// Derive dotted version from directory name.
+		// APT dirs: "8.4", "8.3", etc.
+		// DNF (Remi) dirs: "php84", "php83", etc.
+		var ver string
+		if isDNF {
+			if !strings.HasPrefix(name, "php") {
+				continue
+			}
+			digits := name[3:] // "84"
+			if len(digits) < 2 {
+				continue
+			}
+			ver = digits[:len(digits)-1] + "." + digits[len(digits)-1:]
+		} else {
+			ver = name
 		}
-		// Also check /var/run/php which may be a symlink to /run/php
-		altSock := fmt.Sprintf("/var/run/php/php%s-fpm.sock", ver)
-		if _, err := os.Stat(altSock); err == nil {
+
+		// Check for active FPM socket
+		if hasPHPFPMSocket(ver, isDNF) {
 			versions = append(versions, ver)
 		}
 	}
 
 	return versions, nil
+}
+
+// hasPHPFPMSocket checks common socket paths for a PHP-FPM version.
+func hasPHPFPMSocket(version string, isDNF bool) bool {
+	var candidates []string
+	if isDNF {
+		remiVer := "php" + strings.ReplaceAll(version, ".", "")
+		candidates = []string{
+			fmt.Sprintf("/var/opt/remi/%s/run/php-fpm/www.sock", remiVer),
+			fmt.Sprintf("/run/php-fpm/%s-www.sock", remiVer),
+			"/run/php-fpm/www.sock",
+		}
+	} else {
+		candidates = []string{
+			fmt.Sprintf("/run/php/php%s-fpm.sock", version),
+			fmt.Sprintf("/var/run/php/php%s-fpm.sock", version),
+		}
+	}
+
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+
+	// Fallback: check if the service is active
+	svcName := phpFPMServiceName(version)
+	res, err := system.ExecWithTimeout(5*time.Second, "systemctl", "is-active", svcName)
+	if err == nil && strings.TrimSpace(res.Stdout) == "active" {
+		return true
+	}
+
+	return false
 }
 
 // ---------------------------------------------------------------------------
@@ -2630,7 +2731,7 @@ func (s *SoftwareService) GetPHPSlowLog(version string, lines int) (string, stri
 
 	slowlogPath := readFPMValue(content, "slowlog")
 	if slowlogPath == "" {
-		slowlogPath = fmt.Sprintf("/var/log/php%s-fpm.log.slow", version)
+		slowlogPath = phpSlowLogPath(version)
 	}
 
 	timeout := readFPMValue(content, "request_slowlog_timeout")
@@ -2658,7 +2759,7 @@ func (s *SoftwareService) SetPHPSlowLogConfig(version string, enabled bool, time
 	}
 
 	content := string(data)
-	slowlogPath := fmt.Sprintf("/var/log/php%s-fpm.log.slow", version)
+	slowlogPath := phpSlowLogPath(version)
 
 	if enabled {
 		if timeout == "" {
@@ -2687,7 +2788,18 @@ func (s *SoftwareService) SetPHPSlowLogConfig(version string, enabled bool, time
 
 // GetPHPInfo returns the output of php -i for the given version.
 func (s *SoftwareService) GetPHPInfo(version string) (string, error) {
-	bin := fmt.Sprintf("php%s", version)
+	osInfo := system.GetOSInfo()
+	var bin string
+	if osInfo.PkgManager == "dnf" {
+		remiVer := "php" + strings.ReplaceAll(version, ".", "")
+		bin = fmt.Sprintf("/opt/remi/%s/root/usr/bin/php", remiVer)
+		// Fallback to alternatives-managed binary
+		if _, err := os.Stat(bin); err != nil {
+			bin = fmt.Sprintf("php%s", version)
+		}
+	} else {
+		bin = fmt.Sprintf("php%s", version)
+	}
 	res, err := system.ExecWithTimeout(15*time.Second, bin, "-i")
 	if err != nil {
 		return "", fmt.Errorf("failed to run %s -i: %w", bin, err)
