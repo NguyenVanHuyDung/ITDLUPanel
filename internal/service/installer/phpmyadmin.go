@@ -36,8 +36,8 @@ func (i *PhpMyAdminInstaller) Install(ctx context.Context, version string, progr
 	// Install dependencies (php, php-mbstring, php-zip, php-gd, php-json, php-curl, unzip, wget)
 	osInfo := system.GetOSInfo()
 	progress(10)
-	if _, err := system.Exec(ctx, osInfo.PkgManager, "update", "-y"); err != nil {
-		logger.Warn().Err(err).Msg("package index update had warnings")
+	if err := RefreshPackageIndex(ctx, osInfo); err != nil {
+		logger.Warn().Err(err).Msg("package index refresh had warnings")
 	}
 
 	progress(20)

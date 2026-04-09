@@ -27,8 +27,8 @@ func (i *RedisInstaller) Install(ctx context.Context, version string, progress f
 	logger.Info().Str("version", version).Msg("installing redis")
 
 	progress(10)
-	if _, err := system.Exec(ctx, osInfo.PkgManager, "update", "-y"); err != nil {
-		logger.Warn().Err(err).Msg("package index update had warnings")
+	if err := RefreshPackageIndex(ctx, osInfo); err != nil {
+		logger.Warn().Err(err).Msg("package index refresh had warnings")
 	}
 
 	progress(30)

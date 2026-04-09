@@ -227,6 +227,30 @@ func FixDpkg(ctx context.Context) {
 	}
 }
 
+// RefreshPackageIndex refreshes the package manager cache.
+// APT: runs "apt update -y". DNF: runs "dnf makecache --refresh".
+func RefreshPackageIndex(ctx context.Context, osInfo *system.OSInfo) error {
+	if osInfo.PkgManager == "dnf" {
+		_, err := system.Exec(ctx, "dnf", "makecache", "--refresh")
+		return err
+	}
+	_, err := system.Exec(ctx, "apt", "update", "-y")
+	return err
+}
+
+// EnsureEPEL installs the EPEL repository on RHEL-based systems (needed for
+// packages like pure-ftpd that are not in default repos).
+func EnsureEPEL(ctx context.Context, osInfo *system.OSInfo) {
+	if osInfo.PkgManager != "dnf" {
+		return
+	}
+	if _, err := system.Exec(ctx, "dnf", "install", "-y", "epel-release"); err != nil {
+		logger.Warn().Err(err).Msg("failed to install epel-release (may not be available on this distro)")
+		// Fallback: try enabling CRB/PowerTools which some distros need for EPEL deps
+		_, _ = system.Exec(ctx, "dnf", "config-manager", "--set-enabled", "crb")
+	}
+}
+
 // ServerDirExists checks if /ITDLUPanel/server/<name>/ exists.
 func ServerDirExists(name string) bool {
 	_, err := os.Stat(filepath.Join(ServerBaseDir, name))

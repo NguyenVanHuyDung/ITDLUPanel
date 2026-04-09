@@ -31,10 +31,10 @@ func (i *MySQLInstaller) Install(ctx context.Context, version string, progress f
 
 	isMariaDB := strings.HasPrefix(version, "mariadb")
 
-	// Update package index
+	// Refresh package index
 	progress(10)
-	if _, err := system.Exec(ctx, osInfo.PkgManager, "update", "-y"); err != nil {
-		logger.Warn().Err(err).Msg("package index update had warnings")
+	if err := RefreshPackageIndex(ctx, osInfo); err != nil {
+		logger.Warn().Err(err).Msg("package index refresh had warnings")
 	}
 
 	progress(30)
@@ -225,9 +225,6 @@ innodb_flush_log_at_trx_commit = 2
 innodb_flush_method = O_DIRECT
 innodb_io_capacity = 2000
 innodb_io_capacity_max = 4000
-query_cache_type = 1
-query_cache_size = 64M
-query_cache_limit = 2M
 max_connections = 200
 thread_cache_size = 16
 tmp_table_size = 64M
@@ -239,6 +236,14 @@ read_rnd_buffer_size = 2M
 table_open_cache = 4000
 table_definition_cache = 2000
 `, bufferPoolSize)
+
+	// query_cache was removed in MySQL 8.0 — only add for MariaDB
+	if isMariaDB {
+		cnf += `query_cache_type = 1
+query_cache_size = 64M
+query_cache_limit = 2M
+`
+	}
 
 	var confPath string
 	osInfo := system.GetOSInfo()

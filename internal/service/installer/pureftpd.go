@@ -28,8 +28,12 @@ func (i *PureFTPdInstaller) Install(ctx context.Context, version string, progres
 	logger.Info().Msg("installing pure-ftpd")
 
 	progress(10)
-	if _, err := system.Exec(ctx, osInfo.PkgManager, "update", "-y"); err != nil {
-		logger.Warn().Err(err).Msg("package index update had warnings")
+	// RHEL: pure-ftpd is in EPEL, not default repos
+	if osInfo.PkgManager == "dnf" {
+		EnsureEPEL(ctx, osInfo)
+	}
+	if err := RefreshPackageIndex(ctx, osInfo); err != nil {
+		logger.Warn().Err(err).Msg("package index refresh had warnings")
 	}
 
 	progress(30)
@@ -82,7 +86,20 @@ func (i *PureFTPdInstaller) Install(ctx context.Context, version string, progres
 	if pubIP, err := system.ExecWithTimeout(5*time.Second, "curl", "-s", "ifconfig.me"); err == nil {
 		ip := strings.TrimSpace(pubIP.Stdout)
 		if ip != "" {
-			_ = os.WriteFile("/etc/pure-ftpd/conf/ForcePassiveIP", []byte(ip+"\n"), 0644)
+			if osInfo.PkgManager == "apt" {
+				os.MkdirAll("/etc/pure-ftpd/conf", 0755)
+				_ = os.WriteFile("/etc/pure-ftpd/conf/ForcePassiveIP", []byte(ip+"\n"), 0644)
+			} else {
+				// RHEL: append ForcePassiveIP to main config file
+				confFile := "/etc/pure-ftpd/pure-ftpd.conf"
+				if data, err := os.ReadFile(confFile); err == nil {
+					content := string(data)
+					if !strings.Contains(content, "ForcePassiveIP") {
+						content += "\nForcePassiveIP " + ip + "\n"
+						_ = os.WriteFile(confFile, []byte(content), 0644)
+					}
+				}
+			}
 		}
 	}
 	// Restart to apply

@@ -80,12 +80,15 @@ func (i *DockerInstaller) Install(ctx context.Context, version string, progress 
 		}
 
 		progress(30)
+		// Use rhel repo (works for CentOS, AlmaLinux, Rocky, RHEL); fall back to centos then fedora
 		if _, err := system.Exec(ctx, "dnf", "config-manager", "--add-repo",
-			"https://download.docker.com/linux/centos/docker-ce.repo"); err != nil {
-			// Try fedora repo as fallback
+			"https://download.docker.com/linux/rhel/docker-ce.repo"); err != nil {
 			if _, err2 := system.Exec(ctx, "dnf", "config-manager", "--add-repo",
-				"https://download.docker.com/linux/fedora/docker-ce.repo"); err2 != nil {
-				return fmt.Errorf("failed to add Docker repository: %w", err)
+				"https://download.docker.com/linux/centos/docker-ce.repo"); err2 != nil {
+				if _, err3 := system.Exec(ctx, "dnf", "config-manager", "--add-repo",
+					"https://download.docker.com/linux/fedora/docker-ce.repo"); err3 != nil {
+					return fmt.Errorf("failed to add Docker repository: %w", err)
+				}
 			}
 		}
 
