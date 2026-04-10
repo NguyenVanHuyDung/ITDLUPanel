@@ -153,7 +153,7 @@ SESSION_DB_PATH = '/var/lib/pgadmin/sessions'
 STORAGE_DIR = '/var/lib/pgadmin/storage'
 SERVER_MODE = True
 DEFAULT_SERVER = '0.0.0.0'
-DEFAULT_SERVER_PORT = 5050
+DEFAULT_SERVER_PORT = 15050
 `
 
 	if err := os.WriteFile(configLocalPath, []byte(configContent), 0644); err != nil {
@@ -240,8 +240,8 @@ Type=simple
 User=%s
 Group=%s
 WorkingDirectory=%s
-Environment=PGADMIN_INT_PORT=5050
-ExecStart=%s --bind 127.0.0.1:5050 --workers 1 --threads 4 pgAdmin4:app
+Environment=PGADMIN_INT_PORT=15050
+ExecStart=%s --bind 127.0.0.1:15050 --workers 1 --threads 4 pgAdmin4:app
 Restart=on-failure
 RestartSec=5
 
@@ -382,6 +382,11 @@ func pgAdminNginxConfBlock(port int, ssl bool, authEnabled bool, htpasswdPath st
 	}
 	b.WriteString("    server_name _;\n\n")
 
+	// pgAdmin uses large session cookies — increase header buffer sizes
+	b.WriteString("    large_client_header_buffers 4 32k;\n")
+	b.WriteString("    proxy_buffer_size 16k;\n")
+	b.WriteString("    proxy_buffers 4 16k;\n\n")
+
 	if ssl && sslDir != "" {
 		fmt.Fprintf(&b, "    ssl_certificate %s/pgadmin.crt;\n", sslDir)
 		fmt.Fprintf(&b, "    ssl_certificate_key %s/pgadmin.key;\n", sslDir)
@@ -394,7 +399,7 @@ func pgAdminNginxConfBlock(port int, ssl bool, authEnabled bool, htpasswdPath st
 	}
 
 	b.WriteString("    location / {\n")
-	b.WriteString("        proxy_pass http://127.0.0.1:5050;\n")
+	b.WriteString("        proxy_pass http://127.0.0.1:15050;\n")
 	b.WriteString("        proxy_set_header Host $host;\n")
 	b.WriteString("        proxy_set_header X-Real-IP $remote_addr;\n")
 	b.WriteString("        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")

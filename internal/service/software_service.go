@@ -2741,6 +2741,11 @@ func (s *SoftwareService) writePgAdminServerBlock(b *strings.Builder, cfg *PgAdm
 	}
 	b.WriteString("    server_name _;\n\n")
 
+	// pgAdmin uses large session cookies — increase header buffer sizes
+	b.WriteString("    large_client_header_buffers 4 32k;\n")
+	b.WriteString("    proxy_buffer_size 16k;\n")
+	b.WriteString("    proxy_buffers 4 16k;\n\n")
+
 	if ssl {
 		fmt.Fprintf(b, "    ssl_certificate %s/pgadmin.crt;\n", pgadminSSLDir)
 		fmt.Fprintf(b, "    ssl_certificate_key %s/pgadmin.key;\n", pgadminSSLDir)
@@ -2758,7 +2763,7 @@ func (s *SoftwareService) writePgAdminServerBlock(b *strings.Builder, cfg *PgAdm
 	}
 
 	b.WriteString("    location / {\n")
-	b.WriteString("        proxy_pass http://127.0.0.1:5050;\n")
+	b.WriteString("        proxy_pass http://127.0.0.1:15050;\n")
 	b.WriteString("        proxy_set_header Host $host;\n")
 	b.WriteString("        proxy_set_header X-Real-IP $remote_addr;\n")
 	b.WriteString("        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
