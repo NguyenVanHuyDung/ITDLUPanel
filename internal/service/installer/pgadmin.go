@@ -154,6 +154,7 @@ STORAGE_DIR = '/var/lib/pgadmin/storage'
 SERVER_MODE = True
 DEFAULT_SERVER = '0.0.0.0'
 DEFAULT_SERVER_PORT = 15050
+ALLOW_SPECIAL_EMAIL_DOMAINS = ['local', 'localhost']
 `
 
 	if err := os.WriteFile(configLocalPath, []byte(configContent), 0644); err != nil {
