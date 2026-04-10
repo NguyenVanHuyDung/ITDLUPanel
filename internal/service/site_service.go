@@ -2659,7 +2659,6 @@ func (s *SiteService) AddReverseProxyRule(id int64, rule ReverseProxyRule) error
 		return apperrors.New(apperrors.ErrValidation, "name, directory, and target_url are required")
 	}
 
-	// Security: validate inputs before writing to nginx config
 	if !validateNginxPath(rule.Directory) {
 		return apperrors.New(apperrors.ErrValidation, "directory contains invalid characters (only /a-zA-Z0-9_-. allowed)")
 	}
@@ -2670,7 +2669,6 @@ func (s *SiteService) AddReverseProxyRule(id int64, rule ReverseProxyRule) error
 	var rules []ReverseProxyRule
 	_ = readJSONFile(reverseProxyPath(id), &rules)
 
-	// Check for duplicate name
 	for _, r := range rules {
 		if r.Name == rule.Name {
 			return apperrors.New(apperrors.ErrValidation, "rule with this name already exists")
@@ -2683,7 +2681,7 @@ func (s *SiteService) AddReverseProxyRule(id int64, rule ReverseProxyRule) error
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to save reverse proxy rules")
 	}
 
-	if err := s.rebuildReverseProxyNginx(site, rules); err != nil {
+	if err := s.rebuildReverseProxy(site, rules); err != nil {
 		return err
 	}
 
@@ -2710,7 +2708,6 @@ func (s *SiteService) UpdateReverseProxyRule(id int64, index int, rule ReversePr
 		return apperrors.New(apperrors.ErrValidation, "invalid rule index")
 	}
 
-	// Security: validate inputs before writing to nginx config
 	if rule.Directory != "" && !validateNginxPath(rule.Directory) {
 		return apperrors.New(apperrors.ErrValidation, "directory contains invalid characters")
 	}
@@ -2724,7 +2721,7 @@ func (s *SiteService) UpdateReverseProxyRule(id int64, index int, rule ReversePr
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to save reverse proxy rules")
 	}
 
-	if err := s.rebuildReverseProxyNginx(site, rules); err != nil {
+	if err := s.rebuildReverseProxy(site, rules); err != nil {
 		return err
 	}
 
@@ -2758,25 +2755,47 @@ func (s *SiteService) RemoveReverseProxyRule(id int64, index int) error {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to save reverse proxy rules")
 	}
 
-	gen := generatorFor(site.Webserver)
-	confPath := gen.GetConfigPath(site.Domain)
-
-	if len(rules) == 0 {
-		if err := s.removeNginxBlock(confPath, "#REVERSE_PROXY_START", "#REVERSE_PROXY_END"); err != nil {
-			return err
-		}
-	} else {
-		if err := s.rebuildReverseProxyNginx(site, rules); err != nil {
-			return err
-		}
+	if err := s.removeReverseProxy(site, rules); err != nil {
+		return err
 	}
 
+	gen := generatorFor(site.Webserver)
 	if err := gen.ReloadServer(); err != nil {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to reload webserver")
 	}
 
 	logger.Info().Int64("id", id).Str("name", removed.Name).Msg("reverse proxy rule removed")
 	return nil
+}
+
+// rebuildReverseProxy dispatches to the webserver-specific reverse proxy rebuild.
+func (s *SiteService) rebuildReverseProxy(site *Site, rules []ReverseProxyRule) error {
+	switch site.Webserver {
+	case "apache":
+		return s.rebuildReverseProxyApache(site, rules)
+	case "openlitespeed":
+		return s.rebuildReverseProxyOLS(site, rules)
+	default:
+		return s.rebuildReverseProxyNginx(site, rules)
+	}
+}
+
+// removeReverseProxy removes reverse proxy config blocks or rebuilds with remaining rules.
+func (s *SiteService) removeReverseProxy(site *Site, rules []ReverseProxyRule) error {
+	gen := generatorFor(site.Webserver)
+	confPath := gen.GetConfigPath(site.Domain)
+
+	if len(rules) == 0 {
+		switch site.Webserver {
+		case "apache":
+			return s.removeApacheBlock(confPath, "#REVERSE_PROXY_START", "#REVERSE_PROXY_END")
+		case "openlitespeed":
+			return s.removeOLSBlock(confPath, "#REVERSE_PROXY_START", "#REVERSE_PROXY_END")
+		default:
+			return s.removeNginxBlock(confPath, "#REVERSE_PROXY_START", "#REVERSE_PROXY_END")
+		}
+	}
+	return s.rebuildReverseProxy(site, rules)
 }
 
 func (s *SiteService) rebuildReverseProxyNginx(site *Site, rules []ReverseProxyRule) error {
@@ -2846,6 +2865,344 @@ func (s *SiteService) rebuildReverseProxyNginx(site *Site, rules []ReverseProxyR
 	}
 
 	return s.insertNginxBlock(confPath, "#REVERSE_PROXY_START", "#REVERSE_PROXY_END", blockLines)
+}
+
+// rebuildReverseProxyApache generates Apache ProxyPass directives for reverse proxy rules.
+func (s *SiteService) rebuildReverseProxyApache(site *Site, rules []ReverseProxyRule) error {
+	gen := generatorFor(site.Webserver)
+	confPath := gen.GetConfigPath(site.Domain)
+
+	var blockLines []string
+	for _, r := range rules {
+		dir := r.Directory
+		if dir == "" {
+			dir = "/"
+		}
+		if !validateNginxPath(dir) {
+			logger.Warn().Str("directory", dir).Msg("skipping reverse proxy rule with invalid directory path")
+			continue
+		}
+		if !validateURL(r.TargetURL) {
+			logger.Warn().Str("target_url", r.TargetURL).Msg("skipping reverse proxy rule with invalid target URL")
+			continue
+		}
+
+		target := sanitizeApacheValue(r.TargetURL)
+
+		blockLines = append(blockLines, fmt.Sprintf("    # Proxy: %s", r.Name))
+		blockLines = append(blockLines, fmt.Sprintf("    ProxyPass %s %s", dir, target))
+		blockLines = append(blockLines, fmt.Sprintf("    ProxyPassReverse %s %s", dir, target))
+
+		if r.SendDomain {
+			blockLines = append(blockLines, "    ProxyPreserveHost On")
+		} else {
+			blockLines = append(blockLines, "    ProxyPreserveHost Off")
+		}
+
+		blockLines = append(blockLines, "    RequestHeader set X-Forwarded-Proto expr=%{REQUEST_SCHEME}")
+		blockLines = append(blockLines, "    RequestHeader set X-Real-IP expr=%{REMOTE_ADDR}")
+
+		// URL rewrite rules
+		for _, rw := range r.URLRewrite {
+			if rw.Pattern != "" && rw.Replacement != "" {
+				blockLines = append(blockLines, "    RewriteEngine On")
+				blockLines = append(blockLines, fmt.Sprintf("    RewriteRule %s %s [P,L]", sanitizeApacheValue(rw.Pattern), sanitizeApacheValue(rw.Replacement)))
+			}
+		}
+
+		// Content replacement using mod_substitute
+		if len(r.ContentReplace) > 0 {
+			blockLines = append(blockLines, "    AddOutputFilterByType SUBSTITUTE text/html")
+			for _, cr := range r.ContentReplace {
+				if cr.Search != "" {
+					blockLines = append(blockLines, fmt.Sprintf("    Substitute \"s|%s|%s|ni\"", sanitizeApacheValue(cr.Search), sanitizeApacheValue(cr.Replace)))
+				}
+			}
+		}
+
+		if r.EnableCache {
+			blockLines = append(blockLines, fmt.Sprintf("    CacheEnable disk %s", dir))
+		}
+	}
+
+	return s.insertApacheBlock(confPath, "#REVERSE_PROXY_START", "#REVERSE_PROXY_END", blockLines)
+}
+
+// rebuildReverseProxyOLS generates OpenLiteSpeed proxy context blocks.
+func (s *SiteService) rebuildReverseProxyOLS(site *Site, rules []ReverseProxyRule) error {
+	gen := generatorFor(site.Webserver)
+	confPath := gen.GetConfigPath(site.Domain)
+
+	var blockLines []string
+	for i, r := range rules {
+		dir := r.Directory
+		if dir == "" {
+			dir = "/"
+		}
+		if !validateNginxPath(dir) {
+			logger.Warn().Str("directory", dir).Msg("skipping reverse proxy rule with invalid directory path")
+			continue
+		}
+		if !validateURL(r.TargetURL) {
+			logger.Warn().Str("target_url", r.TargetURL).Msg("skipping reverse proxy rule with invalid target URL")
+			continue
+		}
+
+		target := sanitizeApacheValue(r.TargetURL)
+		epName := fmt.Sprintf("proxy_%s_%d", sanitizeOLSName(r.Name), i)
+
+		// External app (proxy backend)
+		blockLines = append(blockLines, fmt.Sprintf("extprocessor %s {", epName))
+		blockLines = append(blockLines, "  type                    proxy")
+		blockLines = append(blockLines, fmt.Sprintf("  address                 %s", target))
+		blockLines = append(blockLines, "  maxConns                100")
+		blockLines = append(blockLines, "  pcKeepAliveTimeout      60")
+		blockLines = append(blockLines, "  initTimeout             60")
+		blockLines = append(blockLines, "  retryTimeout            0")
+		blockLines = append(blockLines, "  respBuffer              0")
+		blockLines = append(blockLines, "}")
+		blockLines = append(blockLines, "")
+
+		// Context block to route requests to proxy
+		blockLines = append(blockLines, fmt.Sprintf("context %s {", dir))
+		blockLines = append(blockLines, "  type                    proxy")
+		blockLines = append(blockLines, fmt.Sprintf("  handler                 %s", epName))
+		if r.SendDomain {
+			blockLines = append(blockLines, "  addDefaultCharset       off")
+		}
+
+		// URL rewrite rules
+		if len(r.URLRewrite) > 0 {
+			blockLines = append(blockLines, "  rewrite  {")
+			blockLines = append(blockLines, "    enable                1")
+			var rwRules []string
+			for _, rw := range r.URLRewrite {
+				if rw.Pattern != "" && rw.Replacement != "" {
+					rwRules = append(rwRules, fmt.Sprintf("RewriteRule %s %s [P,L]", sanitizeApacheValue(rw.Pattern), sanitizeApacheValue(rw.Replacement)))
+				}
+			}
+			if len(rwRules) > 0 {
+				blockLines = append(blockLines, "    rules                 <<<END_rules")
+				blockLines = append(blockLines, rwRules...)
+				blockLines = append(blockLines, "    END_rules")
+			}
+			blockLines = append(blockLines, "  }")
+		}
+
+		blockLines = append(blockLines, "}")
+	}
+
+	return s.insertOLSBlock(confPath, "#REVERSE_PROXY_START", "#REVERSE_PROXY_END", blockLines)
+}
+
+// sanitizeApacheValue removes dangerous characters from Apache config values.
+func sanitizeApacheValue(s string) string {
+	r := strings.NewReplacer("\n", "", "\r", "", "`", "")
+	return r.Replace(s)
+}
+
+// sanitizeOLSName creates a safe identifier for OLS extprocessor names.
+func sanitizeOLSName(s string) string {
+	var buf strings.Builder
+	for _, c := range s {
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
+			buf.WriteRune(c)
+		}
+	}
+	result := buf.String()
+	if result == "" {
+		result = "proxy"
+	}
+	return result
+}
+
+// insertApacheBlock inserts lines between start/end markers in an Apache VirtualHost config.
+// Inserts after the last ErrorDocument directive or before </VirtualHost>.
+func (s *SiteService) insertApacheBlock(confPath, startMarker, endMarker string, blockLines []string) error {
+	content, err := os.ReadFile(confPath)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to read vhost config")
+	}
+
+	text := string(content)
+
+	if strings.Contains(text, startMarker) {
+		return s.replaceApacheBlock(confPath, startMarker, endMarker, blockLines)
+	}
+
+	lines := vhostLines(text)
+	var newLines []string
+	inserted := false
+	for i, line := range lines {
+		newLines = append(newLines, line)
+		if !inserted {
+			trimmed := strings.TrimSpace(line)
+			// Insert before </VirtualHost> closing tag (first occurrence that has content after)
+			nextIdx := i + 1
+			if nextIdx < len(lines) && strings.TrimSpace(lines[nextIdx]) == "</VirtualHost>" {
+				newLines = append(newLines, "    "+startMarker)
+				for _, bl := range blockLines {
+					newLines = append(newLines, "    "+bl)
+				}
+				newLines = append(newLines, "    "+endMarker)
+				inserted = true
+			}
+			// Also try inserting after CustomConfig or ErrorDocument
+			if !inserted && (strings.HasPrefix(trimmed, "ErrorDocument 502") || strings.Contains(trimmed, "# Custom configuration")) {
+				newLines = append(newLines, "    "+startMarker)
+				for _, bl := range blockLines {
+					newLines = append(newLines, "    "+bl)
+				}
+				newLines = append(newLines, "    "+endMarker)
+				inserted = true
+			}
+		}
+	}
+
+	// Fallback: if not inserted, append before last </VirtualHost>
+	if !inserted {
+		var finalLines []string
+		done := false
+		for i := len(newLines) - 1; i >= 0; i-- {
+			if !done && strings.TrimSpace(newLines[i]) == "</VirtualHost>" {
+				finalLines = append([]string{
+					"    " + startMarker,
+				}, finalLines...)
+				for j := len(blockLines) - 1; j >= 0; j-- {
+					finalLines = append([]string{"    " + blockLines[j]}, finalLines...)
+				}
+				finalLines = append([]string{"    " + endMarker}, finalLines...)
+				done = true
+			}
+			finalLines = append([]string{newLines[i]}, finalLines...)
+		}
+		if done {
+			newLines = finalLines
+		}
+	}
+
+	return os.WriteFile(confPath, []byte(vhostJoin(newLines)), 0644)
+}
+
+// replaceApacheBlock replaces content between start/end markers in Apache config.
+func (s *SiteService) replaceApacheBlock(confPath, startMarker, endMarker string, blockLines []string) error {
+	content, err := os.ReadFile(confPath)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to read vhost config")
+	}
+
+	lines := vhostLines(string(content))
+	var newLines []string
+	inBlock := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == startMarker {
+			inBlock = true
+			newLines = append(newLines, line)
+			for _, bl := range blockLines {
+				newLines = append(newLines, "    "+bl)
+			}
+			continue
+		}
+		if trimmed == endMarker {
+			inBlock = false
+			newLines = append(newLines, line)
+			continue
+		}
+		if inBlock {
+			continue
+		}
+		newLines = append(newLines, line)
+	}
+
+	return os.WriteFile(confPath, []byte(vhostJoin(newLines)), 0644)
+}
+
+// removeApacheBlock removes everything between (and including) the start/end markers in Apache config.
+func (s *SiteService) removeApacheBlock(confPath, startMarker, endMarker string) error {
+	return s.removeNginxBlock(confPath, startMarker, endMarker)
+}
+
+// insertOLSBlock inserts lines between start/end markers in an OLS vhost config.
+// Inserts before the "rewrite {" global block or at end of file.
+func (s *SiteService) insertOLSBlock(confPath, startMarker, endMarker string, blockLines []string) error {
+	content, err := os.ReadFile(confPath)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to read vhost config")
+	}
+
+	text := string(content)
+
+	if strings.Contains(text, startMarker) {
+		return s.replaceOLSBlock(confPath, startMarker, endMarker, blockLines)
+	}
+
+	lines := vhostLines(text)
+	var newLines []string
+	inserted := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Insert before the global "rewrite {" block (not inside a context)
+		if !inserted && trimmed == "rewrite  {" {
+			newLines = append(newLines, startMarker)
+			for _, bl := range blockLines {
+				newLines = append(newLines, bl)
+			}
+			newLines = append(newLines, endMarker)
+			newLines = append(newLines, "")
+			inserted = true
+		}
+		newLines = append(newLines, line)
+	}
+
+	if !inserted {
+		newLines = append(newLines, startMarker)
+		for _, bl := range blockLines {
+			newLines = append(newLines, bl)
+		}
+		newLines = append(newLines, endMarker)
+	}
+
+	return os.WriteFile(confPath, []byte(vhostJoin(newLines)), 0644)
+}
+
+// replaceOLSBlock replaces content between start/end markers in OLS config.
+func (s *SiteService) replaceOLSBlock(confPath, startMarker, endMarker string, blockLines []string) error {
+	content, err := os.ReadFile(confPath)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to read vhost config")
+	}
+
+	lines := vhostLines(string(content))
+	var newLines []string
+	inBlock := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == startMarker {
+			inBlock = true
+			newLines = append(newLines, line)
+			for _, bl := range blockLines {
+				newLines = append(newLines, bl)
+			}
+			continue
+		}
+		if trimmed == endMarker {
+			inBlock = false
+			newLines = append(newLines, line)
+			continue
+		}
+		if inBlock {
+			continue
+		}
+		newLines = append(newLines, line)
+	}
+
+	return os.WriteFile(confPath, []byte(vhostJoin(newLines)), 0644)
+}
+
+// removeOLSBlock removes everything between (and including) the start/end markers in OLS config.
+func (s *SiteService) removeOLSBlock(confPath, startMarker, endMarker string) error {
+	return s.removeNginxBlock(confPath, startMarker, endMarker)
 }
 
 // ---------------------------------------------------------------------------
