@@ -55,6 +55,10 @@ func (h *SoftwareHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gi
 		sw.PUT("/phpmyadmin/manager", h.setPhpMyAdminConfig)
 		sw.GET("/phpmyadmin/php-versions", h.getAvailablePHPVersions)
 
+		// pgAdmin Manager
+		sw.GET("/pgadmin/manager", h.getPgAdminConfig)
+		sw.PUT("/pgadmin/manager", h.setPgAdminConfig)
+
 		// Nginx version management
 		sw.GET("/nginx/available-versions", h.getNginxAvailableVersions)
 
@@ -455,6 +459,32 @@ func (h *SoftwareHandler) setPhpMyAdminConfig(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": "phpMyAdmin configuration updated"})
+}
+
+// getPgAdminConfig returns the current pgAdmin manager configuration.
+func (h *SoftwareHandler) getPgAdminConfig(c *gin.Context) {
+	cfg, err := h.softwareService.GetPgAdminConfig()
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, cfg)
+}
+
+// setPgAdminConfig updates the pgAdmin manager configuration.
+func (h *SoftwareHandler) setPgAdminConfig(c *gin.Context) {
+	var cfg service.PgAdminConfig
+	if err := c.ShouldBindJSON(&cfg); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid pgAdmin configuration"},
+		})
+		return
+	}
+	if err := h.softwareService.SetPgAdminConfig(&cfg); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		return
+	}
+	response.Success(c, gin.H{"message": "pgAdmin configuration updated"})
 }
 
 // getAvailablePHPVersions returns installed PHP versions with active FPM.

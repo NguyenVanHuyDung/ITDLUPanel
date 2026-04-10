@@ -148,6 +148,14 @@ var knownSoftware = map[string]softwareMeta{
 		InstallPath:    "/ITDLUPanel/server/postgresql",
 		DefaultVersion: "17",
 	},
+	"pgadmin": {
+		DisplayName:    "pgAdmin",
+		Type:           "tool",
+		ServiceName:    "pgadmin4",
+		ConfigPath:     "/ITDLUPanel/server/config/pgadmin_config.json",
+		InstallPath:    "/ITDLUPanel/server/pgadmin",
+		DefaultVersion: "latest",
+	},
 }
 
 func init() {
@@ -2524,6 +2532,273 @@ func (s *SoftwareService) managePhpMyAdminFirewall(_ context.Context, cfg *PhpMy
 		Protocol string
 		Desc     string
 	}{{Port: httpPort, Protocol: "tcp", Desc: "phpMyAdmin"}}
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// pgAdmin4 Manager
+// ═══════════════════════════════════════════════════════════════════════════
+
+const (
+	pgadminConfigPath = "/ITDLUPanel/server/config/pgadmin_config.json"
+	pgadminSSLDir     = "/ITDLUPanel/server/pgadmin/ssl"
+	pgadminHTPasswd   = "/ITDLUPanel/server/pgadmin/.htpasswd"
+)
+
+func pgadminNginxConfPath() string {
+	return filepath.Join(installer.ServerBaseDir, "nginx", "conf", "conf.d", "pgadmin.conf")
+}
+
+// PgAdminConfig holds the pgAdmin manager settings.
+type PgAdminConfig struct {
+	PublicAccess bool   `json:"public_access"`
+	AccessPort   int    `json:"access_port"`
+	SSLEnabled   bool   `json:"ssl_enabled"`
+	SSLPort      int    `json:"ssl_port"`
+	AuthEnabled  bool   `json:"auth_enabled"`
+	AuthUser     string `json:"auth_user"`
+	AuthPassword string `json:"auth_password"`
+}
+
+func defaultPgAdminConfig() *PgAdminConfig {
+	return &PgAdminConfig{
+		PublicAccess: true,
+		AccessPort:   5050,
+		SSLEnabled:   false,
+		SSLPort:      5051,
+		AuthEnabled:  false,
+	}
+}
+
+// GetPgAdminConfig reads the pgAdmin config from disk or returns defaults.
+func (s *SoftwareService) GetPgAdminConfig() (*PgAdminConfig, error) {
+	cfg := defaultPgAdminConfig()
+
+	data, err := os.ReadFile(pgadminConfigPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return cfg, nil
+		}
+		return nil, fmt.Errorf("failed to read pgadmin config: %w", err)
+	}
+
+	if err := json.Unmarshal(data, cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse pgadmin config: %w", err)
+	}
+
+	return cfg, nil
+}
+
+// SetPgAdminConfig persists the config, regenerates nginx config, manages
+// SSL certs, htpasswd, firewall rules, and reloads nginx.
+func (s *SoftwareService) SetPgAdminConfig(cfg *PgAdminConfig) error {
+	if cfg.AccessPort == 0 {
+		cfg.AccessPort = 5050
+	}
+	if cfg.SSLPort == 0 {
+		cfg.SSLPort = 5051
+	}
+
+	// Persist config JSON
+	if err := s.savePgAdminConfig(cfg); err != nil {
+		return err
+	}
+
+	// Handle basic auth htpasswd
+	if cfg.AuthEnabled {
+		if err := s.ensurePgAdminHTPasswd(cfg.AuthUser, cfg.AuthPassword); err != nil {
+			return fmt.Errorf("failed to create htpasswd: %w", err)
+		}
+	}
+
+	// Handle SSL certs
+	if cfg.SSLEnabled {
+		if err := s.ensurePgAdminSSLCerts(); err != nil {
+			return fmt.Errorf("failed to ensure SSL certs: %w", err)
+		}
+	}
+
+	// Generate nginx config
+	nginxCfg := s.buildPgAdminNginxConfig(cfg)
+	if err := os.WriteFile(pgadminNginxConfPath(), []byte(nginxCfg), 0644); err != nil {
+		return fmt.Errorf("failed to write nginx config: %w", err)
+	}
+
+	// Test nginx config
+	result, err := system.ExecWithTimeout(10*time.Second, "nginx", "-t")
+	if err != nil || result.ExitCode != 0 {
+		errMsg := ""
+		if result != nil {
+			errMsg = result.Stderr
+		}
+		return fmt.Errorf("nginx config test failed: %s", errMsg)
+	}
+
+	// Reload nginx
+	if _, err := system.ExecWithTimeout(10*time.Second, "systemctl", "reload", "nginx"); err != nil {
+		logger.Warn().Err(err).Msg("failed to reload nginx after pgadmin config update")
+	}
+
+	// Manage firewall rules
+	s.managePgAdminFirewall(cfg)
+
+	return nil
+}
+
+func (s *SoftwareService) savePgAdminConfig(cfg *PgAdminConfig) error {
+	dir := filepath.Dir(pgadminConfigPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create config dir: %w", err)
+	}
+
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal pgadmin config: %w", err)
+	}
+	return os.WriteFile(pgadminConfigPath, data, 0644)
+}
+
+func (s *SoftwareService) ensurePgAdminHTPasswd(user, password string) error {
+	if user == "" || password == "" {
+		return fmt.Errorf("auth_user and auth_password are required when auth is enabled")
+	}
+
+	dir := filepath.Dir(pgadminHTPasswd)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	result, err := system.ExecWithTimeout(5*time.Second, "htpasswd", "-cb", pgadminHTPasswd, user, password)
+	if err == nil && result.ExitCode == 0 {
+		return nil
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
+	line := fmt.Sprintf("%s:%s\n", user, string(hash))
+	return os.WriteFile(pgadminHTPasswd, []byte(line), 0644)
+}
+
+func (s *SoftwareService) ensurePgAdminSSLCerts() error {
+	certPath := filepath.Join(pgadminSSLDir, "pgadmin.crt")
+	keyPath := filepath.Join(pgadminSSLDir, "pgadmin.key")
+
+	if _, err := os.Stat(certPath); err == nil {
+		if _, err := os.Stat(keyPath); err == nil {
+			return nil
+		}
+	}
+
+	if err := os.MkdirAll(pgadminSSLDir, 0755); err != nil {
+		return fmt.Errorf("failed to create SSL dir: %w", err)
+	}
+
+	result, err := system.ExecWithTimeout(30*time.Second,
+		"openssl", "req", "-x509", "-nodes", "-days", "3650",
+		"-newkey", "rsa:2048",
+		"-keyout", keyPath,
+		"-out", certPath,
+		"-subj", "/CN=pgAdmin/O=ITDLUPanel",
+	)
+	if err != nil {
+		return fmt.Errorf("failed to generate self-signed cert: %w", err)
+	}
+	if result.ExitCode != 0 {
+		return fmt.Errorf("openssl failed: %s", result.Stderr)
+	}
+	return nil
+}
+
+func (s *SoftwareService) buildPgAdminNginxConfig(cfg *PgAdminConfig) string {
+	var b strings.Builder
+	b.WriteString("# pgAdmin4 - managed by ITDLUPanel\n")
+
+	// HTTP server block
+	s.writePgAdminServerBlock(&b, cfg, false)
+
+	// SSL server block
+	if cfg.SSLEnabled {
+		b.WriteString("\n")
+		s.writePgAdminServerBlock(&b, cfg, true)
+	}
+
+	return b.String()
+}
+
+func (s *SoftwareService) writePgAdminServerBlock(b *strings.Builder, cfg *PgAdminConfig, ssl bool) {
+	port := cfg.AccessPort
+	if ssl {
+		port = cfg.SSLPort
+		fmt.Fprintf(b, "# SSL block\n")
+	}
+
+	b.WriteString("server {\n")
+	if ssl {
+		fmt.Fprintf(b, "    listen %d ssl;\n", port)
+	} else {
+		fmt.Fprintf(b, "    listen %d;\n", port)
+	}
+	b.WriteString("    server_name _;\n\n")
+
+	if ssl {
+		fmt.Fprintf(b, "    ssl_certificate %s/pgadmin.crt;\n", pgadminSSLDir)
+		fmt.Fprintf(b, "    ssl_certificate_key %s/pgadmin.key;\n", pgadminSSLDir)
+		b.WriteString("    ssl_protocols TLSv1.2 TLSv1.3;\n\n")
+	}
+
+	if cfg.AuthEnabled {
+		b.WriteString("    auth_basic \"pgAdmin Login\";\n")
+		fmt.Fprintf(b, "    auth_basic_user_file %s;\n\n", pgadminHTPasswd)
+	}
+
+	if !cfg.PublicAccess {
+		b.WriteString("    allow 127.0.0.1;\n")
+		b.WriteString("    deny all;\n\n")
+	}
+
+	b.WriteString("    location / {\n")
+	b.WriteString("        proxy_pass http://127.0.0.1:5050;\n")
+	b.WriteString("        proxy_set_header Host $host;\n")
+	b.WriteString("        proxy_set_header X-Real-IP $remote_addr;\n")
+	b.WriteString("        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
+	b.WriteString("        proxy_set_header X-Forwarded-Proto $scheme;\n")
+	b.WriteString("        proxy_set_header X-Script-Name /;\n")
+	b.WriteString("        proxy_redirect off;\n")
+	b.WriteString("    }\n")
+
+	b.WriteString("}\n")
+}
+
+func (s *SoftwareService) managePgAdminFirewall(cfg *PgAdminConfig) {
+	if s.firewallService == nil {
+		return
+	}
+
+	httpPort := strconv.Itoa(cfg.AccessPort)
+	sslPort := strconv.Itoa(cfg.SSLPort)
+
+	if err := s.firewallService.UpdateDefaultPort("pgAdmin", httpPort); err != nil {
+		logger.Warn().Err(err).Str("port", httpPort).Msg("failed to update default pgAdmin firewall port")
+	}
+
+	if cfg.SSLEnabled {
+		softwarePortMap["pgadmin-ssl"] = []struct {
+			Port     string
+			Protocol string
+			Desc     string
+		}{{Port: sslPort, Protocol: "tcp", Desc: "pgAdmin SSL"}}
+		s.firewallService.OpenPortsForSoftware("pgadmin-ssl")
+	} else {
+		s.firewallService.ClosePortsForSoftware("pgadmin-ssl")
+		delete(softwarePortMap, "pgadmin-ssl")
+	}
+
+	softwarePortMap["pgadmin"] = []struct {
+		Port     string
+		Protocol string
+		Desc     string
+	}{{Port: httpPort, Protocol: "tcp", Desc: "pgAdmin"}}
 }
 
 // GetAvailablePHPVersions scans the panel PHP config directory for installed

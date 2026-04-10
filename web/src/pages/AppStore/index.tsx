@@ -20,6 +20,7 @@ import FTPManageModal from '@/components/FTPManageModal';
 import MariadbManageModal from '@/components/MariadbManageModal';
 import RedisManageModal from '@/components/RedisManageModal';
 import PostgresqlManageModal from '@/components/PostgresqlManageModal';
+import PgAdminManageModal from '@/components/PgAdminManageModal';
 import FTPStorageManageModal from '@/components/FTPStorageManageModal';
 import S3StorageManageModal from '@/components/S3StorageManageModal';
 import GoogleDriveManageModal from '@/components/GoogleDriveManageModal';
@@ -44,7 +45,7 @@ interface AvailableSoftware {
 
 const SOFTWARE_COLORS: Record<string, string> = {
   nginx: '#009639', apache: '#D22128', mysql: '#4479A1', mariadb: '#003545',
-  postgresql: '#336791', php: '#777BB4', phpmyadmin: '#F89C0E', nodejs: '#339933',
+  postgresql: '#336791', pgadmin: '#336791', php: '#777BB4', phpmyadmin: '#F89C0E', nodejs: '#339933',
   redis: '#DC382D', memcached: '#3C7E31', python: '#3776AB', docker: '#2496ED',
   mongodb: '#47A248', openlitespeed: '#3A7BD5', pureftpd: '#6C757D',
   ftp_storage: '#1890FF',
@@ -79,6 +80,7 @@ export default function AppStore() {
   const [mariadbModalOpen, setMariadbModalOpen] = useState(false);
   const [redisModalOpen, setRedisModalOpen] = useState(false);
   const [postgresqlModalOpen, setPostgresqlModalOpen] = useState(false);
+  const [pgadminModalOpen, setPgadminModalOpen] = useState(false);
   const [ftpStorageModalOpen, setFtpStorageModalOpen] = useState(false);
   const [s3ModalOpen, setS3ModalOpen] = useState(false);
   const [googleDriveModalOpen, setGoogleDriveModalOpen] = useState(false);
@@ -356,6 +358,7 @@ export default function AppStore() {
     if (sw.name === 'mysql') { setMariadbModalOpen(true); return; }
     if (sw.name === 'redis') { setRedisModalOpen(true); return; }
     if (sw.name === 'postgresql') { setPostgresqlModalOpen(true); return; }
+    if (sw.name === 'pgadmin') { setPgadminModalOpen(true); return; }
     if (sw.name === 'ftp_storage') { setFtpStorageModalOpen(true); return; }
     if (sw.name === 's3_storage') { setS3ModalOpen(true); return; }
     if (sw.name === 'google_drive') { setGoogleDriveModalOpen(true); return; }
@@ -1458,6 +1461,7 @@ export default function AppStore() {
       <MariadbManageModal open={mariadbModalOpen} onClose={() => setMariadbModalOpen(false)} />
       <RedisManageModal open={redisModalOpen} onClose={() => setRedisModalOpen(false)} />
       <PostgresqlManageModal open={postgresqlModalOpen} onClose={() => setPostgresqlModalOpen(false)} />
+      <PgAdminManageModal open={pgadminModalOpen} onClose={() => setPgadminModalOpen(false)} />
       <FTPStorageManageModal open={ftpStorageModalOpen} onClose={() => setFtpStorageModalOpen(false)} />
       <S3StorageManageModal open={s3ModalOpen} onClose={() => setS3ModalOpen(false)} />
       <GoogleDriveManageModal open={googleDriveModalOpen} onClose={() => setGoogleDriveModalOpen(false)} />
