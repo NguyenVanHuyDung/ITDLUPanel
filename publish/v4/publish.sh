@@ -28,7 +28,7 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 PUBLISH_DIR="${SCRIPT_DIR}"
 WEB_DIR="${PROJECT_ROOT}/web"
 
-VERSION="4.0.0"
+VERSION="1.0.0"
 BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 ARCH="amd64"
 SKIP_FRONTEND=false
