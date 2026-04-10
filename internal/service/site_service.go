@@ -88,6 +88,8 @@ type CreateSiteRequest struct {
 	Path        string `json:"path" validate:"omitempty"`
 	Webserver   string `json:"webserver" validate:"required,oneof=nginx apache openlitespeed"`
 	PHPVersion  string `json:"php_version" validate:"omitempty"`
+	SiteType    string `json:"site_type" validate:"omitempty,oneof=php proxy node"`
+	ProxyTarget string `json:"proxy_target" validate:"omitempty"`
 	CreateDB    bool   `json:"create_db"`
 	DBName      string `json:"db_name" validate:"omitempty,min=1,max=64"`
 	DBUser      string `json:"db_user" validate:"omitempty,min=1,max=32"`
@@ -121,6 +123,7 @@ type Site struct {
 	UpdatedAt   string  `json:"updated_at"`
 	DiskQuota   int64   `json:"disk_quota"`
 	DiskUsage   int64   `json:"disk_usage"`
+	SiteType    string  `json:"site_type"`
 }
 
 // Domain represents a domain alias bound to a site.
@@ -203,6 +206,15 @@ func (s *SiteService) ReconcileVhosts() {
 // Create provisions a new website: validates uniqueness, creates document root,
 // generates vhost config, enables the site and inserts the record.
 func (s *SiteService) Create(req CreateSiteRequest, userID int64) (*Site, error) {
+	// Default site_type to "php" if not specified
+	if req.SiteType == "" {
+		req.SiteType = "php"
+	}
+	// Proxy sites don't need PHP
+	if req.SiteType == "proxy" {
+		req.PHPVersion = ""
+	}
+
 	// 1. Validate domain uniqueness
 	var count int
 	err := s.db.QueryRow("SELECT COUNT(*) FROM sites WHERE domain = ?", req.Domain).Scan(&count)
@@ -283,9 +295,9 @@ func (s *SiteService) Create(req CreateSiteRequest, userID int64) (*Site, error)
 
 	// 6. Insert into DB
 	result, err := s.db.Exec(
-		`INSERT INTO sites (name, domain, description, path, webserver, php_version, status, created_by, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, 1, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-		req.Name, req.Domain, req.Description, docRoot, req.Webserver, req.PHPVersion, userID,
+		`INSERT INTO sites (name, domain, description, path, webserver, php_version, site_type, status, created_by, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		req.Name, req.Domain, req.Description, docRoot, req.Webserver, req.PHPVersion, req.SiteType, userID,
 	)
 	if err != nil {
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to insert site")
@@ -337,7 +349,31 @@ func (s *SiteService) Create(req CreateSiteRequest, userID int64) (*Site, error)
 		}
 	}
 
-	logger.Info().Int64("id", id).Str("domain", req.Domain).Msg("site created")
+	// Create reverse proxy rule for proxy-type sites
+	if req.SiteType == "proxy" && req.ProxyTarget != "" {
+		rule := ReverseProxyRule{
+			Name:       req.Domain,
+			Directory:  "/",
+			TargetURL:  req.ProxyTarget,
+			SendDomain: true,
+		}
+		rules := []ReverseProxyRule{rule}
+		if err := writeJSONFile(reverseProxyPath(id), rules); err != nil {
+			logger.Warn().Err(err).Msg("failed to save reverse proxy rules for proxy site (non-fatal)")
+		} else {
+			site, _ := s.GetByID(id)
+			if site != nil {
+				if err := s.rebuildReverseProxy(site, rules); err != nil {
+					logger.Warn().Err(err).Msg("failed to rebuild reverse proxy config (non-fatal)")
+				} else {
+					gen := generatorFor(req.Webserver)
+					_ = gen.ReloadServer()
+				}
+			}
+		}
+	}
+
+	logger.Info().Int64("id", id).Str("domain", req.Domain).Str("type", req.SiteType).Msg("site created")
 
 	if s.notifier != nil {
 		s.notifier.Notify(NotificationEvent{Type: EventSiteCreated, Title: req.Domain, Detail: fmt.Sprintf("Webserver: %s, PHP: %s", req.Webserver, req.PHPVersion)})
@@ -377,7 +413,7 @@ func (s *SiteService) List(page, pageSize int, allowedIDs []int64) ([]*Site, int
 	rows, err := s.db.Query(
 		`SELECT id, name, domain, description, path, webserver, php_version, ssl_enabled,
 		        ssl_type, ssl_expiry, status, config_extra, created_by, created_at, updated_at,
-		        disk_quota, disk_usage
+		        disk_quota, disk_usage, COALESCE(site_type, 'php')
 		 FROM sites`+whereClause+` ORDER BY id DESC LIMIT ? OFFSET ?`, pageSize, offset,
 	)
 	if err != nil {
@@ -393,7 +429,7 @@ func (s *SiteService) List(page, pageSize int, allowedIDs []int64) ([]*Site, int
 			&site.PHPVersion, &site.SSLEnabled, &site.SSLType, &site.SSLExpiry,
 			&site.Status, &site.ConfigExtra, &site.CreatedBy,
 			&site.CreatedAt, &site.UpdatedAt,
-			&site.DiskQuota, &site.DiskUsage,
+			&site.DiskQuota, &site.DiskUsage, &site.SiteType,
 		); err != nil {
 			return nil, 0, apperrors.Wrap(err, apperrors.ErrInternal, "failed to scan site row")
 		}
@@ -409,14 +445,14 @@ func (s *SiteService) GetByID(id int64) (*Site, error) {
 	err := s.db.QueryRow(
 		`SELECT id, name, domain, description, path, webserver, php_version, ssl_enabled,
 		        ssl_type, ssl_expiry, status, config_extra, created_by, created_at, updated_at,
-		        disk_quota, disk_usage
+		        disk_quota, disk_usage, COALESCE(site_type, 'php')
 		 FROM sites WHERE id = ?`, id,
 	).Scan(
 		&site.ID, &site.Name, &site.Domain, &site.Description, &site.Path, &site.Webserver,
 		&site.PHPVersion, &site.SSLEnabled, &site.SSLType, &site.SSLExpiry,
 		&site.Status, &site.ConfigExtra, &site.CreatedBy,
 		&site.CreatedAt, &site.UpdatedAt,
-		&site.DiskQuota, &site.DiskUsage,
+		&site.DiskQuota, &site.DiskUsage, &site.SiteType,
 	)
 	if err == sql.ErrNoRows {
 		return nil, apperrors.New(apperrors.ErrNotFound, "site not found")
@@ -893,7 +929,7 @@ func (s *SiteService) RegenerateAllVhosts() error {
 	rows, err := s.db.Query(
 		`SELECT id, name, domain, path, webserver, php_version, ssl_enabled,
 		        ssl_type, ssl_expiry, status, config_extra, created_by, created_at, updated_at,
-		        disk_quota, disk_usage
+		        disk_quota, disk_usage, COALESCE(site_type, 'php')
 		 FROM sites WHERE webserver = 'nginx'`,
 	)
 	if err != nil {
@@ -909,7 +945,7 @@ func (s *SiteService) RegenerateAllVhosts() error {
 			&site.PHPVersion, &site.SSLEnabled, &site.SSLType, &site.SSLExpiry,
 			&site.Status, &site.ConfigExtra, &site.CreatedBy,
 			&site.CreatedAt, &site.UpdatedAt,
-			&site.DiskQuota, &site.DiskUsage,
+			&site.DiskQuota, &site.DiskUsage, &site.SiteType,
 		); err != nil {
 			errs = append(errs, fmt.Sprintf("scan site: %v", err))
 			continue

@@ -24,5 +24,6 @@ func All() []Migration {
 		&Migration011UserResources{},
 		&Migration012Notifications{},
 		&Migration013NotificationTemplates{},
+		&Migration014SiteType{},
 	}
 }

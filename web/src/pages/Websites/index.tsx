@@ -3513,6 +3513,7 @@ function WebsitesContent() {
   const [backupStorageId, setBackupStorageId] = useState<number | null>(null);
   const [detectedWebServer, setDetectedWebServer] = useState<string>('');
   const [ftpOption, setFtpOption] = useState<'none' | 'create'>('none');
+  const [activeTab, setActiveTab] = useState<'php' | 'proxy'>('php');
   const [pathManual, setPathManual] = useState(false);
   const prevDomainRef = useRef<string>('');
   const [pathBrowserOpen, setPathBrowserOpen] = useState(false);
@@ -3636,6 +3637,7 @@ function WebsitesContent() {
       const values = await form.validateFields();
       if (!values.name) values.name = values.domain;
       if (!values.path) values.path = `/ITDLUPanel/wwwroot/${values.domain}`;
+      values.site_type = activeTab;
       // Only include FTP fields when creating new
       if (ftpOption !== 'create') {
         delete values.ftp_user;
@@ -3868,11 +3870,13 @@ function WebsitesContent() {
   };
 
   const filteredSites = useMemo(() =>
-    sites.filter(s =>
-      s.domain.toLowerCase().includes(searchText.toLowerCase()) ||
-      s.name.toLowerCase().includes(searchText.toLowerCase())
-    ),
-  [sites, searchText]);
+    sites.filter(s => {
+      const type = s.site_type || 'php';
+      if (type !== activeTab) return false;
+      return s.domain.toLowerCase().includes(searchText.toLowerCase()) ||
+        s.name.toLowerCase().includes(searchText.toLowerCase());
+    }),
+  [sites, searchText, activeTab]);
 
   const columns = [
     {
@@ -4093,24 +4097,31 @@ function WebsitesContent() {
           display: 'flex', gap: 4, alignItems: 'center',
         }}>
           {[
-            { key: 'php', label: 'PHP Project', icon: <GlobalOutlined style={{ marginRight: 6 }} />, active: true },
-            { key: 'node', label: 'Node Project', active: false },
-            { key: 'proxy', label: 'Proxy Project', active: false },
+            { key: 'php' as const, label: 'PHP Project', icon: <GlobalOutlined style={{ marginRight: 6 }} /> },
+            { key: 'proxy' as const, label: 'Proxy Project', icon: <ApiOutlined style={{ marginRight: 6 }} /> },
           ].map(tab => (
             <button
               key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
               style={{
                 padding: '6px 16px', borderRadius: 6,
-                border: 'none', cursor: tab.active ? 'pointer' : 'not-allowed',
+                border: 'none', cursor: 'pointer',
                 fontSize: 12, fontWeight: 500,
-                background: tab.active ? `${p.accent}15` : 'transparent',
-                color: tab.active ? p.accent : p.textMuted,
-                opacity: tab.active ? 1 : 0.5,
+                background: activeTab === tab.key ? `${p.accent}15` : 'transparent',
+                color: activeTab === tab.key ? p.accent : p.textMuted,
+                opacity: activeTab === tab.key ? 1 : 0.6,
                 transition: 'all 0.15s',
                 display: 'inline-flex', alignItems: 'center',
               }}
             >
               {tab.icon}{tab.label}
+              <span style={{
+                marginLeft: 6, fontSize: 10, padding: '1px 6px', borderRadius: 8,
+                background: activeTab === tab.key ? `${p.accent}20` : `${p.textMuted}15`,
+                color: activeTab === tab.key ? p.accent : p.textMuted,
+              }}>
+                {sites.filter(s => (s.site_type || 'php') === tab.key).length}
+              </span>
             </button>
           ))}
           <div style={{ flex: 1 }} />
@@ -4285,8 +4296,8 @@ function WebsitesContent() {
       <Modal
         title={
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <GlobalOutlined style={{ color: p.accent }} />
-            {t('websites.add_site')}
+            {activeTab === 'proxy' ? <ApiOutlined style={{ color: p.accent }} /> : <GlobalOutlined style={{ color: p.accent }} />}
+            {activeTab === 'proxy' ? 'Add Proxy Project' : t('websites.add_site')}
           </span>
         }
         open={modalOpen}
@@ -4345,31 +4356,41 @@ function WebsitesContent() {
                 ]} />
               </Form.Item>
             </Col>
-            <Col span={8}>
-              <Form.Item name="php_version" label={t('websites.php_version')} style={{ marginBottom: 10 }}>
-                <Select allowClear placeholder="Select" options={[
-                  { value: '', label: 'Static' },
-                  ...phpVersions.map(v => ({ value: v, label: `PHP ${v}` })),
-                ]} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item label="FTP Account" style={{ marginBottom: 10 }}>
-                <Select value={ftpOption} onChange={val => {
-                  setFtpOption(val);
-                  if (val === 'create') {
-                    const domain = form.getFieldValue('domain') || '';
-                    form.setFieldsValue({ ftp_user: domain.replace(/[^a-zA-Z0-9]/g, '_'), ftp_pass: generatePassword() });
-                  }
-                }} options={[
-                  { value: 'none', label: 'Not Set' },
-                  { value: 'create', label: 'Create New' },
-                ]} />
-              </Form.Item>
-            </Col>
+            {activeTab === 'proxy' ? (
+              <Col span={16}>
+                <Form.Item name="proxy_target" label="Proxy Target" rules={[{ required: true, message: 'Required' }]} style={{ marginBottom: 10 }}>
+                  <Input placeholder="http://127.0.0.1:3000" />
+                </Form.Item>
+              </Col>
+            ) : (
+              <>
+                <Col span={8}>
+                  <Form.Item name="php_version" label={t('websites.php_version')} style={{ marginBottom: 10 }}>
+                    <Select allowClear placeholder="Select" options={[
+                      { value: '', label: 'Static' },
+                      ...phpVersions.map(v => ({ value: v, label: `PHP ${v}` })),
+                    ]} />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item label="FTP Account" style={{ marginBottom: 10 }}>
+                    <Select value={ftpOption} onChange={val => {
+                      setFtpOption(val);
+                      if (val === 'create') {
+                        const domain = form.getFieldValue('domain') || '';
+                        form.setFieldsValue({ ftp_user: domain.replace(/[^a-zA-Z0-9]/g, '_'), ftp_pass: generatePassword() });
+                      }
+                    }} options={[
+                      { value: 'none', label: 'Not Set' },
+                      { value: 'create', label: 'Create New' },
+                    ]} />
+                  </Form.Item>
+                </Col>
+              </>
+            )}
           </Row>
 
-          {ftpOption === 'create' && (
+          {activeTab === 'php' && ftpOption === 'create' && (
             <Row gutter={12}>
               <Col span={12}>
                 <Form.Item name="ftp_user" label="FTP User" rules={[{ required: true }]} style={{ marginBottom: 10 }}>
@@ -4384,40 +4405,44 @@ function WebsitesContent() {
             </Row>
           )}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, marginTop: 2 }}>
-            <Form.Item name="create_db" valuePropName="checked" noStyle>
-              <Switch size="small" onChange={checked => {
-                if (checked) {
-                  const domain = form.getFieldValue('domain') || '';
-                  const sanitized = domain.replace(/[^a-zA-Z0-9]/g, '_');
-                  form.setFieldsValue({ db_name: sanitized, db_user: sanitized, db_pass: generatePassword() });
-                }
-              }} />
-            </Form.Item>
-            <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>Create Database</span>
-          </div>
+          {activeTab === 'php' && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, marginTop: 2 }}>
+                <Form.Item name="create_db" valuePropName="checked" noStyle>
+                  <Switch size="small" onChange={checked => {
+                    if (checked) {
+                      const domain = form.getFieldValue('domain') || '';
+                      const sanitized = domain.replace(/[^a-zA-Z0-9]/g, '_');
+                      form.setFieldsValue({ db_name: sanitized, db_user: sanitized, db_pass: generatePassword() });
+                    }
+                  }} />
+                </Form.Item>
+                <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>Create Database</span>
+              </div>
 
-          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.create_db !== cur.create_db}>
-            {({ getFieldValue }) => getFieldValue('create_db') ? (
-              <Row gutter={12}>
-                <Col span={8}>
-                  <Form.Item name="db_name" label="DB Name" rules={[{ required: true }]} style={{ marginBottom: 10 }}>
-                    <Input placeholder="database_name" />
-                  </Form.Item>
-                </Col>
-                <Col span={8}>
-                  <Form.Item name="db_user" label="DB User" rules={[{ required: true }]} style={{ marginBottom: 10 }}>
-                    <Input placeholder="database_user" />
-                  </Form.Item>
-                </Col>
-                <Col span={8}>
-                  <Form.Item name="db_pass" label={<span>DB Pass <a onClick={() => form.setFieldsValue({ db_pass: generatePassword() })} style={{ fontSize: 11, marginLeft: 4 }}>Gen</a></span>} rules={[{ required: true }]} style={{ marginBottom: 10 }}>
-                    <Input.Password placeholder="Password" />
-                  </Form.Item>
-                </Col>
-              </Row>
-            ) : null}
-          </Form.Item>
+              <Form.Item noStyle shouldUpdate={(prev, cur) => prev.create_db !== cur.create_db}>
+                {({ getFieldValue }) => getFieldValue('create_db') ? (
+                  <Row gutter={12}>
+                    <Col span={8}>
+                      <Form.Item name="db_name" label="DB Name" rules={[{ required: true }]} style={{ marginBottom: 10 }}>
+                        <Input placeholder="database_name" />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item name="db_user" label="DB User" rules={[{ required: true }]} style={{ marginBottom: 10 }}>
+                        <Input placeholder="database_user" />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item name="db_pass" label={<span>DB Pass <a onClick={() => form.setFieldsValue({ db_pass: generatePassword() })} style={{ fontSize: 11, marginLeft: 4 }}>Gen</a></span>} rules={[{ required: true }]} style={{ marginBottom: 10 }}>
+                        <Input.Password placeholder="Password" />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                ) : null}
+              </Form.Item>
+            </>
+          )}
         </Form>
       </Modal>
 

@@ -93,6 +93,7 @@ export interface Site {
   webserver: string; php_version?: string; ssl_enabled: boolean;
   ssl_type?: string; ssl_expiry?: string; status: number;
   disk_quota?: number; disk_usage?: number;
+  site_type?: string;
   created_at: string;
 }
 
