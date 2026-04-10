@@ -86,6 +86,9 @@ const nginxTemplate = `server {
     include /ITDLUPanel/server/config/rewrite/{{ .Domain }}.conf;
     #URL-REWRITE-END
 
+    #REVERSE_PROXY_START
+    #REVERSE_PROXY_END
+
     location ~ \.php$ {
         fastcgi_pass unix:/run/php/php{{ .PHPVersion }}-fpm.sock;
         fastcgi_index index.php;
@@ -183,6 +186,9 @@ const nginxTemplate = `server {
     #URL-REWRITE-START
     include /ITDLUPanel/server/config/rewrite/{{ .Domain }}.conf;
     #URL-REWRITE-END
+
+    #REVERSE_PROXY_START
+    #REVERSE_PROXY_END
 
     location ~ \.php$ {
         fastcgi_pass unix:/run/php/php{{ .PHPVersion }}-fpm.sock;
@@ -316,6 +322,9 @@ server {
     include /ITDLUPanel/server/config/rewrite/{{ .Domain }}.conf;
     #URL-REWRITE-END
 
+    #REVERSE_PROXY_START
+    #REVERSE_PROXY_END
+
     location ~ \.php$ {
         fastcgi_pass unix:/run/php/php{{ .PHPVersion }}-fpm.sock;
         fastcgi_index index.php;
@@ -382,7 +391,7 @@ func (n *NginxGenerator) Generate(cfg VhostConfig) (string, error) {
 	}
 
 	// Ensure rewrite include file exists (nginx errors on missing includes)
-	n.ensureRewriteFile(cfg.Domain)
+	n.ensureRewriteFile(cfg.Domain, cfg.SiteType)
 
 	tmpl, err := template.New("nginx").Parse(nginxTemplate)
 	if err != nil {
@@ -496,12 +505,17 @@ func (n *NginxGenerator) ensurePHPSnippet(version string) {
 }
 
 // ensureRewriteFile creates the rewrite include file if it doesn't exist.
-func (n *NginxGenerator) ensureRewriteFile(domain string) {
+// For proxy sites, the rewrite file is kept empty to avoid conflicting location / blocks.
+func (n *NginxGenerator) ensureRewriteFile(domain, siteType string) {
 	dir := "/ITDLUPanel/server/config/rewrite"
 	_ = os.MkdirAll(dir, 0755)
 	fp := filepath.Join(dir, domain+".conf")
 	if _, err := os.Stat(fp); err != nil {
-		defaultContent := "location / {\n    try_files $uri $uri/ /index.php?$query_string;\n}\n"
-		_ = os.WriteFile(fp, []byte(defaultContent), 0644)
+		if siteType == "proxy" {
+			_ = os.WriteFile(fp, []byte(""), 0644)
+		} else {
+			defaultContent := "location / {\n    try_files $uri $uri/ /index.php?$query_string;\n}\n"
+			_ = os.WriteFile(fp, []byte(defaultContent), 0644)
+		}
 	}
 }

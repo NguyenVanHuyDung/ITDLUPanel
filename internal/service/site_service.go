@@ -265,6 +265,7 @@ func (s *SiteService) Create(req CreateSiteRequest, userID int64) (*Site, error)
 		Domain:     req.Domain,
 		DocRoot:    docRoot,
 		PHPVersion: req.PHPVersion,
+		SiteType:   req.SiteType,
 	}
 	if req.Webserver == "nginx" || req.Webserver == "" {
 		nginxVer := installer.DetectNginxVersion()
@@ -737,6 +738,7 @@ func (s *SiteService) SwitchPHP(id int64, phpVersion string) error {
 		Aliases:    aliases,
 		DocRoot:    site.Path,
 		PHPVersion: phpVersion,
+		SiteType:   site.SiteType,
 	}
 	if site.Webserver == "nginx" || site.Webserver == "" {
 		nginxVer2 := installer.DetectNginxVersion()
@@ -983,6 +985,7 @@ func (s *SiteService) regenerateVhostNoReload(site *Site) error {
 		Aliases:    aliases,
 		DocRoot:    site.Path,
 		PHPVersion: phpVersion,
+		SiteType:   site.SiteType,
 		SSLEnabled: site.SSLEnabled == 1,
 		ForceHTTPS: s.getConfigExtraField(site, "force_https") == "1",
 	}
@@ -1021,6 +1024,7 @@ func (s *SiteService) regenerateVhost(site *Site) error {
 		Aliases:    aliases,
 		DocRoot:    site.Path,
 		PHPVersion: phpVersion,
+		SiteType:   site.SiteType,
 		SSLEnabled: site.SSLEnabled == 1,
 		ForceHTTPS: s.getConfigExtraField(site, "force_https") == "1",
 	}
@@ -1808,6 +1812,49 @@ func (s *SiteService) insertNginxBlock(confPath, startMarker, endMarker string, 
 			}
 			newLines = append(newLines, "    "+endMarker)
 			inserted = true
+		}
+	}
+
+	return os.WriteFile(confPath, []byte(vhostJoin(newLines)), 0644)
+}
+
+// insertNginxBlockSmart inserts proxy block using markers if present,
+// otherwise inserts after the LAST uncommented root directive (not the first).
+// This handles SSL configs where the first root is in the :80 redirect block.
+func (s *SiteService) insertNginxBlockSmart(confPath, startMarker, endMarker string, blockLines []string) error {
+	content, err := os.ReadFile(confPath)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to read vhost config")
+	}
+
+	text := string(content)
+
+	if strings.Contains(text, startMarker) {
+		return s.replaceNginxBlock(confPath, startMarker, endMarker, blockLines)
+	}
+
+	// Find the LAST uncommented root directive and insert after it
+	lines := vhostLines(text)
+	lastRootIdx := -1
+	for i, line := range lines {
+		if strings.Contains(line, "root ") && !strings.Contains(line, "#") {
+			lastRootIdx = i
+		}
+	}
+
+	if lastRootIdx < 0 {
+		return apperrors.New(apperrors.ErrInternal, "no root directive found in nginx config")
+	}
+
+	var newLines []string
+	for i, line := range lines {
+		newLines = append(newLines, line)
+		if i == lastRootIdx {
+			newLines = append(newLines, "    "+startMarker)
+			for _, bl := range blockLines {
+				newLines = append(newLines, "    "+bl)
+			}
+			newLines = append(newLines, "    "+endMarker)
 		}
 	}
 
@@ -2900,7 +2947,7 @@ func (s *SiteService) rebuildReverseProxyNginx(site *Site, rules []ReverseProxyR
 		blockLines = append(blockLines, "}")
 	}
 
-	return s.insertNginxBlock(confPath, "#REVERSE_PROXY_START", "#REVERSE_PROXY_END", blockLines)
+	return s.insertNginxBlockSmart(confPath, "#REVERSE_PROXY_START", "#REVERSE_PROXY_END", blockLines)
 }
 
 // rebuildReverseProxyApache generates Apache ProxyPass directives for reverse proxy rules.

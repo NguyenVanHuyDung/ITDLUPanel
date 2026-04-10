@@ -10,6 +10,7 @@ type VhostConfig struct {
 	SSLCert            string
 	SSLKey             string
 	ForceHTTPS         bool   // redirect HTTP→HTTPS; independent of SSLEnabled
+	SiteType           string // "php" or "proxy"
 	CustomConfig       string
 	SupportsQUIC       bool // true if nginx >= 1.25.0
 	UsesHTTP2Directive bool // true if nginx >= 1.25.1 (http2 as separate directive)
