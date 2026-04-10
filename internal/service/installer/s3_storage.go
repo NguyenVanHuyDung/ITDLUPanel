@@ -24,6 +24,7 @@ func (i *S3StorageInstaller) Install(ctx context.Context, version string, progre
 	if err := os.MkdirAll(installDir, 0755); err != nil {
 		return err
 	}
+	_ = os.WriteFile(installDir+"/.installed", []byte("s3_storage"), 0644)
 
 	progress(100)
 	logger.Info().Msg("S3 Storage installed successfully")
@@ -38,7 +39,7 @@ func (i *S3StorageInstaller) Uninstall(ctx context.Context) error {
 }
 
 func (i *S3StorageInstaller) IsInstalled() bool {
-	_, err := os.Stat("/ITDLUPanel/server/s3_storage")
+	_, err := os.Stat("/ITDLUPanel/server/s3_storage/.installed")
 	return err == nil
 }
 

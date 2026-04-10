@@ -919,7 +919,8 @@ export default function Dashboard() {
         </Col>
       </Row>
 
-      {/* ══════ STORAGE PROVIDERS ══════ */}
+      {/* ══════ STORAGE PROVIDERS (only show when at least one has configs) ══════ */}
+      {storageProviders.some(sp => sp.count > 0) && (
       <Row gutter={16} style={{ marginTop: 16 }}>
         <Col xs={24}>
           <Card
@@ -929,7 +930,7 @@ export default function Dashboard() {
             styles={{ body: { padding: 16 }, header: { fontWeight: 600 } }}
           >
             <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '140px' : '180px'}, 1fr))`, gap: 10 }}>
-              {storageProviders.map(sp => (
+              {storageProviders.filter(sp => sp.count > 0).map(sp => (
                 <div
                   key={sp.key}
                   style={{
@@ -970,6 +971,7 @@ export default function Dashboard() {
           </Card>
         </Col>
       </Row>
+      )}
 
       <NginxManageModal open={nginxModalOpen} onClose={() => setNginxModalOpen(false)} />
       <PhpMyAdminManageModal open={pmaModalOpen} onClose={() => setPmaModalOpen(false)} />

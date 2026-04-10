@@ -24,6 +24,7 @@ func (i *GoogleDriveInstaller) Install(ctx context.Context, version string, prog
 	if err := os.MkdirAll(installDir, 0755); err != nil {
 		return err
 	}
+	_ = os.WriteFile(installDir+"/.installed", []byte("google_drive"), 0644)
 
 	progress(100)
 	logger.Info().Msg("Google Drive Storage installed successfully")
@@ -38,7 +39,7 @@ func (i *GoogleDriveInstaller) Uninstall(ctx context.Context) error {
 }
 
 func (i *GoogleDriveInstaller) IsInstalled() bool {
-	_, err := os.Stat("/ITDLUPanel/server/google_drive")
+	_, err := os.Stat("/ITDLUPanel/server/google_drive/.installed")
 	return err == nil
 }
 

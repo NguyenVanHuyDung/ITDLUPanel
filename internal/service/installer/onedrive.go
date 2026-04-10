@@ -24,6 +24,7 @@ func (i *OneDriveInstaller) Install(ctx context.Context, version string, progres
 	if err := os.MkdirAll(installDir, 0755); err != nil {
 		return err
 	}
+	_ = os.WriteFile(installDir+"/.installed", []byte("onedrive"), 0644)
 
 	progress(100)
 	logger.Info().Msg("OneDrive Storage installed successfully")
@@ -38,7 +39,7 @@ func (i *OneDriveInstaller) Uninstall(ctx context.Context) error {
 }
 
 func (i *OneDriveInstaller) IsInstalled() bool {
-	_, err := os.Stat("/ITDLUPanel/server/onedrive")
+	_, err := os.Stat("/ITDLUPanel/server/onedrive/.installed")
 	return err == nil
 }
 

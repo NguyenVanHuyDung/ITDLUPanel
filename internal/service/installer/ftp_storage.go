@@ -39,6 +39,7 @@ func (i *FTPStorageInstaller) Install(ctx context.Context, version string, progr
 	if err := os.MkdirAll(installDir, 0755); err != nil {
 		return fmt.Errorf("failed to create install directory: %w", err)
 	}
+	_ = os.WriteFile(installDir+"/.installed", []byte("ftp_storage"), 0644)
 
 	progress(100)
 	logger.Info().Msg("FTP Storage installed successfully")
@@ -62,15 +63,8 @@ func (i *FTPStorageInstaller) Uninstall(ctx context.Context) error {
 }
 
 func (i *FTPStorageInstaller) IsInstalled() bool {
-	// Check lftp binary exists
-	for _, p := range []string{"/usr/bin/lftp", "/usr/local/bin/lftp"} {
-		if _, err := os.Stat(p); err == nil {
-			if _, err2 := os.Stat("/ITDLUPanel/server/ftp_storage"); err2 == nil {
-				return true
-			}
-		}
-	}
-	return false
+	_, err := os.Stat("/ITDLUPanel/server/ftp_storage/.installed")
+	return err == nil
 }
 
 func (i *FTPStorageInstaller) GetVersions() []string {
