@@ -1,22 +1,22 @@
 nohup: ignoring input
-[90m2026-04-10T18:46:07+07:00[0m [32mINF[0m [1minternal/app/app.go:52[0m[36m >[0m [1mConfiguration loaded[0m [36mconfig=[0mconfig/panel.json
-[90m2026-04-10T18:46:07+07:00[0m [32mINF[0m [1minternal/app/app.go:69[0m[36m >[0m [1mOperating system detected[0m [36march=[0mamd64 [36mos=[0mUbuntu [36mpackage_manager=[0mapt [36mversion=[0m"22.04.5 LTS (Jammy Jellyfish)"
-[90m2026-04-10T18:46:07+07:00[0m [32mINF[0m [1minternal/app/app.go:89[0m[36m >[0m [1mDatabase ready[0m [36mpath=[0mdata/panel.db
-[90m2026-04-10T18:46:07+07:00[0m [32mINF[0m [1minternal/service/site_service.go:198[0m[36m >[0m [1mvhost reconciliation: all configs intact[0m
-[90m2026-04-10T18:46:07+07:00[0m [32mINF[0m [1minternal/app/app.go:119[0m[36m >[0m [1mInternationalisation ready[0m [36mdefault_language=[0men
+[90m2026-04-10T18:49:55+07:00[0m [32mINF[0m [1minternal/app/app.go:52[0m[36m >[0m [1mConfiguration loaded[0m [36mconfig=[0mconfig/panel.json
+[90m2026-04-10T18:49:55+07:00[0m [32mINF[0m [1minternal/app/app.go:69[0m[36m >[0m [1mOperating system detected[0m [36march=[0mamd64 [36mos=[0mUbuntu [36mpackage_manager=[0mapt [36mversion=[0m"22.04.5 LTS (Jammy Jellyfish)"
+[90m2026-04-10T18:49:55+07:00[0m [32mINF[0m [1minternal/app/app.go:89[0m[36m >[0m [1mDatabase ready[0m [36mpath=[0mdata/panel.db
+[90m2026-04-10T18:49:55+07:00[0m [32mINF[0m [1minternal/service/site_service.go:198[0m[36m >[0m [1mvhost reconciliation: all configs intact[0m
+[90m2026-04-10T18:49:55+07:00[0m [32mINF[0m [1minternal/app/app.go:119[0m[36m >[0m [1mInternationalisation ready[0m [36mdefault_language=[0men
 [GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
  - using env:	export GIN_MODE=release
  - using code:	gin.SetMode(gin.ReleaseMode)
 
 [GIN-debug] GET    /api/v1/health            --> github.com/ITDLUPanel/panel/internal/app.healthHandler (10 handlers)
-[90m2026-04-10T18:46:07+07:00[0m [32mINF[0m [1minternal/task/queue.go:92[0m[36m >[0m [1mtask queue started[0m [36mworkers=[0m4
-[90m2026-04-10T18:46:07+07:00[0m [32mINF[0m [1minternal/service/metrics_collector.go:63[0m[36m >[0m [1mMetrics collector started[0m [36minterval=[0m60000
-[90m2026-04-10T18:46:07+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["-l"] [36mcmd=[0mcrontab
-[90m2026-04-10T18:46:07+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["-c","echo 'CRON_TZ=Asia/Ho_Chi_Minh\n\n# ITDLUPanel-cron-9\n0 3 * * * /root/ITDLUPanel/bin/itdlupanel cron-run -id=9 -config=/root/ITDLUPanel/config/panel.json\n\n# ITDLUPanel-cron-8\n35 3 * * * /root/ITDLUPanel/bin/itdlupanel cron-run -id=8 -config=/root/ITDLUPanel/config/panel.json\n' | crontab -"] [36mcmd=[0m/bin/bash
-[90m2026-04-10T18:46:07+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["-l"] [36mcmd=[0mcrontab
-[90m2026-04-10T18:46:07+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["-c","echo 'CRON_TZ=Asia/Ho_Chi_Minh\n\n# ITDLUPanel-cron-8\n35 3 * * * /root/ITDLUPanel/bin/itdlupanel cron-run -id=8 -config=/root/ITDLUPanel/config/panel.json\n\n# ITDLUPanel-cron-9\n0 3 * * * /root/ITDLUPanel/bin/itdlupanel cron-run -id=9 -config=/root/ITDLUPanel/config/panel.json\n' | crontab -"] [36mcmd=[0m/bin/bash
-[90m2026-04-10T18:46:07+07:00[0m DBG [1minternal/service/metrics_collector.go:285[0m[36m >[0m Metrics aggregated [36mdst=[0mmonitor_metrics_5m [36mrows=[0m2 [36msrc=[0mmonitor_metrics_raw
-[90m2026-04-10T18:46:07+07:00[0m [32mINF[0m [1minternal/service/cron_service.go:104[0m[36m >[0m [1mcrontab entries resynced[0m [36mcount=[0m2
+[90m2026-04-10T18:49:55+07:00[0m [32mINF[0m [1minternal/task/queue.go:92[0m[36m >[0m [1mtask queue started[0m [36mworkers=[0m4
+[90m2026-04-10T18:49:55+07:00[0m [32mINF[0m [1minternal/service/metrics_collector.go:63[0m[36m >[0m [1mMetrics collector started[0m [36minterval=[0m60000
+[90m2026-04-10T18:49:55+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["-l"] [36mcmd=[0mcrontab
+[90m2026-04-10T18:49:55+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["-c","echo 'CRON_TZ=Asia/Ho_Chi_Minh\n\n# ITDLUPanel-cron-9\n0 3 * * * /root/ITDLUPanel/bin/itdlupanel cron-run -id=9 -config=/root/ITDLUPanel/config/panel.json\n\n# ITDLUPanel-cron-8\n35 3 * * * /root/ITDLUPanel/bin/itdlupanel cron-run -id=8 -config=/root/ITDLUPanel/config/panel.json\n' | crontab -"] [36mcmd=[0m/bin/bash
+[90m2026-04-10T18:49:55+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["-l"] [36mcmd=[0mcrontab
+[90m2026-04-10T18:49:55+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["-c","echo 'CRON_TZ=Asia/Ho_Chi_Minh\n\n# ITDLUPanel-cron-8\n35 3 * * * /root/ITDLUPanel/bin/itdlupanel cron-run -id=8 -config=/root/ITDLUPanel/config/panel.json\n\n# ITDLUPanel-cron-9\n0 3 * * * /root/ITDLUPanel/bin/itdlupanel cron-run -id=9 -config=/root/ITDLUPanel/config/panel.json\n' | crontab -"] [36mcmd=[0m/bin/bash
+[90m2026-04-10T18:49:55+07:00[0m DBG [1minternal/service/metrics_collector.go:285[0m[36m >[0m Metrics aggregated [36mdst=[0mmonitor_metrics_5m [36mrows=[0m1 [36msrc=[0mmonitor_metrics_raw
+[90m2026-04-10T18:49:55+07:00[0m [32mINF[0m [1minternal/service/cron_service.go:104[0m[36m >[0m [1mcrontab entries resynced[0m [36mcount=[0m2
 [GIN-debug] POST   /api/v1/auth/login        --> github.com/ITDLUPanel/panel/internal/api/v1.(*AuthHandler).Login-fm (10 handlers)
 [GIN-debug] POST   /api/v1/auth/refresh      --> github.com/ITDLUPanel/panel/internal/api/v1.(*AuthHandler).RefreshToken-fm (10 handlers)
 [GIN-debug] POST   /api/v1/auth/2fa/verify   --> github.com/ITDLUPanel/panel/internal/api/v1.(*AuthHandler).Verify2FA-fm (10 handlers)
@@ -90,6 +90,7 @@ nohup: ignoring input
 [GIN-debug] POST   /api/v1/software/php/:version/extensions/uninstall --> github.com/ITDLUPanel/panel/internal/api/v1.(*SoftwareHandler).uninstallPHPExtension-fm (12 handlers)
 [GIN-debug] GET    /api/v1/software/php/:version/config --> github.com/ITDLUPanel/panel/internal/api/v1.(*SoftwareHandler).getPHPConfig-fm (12 handlers)
 [GIN-debug] PUT    /api/v1/software/php/:version/config --> github.com/ITDLUPanel/panel/internal/api/v1.(*SoftwareHandler).setPHPConfig-fm (12 handlers)
+[90m2026-04-10T18:49:55+07:00[0m DBG [1minternal/service/metrics_collector.go:285[0m[36m >[0m Metrics aggregated [36mdst=[0mmonitor_metrics_1h [36mrows=[0m1 [36msrc=[0mmonitor_metrics_5m
 [GIN-debug] GET    /api/v1/software/php/:version/opcache --> github.com/ITDLUPanel/panel/internal/api/v1.(*SoftwareHandler).getPHPOPcache-fm (12 handlers)
 [GIN-debug] PUT    /api/v1/software/php/:version/opcache --> github.com/ITDLUPanel/panel/internal/api/v1.(*SoftwareHandler).setPHPOPcache-fm (12 handlers)
 [GIN-debug] GET    /api/v1/software/php/:version/config-file --> github.com/ITDLUPanel/panel/internal/api/v1.(*SoftwareHandler).getPHPConfigFile-fm (12 handlers)
@@ -326,6 +327,7 @@ nohup: ignoring input
 [GIN-debug] DELETE /api/v1/docker/compose/:name --> github.com/ITDLUPanel/panel/internal/api/v1.(*DockerComposeHandler).removeProject-fm (12 handlers)
 [GIN-debug] POST   /api/v1/docker/compose/:name/up --> github.com/ITDLUPanel/panel/internal/api/v1.(*DockerComposeHandler).up-fm (12 handlers)
 [GIN-debug] POST   /api/v1/docker/compose/:name/down --> github.com/ITDLUPanel/panel/internal/api/v1.(*DockerComposeHandler).down-fm (12 handlers)
+[90m2026-04-10T18:49:55+07:00[0m DBG [1minternal/service/metrics_collector.go:285[0m[36m >[0m Metrics aggregated [36mdst=[0mmonitor_metrics_1d [36mrows=[0m1 [36msrc=[0mmonitor_metrics_1h
 [GIN-debug] POST   /api/v1/docker/compose/:name/restart --> github.com/ITDLUPanel/panel/internal/api/v1.(*DockerComposeHandler).restart-fm (12 handlers)
 [GIN-debug] GET    /api/v1/docker/compose/:name/logs --> github.com/ITDLUPanel/panel/internal/api/v1.(*DockerComposeHandler).logs-fm (12 handlers)
 [GIN-debug] GET    /api/v1/logs/panel        --> github.com/ITDLUPanel/panel/internal/api/v1.(*LogHandler).GetPanelLog-fm (12 handlers)
@@ -361,7 +363,6 @@ nohup: ignoring input
 [GIN-debug] DELETE /api/v1/cloud-storages/:id --> github.com/ITDLUPanel/panel/internal/api/v1.(*CloudStorageHandler).Delete-fm (12 handlers)
 [GIN-debug] POST   /api/v1/cloud-storages/:id/test --> github.com/ITDLUPanel/panel/internal/api/v1.(*CloudStorageHandler).TestByID-fm (12 handlers)
 [GIN-debug] POST   /api/v1/cloud-storages/test --> github.com/ITDLUPanel/panel/internal/api/v1.(*CloudStorageHandler).TestInline-fm (12 handlers)
-[90m2026-04-10T18:46:07+07:00[0m DBG [1minternal/service/metrics_collector.go:285[0m[36m >[0m Metrics aggregated [36mdst=[0mmonitor_metrics_1h [36mrows=[0m1 [36msrc=[0mmonitor_metrics_5m
 [GIN-debug] GET    /api/v1/cloud-storages/:id/auth-url --> github.com/ITDLUPanel/panel/internal/api/v1.(*CloudStorageHandler).GetAuthURL-fm (12 handlers)
 [GIN-debug] GET    /api/v1/cloud-storages/oauth/callback --> github.com/ITDLUPanel/panel/internal/api/v1.(*CloudStorageHandler).OAuthCallback-fm (10 handlers)
 [GIN-debug] GET    /api/v1/plugins           --> github.com/ITDLUPanel/panel/internal/api/v1.(*PluginHandler).ListPlugins-fm (12 handlers)
@@ -371,11 +372,9 @@ nohup: ignoring input
 [GIN-debug] PUT    /api/v1/plugins/:name/status --> github.com/ITDLUPanel/panel/internal/api/v1.(*PluginHandler).UpdatePluginStatus-fm (12 handlers)
 [GIN-debug] GET    /api/v1/plugins/:name/config --> github.com/ITDLUPanel/panel/internal/api/v1.(*PluginHandler).GetPluginConfig-fm (12 handlers)
 [GIN-debug] PUT    /api/v1/plugins/:name/config --> github.com/ITDLUPanel/panel/internal/api/v1.(*PluginHandler).UpdatePluginConfig-fm (12 handlers)
-[90m2026-04-10T18:46:07+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["set-timezone","Asia/Ho_Chi_Minh"] [36mcmd=[0mtimedatectl
-[90m2026-04-10T18:46:07+07:00[0m DBG [1minternal/service/metrics_collector.go:285[0m[36m >[0m Metrics aggregated [36mdst=[0mmonitor_metrics_1d [36mrows=[0m1 [36msrc=[0mmonitor_metrics_1h
-[90m2026-04-10T18:46:07+07:00[0m DBG [1minternal/service/metrics_collector.go:308[0m[36m >[0m Old metrics purged [36mdeleted=[0m11 [36mtable=[0mmonitor_metrics_raw
-[90m2026-04-10T18:46:07+07:00[0m DBG [1minternal/service/metrics_collector.go:308[0m[36m >[0m Old metrics purged [36mdeleted=[0m6 [36mtable=[0mmonitor_metrics_5m
-[90m2026-04-10T18:46:08+07:00[0m [32mINF[0m [1minternal/service/settings_service.go:336[0m[36m >[0m [1mtimezone applied[0m [36mtimezone=[0mAsia/Ho_Chi_Minh
+[90m2026-04-10T18:49:55+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["set-timezone","Asia/Ho_Chi_Minh"] [36mcmd=[0mtimedatectl
+[90m2026-04-10T18:49:55+07:00[0m DBG [1minternal/service/metrics_collector.go:308[0m[36m >[0m Old metrics purged [36mdeleted=[0m4 [36mtable=[0mmonitor_metrics_raw
+[90m2026-04-10T18:49:55+07:00[0m [32mINF[0m [1minternal/service/settings_service.go:336[0m[36m >[0m [1mtimezone applied[0m [36mtimezone=[0mAsia/Ho_Chi_Minh
 [GIN-debug] GET    /api/v1/settings          --> github.com/ITDLUPanel/panel/internal/api/v1.(*SettingsHandler).GetAll-fm (12 handlers)
 [GIN-debug] PUT    /api/v1/settings          --> github.com/ITDLUPanel/panel/internal/api/v1.(*SettingsHandler).UpdateSettings-fm (12 handlers)
 [GIN-debug] PUT    /api/v1/settings/panel-port --> github.com/ITDLUPanel/panel/internal/api/v1.(*SettingsHandler).ChangePanelPort-fm (12 handlers)
@@ -407,27 +406,29 @@ nohup: ignoring input
 [GIN-debug] GET    /api/v1/notifications/event-types/critical --> github.com/ITDLUPanel/panel/internal/api/v1.(*NotificationHandler).ListCriticalEventTypes-fm (12 handlers)
 [GIN-debug] GET    /api/v1/terminal          --> github.com/ITDLUPanel/panel/internal/app.SetupRouter.HandleTerminal.func12 (10 handlers)
 [GIN-debug] GET    /api/v1/monitor/realtime  --> github.com/ITDLUPanel/panel/internal/app.SetupRouter.HandleMonitorWS.func13 (11 handlers)
-[90m2026-04-10T18:46:08+07:00[0m [32mINF[0m [1minternal/app/app.go:163[0m[36m >[0m [1mRouter initialised[0m
-[90m2026-04-10T18:46:08+07:00[0m [32mINF[0m [1minternal/app/app.go:178[0m[36m >[0m [1mStarting ITDLUPanel server[0m [36maddress=[0m0.0.0.0:8888 [36mssl=[0mtrue
-[90m2026-04-10T18:46:08+07:00[0m [32mINF[0m [1minternal/app/app.go:226[0m[36m >[0m [1mHTTP+HTTPS multiplexed on same port[0m [36maddress=[0m0.0.0.0:8888
-[90m2026-04-10T18:46:08+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m3.378407 [36mip=[0m127.0.0.1 [36mmethod=[0mGET [36mpath=[0m/ [36msize=[0m1767 [36mstatus=[0m200
-2026/04/10 18:46:11 http: TLS handshake error from 10.10.66.74:57694: remote error: tls: unknown certificate
-2026/04/10 18:46:11 http: TLS handshake error from 10.10.66.74:57696: remote error: tls: unknown certificate
-[90m2026-04-10T18:46:11+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m3.21563 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks/summary [36msize=[0m107 [36mstatus=[0m200
-[90m2026-04-10T18:46:11+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m1.032005 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks?page=1&per_page=50&status=running [36msize=[0m108 [36mstatus=[0m200
-[90m2026-04-10T18:46:11+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m0.866105 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks/summary [36msize=[0m107 [36mstatus=[0m200
-2026/04/10 18:46:11 http: TLS handshake error from 10.10.66.74:57710: remote error: tls: unknown certificate
-[90m2026-04-10T18:46:12+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m2.679363 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks?page=1&per_page=50&status=pending [36msize=[0m108 [36mstatus=[0m200
-2026/04/10 18:46:12 http: TLS handshake error from 10.10.66.74:57720: remote error: tls: unknown certificate
-[90m2026-04-10T18:46:12+07:00[0m DBG [1minternal/websocket/hub.go:49[0m[36m >[0m websocket client registered [36mclient_id=[0m17c74aa4-57f0-4f31-9849-36445bc492c9 [36mtotal=[0m1
-[90m2026-04-10T18:46:12+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m1.537183 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks?page=1&per_page=50&status=running [36msize=[0m108 [36mstatus=[0m200
-[90m2026-04-10T18:46:12+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m1.773155 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks/summary [36msize=[0m107 [36mstatus=[0m200
-2026/04/10 18:46:12 http: TLS handshake error from 10.10.66.74:57750: remote error: tls: unknown certificate
-2026/04/10 18:46:12 http: TLS handshake error from 10.10.66.74:57762: remote error: tls: unknown certificate
-[90m2026-04-10T18:46:12+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m3.433495 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks/summary [36msize=[0m107 [36mstatus=[0m200
-2026/04/10 18:46:12 http: TLS handshake error from 10.10.66.74:57776: remote error: tls: unknown certificate
-[90m2026-04-10T18:46:12+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m1.098721 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks?page=1&per_page=50&status=pending [36msize=[0m108 [36mstatus=[0m200
-2026/04/10 18:46:12 http: TLS handshake error from 10.10.66.74:57788: remote error: tls: unknown certificate
-[90m2026-04-10T18:46:12+07:00[0m DBG [1minternal/websocket/hub.go:49[0m[36m >[0m websocket client registered [36mclient_id=[0mb813ee3b-c634-47fa-b9a0-8a22049c8c72 [36mtotal=[0m2
-[90m2026-04-10T18:46:13+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m303.044224 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/monitor/processes [36msize=[0m2401 [36mstatus=[0m200
-[90m2026-04-10T18:46:13+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m1091.938691 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/dashboard [36msize=[0m772 [36mstatus=[0m200
+[90m2026-04-10T18:49:55+07:00[0m [32mINF[0m [1minternal/app/app.go:163[0m[36m >[0m [1mRouter initialised[0m
+[90m2026-04-10T18:49:55+07:00[0m [32mINF[0m [1minternal/app/app.go:178[0m[36m >[0m [1mStarting ITDLUPanel server[0m [36maddress=[0m0.0.0.0:8888 [36mssl=[0mtrue
+[90m2026-04-10T18:49:55+07:00[0m [32mINF[0m [1minternal/app/app.go:226[0m[36m >[0m [1mHTTP+HTTPS multiplexed on same port[0m [36maddress=[0m0.0.0.0:8888
+[90m2026-04-10T18:49:56+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m3.229138 [36mip=[0m127.0.0.1 [36mmethod=[0mGET [36mpath=[0m/ [36msize=[0m1767 [36mstatus=[0m200
+2026/04/10 18:49:57 http: TLS handshake error from 10.10.66.74:55838: remote error: tls: unknown certificate
+2026/04/10 18:49:57 http: TLS handshake error from 10.10.66.74:55852: remote error: tls: unknown certificate
+[90m2026-04-10T18:49:58+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m301.996815 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/monitor/processes [36msize=[0m2387 [36mstatus=[0m200
+[90m2026-04-10T18:49:58+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m1091.548635 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/dashboard [36msize=[0m776 [36mstatus=[0m200
+[90m2026-04-10T18:49:59+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m2.654665 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks?page=1&per_page=50&status=running [36msize=[0m108 [36mstatus=[0m200
+[90m2026-04-10T18:49:59+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m3.755324 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks/summary [36msize=[0m107 [36mstatus=[0m200
+[90m2026-04-10T18:49:59+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m0.549027 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks/summary [36msize=[0m107 [36mstatus=[0m200
+[90m2026-04-10T18:49:59+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m0.630306 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks?page=1&per_page=50&status=pending [36msize=[0m108 [36mstatus=[0m200
+2026/04/10 18:49:59 http: TLS handshake error from 10.10.66.74:55886: remote error: tls: unknown certificate
+2026/04/10 18:49:59 http: TLS handshake error from 10.10.66.74:55900: remote error: tls: unknown certificate
+[90m2026-04-10T18:49:59+07:00[0m DBG [1minternal/websocket/hub.go:49[0m[36m >[0m websocket client registered [36mclient_id=[0m74338d6f-adf9-43b6-9b83-de1ef1c4ad4a [36mtotal=[0m1
+[90m2026-04-10T18:50:00+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m1.099215 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks/summary [36msize=[0m107 [36mstatus=[0m200
+2026/04/10 18:50:00 http: TLS handshake error from 10.10.66.74:55924: remote error: tls: unknown certificate
+[90m2026-04-10T18:50:00+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m0.717657 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks?page=1&per_page=50&status=running [36msize=[0m108 [36mstatus=[0m200
+[90m2026-04-10T18:50:00+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m0.805863 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks/summary [36msize=[0m107 [36mstatus=[0m200
+2026/04/10 18:50:00 http: TLS handshake error from 10.10.66.74:55938: remote error: tls: unknown certificate
+[90m2026-04-10T18:50:00+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m0.449106 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks?page=1&per_page=50&status=pending [36msize=[0m108 [36mstatus=[0m200
+2026/04/10 18:50:00 http: TLS handshake error from 10.10.66.74:55946: remote error: tls: unknown certificate
+[90m2026-04-10T18:50:00+07:00[0m DBG [1minternal/websocket/hub.go:49[0m[36m >[0m websocket client registered [36mclient_id=[0mbfde351a-60ed-4ec1-95b5-b93a3df03853 [36mtotal=[0m2
+[90m2026-04-10T18:50:01+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m1107.211651 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/dashboard [36msize=[0m754 [36mstatus=[0m200
+[90m2026-04-10T18:50:02+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m288.420503 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/monitor/processes [36msize=[0m2396 [36mstatus=[0m200
+[90m2026-04-10T18:50:03+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m1088.779895 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/dashboard [36msize=[0m755 [36mstatus=[0m200

@@ -401,7 +401,7 @@ func pgAdminNginxConfBlock(port int, ssl bool, authEnabled bool, htpasswdPath st
 
 	b.WriteString("    location / {\n")
 	b.WriteString("        proxy_pass http://127.0.0.1:15050;\n")
-	b.WriteString("        proxy_set_header Host $host;\n")
+	b.WriteString("        proxy_set_header Host $host:$server_port;\n")
 	b.WriteString("        proxy_set_header X-Real-IP $remote_addr;\n")
 	b.WriteString("        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
 	b.WriteString("        proxy_set_header X-Forwarded-Proto $scheme;\n")
