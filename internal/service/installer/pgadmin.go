@@ -182,11 +182,15 @@ DEFAULT_SERVER_PORT = 15050
 	}
 
 	// Create the initial admin user using pgadmin4 setup utility
-	// We use environment variables for non-interactive setup
+	// Use the venv python to ensure all pgAdmin dependencies are available
 	pgSetup := findPgAdminSetupPy()
 	if pgSetup != "" {
-		system.ExecWithTimeout(30*time.Second, "bash", "-c",
-			fmt.Sprintf("PGADMIN_SETUP_EMAIL=admin@itdlupanel.local PGADMIN_SETUP_PASSWORD=admin python3 %s setup-db", pgSetup))
+		venvPy := "/usr/pgadmin4/venv/bin/python3"
+		if _, err := os.Stat(venvPy); err != nil {
+			venvPy = "python3"
+		}
+		system.ExecWithTimeout(60*time.Second, "bash", "-c",
+			fmt.Sprintf("cd /usr/pgadmin4/web && PGADMIN_SETUP_EMAIL=admin@itdlupanel.local PGADMIN_SETUP_PASSWORD=admin %s %s setup-db", venvPy, pgSetup))
 	}
 }
 
@@ -219,17 +223,14 @@ func (i *PgAdminInstaller) setupGunicornService(ctx context.Context) {
 		runUser = "www-data"
 	}
 
-	// Install gunicorn if not available
-	system.ExecWithTimeout(60*time.Second, "pip3", "install", "gunicorn")
-
-	// Find gunicorn binary
-	gunicornBin := "gunicorn"
-	for _, p := range []string{"/usr/local/bin/gunicorn", "/usr/bin/gunicorn"} {
-		if _, err := os.Stat(p); err == nil {
-			gunicornBin = p
-			break
-		}
+	// Use pgAdmin4's own venv Python to run gunicorn (avoids missing flask/modules)
+	venvPython := "/usr/pgadmin4/venv/bin/python3"
+	if _, err := os.Stat(venvPython); err != nil {
+		venvPython = "python3"
 	}
+
+	// Ensure gunicorn is available in venv's Python path
+	system.ExecWithTimeout(60*time.Second, venvPython, "-m", "pip", "install", "gunicorn")
 
 	serviceContent := fmt.Sprintf(`[Unit]
 Description=pgAdmin4 Web Interface
@@ -241,13 +242,13 @@ User=%s
 Group=%s
 WorkingDirectory=%s
 Environment=PGADMIN_INT_PORT=15050
-ExecStart=%s --bind 127.0.0.1:15050 --workers 1 --threads 4 pgAdmin4:app
+ExecStart=%s -m gunicorn --bind 127.0.0.1:15050 --workers 1 --threads 4 pgAdmin4:app
 Restart=on-failure
 RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
-`, runUser, runUser, webDir, gunicornBin)
+`, runUser, runUser, webDir, venvPython)
 
 	if err := os.WriteFile("/etc/systemd/system/pgadmin4.service", []byte(serviceContent), 0644); err != nil {
 		logger.Warn().Err(err).Msg("failed to write pgAdmin4 systemd service")

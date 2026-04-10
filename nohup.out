@@ -1,22 +1,22 @@
 nohup: ignoring input
-[90m2026-04-10T17:27:59+07:00[0m [32mINF[0m [1minternal/app/app.go:52[0m[36m >[0m [1mConfiguration loaded[0m [36mconfig=[0mconfig/panel.json
-[90m2026-04-10T17:27:59+07:00[0m [32mINF[0m [1minternal/app/app.go:69[0m[36m >[0m [1mOperating system detected[0m [36march=[0mamd64 [36mos=[0mUbuntu [36mpackage_manager=[0mapt [36mversion=[0m"22.04.5 LTS (Jammy Jellyfish)"
-[90m2026-04-10T17:27:59+07:00[0m [32mINF[0m [1minternal/app/app.go:89[0m[36m >[0m [1mDatabase ready[0m [36mpath=[0mdata/panel.db
-[90m2026-04-10T17:27:59+07:00[0m [32mINF[0m [1minternal/service/site_service.go:198[0m[36m >[0m [1mvhost reconciliation: all configs intact[0m
-[90m2026-04-10T17:27:59+07:00[0m [32mINF[0m [1minternal/app/app.go:119[0m[36m >[0m [1mInternationalisation ready[0m [36mdefault_language=[0men
+[90m2026-04-10T18:46:07+07:00[0m [32mINF[0m [1minternal/app/app.go:52[0m[36m >[0m [1mConfiguration loaded[0m [36mconfig=[0mconfig/panel.json
+[90m2026-04-10T18:46:07+07:00[0m [32mINF[0m [1minternal/app/app.go:69[0m[36m >[0m [1mOperating system detected[0m [36march=[0mamd64 [36mos=[0mUbuntu [36mpackage_manager=[0mapt [36mversion=[0m"22.04.5 LTS (Jammy Jellyfish)"
+[90m2026-04-10T18:46:07+07:00[0m [32mINF[0m [1minternal/app/app.go:89[0m[36m >[0m [1mDatabase ready[0m [36mpath=[0mdata/panel.db
+[90m2026-04-10T18:46:07+07:00[0m [32mINF[0m [1minternal/service/site_service.go:198[0m[36m >[0m [1mvhost reconciliation: all configs intact[0m
+[90m2026-04-10T18:46:07+07:00[0m [32mINF[0m [1minternal/app/app.go:119[0m[36m >[0m [1mInternationalisation ready[0m [36mdefault_language=[0men
 [GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
  - using env:	export GIN_MODE=release
  - using code:	gin.SetMode(gin.ReleaseMode)
 
 [GIN-debug] GET    /api/v1/health            --> github.com/ITDLUPanel/panel/internal/app.healthHandler (10 handlers)
-[90m2026-04-10T17:27:59+07:00[0m [32mINF[0m [1minternal/task/queue.go:92[0m[36m >[0m [1mtask queue started[0m [36mworkers=[0m4
-[90m2026-04-10T17:27:59+07:00[0m [32mINF[0m [1minternal/service/metrics_collector.go:63[0m[36m >[0m [1mMetrics collector started[0m [36minterval=[0m60000
-[90m2026-04-10T17:27:59+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["-l"] [36mcmd=[0mcrontab
-[90m2026-04-10T17:27:59+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["-c","echo 'CRON_TZ=Asia/Ho_Chi_Minh\n\n# ITDLUPanel-cron-9\n0 3 * * * /root/ITDLUPanel/bin/itdlupanel cron-run -id=9 -config=/root/ITDLUPanel/config/panel.json\n\n# ITDLUPanel-cron-8\n35 3 * * * /root/ITDLUPanel/bin/itdlupanel cron-run -id=8 -config=/root/ITDLUPanel/config/panel.json\n' | crontab -"] [36mcmd=[0m/bin/bash
-[90m2026-04-10T17:27:59+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["-l"] [36mcmd=[0mcrontab
-[90m2026-04-10T17:27:59+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["-c","echo 'CRON_TZ=Asia/Ho_Chi_Minh\n\n# ITDLUPanel-cron-8\n35 3 * * * /root/ITDLUPanel/bin/itdlupanel cron-run -id=8 -config=/root/ITDLUPanel/config/panel.json\n\n# ITDLUPanel-cron-9\n0 3 * * * /root/ITDLUPanel/bin/itdlupanel cron-run -id=9 -config=/root/ITDLUPanel/config/panel.json\n' | crontab -"] [36mcmd=[0m/bin/bash
-[90m2026-04-10T17:27:59+07:00[0m DBG [1minternal/service/metrics_collector.go:285[0m[36m >[0m Metrics aggregated [36mdst=[0mmonitor_metrics_5m [36mrows=[0m1 [36msrc=[0mmonitor_metrics_raw
-[90m2026-04-10T17:27:59+07:00[0m [32mINF[0m [1minternal/service/cron_service.go:104[0m[36m >[0m [1mcrontab entries resynced[0m [36mcount=[0m2
+[90m2026-04-10T18:46:07+07:00[0m [32mINF[0m [1minternal/task/queue.go:92[0m[36m >[0m [1mtask queue started[0m [36mworkers=[0m4
+[90m2026-04-10T18:46:07+07:00[0m [32mINF[0m [1minternal/service/metrics_collector.go:63[0m[36m >[0m [1mMetrics collector started[0m [36minterval=[0m60000
+[90m2026-04-10T18:46:07+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["-l"] [36mcmd=[0mcrontab
+[90m2026-04-10T18:46:07+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["-c","echo 'CRON_TZ=Asia/Ho_Chi_Minh\n\n# ITDLUPanel-cron-9\n0 3 * * * /root/ITDLUPanel/bin/itdlupanel cron-run -id=9 -config=/root/ITDLUPanel/config/panel.json\n\n# ITDLUPanel-cron-8\n35 3 * * * /root/ITDLUPanel/bin/itdlupanel cron-run -id=8 -config=/root/ITDLUPanel/config/panel.json\n' | crontab -"] [36mcmd=[0m/bin/bash
+[90m2026-04-10T18:46:07+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["-l"] [36mcmd=[0mcrontab
+[90m2026-04-10T18:46:07+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["-c","echo 'CRON_TZ=Asia/Ho_Chi_Minh\n\n# ITDLUPanel-cron-8\n35 3 * * * /root/ITDLUPanel/bin/itdlupanel cron-run -id=8 -config=/root/ITDLUPanel/config/panel.json\n\n# ITDLUPanel-cron-9\n0 3 * * * /root/ITDLUPanel/bin/itdlupanel cron-run -id=9 -config=/root/ITDLUPanel/config/panel.json\n' | crontab -"] [36mcmd=[0m/bin/bash
+[90m2026-04-10T18:46:07+07:00[0m DBG [1minternal/service/metrics_collector.go:285[0m[36m >[0m Metrics aggregated [36mdst=[0mmonitor_metrics_5m [36mrows=[0m2 [36msrc=[0mmonitor_metrics_raw
+[90m2026-04-10T18:46:07+07:00[0m [32mINF[0m [1minternal/service/cron_service.go:104[0m[36m >[0m [1mcrontab entries resynced[0m [36mcount=[0m2
 [GIN-debug] POST   /api/v1/auth/login        --> github.com/ITDLUPanel/panel/internal/api/v1.(*AuthHandler).Login-fm (10 handlers)
 [GIN-debug] POST   /api/v1/auth/refresh      --> github.com/ITDLUPanel/panel/internal/api/v1.(*AuthHandler).RefreshToken-fm (10 handlers)
 [GIN-debug] POST   /api/v1/auth/2fa/verify   --> github.com/ITDLUPanel/panel/internal/api/v1.(*AuthHandler).Verify2FA-fm (10 handlers)
@@ -75,12 +75,16 @@ nohup: ignoring input
 [GIN-debug] GET    /api/v1/software/phpmyadmin/manager --> github.com/ITDLUPanel/panel/internal/api/v1.(*SoftwareHandler).getPhpMyAdminConfig-fm (12 handlers)
 [GIN-debug] PUT    /api/v1/software/phpmyadmin/manager --> github.com/ITDLUPanel/panel/internal/api/v1.(*SoftwareHandler).setPhpMyAdminConfig-fm (12 handlers)
 [GIN-debug] GET    /api/v1/software/phpmyadmin/php-versions --> github.com/ITDLUPanel/panel/internal/api/v1.(*SoftwareHandler).getAvailablePHPVersions-fm (12 handlers)
+[GIN-debug] GET    /api/v1/software/pgadmin/manager --> github.com/ITDLUPanel/panel/internal/api/v1.(*SoftwareHandler).getPgAdminConfig-fm (12 handlers)
+[GIN-debug] PUT    /api/v1/software/pgadmin/manager --> github.com/ITDLUPanel/panel/internal/api/v1.(*SoftwareHandler).setPgAdminConfig-fm (12 handlers)
 [GIN-debug] GET    /api/v1/software/nginx/available-versions --> github.com/ITDLUPanel/panel/internal/api/v1.(*SoftwareHandler).getNginxAvailableVersions-fm (12 handlers)
 [GIN-debug] GET    /api/v1/software/mysql/slow-log --> github.com/ITDLUPanel/panel/internal/api/v1.(*SoftwareHandler).getMariaDBSlowLog-fm (12 handlers)
 [GIN-debug] GET    /api/v1/software/mysql/binary-logs --> github.com/ITDLUPanel/panel/internal/api/v1.(*SoftwareHandler).getMariaDBBinaryLogs-fm (12 handlers)
 [GIN-debug] GET    /api/v1/software/mysql/memory-protection --> github.com/ITDLUPanel/panel/internal/api/v1.(*SoftwareHandler).getMariaDBMemoryProtection-fm (12 handlers)
 [GIN-debug] PUT    /api/v1/software/mysql/memory-protection --> github.com/ITDLUPanel/panel/internal/api/v1.(*SoftwareHandler).setMariaDBMemoryProtection-fm (12 handlers)
 [GIN-debug] GET    /api/v1/software/mysql/ram-plans --> github.com/ITDLUPanel/panel/internal/api/v1.(*SoftwareHandler).getMariaDBRAMPlans-fm (12 handlers)
+[GIN-debug] GET    /api/v1/software/postgresql/connections --> github.com/ITDLUPanel/panel/internal/api/v1.(*SoftwareHandler).getPostgreSQLConnections-fm (12 handlers)
+[GIN-debug] GET    /api/v1/software/postgresql/databases --> github.com/ITDLUPanel/panel/internal/api/v1.(*SoftwareHandler).getPostgreSQLDatabases-fm (12 handlers)
 [GIN-debug] GET    /api/v1/software/php/:version/extensions --> github.com/ITDLUPanel/panel/internal/api/v1.(*SoftwareHandler).getPHPExtensions-fm (12 handlers)
 [GIN-debug] POST   /api/v1/software/php/:version/extensions/install --> github.com/ITDLUPanel/panel/internal/api/v1.(*SoftwareHandler).installPHPExtension-fm (12 handlers)
 [GIN-debug] POST   /api/v1/software/php/:version/extensions/uninstall --> github.com/ITDLUPanel/panel/internal/api/v1.(*SoftwareHandler).uninstallPHPExtension-fm (12 handlers)
@@ -340,7 +344,6 @@ nohup: ignoring input
 [GIN-debug] GET    /api/v1/backups/database-counts --> github.com/ITDLUPanel/panel/internal/api/v1.(*BackupHandler).DatabaseBackupCounts-fm (12 handlers)
 [GIN-debug] GET    /api/v1/backups/:id       --> github.com/ITDLUPanel/panel/internal/api/v1.(*BackupHandler).Get-fm (12 handlers)
 [GIN-debug] DELETE /api/v1/backups/:id       --> github.com/ITDLUPanel/panel/internal/api/v1.(*BackupHandler).Delete-fm (12 handlers)
-[90m2026-04-10T17:27:59+07:00[0m DBG [1minternal/service/metrics_collector.go:285[0m[36m >[0m Metrics aggregated [36mdst=[0mmonitor_metrics_1h [36mrows=[0m2 [36msrc=[0mmonitor_metrics_5m
 [GIN-debug] POST   /api/v1/backups/:id/restore --> github.com/ITDLUPanel/panel/internal/api/v1.(*BackupHandler).Restore-fm (12 handlers)
 [GIN-debug] GET    /api/v1/backups/:id/download --> github.com/ITDLUPanel/panel/internal/api/v1.(*BackupHandler).Download-fm (12 handlers)
 [GIN-debug] GET    /api/v1/ftp-storages      --> github.com/ITDLUPanel/panel/internal/api/v1.(*FTPStorageHandler).List-fm (12 handlers)
@@ -358,6 +361,7 @@ nohup: ignoring input
 [GIN-debug] DELETE /api/v1/cloud-storages/:id --> github.com/ITDLUPanel/panel/internal/api/v1.(*CloudStorageHandler).Delete-fm (12 handlers)
 [GIN-debug] POST   /api/v1/cloud-storages/:id/test --> github.com/ITDLUPanel/panel/internal/api/v1.(*CloudStorageHandler).TestByID-fm (12 handlers)
 [GIN-debug] POST   /api/v1/cloud-storages/test --> github.com/ITDLUPanel/panel/internal/api/v1.(*CloudStorageHandler).TestInline-fm (12 handlers)
+[90m2026-04-10T18:46:07+07:00[0m DBG [1minternal/service/metrics_collector.go:285[0m[36m >[0m Metrics aggregated [36mdst=[0mmonitor_metrics_1h [36mrows=[0m1 [36msrc=[0mmonitor_metrics_5m
 [GIN-debug] GET    /api/v1/cloud-storages/:id/auth-url --> github.com/ITDLUPanel/panel/internal/api/v1.(*CloudStorageHandler).GetAuthURL-fm (12 handlers)
 [GIN-debug] GET    /api/v1/cloud-storages/oauth/callback --> github.com/ITDLUPanel/panel/internal/api/v1.(*CloudStorageHandler).OAuthCallback-fm (10 handlers)
 [GIN-debug] GET    /api/v1/plugins           --> github.com/ITDLUPanel/panel/internal/api/v1.(*PluginHandler).ListPlugins-fm (12 handlers)
@@ -367,11 +371,11 @@ nohup: ignoring input
 [GIN-debug] PUT    /api/v1/plugins/:name/status --> github.com/ITDLUPanel/panel/internal/api/v1.(*PluginHandler).UpdatePluginStatus-fm (12 handlers)
 [GIN-debug] GET    /api/v1/plugins/:name/config --> github.com/ITDLUPanel/panel/internal/api/v1.(*PluginHandler).GetPluginConfig-fm (12 handlers)
 [GIN-debug] PUT    /api/v1/plugins/:name/config --> github.com/ITDLUPanel/panel/internal/api/v1.(*PluginHandler).UpdatePluginConfig-fm (12 handlers)
-[90m2026-04-10T17:27:59+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["set-timezone","Asia/Ho_Chi_Minh"] [36mcmd=[0mtimedatectl
-[90m2026-04-10T17:27:59+07:00[0m DBG [1minternal/service/metrics_collector.go:285[0m[36m >[0m Metrics aggregated [36mdst=[0mmonitor_metrics_1d [36mrows=[0m1 [36msrc=[0mmonitor_metrics_1h
-[90m2026-04-10T17:27:59+07:00[0m DBG [1minternal/service/metrics_collector.go:308[0m[36m >[0m Old metrics purged [36mdeleted=[0m17 [36mtable=[0mmonitor_metrics_5m
-[90m2026-04-10T17:27:59+07:00[0m DBG [1minternal/service/metrics_collector.go:308[0m[36m >[0m Old metrics purged [36mdeleted=[0m40 [36mtable=[0mmonitor_metrics_raw
-[90m2026-04-10T17:27:59+07:00[0m [32mINF[0m [1minternal/service/settings_service.go:336[0m[36m >[0m [1mtimezone applied[0m [36mtimezone=[0mAsia/Ho_Chi_Minh
+[90m2026-04-10T18:46:07+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["set-timezone","Asia/Ho_Chi_Minh"] [36mcmd=[0mtimedatectl
+[90m2026-04-10T18:46:07+07:00[0m DBG [1minternal/service/metrics_collector.go:285[0m[36m >[0m Metrics aggregated [36mdst=[0mmonitor_metrics_1d [36mrows=[0m1 [36msrc=[0mmonitor_metrics_1h
+[90m2026-04-10T18:46:07+07:00[0m DBG [1minternal/service/metrics_collector.go:308[0m[36m >[0m Old metrics purged [36mdeleted=[0m11 [36mtable=[0mmonitor_metrics_raw
+[90m2026-04-10T18:46:07+07:00[0m DBG [1minternal/service/metrics_collector.go:308[0m[36m >[0m Old metrics purged [36mdeleted=[0m6 [36mtable=[0mmonitor_metrics_5m
+[90m2026-04-10T18:46:08+07:00[0m [32mINF[0m [1minternal/service/settings_service.go:336[0m[36m >[0m [1mtimezone applied[0m [36mtimezone=[0mAsia/Ho_Chi_Minh
 [GIN-debug] GET    /api/v1/settings          --> github.com/ITDLUPanel/panel/internal/api/v1.(*SettingsHandler).GetAll-fm (12 handlers)
 [GIN-debug] PUT    /api/v1/settings          --> github.com/ITDLUPanel/panel/internal/api/v1.(*SettingsHandler).UpdateSettings-fm (12 handlers)
 [GIN-debug] PUT    /api/v1/settings/panel-port --> github.com/ITDLUPanel/panel/internal/api/v1.(*SettingsHandler).ChangePanelPort-fm (12 handlers)
@@ -403,51 +407,27 @@ nohup: ignoring input
 [GIN-debug] GET    /api/v1/notifications/event-types/critical --> github.com/ITDLUPanel/panel/internal/api/v1.(*NotificationHandler).ListCriticalEventTypes-fm (12 handlers)
 [GIN-debug] GET    /api/v1/terminal          --> github.com/ITDLUPanel/panel/internal/app.SetupRouter.HandleTerminal.func12 (10 handlers)
 [GIN-debug] GET    /api/v1/monitor/realtime  --> github.com/ITDLUPanel/panel/internal/app.SetupRouter.HandleMonitorWS.func13 (11 handlers)
-[90m2026-04-10T17:27:59+07:00[0m [32mINF[0m [1minternal/app/app.go:163[0m[36m >[0m [1mRouter initialised[0m
-[90m2026-04-10T17:27:59+07:00[0m [32mINF[0m [1minternal/app/app.go:178[0m[36m >[0m [1mStarting ITDLUPanel server[0m [36maddress=[0m0.0.0.0:8888 [36mssl=[0mtrue
-[90m2026-04-10T17:27:59+07:00[0m [32mINF[0m [1minternal/app/app.go:226[0m[36m >[0m [1mHTTP+HTTPS multiplexed on same port[0m [36maddress=[0m0.0.0.0:8888
-2026/04/10 17:28:00 http: TLS handshake error from 10.10.66.74:58894: remote error: tls: unknown certificate
-[90m2026-04-10T17:28:01+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m1094.125615 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/dashboard [36msize=[0m774 [36mstatus=[0m200
-[90m2026-04-10T17:28:03+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m1.244107 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks/summary [36msize=[0m107 [36mstatus=[0m200
-[90m2026-04-10T17:28:03+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m1.299031 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks?page=1&per_page=50&status=running [36msize=[0m108 [36mstatus=[0m200
-2026/04/10 17:28:03 http: TLS handshake error from 10.10.66.74:58924: remote error: tls: unknown certificate
-[90m2026-04-10T17:28:03+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m0.544892 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks/summary [36msize=[0m107 [36mstatus=[0m200
-2026/04/10 17:28:03 http: TLS handshake error from 10.10.66.74:58926: remote error: tls: unknown certificate
-2026/04/10 17:28:03 http: TLS handshake error from 10.10.66.74:58942: remote error: tls: unknown certificate
-[90m2026-04-10T17:28:03+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m3.164781 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks?page=1&per_page=50&status=pending [36msize=[0m108 [36mstatus=[0m200
-[90m2026-04-10T17:28:03+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m3.321018 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks/summary [36msize=[0m107 [36mstatus=[0m200
-2026/04/10 17:28:03 http: TLS handshake error from 10.10.66.74:58948: remote error: tls: unknown certificate
-2026/04/10 17:28:03 http: TLS handshake error from 10.10.66.74:58956: remote error: tls: unknown certificate
-[90m2026-04-10T17:28:03+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m0.739273 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks/summary [36msize=[0m107 [36mstatus=[0m200
-[90m2026-04-10T17:28:03+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m0.692727 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks?page=1&per_page=50&status=running [36msize=[0m108 [36mstatus=[0m200
-2026/04/10 17:28:03 http: TLS handshake error from 10.10.66.74:58976: remote error: tls: unknown certificate
-[90m2026-04-10T17:28:03+07:00[0m DBG [1minternal/websocket/hub.go:49[0m[36m >[0m websocket client registered [36mclient_id=[0m575590c5-e3af-40f5-96b5-f8a3e9af0297 [36mtotal=[0m1
-2026/04/10 17:28:03 http: TLS handshake error from 10.10.66.74:58990: remote error: tls: unknown certificate
-[90m2026-04-10T17:28:03+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m0.560545 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks?page=1&per_page=50&status=pending [36msize=[0m108 [36mstatus=[0m200
-[90m2026-04-10T17:28:03+07:00[0m DBG [1minternal/websocket/hub.go:49[0m[36m >[0m websocket client registered [36mclient_id=[0m5eac7671-cc44-4a21-ab8c-bf1c33cece6d [36mtotal=[0m2
-[90m2026-04-10T17:28:06+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m0.064973 [36mip=[0m127.0.0.1 [36mmethod=[0mGET [36mpath=[0m/api/v1/health [36msize=[0m33 [36mstatus=[0m200
-[90m2026-04-10T17:28:15+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m357.986667 [36mip=[0m127.0.0.1 [36mmethod=[0mPOST [36mpath=[0m/api/v1/auth/login [36msize=[0m529 [36mstatus=[0m200
-[90m2026-04-10T17:28:15+07:00[0m [33mWRN[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m0.042213 [36mip=[0m127.0.0.1 [36mmethod=[0mGET [36mpath=[0m/api/v1/software [36msize=[0m57 [36mstatus=[0m401
-[90m2026-04-10T17:28:24+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m359.285218 [36mip=[0m127.0.0.1 [36mmethod=[0mPOST [36mpath=[0m/api/v1/auth/login [36msize=[0m529 [36mstatus=[0m200
-[90m2026-04-10T17:28:24+07:00[0m [33mWRN[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m0.057301 [36mip=[0m127.0.0.1 [36mmethod=[0mGET [36mpath=[0m/api/v1/software [36msize=[0m57 [36mstatus=[0m401
-[90m2026-04-10T17:28:29+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m1096.864912 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/dashboard [36msize=[0m769 [36mstatus=[0m200
-[90m2026-04-10T17:28:30+07:00[0m [33mWRN[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m0.550787 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/dashboard [36msize=[0m49 [36mstatus=[0m401
-[90m2026-04-10T17:28:30+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m12.884144 [36mip=[0m10.10.66.74 [36mmethod=[0mPOST [36mpath=[0m/api/v1/auth/refresh [36msize=[0m260 [36mstatus=[0m200
-[90m2026-04-10T17:28:31+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m1097.088482 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/dashboard [36msize=[0m753 [36mstatus=[0m200
-[90m2026-04-10T17:28:32+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m360.570409 [36mip=[0m127.0.0.1 [36mmethod=[0mPOST [36mpath=[0m/api/v1/auth/login [36msize=[0m529 [36mstatus=[0m200
-[90m2026-04-10T17:28:32+07:00[0m [33mWRN[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m0.035047 [36mip=[0m127.0.0.1 [36mmethod=[0mGET [36mpath=[0m/api/v1/software [36msize=[0m57 [36mstatus=[0m401
-[90m2026-04-10T17:28:43+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m360.910892 [36mip=[0m127.0.0.1 [36mmethod=[0mPOST [36mpath=[0m/api/v1/auth/login [36msize=[0m529 [36mstatus=[0m200
-[90m2026-04-10T17:28:43+07:00[0m [33mWRN[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m0.052264 [36mip=[0m127.0.0.1 [36mmethod=[0mGET [36mpath=[0m/api/v1/software [36msize=[0m57 [36mstatus=[0m401
-[90m2026-04-10T17:28:50+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m359.935457 [36mip=[0m127.0.0.1 [36mmethod=[0mPOST [36mpath=[0m/api/v1/auth/login [36msize=[0m529 [36mstatus=[0m200
-[90m2026-04-10T17:28:58+07:00[0m [33mWRN[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m1.139714 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/dashboard [36msize=[0m49 [36mstatus=[0m401
-[90m2026-04-10T17:28:58+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m12.760874 [36mip=[0m10.10.66.74 [36mmethod=[0mPOST [36mpath=[0m/api/v1/auth/refresh [36msize=[0m260 [36mstatus=[0m200
-[90m2026-04-10T17:28:59+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m1097.143645 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/dashboard [36msize=[0m744 [36mstatus=[0m200
-[90m2026-04-10T17:29:00+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m356.259177 [36mip=[0m127.0.0.1 [36mmethod=[0mPOST [36mpath=[0m/api/v1/auth/login [36msize=[0m529 [36mstatus=[0m200
-[90m2026-04-10T17:29:00+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["is-active","docker"] [36mcmd=[0msystemctl
-[90m2026-04-10T17:29:00+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["is-active","mariadb"] [36mcmd=[0msystemctl
-[90m2026-04-10T17:29:00+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["is-active","nginx"] [36mcmd=[0msystemctl
-[90m2026-04-10T17:29:00+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["is-active","php8.4-fpm"] [36mcmd=[0msystemctl
-[90m2026-04-10T17:29:00+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["is-active","pure-ftpd"] [36mcmd=[0msystemctl
-[90m2026-04-10T17:29:00+07:00[0m DBG [1minternal/system/shell.go:24[0m[36m >[0m executing command [36margs=[0m["is-active","redis-server"] [36mcmd=[0msystemctl
-[90m2026-04-10T17:29:00+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m31.392082 [36mip=[0m127.0.0.1 [36mmethod=[0mGET [36mpath=[0m/api/v1/software [36msize=[0m5265 [36mstatus=[0m200
-[90m2026-04-10T17:29:01+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m1101.667332 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/dashboard [36msize=[0m762 [36mstatus=[0m200
+[90m2026-04-10T18:46:08+07:00[0m [32mINF[0m [1minternal/app/app.go:163[0m[36m >[0m [1mRouter initialised[0m
+[90m2026-04-10T18:46:08+07:00[0m [32mINF[0m [1minternal/app/app.go:178[0m[36m >[0m [1mStarting ITDLUPanel server[0m [36maddress=[0m0.0.0.0:8888 [36mssl=[0mtrue
+[90m2026-04-10T18:46:08+07:00[0m [32mINF[0m [1minternal/app/app.go:226[0m[36m >[0m [1mHTTP+HTTPS multiplexed on same port[0m [36maddress=[0m0.0.0.0:8888
+[90m2026-04-10T18:46:08+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m3.378407 [36mip=[0m127.0.0.1 [36mmethod=[0mGET [36mpath=[0m/ [36msize=[0m1767 [36mstatus=[0m200
+2026/04/10 18:46:11 http: TLS handshake error from 10.10.66.74:57694: remote error: tls: unknown certificate
+2026/04/10 18:46:11 http: TLS handshake error from 10.10.66.74:57696: remote error: tls: unknown certificate
+[90m2026-04-10T18:46:11+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m3.21563 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks/summary [36msize=[0m107 [36mstatus=[0m200
+[90m2026-04-10T18:46:11+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m1.032005 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks?page=1&per_page=50&status=running [36msize=[0m108 [36mstatus=[0m200
+[90m2026-04-10T18:46:11+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m0.866105 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks/summary [36msize=[0m107 [36mstatus=[0m200
+2026/04/10 18:46:11 http: TLS handshake error from 10.10.66.74:57710: remote error: tls: unknown certificate
+[90m2026-04-10T18:46:12+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m2.679363 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks?page=1&per_page=50&status=pending [36msize=[0m108 [36mstatus=[0m200
+2026/04/10 18:46:12 http: TLS handshake error from 10.10.66.74:57720: remote error: tls: unknown certificate
+[90m2026-04-10T18:46:12+07:00[0m DBG [1minternal/websocket/hub.go:49[0m[36m >[0m websocket client registered [36mclient_id=[0m17c74aa4-57f0-4f31-9849-36445bc492c9 [36mtotal=[0m1
+[90m2026-04-10T18:46:12+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m1.537183 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks?page=1&per_page=50&status=running [36msize=[0m108 [36mstatus=[0m200
+[90m2026-04-10T18:46:12+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m1.773155 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks/summary [36msize=[0m107 [36mstatus=[0m200
+2026/04/10 18:46:12 http: TLS handshake error from 10.10.66.74:57750: remote error: tls: unknown certificate
+2026/04/10 18:46:12 http: TLS handshake error from 10.10.66.74:57762: remote error: tls: unknown certificate
+[90m2026-04-10T18:46:12+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m3.433495 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks/summary [36msize=[0m107 [36mstatus=[0m200
+2026/04/10 18:46:12 http: TLS handshake error from 10.10.66.74:57776: remote error: tls: unknown certificate
+[90m2026-04-10T18:46:12+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m1.098721 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/tasks?page=1&per_page=50&status=pending [36msize=[0m108 [36mstatus=[0m200
+2026/04/10 18:46:12 http: TLS handshake error from 10.10.66.74:57788: remote error: tls: unknown certificate
+[90m2026-04-10T18:46:12+07:00[0m DBG [1minternal/websocket/hub.go:49[0m[36m >[0m websocket client registered [36mclient_id=[0mb813ee3b-c634-47fa-b9a0-8a22049c8c72 [36mtotal=[0m2
+[90m2026-04-10T18:46:13+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m303.044224 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/monitor/processes [36msize=[0m2401 [36mstatus=[0m200
+[90m2026-04-10T18:46:13+07:00[0m [32mINF[0m [1minternal/app/middleware.go:68[0m[36m >[0m [1mHTTP request[0m [36mduration=[0m1091.938691 [36mip=[0m10.10.66.74 [36mmethod=[0mGET [36mpath=[0m/api/v1/dashboard [36msize=[0m772 [36mstatus=[0m200
