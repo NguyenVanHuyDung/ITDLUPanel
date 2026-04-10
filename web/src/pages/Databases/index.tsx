@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Table, Modal, Form, Input, Select, message, Popconfirm, Tooltip, Spin, Popover, InputNumber } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, KeyOutlined, CloudDownloadOutlined,
@@ -85,6 +85,7 @@ function DatabasesContent() {
   const [detectedDbType, setDetectedDbType] = useState<string>('');
   const [activeDbTab, setActiveDbTab] = useState<'mysql' | 'postgresql' | 'redis'>('mysql');
   const [installedEngines, setInstalledEngines] = useState<Set<string>>(new Set());
+  const initialTabSet = useRef(false);
   const [pgDatabases, setPgDatabases] = useState<any[]>([]);
   const [pgLoading, setPgLoading] = useState(false);
   const [redisInfo, setRedisInfo] = useState<any>(null);
@@ -179,14 +180,17 @@ function DatabasesContent() {
       if (pgSw) engines.add('postgresql');
       if (redisSw) engines.add('redis');
       setInstalledEngines(engines);
-      // Auto-select first available tab
-      if (engines.has('mysql')) {
-        setActiveDbTab('mysql');
-      } else if (engines.has('postgresql')) {
-        setActiveDbTab('postgresql');
-        setDetectedDbType('postgresql');
-      } else if (engines.has('redis')) {
-        setActiveDbTab('redis');
+      // Auto-select first available tab (only on first load)
+      if (!initialTabSet.current) {
+        initialTabSet.current = true;
+        if (engines.has('mysql')) {
+          setActiveDbTab('mysql');
+        } else if (engines.has('postgresql')) {
+          setActiveDbTab('postgresql');
+          setDetectedDbType('postgresql');
+        } else if (engines.has('redis')) {
+          setActiveDbTab('redis');
+        }
       }
     } catch {
       setPmaInstalled(false);

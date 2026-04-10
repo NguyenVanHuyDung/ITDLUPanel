@@ -401,7 +401,15 @@ func runCronCommand() {
 	defer db.Close()
 
 	cronSvc := service.NewCronService(db.GetDB())
+	// Wire up notification service so cron can dispatch alerts.
+	notifSvc := service.NewNotificationService(db.GetDB(), nil)
+	cronSvc.SetNotifier(notifSvc)
+
 	output, runErr := cronSvc.RunNow(*cronID)
+
+	// Allow goroutine-based notification dispatch to complete before exit.
+	notifSvc.Wait()
+
 	if runErr != nil {
 		fmt.Fprintf(os.Stderr, "Cron job %d failed: %v\n", *cronID, runErr)
 		if output != "" {

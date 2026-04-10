@@ -129,6 +129,9 @@ type NotificationService struct {
 	rateMu   sync.Mutex
 	rateMap  map[string]time.Time
 	rateWait time.Duration
+
+	// WaitGroup for in-flight async dispatches (used by cron-run to wait before exit).
+	wg sync.WaitGroup
 }
 
 // NewNotificationService creates a new NotificationService.
@@ -139,7 +142,7 @@ func NewNotificationService(db *sql.DB, hub *websocket.Hub) *NotificationService
 		email:    NewEmailService(),
 		telegram: NewTelegramService(),
 		rateMap:  make(map[string]time.Time),
-		rateWait: 5 * time.Minute,
+		rateWait: 1 * time.Minute,
 	}
 }
 
@@ -165,7 +168,17 @@ func (s *NotificationService) Notify(evt NotificationEvent) {
 		}))
 	}
 
-	go s.dispatchAsync(evt)
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		s.dispatchAsync(evt)
+	}()
+}
+
+// Wait blocks until all in-flight notification dispatches complete.
+// Used by short-lived processes (e.g. cron-run) to ensure delivery before exit.
+func (s *NotificationService) Wait() {
+	s.wg.Wait()
 }
 
 func (s *NotificationService) dispatchAsync(evt NotificationEvent) {
@@ -359,9 +372,11 @@ func (s *NotificationService) GetChannelRaw(id int64) (*NotificationChannel, err
 // These are the most important events that system admins should be alerted about.
 func CriticalEventTypes() []string {
 	return []string{
+		EventCronSuccess,
 		EventCronFailed,
 		EventSSLExpiryWarning,
 		EventSSLExpired,
+		EventBackupCompleted,
 		EventBackupFailed,
 		EventSoftwareInstallFail,
 		EventDiskHigh,
