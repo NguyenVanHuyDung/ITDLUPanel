@@ -318,6 +318,19 @@ func (r *Registry) List() []string {
 	return names
 }
 
+// DetectWebServer determines which web server is installed by checking for
+// its managed directory under ServerBaseDir. Returns "nginx", "apache",
+// "openlitespeed", or "nginx" as fallback.
+func DetectWebServer() string {
+	for _, ws := range []string{"openlitespeed", "apache", "nginx"} {
+		dir := filepath.Join(ServerBaseDir, ws)
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return ws
+		}
+	}
+	return "nginx"
+}
+
 // DefaultRegistry creates a Registry pre-populated with all built-in installers.
 func DefaultRegistry() *Registry {
 	r := NewRegistry()

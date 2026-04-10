@@ -145,8 +145,8 @@ $cfg['TempDir'] = '/tmp';
 	system.ExecWithTimeout(10*time.Second, "chown", "-R", webUser+":"+webUser, installDir)
 
 	progress(90)
-	// Configure nginx to serve phpMyAdmin at /phpmyadmin/
-	setupPhpMyAdminNginx(ctx)
+	// Configure web server to serve phpMyAdmin
+	setupPhpMyAdminWebServer(ctx)
 
 	// Cleanup
 	os.Remove(tmpFile)
@@ -160,7 +160,7 @@ $cfg['TempDir'] = '/tmp';
 func (i *PhpMyAdminInstaller) Uninstall(ctx context.Context) error {
 	logger.Info().Msg("uninstalling phpMyAdmin")
 	CleanupServerDir("phpmyadmin")
-	removePhpMyAdminNginx(ctx)
+	removePhpMyAdminWebServer(ctx)
 	logger.Info().Msg("phpMyAdmin uninstalled")
 	return nil
 }
@@ -260,6 +260,20 @@ func detectInstalledPHPVersion() string {
 	return "8.3" // default fallback
 }
 
+func setupPhpMyAdminWebServer(ctx context.Context) {
+	ws := DetectWebServer()
+	logger.Info().Str("webserver", ws).Msg("setting up phpMyAdmin web server config")
+
+	switch ws {
+	case "apache":
+		setupPhpMyAdminApache(ctx)
+	case "openlitespeed":
+		setupPhpMyAdminOLS(ctx)
+	default:
+		setupPhpMyAdminNginx(ctx)
+	}
+}
+
 func setupPhpMyAdminNginx(ctx context.Context) {
 	phpVer := detectInstalledPHPVersion()
 	logger.Info().Str("php_version", phpVer).Msg("configuring phpMyAdmin nginx with detected PHP version")
@@ -357,7 +371,236 @@ server {
 	logger.Info().Msg("phpMyAdmin nginx config applied and nginx reloaded")
 }
 
-func removePhpMyAdminNginx(ctx context.Context) {
+func removePhpMyAdminWebServer(ctx context.Context) {
+	// Remove configs from all webservers (safe — removes non-existent files silently)
 	os.Remove(phpMyAdminNginxConfPath)
-	system.ExecWithTimeout(5*time.Second, "systemctl", "reload", "nginx")
+	os.Remove(filepath.Join(ServerBaseDir, "apache", "conf", "conf.d", "phpmyadmin.conf"))
+	os.Remove(filepath.Join(ServerBaseDir, "openlitespeed", "conf", "vhosts", "phpmyadmin", "vhconf.conf"))
+
+	ws := DetectWebServer()
+	switch ws {
+	case "apache":
+		osInfo := system.GetOSInfo()
+		svc := "apache2"
+		if osInfo.PkgManager == "dnf" {
+			svc = "httpd"
+		}
+		system.ExecWithTimeout(5*time.Second, "systemctl", "reload", svc)
+	case "openlitespeed":
+		system.ExecWithTimeout(5*time.Second, "/usr/local/lsws/bin/lswsctrl", "restart")
+	default:
+		system.ExecWithTimeout(5*time.Second, "systemctl", "reload", "nginx")
+	}
+}
+
+func setupPhpMyAdminApache(ctx context.Context) {
+	phpVer := detectInstalledPHPVersion()
+	logger.Info().Str("php_version", phpVer).Msg("configuring phpMyAdmin Apache")
+
+	confDir := filepath.Join(ServerBaseDir, "apache", "conf", "conf.d")
+	os.MkdirAll(confDir, 0755)
+
+	// Save default config JSON
+	savePhpMyAdminDefaultConfig(phpVer)
+
+	// Generate self-signed SSL certs
+	ensurePhpMyAdminSSLCert()
+
+	fpmSock := fmt.Sprintf("unix:/var/run/php/php%s-fpm.sock", phpVer)
+	osInfo := system.GetOSInfo()
+	if osInfo.PkgManager == "dnf" {
+		remiVer := strings.ReplaceAll(phpVer, ".", "")
+		fpmSock = fmt.Sprintf("unix:/var/opt/remi/php%s/run/php-fpm/www.sock", remiVer)
+	}
+
+	installDir := "/ITDLUPanel/server/phpmyadmin/www"
+	sslDir := "/ITDLUPanel/server/phpmyadmin/ssl"
+	conf := fmt.Sprintf(`# phpMyAdmin - managed by ITDLUPanel
+Listen 888
+<VirtualHost *:888>
+    DocumentRoot %s
+    ServerName _
+    <Directory %s>
+        Options FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+    <FilesMatch \.php$>
+        SetHandler "proxy:%s|fcgi://localhost"
+    </FilesMatch>
+    <Directory %s/tmp>
+        Require all denied
+    </Directory>
+</VirtualHost>
+
+Listen 887
+<VirtualHost *:887>
+    DocumentRoot %s
+    ServerName _
+    SSLEngine on
+    SSLCertificateFile %s/phpmyadmin.crt
+    SSLCertificateKeyFile %s/phpmyadmin.key
+    SSLProtocol all -SSLv3 -TLSv1 -TLSv1.1
+    <Directory %s>
+        Options FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+    <FilesMatch \.php$>
+        SetHandler "proxy:%s|fcgi://localhost"
+    </FilesMatch>
+    <Directory %s/tmp>
+        Require all denied
+    </Directory>
+</VirtualHost>
+`, installDir, installDir, fpmSock, installDir,
+		installDir, sslDir, sslDir, installDir, fpmSock, installDir)
+
+	confPath := filepath.Join(confDir, "phpmyadmin.conf")
+	if err := os.WriteFile(confPath, []byte(conf), 0644); err != nil {
+		logger.Warn().Err(err).Msg("failed to write phpMyAdmin Apache config")
+		return
+	}
+
+	if _, err := system.ExecWithTimeout(5*time.Second, "apachectl", "configtest"); err != nil {
+		logger.Warn().Err(err).Msg("apache config test failed after phpMyAdmin setup")
+		return
+	}
+	svc := "apache2"
+	if osInfo.PkgManager == "dnf" {
+		svc = "httpd"
+	}
+	system.ExecWithTimeout(5*time.Second, "systemctl", "reload", svc)
+	logger.Info().Msg("phpMyAdmin Apache config applied")
+}
+
+func setupPhpMyAdminOLS(ctx context.Context) {
+	phpVer := detectInstalledPHPVersion()
+	logger.Info().Str("php_version", phpVer).Msg("configuring phpMyAdmin OLS")
+
+	phpHandler := fmt.Sprintf("lsphp%s", strings.ReplaceAll(phpVer, ".", ""))
+	installDir := "/ITDLUPanel/server/phpmyadmin/www"
+
+	vhostDir := filepath.Join(ServerBaseDir, "openlitespeed", "conf", "vhosts", "phpmyadmin")
+	os.MkdirAll(vhostDir, 0755)
+
+	savePhpMyAdminDefaultConfig(phpVer)
+	ensurePhpMyAdminSSLCert()
+
+	conf := fmt.Sprintf(`docRoot                   %s
+vhDomain                  phpmyadmin
+enableGzip                1
+
+index  {
+  useServer               0
+  indexFiles              index.php, index.html
+}
+
+scripthandler  {
+  add                     lsapi:%s php
+}
+
+extprocessor %s {
+  type                    lsapi
+  address                 uds://tmp/lshttpd/%s.sock
+  maxConns                10
+  env                     PHP_LSAPI_CHILDREN=10
+  initTimeout             60
+  retryTimeout            0
+  respBuffer              0
+  path                    /usr/local/lsws/%s/bin/lsphp
+}
+
+context /tmp/ {
+  allowBrowse             0
+}
+`, installDir, phpHandler, phpHandler, phpHandler, phpHandler)
+
+	confPath := filepath.Join(vhostDir, "vhconf.conf")
+	if err := os.WriteFile(confPath, []byte(conf), 0644); err != nil {
+		logger.Warn().Err(err).Msg("failed to write phpMyAdmin OLS config")
+		return
+	}
+
+	// Register in httpd_config.conf
+	registerOLSToolVhost("phpmyadmin", 888, 887)
+
+	system.ExecWithTimeout(5*time.Second, "/usr/local/lsws/bin/lswsctrl", "restart")
+	logger.Info().Msg("phpMyAdmin OLS config applied")
+}
+
+// savePhpMyAdminDefaultConfig writes the default phpmyadmin_config.json if it doesn't exist.
+func savePhpMyAdminDefaultConfig(phpVer string) {
+	configDir := "/ITDLUPanel/server/config"
+	os.MkdirAll(configDir, 0755)
+	defaultCfg := []byte(`{
+  "public_access": true,
+  "php_version": "` + phpVer + `",
+  "access_port": 888,
+  "ssl_enabled": true,
+  "ssl_port": 887,
+  "auth_enabled": false,
+  "auth_user": "",
+  "auth_password": ""
+}`)
+	configPath := filepath.Join(configDir, "phpmyadmin_config.json")
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		os.WriteFile(configPath, defaultCfg, 0644)
+	}
+}
+
+// ensurePhpMyAdminSSLCert generates a self-signed cert if missing.
+func ensurePhpMyAdminSSLCert() {
+	sslDir := "/ITDLUPanel/server/phpmyadmin/ssl"
+	certPath := filepath.Join(sslDir, "phpmyadmin.crt")
+	keyPath := filepath.Join(sslDir, "phpmyadmin.key")
+	os.MkdirAll(sslDir, 0755)
+
+	if _, err := os.Stat(certPath); err == nil {
+		if _, err := os.Stat(keyPath); err == nil {
+			return
+		}
+	}
+
+	result, err := system.ExecWithTimeout(30*time.Second,
+		"openssl", "req", "-x509", "-nodes", "-days", "3650",
+		"-newkey", "rsa:2048",
+		"-keyout", keyPath,
+		"-out", certPath,
+		"-subj", "/CN=phpMyAdmin/O=ITDLUPanel",
+	)
+	if err == nil && result.ExitCode == 0 {
+		logger.Info().Msg("generated self-signed SSL cert for phpMyAdmin")
+	} else {
+		logger.Warn().Msg("failed to generate phpMyAdmin SSL cert")
+	}
+}
+
+// registerOLSToolVhost adds a listener + virtualhost block for a tool in httpd_config.conf.
+func registerOLSToolVhost(name string, httpPort, sslPort int) {
+	configPath := filepath.Join(ServerBaseDir, "openlitespeed", "conf", "httpd_config.conf")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		logger.Warn().Err(err).Msg("failed to read httpd_config.conf")
+		return
+	}
+	content := string(data)
+
+	listenerName := fmt.Sprintf("tool_%s", name)
+	if !strings.Contains(content, fmt.Sprintf("listener %s {", listenerName)) {
+		content += fmt.Sprintf("\nlistener %s {\n  address                 *:%d\n  secure                  0\n  map                     %s %s\n}\n", listenerName, httpPort, name, name)
+	}
+
+	sslListenerName := fmt.Sprintf("tool_%s_ssl", name)
+	sslDir := filepath.Join(ServerBaseDir, name, "ssl")
+	if !strings.Contains(content, fmt.Sprintf("listener %s {", sslListenerName)) {
+		content += fmt.Sprintf("\nlistener %s {\n  address                 *:%d\n  secure                  1\n  keyFile                 %s/%s.key\n  certFile                %s/%s.crt\n  map                     %s %s\n}\n", sslListenerName, sslPort, sslDir, name, sslDir, name, name, name)
+	}
+
+	vhostDir := filepath.Join(ServerBaseDir, "openlitespeed", "conf", "vhosts", name)
+	if !strings.Contains(content, fmt.Sprintf("virtualhost %s {", name)) {
+		content += fmt.Sprintf("\nvirtualhost %s {\n  vhRoot                  %s\n  configFile              %s/vhconf.conf\n  allowSymbolLink         1\n  enableScript            1\n  restrained              0\n}\n", name, vhostDir, vhostDir)
+	}
+
+	os.WriteFile(configPath, []byte(content), 0644)
 }

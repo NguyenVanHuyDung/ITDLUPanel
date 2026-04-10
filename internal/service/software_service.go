@@ -2204,6 +2204,14 @@ func phpmyadminNginxConfPath() string {
 	return filepath.Join(installer.ServerBaseDir, "nginx", "conf", "conf.d", "phpmyadmin.conf")
 }
 
+func phpmyadminApacheConfPath() string {
+	return filepath.Join(installer.ServerBaseDir, "apache", "conf", "conf.d", "phpmyadmin.conf")
+}
+
+func phpmyadminOLSConfPath() string {
+	return filepath.Join(installer.ServerBaseDir, "openlitespeed", "conf", "vhosts", "phpmyadmin", "vhconf.conf")
+}
+
 // PhpMyAdminConfig holds the phpMyAdmin manager settings.
 type PhpMyAdminConfig struct {
 	PublicAccess bool   `json:"public_access"`
@@ -2294,7 +2302,7 @@ func (s *SoftwareService) detectPHPVersionFromNginx(fallback string) string {
 }
 
 // SetPhpMyAdminConfig persists the config, regenerates nginx config, manages
-// SSL certs, htpasswd, firewall rules, and reloads nginx.
+// SSL certs, htpasswd, firewall rules, and reloads the active web server.
 func (s *SoftwareService) SetPhpMyAdminConfig(cfg *PhpMyAdminConfig) error {
 	if cfg.AccessPort == 0 {
 		cfg.AccessPort = 888
@@ -2325,32 +2333,50 @@ func (s *SoftwareService) SetPhpMyAdminConfig(cfg *PhpMyAdminConfig) error {
 		}
 	}
 
-	// Generate nginx config
-	nginxCfg := s.buildPhpMyAdminNginxConfig(cfg)
-	if err := os.WriteFile(phpmyadminNginxConfPath(), []byte(nginxCfg), 0644); err != nil {
-		return fmt.Errorf("failed to write nginx config: %w", err)
-	}
-
-	// Test nginx config
-	ctx := context.Background()
-	result, err := system.ExecWithTimeout(10*time.Second, "nginx", "-t")
-	if err != nil || result.ExitCode != 0 {
-		errMsg := ""
-		if result != nil {
-			errMsg = result.Stderr
-		}
-		return fmt.Errorf("nginx config test failed: %s", errMsg)
-	}
-
-	// Reload nginx
-	if _, err := system.ExecWithTimeout(10*time.Second, "systemctl", "reload", "nginx"); err != nil {
-		logger.Warn().Err(err).Msg("failed to reload nginx after phpmyadmin config update")
+	// Detect active web server and generate appropriate config
+	ws, _ := s.getInstalledWebServer()
+	if err := s.applyPhpMyAdminWebServerConfig(ws, cfg); err != nil {
+		return err
 	}
 
 	// Manage firewall rules
+	ctx := context.Background()
 	s.managePhpMyAdminFirewall(ctx, cfg)
 
 	return nil
+}
+
+// applyPhpMyAdminWebServerConfig writes the config, tests it, and reloads.
+func (s *SoftwareService) applyPhpMyAdminWebServerConfig(ws string, cfg *PhpMyAdminConfig) error {
+	switch ws {
+	case "apache":
+		confPath := phpmyadminApacheConfPath()
+		os.MkdirAll(filepath.Dir(confPath), 0755)
+		content := s.buildPhpMyAdminApacheConfig(cfg)
+		if err := os.WriteFile(confPath, []byte(content), 0644); err != nil {
+			return fmt.Errorf("failed to write apache config: %w", err)
+		}
+		return testAndReloadApache()
+
+	case "openlitespeed":
+		confPath := phpmyadminOLSConfPath()
+		os.MkdirAll(filepath.Dir(confPath), 0755)
+		content := s.buildPhpMyAdminOLSConfig(cfg)
+		if err := os.WriteFile(confPath, []byte(content), 0644); err != nil {
+			return fmt.Errorf("failed to write OLS config: %w", err)
+		}
+		registerOLSToolVhost("phpmyadmin", cfg.AccessPort, cfg.SSLEnabled, cfg.SSLPort)
+		return restartOLS()
+
+	default: // nginx
+		confPath := phpmyadminNginxConfPath()
+		os.MkdirAll(filepath.Dir(confPath), 0755)
+		content := s.buildPhpMyAdminNginxConfig(cfg)
+		if err := os.WriteFile(confPath, []byte(content), 0644); err != nil {
+			return fmt.Errorf("failed to write nginx config: %w", err)
+		}
+		return testAndReloadNginx()
+	}
 }
 
 func (s *SoftwareService) savePhpMyAdminConfig(cfg *PhpMyAdminConfig) error {
@@ -2548,6 +2574,14 @@ func pgadminNginxConfPath() string {
 	return filepath.Join(installer.ServerBaseDir, "nginx", "conf", "conf.d", "pgadmin.conf")
 }
 
+func pgadminApacheConfPath() string {
+	return filepath.Join(installer.ServerBaseDir, "apache", "conf", "conf.d", "pgadmin.conf")
+}
+
+func pgadminOLSConfPath() string {
+	return filepath.Join(installer.ServerBaseDir, "openlitespeed", "conf", "vhosts", "pgadmin", "vhconf.conf")
+}
+
 // PgAdminConfig holds the pgAdmin manager settings.
 type PgAdminConfig struct {
 	PublicAccess bool   `json:"public_access"`
@@ -2563,7 +2597,7 @@ func defaultPgAdminConfig() *PgAdminConfig {
 	return &PgAdminConfig{
 		PublicAccess: true,
 		AccessPort:   5050,
-		SSLEnabled:   false,
+		SSLEnabled:   true,
 		SSLPort:      5051,
 		AuthEnabled:  false,
 	}
@@ -2588,8 +2622,8 @@ func (s *SoftwareService) GetPgAdminConfig() (*PgAdminConfig, error) {
 	return cfg, nil
 }
 
-// SetPgAdminConfig persists the config, regenerates nginx config, manages
-// SSL certs, htpasswd, firewall rules, and reloads nginx.
+// SetPgAdminConfig persists the config, generates web server config for the
+// active web server, manages SSL certs, htpasswd, firewall rules, and reloads.
 func (s *SoftwareService) SetPgAdminConfig(cfg *PgAdminConfig) error {
 	if cfg.AccessPort == 0 {
 		cfg.AccessPort = 5050
@@ -2617,31 +2651,49 @@ func (s *SoftwareService) SetPgAdminConfig(cfg *PgAdminConfig) error {
 		}
 	}
 
-	// Generate nginx config
-	nginxCfg := s.buildPgAdminNginxConfig(cfg)
-	if err := os.WriteFile(pgadminNginxConfPath(), []byte(nginxCfg), 0644); err != nil {
-		return fmt.Errorf("failed to write nginx config: %w", err)
-	}
-
-	// Test nginx config
-	result, err := system.ExecWithTimeout(10*time.Second, "nginx", "-t")
-	if err != nil || result.ExitCode != 0 {
-		errMsg := ""
-		if result != nil {
-			errMsg = result.Stderr
-		}
-		return fmt.Errorf("nginx config test failed: %s", errMsg)
-	}
-
-	// Reload nginx
-	if _, err := system.ExecWithTimeout(10*time.Second, "systemctl", "reload", "nginx"); err != nil {
-		logger.Warn().Err(err).Msg("failed to reload nginx after pgadmin config update")
+	// Detect active web server and generate appropriate config
+	ws, _ := s.getInstalledWebServer()
+	if err := s.applyPgAdminWebServerConfig(ws, cfg); err != nil {
+		return err
 	}
 
 	// Manage firewall rules
 	s.managePgAdminFirewall(cfg)
 
 	return nil
+}
+
+// applyPgAdminWebServerConfig writes the config, tests it, and reloads.
+func (s *SoftwareService) applyPgAdminWebServerConfig(ws string, cfg *PgAdminConfig) error {
+	switch ws {
+	case "apache":
+		confPath := pgadminApacheConfPath()
+		os.MkdirAll(filepath.Dir(confPath), 0755)
+		content := s.buildPgAdminApacheConfig(cfg)
+		if err := os.WriteFile(confPath, []byte(content), 0644); err != nil {
+			return fmt.Errorf("failed to write apache config: %w", err)
+		}
+		return testAndReloadApache()
+
+	case "openlitespeed":
+		confPath := pgadminOLSConfPath()
+		os.MkdirAll(filepath.Dir(confPath), 0755)
+		content := s.buildPgAdminOLSConfig(cfg)
+		if err := os.WriteFile(confPath, []byte(content), 0644); err != nil {
+			return fmt.Errorf("failed to write OLS config: %w", err)
+		}
+		registerOLSToolVhost("pgadmin", cfg.AccessPort, cfg.SSLEnabled, cfg.SSLPort)
+		return restartOLS()
+
+	default: // nginx
+		confPath := pgadminNginxConfPath()
+		os.MkdirAll(filepath.Dir(confPath), 0755)
+		content := s.buildPgAdminNginxConfig(cfg)
+		if err := os.WriteFile(confPath, []byte(content), 0644); err != nil {
+			return fmt.Errorf("failed to write nginx config: %w", err)
+		}
+		return testAndReloadNginx()
+	}
 }
 
 func (s *SoftwareService) savePgAdminConfig(cfg *PgAdminConfig) error {
@@ -2803,6 +2855,314 @@ func (s *SoftwareService) managePgAdminFirewall(cfg *PgAdminConfig) {
 		Protocol string
 		Desc     string
 	}{{Port: httpPort, Protocol: "tcp", Desc: "pgAdmin"}}
+}
+
+// ---------------------------------------------------------------------------
+// Shared web-server helpers
+// ---------------------------------------------------------------------------
+
+func testAndReloadNginx() error {
+	result, err := system.ExecWithTimeout(10*time.Second, "nginx", "-t")
+	if err != nil || result.ExitCode != 0 {
+		errMsg := ""
+		if result != nil {
+			errMsg = result.Stderr
+		}
+		return fmt.Errorf("nginx config test failed: %s", errMsg)
+	}
+	if _, err := system.ExecWithTimeout(10*time.Second, "systemctl", "reload", "nginx"); err != nil {
+		logger.Warn().Err(err).Msg("failed to reload nginx")
+	}
+	return nil
+}
+
+func testAndReloadApache() error {
+	if _, err := system.ExecWithTimeout(10*time.Second, "apachectl", "configtest"); err != nil {
+		return fmt.Errorf("apache config test failed: %w", err)
+	}
+	osInfo := system.GetOSInfo()
+	svc := "apache2"
+	if osInfo.PkgManager == "dnf" {
+		svc = "httpd"
+	}
+	if _, err := system.ExecWithTimeout(10*time.Second, "systemctl", "reload", svc); err != nil {
+		logger.Warn().Err(err).Msg("failed to reload apache")
+	}
+	return nil
+}
+
+func restartOLS() error {
+	if _, err := system.ExecWithTimeout(10*time.Second, "/usr/local/lsws/bin/lswsctrl", "restart"); err != nil {
+		if _, err2 := system.ExecWithTimeout(10*time.Second, "systemctl", "restart", "lsws"); err2 != nil {
+			logger.Warn().Err(err2).Msg("failed to restart OLS")
+		}
+	}
+	return nil
+}
+
+// registerOLSToolVhost adds a listener + virtualhost block for a panel tool
+// (phpMyAdmin, pgAdmin) in the OLS httpd_config.conf.
+func registerOLSToolVhost(name string, httpPort int, sslEnabled bool, sslPort int) {
+	configPath := filepath.Join(installer.ServerBaseDir, "openlitespeed", "conf", "httpd_config.conf")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		logger.Warn().Err(err).Msg("failed to read httpd_config.conf for tool vhost registration")
+		return
+	}
+	content := string(data)
+
+	listenerName := fmt.Sprintf("tool_%s", name)
+	if !strings.Contains(content, fmt.Sprintf("listener %s", listenerName)) {
+		content += fmt.Sprintf(`
+listener %s {
+  address                 *:%d
+  secure                  0
+  map                     %s %s
+}
+`, listenerName, httpPort, name, name)
+	}
+
+	if sslEnabled {
+		sslListenerName := fmt.Sprintf("tool_%s_ssl", name)
+		if !strings.Contains(content, fmt.Sprintf("listener %s", sslListenerName)) {
+			sslDir := filepath.Join(installer.ServerBaseDir, name, "ssl")
+			content += fmt.Sprintf(`
+listener %s {
+  address                 *:%d
+  secure                  1
+  keyFile                 %s/%s.key
+  certFile                %s/%s.crt
+  map                     %s %s
+}
+`, sslListenerName, sslPort, sslDir, name, sslDir, name, name, name)
+		}
+	}
+
+	if !strings.Contains(content, fmt.Sprintf("virtualhost %s", name)) {
+		vhostDir := filepath.Join(installer.ServerBaseDir, "openlitespeed", "conf", "vhosts", name)
+		content += fmt.Sprintf(`
+virtualhost %s {
+  vhRoot                  %s
+  configFile              %s/vhconf.conf
+  allowSymbolLink         1
+  enableScript            1
+  restrained              0
+}
+`, name, vhostDir, vhostDir)
+	}
+
+	os.WriteFile(configPath, []byte(content), 0644)
+}
+
+// ---------------------------------------------------------------------------
+// phpMyAdmin – Apache config builder
+// ---------------------------------------------------------------------------
+
+func (s *SoftwareService) buildPhpMyAdminApacheConfig(cfg *PhpMyAdminConfig) string {
+	var b strings.Builder
+	b.WriteString("# phpMyAdmin - managed by ITDLUPanel\n")
+	s.writePhpMyAdminApacheVHost(&b, cfg, false)
+	if cfg.SSLEnabled {
+		b.WriteString("\n")
+		s.writePhpMyAdminApacheVHost(&b, cfg, true)
+	}
+	return b.String()
+}
+
+func (s *SoftwareService) writePhpMyAdminApacheVHost(b *strings.Builder, cfg *PhpMyAdminConfig, ssl bool) {
+	port := cfg.AccessPort
+	if ssl {
+		port = cfg.SSLPort
+	}
+	fpmSock := fmt.Sprintf("unix:/var/run/php/php%s-fpm.sock", cfg.PHPVersion)
+	osInfo := system.GetOSInfo()
+	if osInfo.PkgManager == "dnf" {
+		remiVer := strings.ReplaceAll(cfg.PHPVersion, ".", "")
+		fpmSock = fmt.Sprintf("unix:/var/opt/remi/php%s/run/php-fpm/www.sock", remiVer)
+	}
+
+	fmt.Fprintf(b, "Listen %d\n", port)
+	fmt.Fprintf(b, "<VirtualHost *:%d>\n", port)
+	fmt.Fprintf(b, "    DocumentRoot %s\n", phpmyadminRoot)
+	b.WriteString("    ServerName _\n\n")
+
+	if ssl {
+		b.WriteString("    SSLEngine on\n")
+		fmt.Fprintf(b, "    SSLCertificateFile %s/phpmyadmin.crt\n", phpmyadminSSLDir)
+		fmt.Fprintf(b, "    SSLCertificateKeyFile %s/phpmyadmin.key\n", phpmyadminSSLDir)
+		b.WriteString("    SSLProtocol all -SSLv3 -TLSv1 -TLSv1.1\n\n")
+	}
+
+	if cfg.AuthEnabled {
+		b.WriteString("    <Location />\n")
+		b.WriteString("        AuthType Basic\n")
+		b.WriteString("        AuthName \"phpMyAdmin Login\"\n")
+		fmt.Fprintf(b, "        AuthUserFile %s\n", phpmyadminHTPasswd)
+		b.WriteString("        Require valid-user\n")
+		b.WriteString("    </Location>\n\n")
+	}
+
+	if !cfg.PublicAccess {
+		b.WriteString("    <Location />\n")
+		b.WriteString("        Require ip 127.0.0.1 ::1\n")
+		b.WriteString("    </Location>\n\n")
+	}
+
+	fmt.Fprintf(b, "    <Directory %s>\n", phpmyadminRoot)
+	b.WriteString("        Options FollowSymLinks\n")
+	b.WriteString("        AllowOverride All\n")
+	b.WriteString("        Require all granted\n")
+	b.WriteString("    </Directory>\n\n")
+
+	fmt.Fprintf(b, "    <FilesMatch \\.php$>\n")
+	fmt.Fprintf(b, "        SetHandler \"proxy:%s|fcgi://localhost\"\n", fpmSock)
+	b.WriteString("    </FilesMatch>\n\n")
+
+	fmt.Fprintf(b, "    <Directory %s/tmp>\n", phpmyadminRoot)
+	b.WriteString("        Require all denied\n")
+	b.WriteString("    </Directory>\n")
+
+	b.WriteString("</VirtualHost>\n")
+}
+
+// ---------------------------------------------------------------------------
+// phpMyAdmin – OLS config builder
+// ---------------------------------------------------------------------------
+
+func (s *SoftwareService) buildPhpMyAdminOLSConfig(cfg *PhpMyAdminConfig) string {
+	phpHandler := fmt.Sprintf("lsphp%s", strings.ReplaceAll(cfg.PHPVersion, ".", ""))
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "docRoot                   %s\n", phpmyadminRoot)
+	b.WriteString("vhDomain                  phpmyadmin\n")
+	b.WriteString("enableGzip                1\n\n")
+
+	b.WriteString("index  {\n")
+	b.WriteString("  useServer               0\n")
+	b.WriteString("  indexFiles              index.php, index.html\n")
+	b.WriteString("}\n\n")
+
+	fmt.Fprintf(&b, "scripthandler  {\n")
+	fmt.Fprintf(&b, "  add                     lsapi:%s php\n", phpHandler)
+	b.WriteString("}\n\n")
+
+	fmt.Fprintf(&b, "extprocessor %s {\n", phpHandler)
+	b.WriteString("  type                    lsapi\n")
+	fmt.Fprintf(&b, "  address                 uds://tmp/lshttpd/%s.sock\n", phpHandler)
+	b.WriteString("  maxConns                10\n")
+	b.WriteString("  env                     PHP_LSAPI_CHILDREN=10\n")
+	b.WriteString("  initTimeout             60\n")
+	b.WriteString("  retryTimeout            0\n")
+	b.WriteString("  respBuffer              0\n")
+	fmt.Fprintf(&b, "  path                    /usr/local/lsws/%s/bin/lsphp\n", phpHandler)
+	b.WriteString("}\n\n")
+
+	if !cfg.PublicAccess {
+		b.WriteString("accessControl  {\n")
+		b.WriteString("  allow                   127.0.0.1\n")
+		b.WriteString("  deny                    ALL\n")
+		b.WriteString("}\n\n")
+	}
+
+	// Deny /tmp
+	b.WriteString("context /tmp/ {\n")
+	b.WriteString("  allowBrowse             0\n")
+	b.WriteString("}\n")
+
+	return b.String()
+}
+
+// ---------------------------------------------------------------------------
+// pgAdmin – Apache config builder (reverse proxy to gunicorn)
+// ---------------------------------------------------------------------------
+
+func (s *SoftwareService) buildPgAdminApacheConfig(cfg *PgAdminConfig) string {
+	var b strings.Builder
+	b.WriteString("# pgAdmin4 - managed by ITDLUPanel\n")
+	s.writePgAdminApacheVHost(&b, cfg, false)
+	if cfg.SSLEnabled {
+		b.WriteString("\n")
+		s.writePgAdminApacheVHost(&b, cfg, true)
+	}
+	return b.String()
+}
+
+func (s *SoftwareService) writePgAdminApacheVHost(b *strings.Builder, cfg *PgAdminConfig, ssl bool) {
+	port := cfg.AccessPort
+	if ssl {
+		port = cfg.SSLPort
+	}
+
+	fmt.Fprintf(b, "Listen %d\n", port)
+	fmt.Fprintf(b, "<VirtualHost *:%d>\n", port)
+	b.WriteString("    ServerName _\n\n")
+
+	if ssl {
+		b.WriteString("    SSLEngine on\n")
+		fmt.Fprintf(b, "    SSLCertificateFile %s/pgadmin.crt\n", pgadminSSLDir)
+		fmt.Fprintf(b, "    SSLCertificateKeyFile %s/pgadmin.key\n", pgadminSSLDir)
+		b.WriteString("    SSLProtocol all -SSLv3 -TLSv1 -TLSv1.1\n\n")
+	}
+
+	if cfg.AuthEnabled {
+		b.WriteString("    <Location />\n")
+		b.WriteString("        AuthType Basic\n")
+		b.WriteString("        AuthName \"pgAdmin Login\"\n")
+		fmt.Fprintf(b, "        AuthUserFile %s\n", pgadminHTPasswd)
+		b.WriteString("        Require valid-user\n")
+		b.WriteString("    </Location>\n\n")
+	}
+
+	if !cfg.PublicAccess {
+		b.WriteString("    <Location />\n")
+		b.WriteString("        Require ip 127.0.0.1 ::1\n")
+		b.WriteString("    </Location>\n\n")
+	}
+
+	b.WriteString("    ProxyPreserveHost On\n")
+	b.WriteString("    ProxyPass / http://127.0.0.1:15050/\n")
+	b.WriteString("    ProxyPassReverse / http://127.0.0.1:15050/\n\n")
+
+	b.WriteString("    RequestHeader set X-Forwarded-Proto expr=%{REQUEST_SCHEME}\n")
+	b.WriteString("    RequestHeader set X-Real-IP expr=%{REMOTE_ADDR}\n")
+
+	b.WriteString("</VirtualHost>\n")
+}
+
+// ---------------------------------------------------------------------------
+// pgAdmin – OLS config builder (reverse proxy to gunicorn)
+// ---------------------------------------------------------------------------
+
+func (s *SoftwareService) buildPgAdminOLSConfig(cfg *PgAdminConfig) string {
+	var b strings.Builder
+	b.WriteString("docRoot                   /usr/pgadmin4/web\n")
+	b.WriteString("vhDomain                  pgadmin\n")
+	b.WriteString("enableGzip                1\n\n")
+
+	// Proxy all requests to gunicorn backend
+	b.WriteString("extprocessor pgadmin_backend {\n")
+	b.WriteString("  type                    proxy\n")
+	b.WriteString("  address                 127.0.0.1:15050\n")
+	b.WriteString("  maxConns                25\n")
+	b.WriteString("  initTimeout             60\n")
+	b.WriteString("  retryTimeout            0\n")
+	b.WriteString("  respBuffer              0\n")
+	b.WriteString("}\n\n")
+
+	b.WriteString("context / {\n")
+	b.WriteString("  type                    proxy\n")
+	b.WriteString("  handler                 pgadmin_backend\n")
+	b.WriteString("  addDefaultCharset       off\n")
+	b.WriteString("}\n\n")
+
+	if !cfg.PublicAccess {
+		b.WriteString("accessControl  {\n")
+		b.WriteString("  allow                   127.0.0.1\n")
+		b.WriteString("  deny                    ALL\n")
+		b.WriteString("}\n")
+	}
+
+	return b.String()
 }
 
 // GetAvailablePHPVersions scans the panel PHP config directory for installed

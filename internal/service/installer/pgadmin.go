@@ -70,8 +70,8 @@ func (i *PgAdminInstaller) Install(ctx context.Context, version string, progress
 	i.generateSSLCert()
 
 	progress(85)
-	// Setup nginx reverse proxy
-	setupPgAdminNginx(ctx)
+	// Setup web server reverse proxy
+	setupPgAdminWebServer(ctx)
 
 	progress(90)
 	// Enable and start pgadmin4 service (if using systemd setup)
@@ -300,8 +300,8 @@ func (i *PgAdminInstaller) Uninstall(ctx context.Context) error {
 		system.Exec(ctx, "dnf", "remove", "-y", "pgadmin4-web", "pgadmin4-server")
 	}
 
-	// Remove nginx config
-	removePgAdminNginx(ctx)
+	// Remove web server config
+	removePgAdminWebServer(ctx)
 
 	// Clean up directories
 	CleanupServerDir("pgadmin")
@@ -337,6 +337,20 @@ func (i *PgAdminInstaller) GetVersions() []string {
 
 const pgAdminNginxConfPath = `/ITDLUPanel/server/nginx/conf/conf.d/pgadmin.conf`
 
+func setupPgAdminWebServer(ctx context.Context) {
+	ws := DetectWebServer()
+	logger.Info().Str("webserver", ws).Msg("setting up pgAdmin web server config")
+
+	switch ws {
+	case "apache":
+		setupPgAdminApache(ctx)
+	case "openlitespeed":
+		setupPgAdminOLS(ctx)
+	default:
+		setupPgAdminNginx(ctx)
+	}
+}
+
 func setupPgAdminNginx(ctx context.Context) {
 	os.MkdirAll(filepath.Join(ServerBaseDir, "nginx", "conf", "conf.d"), 0755)
 
@@ -346,7 +360,7 @@ func setupPgAdminNginx(ctx context.Context) {
 	defaultCfg := []byte(`{
   "public_access": true,
   "access_port": 5050,
-  "ssl_enabled": false,
+  "ssl_enabled": true,
   "ssl_port": 5051,
   "auth_enabled": false,
   "auth_user": "",
@@ -357,9 +371,25 @@ func setupPgAdminNginx(ctx context.Context) {
 		os.WriteFile(configPath, defaultCfg, 0644)
 	}
 
-	// Write nginx config (HTTP only for initial install)
-	nginxConf := pgAdminNginxConfBlock(5050, false, false, "", "")
-	if err := os.WriteFile(pgAdminNginxConfPath, []byte(nginxConf), 0644); err != nil {
+	// Generate self-signed SSL certs for initial install
+	sslDir := filepath.Join(ServerBaseDir, "pgadmin", "ssl")
+	os.MkdirAll(sslDir, 0755)
+	certPath := filepath.Join(sslDir, "pgadmin.crt")
+	keyPath := filepath.Join(sslDir, "pgadmin.key")
+	if _, err := os.Stat(certPath); os.IsNotExist(err) {
+		system.ExecWithTimeout(10*time.Second, "openssl", "req", "-x509", "-nodes",
+			"-days", "3650", "-newkey", "rsa:2048",
+			"-keyout", keyPath, "-out", certPath,
+			"-subj", "/CN=pgadmin")
+	}
+
+	// Write nginx config with both HTTP and SSL blocks
+	var conf strings.Builder
+	conf.WriteString(pgAdminNginxConfBlock(5050, false, false, "", ""))
+	conf.WriteString("\n")
+	conf.WriteString(pgAdminNginxConfBlock(5051, true, false, "", sslDir))
+
+	if err := os.WriteFile(pgAdminNginxConfPath, []byte(conf.String()), 0644); err != nil {
 		logger.Warn().Err(err).Msg("failed to write pgAdmin nginx config")
 		return
 	}
@@ -413,7 +443,164 @@ func pgAdminNginxConfBlock(port int, ssl bool, authEnabled bool, htpasswdPath st
 	return b.String()
 }
 
-func removePgAdminNginx(ctx context.Context) {
+func removePgAdminWebServer(ctx context.Context) {
 	os.Remove(pgAdminNginxConfPath)
-	system.ExecWithTimeout(5*time.Second, "systemctl", "reload", "nginx")
+	os.Remove(filepath.Join(ServerBaseDir, "apache", "conf", "conf.d", "pgadmin.conf"))
+	os.Remove(filepath.Join(ServerBaseDir, "openlitespeed", "conf", "vhosts", "pgadmin", "vhconf.conf"))
+
+	ws := DetectWebServer()
+	switch ws {
+	case "apache":
+		osInfo := system.GetOSInfo()
+		svc := "apache2"
+		if osInfo.PkgManager == "dnf" {
+			svc = "httpd"
+		}
+		system.ExecWithTimeout(5*time.Second, "systemctl", "reload", svc)
+	case "openlitespeed":
+		system.ExecWithTimeout(5*time.Second, "/usr/local/lsws/bin/lswsctrl", "restart")
+	default:
+		system.ExecWithTimeout(5*time.Second, "systemctl", "reload", "nginx")
+	}
+}
+
+func setupPgAdminApache(ctx context.Context) {
+	confDir := filepath.Join(ServerBaseDir, "apache", "conf", "conf.d")
+	os.MkdirAll(confDir, 0755)
+
+	// Save default config JSON with SSL enabled
+	configDir := "/ITDLUPanel/server/config"
+	os.MkdirAll(configDir, 0755)
+	defaultCfg := []byte(`{
+  "public_access": true,
+  "access_port": 5050,
+  "ssl_enabled": true,
+  "ssl_port": 5051,
+  "auth_enabled": false,
+  "auth_user": "",
+  "auth_password": ""
+}`)
+	configPath := filepath.Join(configDir, "pgadmin_config.json")
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		os.WriteFile(configPath, defaultCfg, 0644)
+	}
+
+	sslDir := filepath.Join(ServerBaseDir, "pgadmin", "ssl")
+	os.MkdirAll(sslDir, 0755)
+	certPath := filepath.Join(sslDir, "pgadmin.crt")
+	keyPath := filepath.Join(sslDir, "pgadmin.key")
+	if _, err := os.Stat(certPath); os.IsNotExist(err) {
+		system.ExecWithTimeout(10*time.Second, "openssl", "req", "-x509", "-nodes",
+			"-days", "3650", "-newkey", "rsa:2048",
+			"-keyout", keyPath, "-out", certPath,
+			"-subj", "/CN=pgadmin")
+	}
+
+	conf := fmt.Sprintf(`# pgAdmin4 - managed by ITDLUPanel
+Listen 5050
+<VirtualHost *:5050>
+    ServerName _
+    ProxyPreserveHost On
+    ProxyPass / http://127.0.0.1:15050/
+    ProxyPassReverse / http://127.0.0.1:15050/
+    RequestHeader set X-Forwarded-Proto expr=%%{REQUEST_SCHEME}
+    RequestHeader set X-Real-IP expr=%%{REMOTE_ADDR}
+</VirtualHost>
+
+Listen 5051
+<VirtualHost *:5051>
+    ServerName _
+    SSLEngine on
+    SSLCertificateFile %s/pgadmin.crt
+    SSLCertificateKeyFile %s/pgadmin.key
+    SSLProtocol all -SSLv3 -TLSv1 -TLSv1.1
+    ProxyPreserveHost On
+    ProxyPass / http://127.0.0.1:15050/
+    ProxyPassReverse / http://127.0.0.1:15050/
+    RequestHeader set X-Forwarded-Proto https
+    RequestHeader set X-Real-IP expr=%%{REMOTE_ADDR}
+</VirtualHost>
+`, sslDir, sslDir)
+
+	confPath := filepath.Join(confDir, "pgadmin.conf")
+	if err := os.WriteFile(confPath, []byte(conf), 0644); err != nil {
+		logger.Warn().Err(err).Msg("failed to write pgAdmin Apache config")
+		return
+	}
+
+	if _, err := system.ExecWithTimeout(5*time.Second, "apachectl", "configtest"); err != nil {
+		logger.Warn().Err(err).Msg("apache config test failed after pgAdmin setup")
+		return
+	}
+	osInfo := system.GetOSInfo()
+	svc := "apache2"
+	if osInfo.PkgManager == "dnf" {
+		svc = "httpd"
+	}
+	system.ExecWithTimeout(5*time.Second, "systemctl", "reload", svc)
+	logger.Info().Msg("pgAdmin Apache config applied")
+}
+
+func setupPgAdminOLS(ctx context.Context) {
+	vhostDir := filepath.Join(ServerBaseDir, "openlitespeed", "conf", "vhosts", "pgadmin")
+	os.MkdirAll(vhostDir, 0755)
+
+	// Save default config JSON
+	configDir := "/ITDLUPanel/server/config"
+	os.MkdirAll(configDir, 0755)
+	defaultCfg := []byte(`{
+  "public_access": true,
+  "access_port": 5050,
+  "ssl_enabled": true,
+  "ssl_port": 5051,
+  "auth_enabled": false,
+  "auth_user": "",
+  "auth_password": ""
+}`)
+	configPath := filepath.Join(configDir, "pgadmin_config.json")
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		os.WriteFile(configPath, defaultCfg, 0644)
+	}
+
+	sslDir := filepath.Join(ServerBaseDir, "pgadmin", "ssl")
+	os.MkdirAll(sslDir, 0755)
+	certPath := filepath.Join(sslDir, "pgadmin.crt")
+	keyPath := filepath.Join(sslDir, "pgadmin.key")
+	if _, err := os.Stat(certPath); os.IsNotExist(err) {
+		system.ExecWithTimeout(10*time.Second, "openssl", "req", "-x509", "-nodes",
+			"-days", "3650", "-newkey", "rsa:2048",
+			"-keyout", keyPath, "-out", certPath,
+			"-subj", "/CN=pgadmin")
+	}
+
+	conf := `docRoot                   /usr/pgadmin4/web
+vhDomain                  pgadmin
+enableGzip                1
+
+extprocessor pgadmin_backend {
+  type                    proxy
+  address                 127.0.0.1:15050
+  maxConns                25
+  initTimeout             60
+  retryTimeout            0
+  respBuffer              0
+}
+
+context / {
+  type                    proxy
+  handler                 pgadmin_backend
+  addDefaultCharset       off
+}
+`
+
+	confPath := filepath.Join(vhostDir, "vhconf.conf")
+	if err := os.WriteFile(confPath, []byte(conf), 0644); err != nil {
+		logger.Warn().Err(err).Msg("failed to write pgAdmin OLS config")
+		return
+	}
+
+	registerOLSToolVhost("pgadmin", 5050, 5051)
+
+	system.ExecWithTimeout(5*time.Second, "/usr/local/lsws/bin/lswsctrl", "restart")
+	logger.Info().Msg("pgAdmin OLS config applied")
 }
