@@ -115,6 +115,7 @@ export default function OneClickInstall({ onRefresh }: { onRefresh?: () => void 
 
   const handleInstall = async (values: { name: string; image: string; ports: string; env: string; volumes: string }) => {
     setInstallLoading(true);
+    let containerCreated = false;
     try {
       const ports: Record<string, string> = {};
       if (values.ports) {
@@ -135,6 +136,7 @@ export default function OneClickInstall({ onRefresh }: { onRefresh?: () => void 
         restart_policy: 'unless-stopped',
         command: installApp?.command || '',
       });
+      containerCreated = true;
 
       await api.post(`/docker/containers/${values.name}/start`);
 
@@ -144,7 +146,15 @@ export default function OneClickInstall({ onRefresh }: { onRefresh?: () => void 
       fetchInstalledContainers();
       onRefresh?.();
     } catch (err: any) {
-      message.error(err?.response?.data?.message || 'Installation failed');
+      const errMsg = err?.response?.data?.message || 'Installation failed';
+      message.error(errMsg);
+      // If container was created but start failed, clean up
+      if (containerCreated) {
+        try {
+          await api.delete(`/docker/containers/${values.name}?force=true`);
+        } catch { /* ignore cleanup errors */ }
+      }
+      onRefresh?.();
     } finally {
       setInstallLoading(false);
     }

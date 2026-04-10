@@ -16,6 +16,12 @@ type DockerHandler struct {
 	dockerService *service.DockerService
 }
 
+// dockerErr wraps a plain error into an AppError so response.Error()
+// passes the actual message to the frontend instead of "internal server error".
+func dockerErr(c *gin.Context, err error) {
+	response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+}
+
 // NewDockerHandler creates a new DockerHandler.
 func NewDockerHandler(dockerService *service.DockerService) *DockerHandler {
 	return &DockerHandler{dockerService: dockerService}
@@ -95,7 +101,7 @@ func (h *DockerHandler) info(c *gin.Context) {
 
 	info, err := h.dockerService.GetDockerInfo()
 	if err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 
@@ -113,7 +119,7 @@ func (h *DockerHandler) listContainers(c *gin.Context) {
 	all := c.Query("all") == "true"
 	containers, err := h.dockerService.ListContainers(all)
 	if err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, containers)
@@ -123,7 +129,7 @@ func (h *DockerHandler) getContainer(c *gin.Context) {
 	id := c.Param("id")
 	detail, err := h.dockerService.GetContainer(id)
 	if err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, detail)
@@ -165,7 +171,7 @@ func (h *DockerHandler) createContainer(c *gin.Context) {
 		Command:       body.Command,
 	})
 	if err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 
@@ -175,7 +181,7 @@ func (h *DockerHandler) createContainer(c *gin.Context) {
 func (h *DockerHandler) startContainer(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.dockerService.StartContainer(id); err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, gin.H{"message": "container started"})
@@ -184,7 +190,7 @@ func (h *DockerHandler) startContainer(c *gin.Context) {
 func (h *DockerHandler) stopContainer(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.dockerService.StopContainer(id); err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, gin.H{"message": "container stopped"})
@@ -193,7 +199,7 @@ func (h *DockerHandler) stopContainer(c *gin.Context) {
 func (h *DockerHandler) restartContainer(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.dockerService.RestartContainer(id); err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, gin.H{"message": "container restarted"})
@@ -203,7 +209,7 @@ func (h *DockerHandler) removeContainer(c *gin.Context) {
 	id := c.Param("id")
 	force := c.Query("force") == "true"
 	if err := h.dockerService.RemoveContainer(id, force); err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, gin.H{"message": "container removed"})
@@ -220,7 +226,7 @@ func (h *DockerHandler) containerLogs(c *gin.Context) {
 
 	logs, err := h.dockerService.GetContainerLogs(id, tail)
 	if err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, gin.H{"logs": logs})
@@ -230,7 +236,7 @@ func (h *DockerHandler) containerStats(c *gin.Context) {
 	id := c.Param("id")
 	stats, err := h.dockerService.GetContainerStats(id)
 	if err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, stats)
@@ -243,7 +249,7 @@ func (h *DockerHandler) containerStats(c *gin.Context) {
 func (h *DockerHandler) listImages(c *gin.Context) {
 	images, err := h.dockerService.ListImages()
 	if err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, images)
@@ -263,7 +269,7 @@ func (h *DockerHandler) pullImage(c *gin.Context) {
 	}
 
 	if err := h.dockerService.PullImage(body.Name); err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, gin.H{"message": "image pulled", "name": body.Name})
@@ -273,7 +279,7 @@ func (h *DockerHandler) removeImage(c *gin.Context) {
 	id := c.Param("id")
 	force := c.Query("force") == "true"
 	if err := h.dockerService.RemoveImage(id, force); err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, gin.H{"message": "image removed"})
@@ -286,7 +292,7 @@ func (h *DockerHandler) removeImage(c *gin.Context) {
 func (h *DockerHandler) listNetworks(c *gin.Context) {
 	networks, err := h.dockerService.ListNetworks()
 	if err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, networks)
@@ -295,7 +301,7 @@ func (h *DockerHandler) listNetworks(c *gin.Context) {
 func (h *DockerHandler) listVolumes(c *gin.Context) {
 	volumes, err := h.dockerService.ListVolumes()
 	if err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, volumes)
@@ -308,7 +314,7 @@ func (h *DockerHandler) listVolumes(c *gin.Context) {
 func (h *DockerHandler) pauseContainer(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.dockerService.PauseContainer(id); err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, gin.H{"message": "container paused"})
@@ -317,7 +323,7 @@ func (h *DockerHandler) pauseContainer(c *gin.Context) {
 func (h *DockerHandler) unpauseContainer(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.dockerService.UnpauseContainer(id); err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, gin.H{"message": "container unpaused"})
@@ -337,7 +343,7 @@ func (h *DockerHandler) renameContainer(c *gin.Context) {
 		return
 	}
 	if err := h.dockerService.RenameContainer(id, body.Name); err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, gin.H{"message": "container renamed"})
@@ -357,7 +363,7 @@ func (h *DockerHandler) searchImages(c *gin.Context) {
 	}
 	results, err := h.dockerService.SearchImages(q)
 	if err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, results)
@@ -367,7 +373,7 @@ func (h *DockerHandler) inspectImage(c *gin.Context) {
 	id := c.Param("id")
 	detail, err := h.dockerService.InspectImage(id)
 	if err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, detail)
@@ -377,7 +383,7 @@ func (h *DockerHandler) imageHistory(c *gin.Context) {
 	id := c.Param("id")
 	history, err := h.dockerService.GetImageHistory(id)
 	if err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, history)
@@ -401,7 +407,7 @@ func (h *DockerHandler) tagImage(c *gin.Context) {
 		body.Tag = "latest"
 	}
 	if err := h.dockerService.TagImage(id, body.Repo, body.Tag); err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, gin.H{"message": "image tagged"})
@@ -410,7 +416,7 @@ func (h *DockerHandler) tagImage(c *gin.Context) {
 func (h *DockerHandler) pruneImages(c *gin.Context) {
 	reclaimed, err := h.dockerService.PruneImages()
 	if err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, gin.H{"message": "images pruned", "space_reclaimed": reclaimed})
@@ -424,7 +430,7 @@ func (h *DockerHandler) inspectNetwork(c *gin.Context) {
 	id := c.Param("id")
 	detail, err := h.dockerService.InspectNetwork(id)
 	if err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, detail)
@@ -457,7 +463,7 @@ func (h *DockerHandler) createNetwork(c *gin.Context) {
 		Internal: body.Internal,
 	})
 	if err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Created(c, network)
@@ -466,7 +472,7 @@ func (h *DockerHandler) createNetwork(c *gin.Context) {
 func (h *DockerHandler) removeNetwork(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.dockerService.RemoveNetwork(id); err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, gin.H{"message": "network removed"})
@@ -486,7 +492,7 @@ func (h *DockerHandler) connectNetwork(c *gin.Context) {
 		return
 	}
 	if err := h.dockerService.ConnectContainerToNetwork(id, body.Container); err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, gin.H{"message": "container connected"})
@@ -502,7 +508,7 @@ func (h *DockerHandler) disconnectNetwork(c *gin.Context) {
 		return
 	}
 	if err := h.dockerService.DisconnectContainerFromNetwork(id, body.Container); err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, gin.H{"message": "container disconnected"})
@@ -511,7 +517,7 @@ func (h *DockerHandler) disconnectNetwork(c *gin.Context) {
 func (h *DockerHandler) pruneNetworks(c *gin.Context) {
 	deleted, err := h.dockerService.PruneNetworks()
 	if err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, gin.H{"message": "networks pruned", "deleted": deleted})
@@ -525,7 +531,7 @@ func (h *DockerHandler) inspectVolume(c *gin.Context) {
 	name := c.Param("name")
 	detail, err := h.dockerService.InspectVolume(name)
 	if err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, detail)
@@ -556,7 +562,7 @@ func (h *DockerHandler) createVolume(c *gin.Context) {
 		Options: body.Options,
 	})
 	if err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Created(c, volume)
@@ -566,7 +572,7 @@ func (h *DockerHandler) removeVolume(c *gin.Context) {
 	name := c.Param("name")
 	force := c.Query("force") == "true"
 	if err := h.dockerService.RemoveVolume(name, force); err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, gin.H{"message": "volume removed"})
@@ -575,7 +581,7 @@ func (h *DockerHandler) removeVolume(c *gin.Context) {
 func (h *DockerHandler) pruneVolumes(c *gin.Context) {
 	reclaimed, err := h.dockerService.PruneVolumes()
 	if err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, gin.H{"message": "volumes pruned", "space_reclaimed": reclaimed})
@@ -588,7 +594,7 @@ func (h *DockerHandler) pruneVolumes(c *gin.Context) {
 func (h *DockerHandler) systemDf(c *gin.Context) {
 	du, err := h.dockerService.GetSystemDiskUsage()
 	if err != nil {
-		response.Error(c, err)
+		dockerErr(c, err)
 		return
 	}
 	response.Success(c, du)
