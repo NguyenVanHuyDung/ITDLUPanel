@@ -89,10 +89,16 @@ type Image struct {
 
 // Network represents a Docker network.
 type Network struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Driver string `json:"driver"`
-	Scope  string `json:"scope"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Driver          string `json:"driver"`
+	Scope           string `json:"scope"`
+	Subnet          string `json:"subnet"`
+	Gateway         string `json:"gateway"`
+	Internal        bool   `json:"internal"`
+	EnableIPv6      bool   `json:"enable_ipv6"`
+	ContainerCount  int    `json:"container_count"`
+	Created         string `json:"created"`
 }
 
 // Volume represents a Docker volume.
@@ -130,17 +136,37 @@ type CreateContainerRequest struct {
 	Command       string            `json:"command"`
 }
 
+// NetworkContainerEndpoint holds per-container info inside a network.
+type NetworkContainerEndpoint struct {
+	Name        string `json:"name"`
+	IPv4Address string `json:"ipv4_address"`
+	IPv6Address string `json:"ipv6_address,omitempty"`
+	MacAddress  string `json:"mac_address"`
+}
+
+// IPAMConfig holds a single IPAM pool entry.
+type IPAMConfig struct {
+	Subnet  string `json:"subnet"`
+	Gateway string `json:"gateway"`
+}
+
 // NetworkDetail holds full info about a Docker network.
 type NetworkDetail struct {
-	ID         string            `json:"id"`
-	Name       string            `json:"name"`
-	Driver     string            `json:"driver"`
-	Scope      string            `json:"scope"`
-	Subnet     string            `json:"subnet"`
-	Gateway    string            `json:"gateway"`
-	Internal   bool              `json:"internal"`
-	Containers map[string]string `json:"containers"` // containerID -> name
-	Created    string            `json:"created"`
+	ID           string                               `json:"id"`
+	Name         string                               `json:"name"`
+	Driver       string                               `json:"driver"`
+	Scope        string                               `json:"scope"`
+	Internal     bool                                 `json:"internal"`
+	EnableIPv6   bool                                 `json:"enable_ipv6"`
+	IPAM         []IPAMConfig                         `json:"ipam"`
+	IPAMDriver   string                               `json:"ipam_driver"`
+	Containers   map[string]NetworkContainerEndpoint   `json:"containers"`
+	Options      map[string]string                    `json:"options"`
+	Labels       map[string]string                    `json:"labels"`
+	Created      string                               `json:"created"`
+	// Convenience fields kept for backward compat
+	Subnet  string `json:"subnet"`
+	Gateway string `json:"gateway"`
 }
 
 // VolumeDetail holds full info about a Docker volume.
@@ -870,10 +896,22 @@ func (s *DockerService) ListNetworks() ([]*Network, error) {
 	}
 
 	var raw []struct {
-		ID     string `json:"Id"`
-		Name   string `json:"Name"`
-		Driver string `json:"Driver"`
-		Scope  string `json:"Scope"`
+		ID         string `json:"Id"`
+		Name       string `json:"Name"`
+		Driver     string `json:"Driver"`
+		Scope      string `json:"Scope"`
+		Created    string `json:"Created"`
+		Internal   bool   `json:"Internal"`
+		EnableIPv6 bool   `json:"EnableIPv6"`
+		IPAM       struct {
+			Config []struct {
+				Subnet  string
+				Gateway string
+			}
+		}
+		Containers map[string]struct {
+			Name string
+		}
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("list networks decode: %w", err)
@@ -885,11 +923,22 @@ func (s *DockerService) ListNetworks() ([]*Network, error) {
 		if len(id) > 12 {
 			id = id[:12]
 		}
+		subnet, gateway := "", ""
+		if len(n.IPAM.Config) > 0 {
+			subnet = n.IPAM.Config[0].Subnet
+			gateway = n.IPAM.Config[0].Gateway
+		}
 		networks = append(networks, &Network{
-			ID:     id,
-			Name:   n.Name,
-			Driver: n.Driver,
-			Scope:  n.Scope,
+			ID:             id,
+			Name:           n.Name,
+			Driver:         n.Driver,
+			Scope:          n.Scope,
+			Subnet:         subnet,
+			Gateway:        gateway,
+			Internal:       n.Internal,
+			EnableIPv6:     n.EnableIPv6,
+			ContainerCount: len(n.Containers),
+			Created:        n.Created,
 		})
 	}
 	return networks, nil
@@ -1177,20 +1226,27 @@ func (s *DockerService) InspectNetwork(id string) (*NetworkDetail, error) {
 	}
 
 	var raw struct {
-		ID       string `json:"Id"`
-		Name     string
-		Driver   string
-		Scope    string
-		Created  string
-		Internal bool
-		IPAM     struct {
-			Config []struct {
+		ID         string `json:"Id"`
+		Name       string
+		Driver     string
+		Scope      string
+		Created    string
+		Internal   bool
+		EnableIPv6 bool
+		Options    map[string]string
+		Labels     map[string]string
+		IPAM       struct {
+			Driver  string
+			Config  []struct {
 				Subnet  string
 				Gateway string
 			}
 		}
 		Containers map[string]struct {
-			Name string
+			Name        string
+			IPv4Address string
+			IPv6Address string
+			MacAddress  string
 		}
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
@@ -1198,23 +1254,41 @@ func (s *DockerService) InspectNetwork(id string) (*NetworkDetail, error) {
 	}
 
 	subnet, gateway := "", ""
-	if len(raw.IPAM.Config) > 0 {
-		subnet = raw.IPAM.Config[0].Subnet
-		gateway = raw.IPAM.Config[0].Gateway
+	var ipamConfigs []IPAMConfig
+	for _, cfg := range raw.IPAM.Config {
+		ipamConfigs = append(ipamConfigs, IPAMConfig{Subnet: cfg.Subnet, Gateway: cfg.Gateway})
+	}
+	if len(ipamConfigs) > 0 {
+		subnet = ipamConfigs[0].Subnet
+		gateway = ipamConfigs[0].Gateway
 	}
 
-	containers := make(map[string]string)
+	containers := make(map[string]NetworkContainerEndpoint)
 	for cid, c := range raw.Containers {
 		short := cid
 		if len(short) > 12 {
 			short = short[:12]
 		}
-		containers[short] = c.Name
+		containers[short] = NetworkContainerEndpoint{
+			Name:        c.Name,
+			IPv4Address: c.IPv4Address,
+			IPv6Address: c.IPv6Address,
+			MacAddress:  c.MacAddress,
+		}
 	}
 
 	nid := raw.ID
 	if len(nid) > 12 {
 		nid = nid[:12]
+	}
+
+	opts := raw.Options
+	if opts == nil {
+		opts = make(map[string]string)
+	}
+	labels := raw.Labels
+	if labels == nil {
+		labels = make(map[string]string)
 	}
 
 	return &NetworkDetail{
@@ -1225,7 +1299,12 @@ func (s *DockerService) InspectNetwork(id string) (*NetworkDetail, error) {
 		Subnet:     subnet,
 		Gateway:    gateway,
 		Internal:   raw.Internal,
+		EnableIPv6: raw.EnableIPv6,
+		IPAM:       ipamConfigs,
+		IPAMDriver: raw.IPAM.Driver,
 		Containers: containers,
+		Options:    opts,
+		Labels:     labels,
 		Created:    raw.Created,
 	}, nil
 }
