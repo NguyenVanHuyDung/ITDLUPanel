@@ -15,6 +15,7 @@ import PHPManageModal from '@/components/PHPManageModal';
 import FTPManageModal from '@/components/FTPManageModal';
 import MariadbManageModal from '@/components/MariadbManageModal';
 import RedisManageModal from '@/components/RedisManageModal';
+import PostgresqlManageModal from '@/components/PostgresqlManageModal';
 import FTPStorageManageModal from '@/components/FTPStorageManageModal';
 import S3StorageManageModal from '@/components/S3StorageManageModal';
 import GoogleDriveManageModal from '@/components/GoogleDriveManageModal';
@@ -236,6 +237,7 @@ export default function Dashboard() {
   const [ftpModalOpen, setFtpModalOpen] = useState(false);
   const [mariadbModalOpen, setMariadbModalOpen] = useState(false);
   const [redisModalOpen, setRedisModalOpen] = useState(false);
+  const [postgresqlModalOpen, setPostgresqlModalOpen] = useState(false);
   const [ftpStorageModalOpen, setFtpStorageModalOpen] = useState(false);
   const [s3StorageModalOpen, setS3StorageModalOpen] = useState(false);
   const [gdStorageModalOpen, setGdStorageModalOpen] = useState(false);
@@ -836,7 +838,7 @@ export default function Dashboard() {
                 {installedSoftware.map(sw => {
                   const running = sw.status === 1;
                   const swIcon = getSoftwareIcon(sw.name);
-                  const clickable = ['nginx', 'phpmyadmin', 'php', 'pureftpd', 'mysql', 'redis', 'docker'].includes(sw.name);
+                  const clickable = ['nginx', 'phpmyadmin', 'php', 'pureftpd', 'mysql', 'redis', 'postgresql', 'docker'].includes(sw.name);
                   return (
                     <div key={sw.name} style={{
                       display: 'flex', alignItems: 'center', gap: 10,
@@ -853,6 +855,7 @@ export default function Dashboard() {
                       if (sw.name === 'pureftpd') setFtpModalOpen(true);
                       if (sw.name === 'mysql') setMariadbModalOpen(true);
                       if (sw.name === 'redis') setRedisModalOpen(true);
+                      if (sw.name === 'postgresql') setPostgresqlModalOpen(true);
                       if (sw.name === 'docker') navigate('/docker');
                     }}
                     onMouseEnter={e => { if (clickable) e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)'; }}
@@ -984,6 +987,7 @@ export default function Dashboard() {
       <FTPManageModal open={ftpModalOpen} onClose={() => setFtpModalOpen(false)} />
       <MariadbManageModal open={mariadbModalOpen} onClose={() => setMariadbModalOpen(false)} />
       <RedisManageModal open={redisModalOpen} onClose={() => setRedisModalOpen(false)} />
+      <PostgresqlManageModal open={postgresqlModalOpen} onClose={() => setPostgresqlModalOpen(false)} />
       <FTPStorageManageModal open={ftpStorageModalOpen} onClose={() => setFtpStorageModalOpen(false)} />
       <S3StorageManageModal open={s3StorageModalOpen} onClose={() => setS3StorageModalOpen(false)} />
       <GoogleDriveManageModal open={gdStorageModalOpen} onClose={() => setGdStorageModalOpen(false)} />

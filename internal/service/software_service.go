@@ -3133,3 +3133,213 @@ func (s *SoftwareService) GetMariaDBRAMPlan(totalRAM int64) map[string]map[strin
 	}
 	return plans
 }
+
+// ─── PostgreSQL Management ──────────────────────────────────────────────────
+
+// PostgreSQLOptimization holds tunable PostgreSQL parameters.
+type PostgreSQLOptimization struct {
+	SharedBuffers                string `json:"shared_buffers"`
+	EffectiveCacheSize           string `json:"effective_cache_size"`
+	WorkMem                      string `json:"work_mem"`
+	MaintenanceWorkMem           string `json:"maintenance_work_mem"`
+	MaxConnections               string `json:"max_connections"`
+	WalBuffers                   string `json:"wal_buffers"`
+	MinWalSize                   string `json:"min_wal_size"`
+	MaxWalSize                   string `json:"max_wal_size"`
+	CheckpointCompletionTarget   string `json:"checkpoint_completion_target"`
+	RandomPageCost               string `json:"random_page_cost"`
+	EffectiveIOConcurrency       string `json:"effective_io_concurrency"`
+	DefaultStatisticsTarget      string `json:"default_statistics_target"`
+	MaxWorkerProcesses           string `json:"max_worker_processes"`
+	MaxParallelWorkersPerGather  string `json:"max_parallel_workers_per_gather"`
+	MaxParallelWorkers           string `json:"max_parallel_workers"`
+	MaxParallelMaintenanceWorkers string `json:"max_parallel_maintenance_workers"`
+}
+
+func (s *SoftwareService) getPostgreSQLTuningPath() string {
+	// Check conf.d in known PostgreSQL config locations
+	pgConf := filepath.Join(installer.ServerBaseDir, "postgresql", "conf")
+	// The symlink postgresql/conf -> /etc/postgresql/<ver>/main (Debian) or /var/lib/pgsql/<ver>/data (RHEL)
+	confD := filepath.Join(pgConf, "conf.d", "99-itdlu-tuning.conf")
+	if _, err := os.Stat(confD); err == nil {
+		return confD
+	}
+	// Try reading symlink target
+	target, err := os.Readlink(pgConf)
+	if err == nil {
+		confD = filepath.Join(target, "conf.d", "99-itdlu-tuning.conf")
+		if _, err := os.Stat(confD); err == nil {
+			return confD
+		}
+	}
+	// Scan /etc/postgresql for installed versions
+	entries, _ := os.ReadDir("/etc/postgresql")
+	for _, e := range entries {
+		if e.IsDir() {
+			p := filepath.Join("/etc/postgresql", e.Name(), "main", "conf.d", "99-itdlu-tuning.conf")
+			if _, err := os.Stat(p); err == nil {
+				return p
+			}
+			// Create conf.d if needed
+			confDir := filepath.Join("/etc/postgresql", e.Name(), "main", "conf.d")
+			_ = os.MkdirAll(confDir, 0755)
+			return filepath.Join(confDir, "99-itdlu-tuning.conf")
+		}
+	}
+	// Fallback for RHEL
+	entries, _ = os.ReadDir("/var/lib/pgsql")
+	for _, e := range entries {
+		if e.IsDir() {
+			confDir := filepath.Join("/var/lib/pgsql", e.Name(), "data", "conf.d")
+			_ = os.MkdirAll(confDir, 0755)
+			return filepath.Join(confDir, "99-itdlu-tuning.conf")
+		}
+	}
+	return filepath.Join(pgConf, "conf.d", "99-itdlu-tuning.conf")
+}
+
+func parsePGConfig(content string) map[string]string {
+	result := make(map[string]string)
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		k, v, ok := strings.Cut(line, "=")
+		if ok {
+			result[strings.TrimSpace(k)] = strings.TrimSpace(v)
+		}
+	}
+	return result
+}
+
+func (s *SoftwareService) GetPostgreSQLOptimization() (*PostgreSQLOptimization, error) {
+	path := s.getPostgreSQLTuningPath()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return &PostgreSQLOptimization{}, nil
+	}
+	kv := parsePGConfig(string(data))
+	opt := &PostgreSQLOptimization{
+		SharedBuffers:                kv["shared_buffers"],
+		EffectiveCacheSize:           kv["effective_cache_size"],
+		WorkMem:                      kv["work_mem"],
+		MaintenanceWorkMem:           kv["maintenance_work_mem"],
+		MaxConnections:               kv["max_connections"],
+		WalBuffers:                   kv["wal_buffers"],
+		MinWalSize:                   kv["min_wal_size"],
+		MaxWalSize:                   kv["max_wal_size"],
+		CheckpointCompletionTarget:   kv["checkpoint_completion_target"],
+		RandomPageCost:               kv["random_page_cost"],
+		EffectiveIOConcurrency:       kv["effective_io_concurrency"],
+		DefaultStatisticsTarget:      kv["default_statistics_target"],
+		MaxWorkerProcesses:           kv["max_worker_processes"],
+		MaxParallelWorkersPerGather:  kv["max_parallel_workers_per_gather"],
+		MaxParallelWorkers:           kv["max_parallel_workers"],
+		MaxParallelMaintenanceWorkers: kv["max_parallel_maintenance_workers"],
+	}
+	return opt, nil
+}
+
+func (s *SoftwareService) UpdatePostgreSQLOptimization(opt *PostgreSQLOptimization) error {
+	path := s.getPostgreSQLTuningPath()
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	lines := []string{"# ITDLUPanel PostgreSQL Tuning (managed by panel)"}
+	add := func(k, v string) {
+		if v != "" {
+			lines = append(lines, fmt.Sprintf("%s = %s", k, v))
+		}
+	}
+	add("shared_buffers", opt.SharedBuffers)
+	add("effective_cache_size", opt.EffectiveCacheSize)
+	add("work_mem", opt.WorkMem)
+	add("maintenance_work_mem", opt.MaintenanceWorkMem)
+	add("max_connections", opt.MaxConnections)
+	add("wal_buffers", opt.WalBuffers)
+	add("min_wal_size", opt.MinWalSize)
+	add("max_wal_size", opt.MaxWalSize)
+	add("checkpoint_completion_target", opt.CheckpointCompletionTarget)
+	add("random_page_cost", opt.RandomPageCost)
+	add("effective_io_concurrency", opt.EffectiveIOConcurrency)
+	add("default_statistics_target", opt.DefaultStatisticsTarget)
+	add("max_worker_processes", opt.MaxWorkerProcesses)
+	add("max_parallel_workers_per_gather", opt.MaxParallelWorkersPerGather)
+	add("max_parallel_workers", opt.MaxParallelWorkers)
+	add("max_parallel_maintenance_workers", opt.MaxParallelMaintenanceWorkers)
+
+	content := strings.Join(lines, "\n") + "\n"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return err
+	}
+
+	// Restart PostgreSQL to apply changes like shared_buffers
+	svcName, _ := s.resolveServiceName("postgresql")
+	system.ExecWithTimeout(30*time.Second, "systemctl", "restart", svcName)
+	return nil
+}
+
+// GetPostgreSQLConnections returns active connections from pg_stat_activity.
+func (s *SoftwareService) GetPostgreSQLConnections() ([]map[string]string, error) {
+	ctx := context.Background()
+	query := `SELECT datname, usename, state, COALESCE(LEFT(query, 200), '') as query, client_addr, backend_start::text FROM pg_stat_activity WHERE backend_type = 'client backend' ORDER BY backend_start DESC`
+	result, err := system.Exec(ctx, "sudo", "-u", "postgres", "psql", "-t", "-A", "-F", "\t", "-c", query)
+	if err != nil {
+		return nil, err
+	}
+
+	var connections []map[string]string
+	for _, line := range strings.Split(strings.TrimSpace(result.Stdout), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 6)
+		conn := map[string]string{
+			"datname":  safeIndex(parts, 0),
+			"usename":  safeIndex(parts, 1),
+			"state":    safeIndex(parts, 2),
+			"query":    safeIndex(parts, 3),
+			"client":   safeIndex(parts, 4),
+			"started":  safeIndex(parts, 5),
+		}
+		connections = append(connections, conn)
+	}
+	return connections, nil
+}
+
+// GetPostgreSQLDatabases returns all databases with size and owner info.
+func (s *SoftwareService) GetPostgreSQLDatabases() ([]map[string]interface{}, error) {
+	ctx := context.Background()
+	query := `SELECT d.datname, pg_catalog.pg_get_userbyid(d.datdba) as owner, pg_encoding_to_char(d.encoding) as encoding, pg_database_size(d.datname) as size FROM pg_database d WHERE d.datistemplate = false ORDER BY d.datname`
+	result, err := system.Exec(ctx, "sudo", "-u", "postgres", "psql", "-t", "-A", "-F", "\t", "-c", query)
+	if err != nil {
+		return nil, err
+	}
+
+	var databases []map[string]interface{}
+	for _, line := range strings.Split(strings.TrimSpace(result.Stdout), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 4)
+		size, _ := strconv.ParseInt(safeIndex(parts, 3), 10, 64)
+		db := map[string]interface{}{
+			"name":     safeIndex(parts, 0),
+			"owner":    safeIndex(parts, 1),
+			"encoding": safeIndex(parts, 2),
+			"size":     size,
+		}
+		databases = append(databases, db)
+	}
+	return databases, nil
+}
+
+func safeIndex(parts []string, idx int) string {
+	if idx < len(parts) {
+		return parts[idx]
+	}
+	return ""
+}

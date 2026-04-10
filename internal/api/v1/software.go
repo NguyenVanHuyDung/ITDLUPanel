@@ -65,6 +65,10 @@ func (h *SoftwareHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gi
 		sw.PUT("/mysql/memory-protection", h.setMariaDBMemoryProtection)
 		sw.GET("/mysql/ram-plans", h.getMariaDBRAMPlans)
 
+		// PostgreSQL management
+		sw.GET("/postgresql/connections", h.getPostgreSQLConnections)
+		sw.GET("/postgresql/databases", h.getPostgreSQLDatabases)
+
 		// PHP management
 		sw.GET("/php/:version/extensions", h.getPHPExtensions)
 		sw.POST("/php/:version/extensions/install", h.installPHPExtension)
@@ -351,6 +355,13 @@ func (h *SoftwareHandler) getOptimization(c *gin.Context) {
 			return
 		}
 		response.Success(c, opt)
+	case "postgresql":
+		opt, err := h.softwareService.GetPostgreSQLOptimization()
+		if err != nil {
+			response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get postgresql optimization"))
+			return
+		}
+		response.Success(c, opt)
 	default:
 		response.Error(c, apperrors.New(apperrors.ErrValidation, "optimization not supported for "+name))
 	}
@@ -404,6 +415,17 @@ func (h *SoftwareHandler) updateOptimization(c *gin.Context) {
 			return
 		}
 		response.Success(c, gin.H{"message": "mysql optimization updated"})
+	case "postgresql":
+		var opt service.PostgreSQLOptimization
+		if err := c.ShouldBindJSON(&opt); err != nil {
+			response.Error(c, apperrors.Wrap(err, apperrors.ErrValidation, "invalid request"))
+			return
+		}
+		if err := h.softwareService.UpdatePostgreSQLOptimization(&opt); err != nil {
+			response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to update postgresql optimization"))
+			return
+		}
+		response.Success(c, gin.H{"message": "postgresql optimization updated"})
 	default:
 		response.Error(c, apperrors.New(apperrors.ErrValidation, "optimization not supported for "+name))
 	}
@@ -911,4 +933,24 @@ func (h *SoftwareHandler) getMariaDBRAMPlans(c *gin.Context) {
 	totalBytes := totalKB * 1024
 	plans := h.softwareService.GetMariaDBRAMPlan(totalBytes)
 	response.Success(c, gin.H{"plans": plans, "total_ram_mb": totalKB / 1024})
+}
+
+// ─── PostgreSQL Management ──────────────────────────────────────────────────
+
+func (h *SoftwareHandler) getPostgreSQLConnections(c *gin.Context) {
+	connections, err := h.softwareService.GetPostgreSQLConnections()
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get postgresql connections"))
+		return
+	}
+	response.Success(c, connections)
+}
+
+func (h *SoftwareHandler) getPostgreSQLDatabases(c *gin.Context) {
+	databases, err := h.softwareService.GetPostgreSQLDatabases()
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get postgresql databases"))
+		return
+	}
+	response.Success(c, databases)
 }
