@@ -2912,6 +2912,7 @@ func (s *SiteService) rebuildReverseProxyNginx(site *Site, rules []ReverseProxyR
 		}
 
 		blockLines = append(blockLines, fmt.Sprintf("    proxy_pass %s;", sanitizeNginxValue(r.TargetURL)))
+		blockLines = append(blockLines, "    proxy_redirect off;")
 		blockLines = append(blockLines, "    proxy_set_header X-Real-IP $remote_addr;")
 		blockLines = append(blockLines, "    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;")
 		blockLines = append(blockLines, "    proxy_set_header X-Forwarded-Proto $scheme;")
