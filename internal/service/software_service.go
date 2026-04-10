@@ -2768,7 +2768,6 @@ func (s *SoftwareService) writePgAdminServerBlock(b *strings.Builder, cfg *PgAdm
 	b.WriteString("        proxy_set_header X-Real-IP $remote_addr;\n")
 	b.WriteString("        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
 	b.WriteString("        proxy_set_header X-Forwarded-Proto $scheme;\n")
-	b.WriteString("        proxy_set_header X-Script-Name /;\n")
 	b.WriteString("        proxy_redirect off;\n")
 	b.WriteString("    }\n")
 
