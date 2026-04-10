@@ -1202,6 +1202,15 @@ export default function AppStore() {
                   '6.2': 'Redis 6.2 — EOL (Legacy)',
                 };
 
+                const pgLabels: Record<string, string> = {
+                  '17': 'PostgreSQL 17 — Latest (2024–2029)',
+                  '16': 'PostgreSQL 16 — Current (2023–2028)',
+                  '15': 'PostgreSQL 15 — Stable (2022–2027)',
+                  '14': 'PostgreSQL 14 — Stable (2021–2026)',
+                };
+
+                const isPG = installTarget?.name === 'postgresql';
+
                 const singleVersionLabels: Record<string, Record<string, string>> = {
                   apache: { '2.4': 'Apache 2.4 (Current Stable)' },
                   openlitespeed: { stable: 'OpenLiteSpeed (Latest Stable)' },
@@ -1225,6 +1234,8 @@ export default function AppStore() {
                     label = phpLabels[v] || `PHP ${v}`;
                   } else if (isRedis) {
                     label = redisLabels[v] || `Redis ${v}`;
+                  } else if (isPG) {
+                    label = pgLabels[v] || `PostgreSQL ${v}`;
                   } else if (singleVersionLabels[swName]?.[v]) {
                     label = singleVersionLabels[swName][v];
                   }

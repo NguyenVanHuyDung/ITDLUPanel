@@ -27,7 +27,7 @@ var safeNameRe = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
 // CreateDBRequest holds the data needed to create a new database.
 type CreateDBRequest struct {
 	Name         string `json:"name" validate:"required,min=1,max=64"`
-	DBType       string `json:"db_type" validate:"required,oneof=mysql mariadb"`
+	DBType       string `json:"db_type" validate:"required,oneof=mysql mariadb postgresql"`
 	Username     string `json:"username" validate:"required,min=1,max=32"`
 	Password     string `json:"password" validate:"required,min=6"`
 	Charset      string `json:"charset"`
@@ -67,6 +67,22 @@ func NewDatabaseService(db *sql.DB) *DatabaseService {
 
 // Create provisions a new database and its dedicated user.
 func (s *DatabaseService) Create(req CreateDBRequest) (*Database, error) {
+	if !safeNameRe.MatchString(req.Name) {
+		return nil, apperrors.New(apperrors.ErrValidation, "database name contains invalid characters")
+	}
+	if !safeNameRe.MatchString(req.Username) {
+		return nil, apperrors.New(apperrors.ErrValidation, "username contains invalid characters")
+	}
+
+	ctx := context.Background()
+
+	if req.DBType == "postgresql" {
+		return s.createPostgres(ctx, req)
+	}
+	return s.createMySQL(ctx, req)
+}
+
+func (s *DatabaseService) createMySQL(ctx context.Context, req CreateDBRequest) (*Database, error) {
 	if req.Charset == "" {
 		req.Charset = "utf8mb4"
 	}
@@ -77,23 +93,12 @@ func (s *DatabaseService) Create(req CreateDBRequest) (*Database, error) {
 		req.RemoteAccess = "localhost"
 	}
 
-	if !safeNameRe.MatchString(req.Name) {
-		return nil, apperrors.New(apperrors.ErrValidation, "database name contains invalid characters")
-	}
-	if !safeNameRe.MatchString(req.Username) {
-		return nil, apperrors.New(apperrors.ErrValidation, "username contains invalid characters")
-	}
-
-	ctx := context.Background()
-
-	// Create the database.
 	createDBSQL := fmt.Sprintf("CREATE DATABASE `%s` CHARACTER SET %s COLLATE %s",
 		req.Name, req.Charset, req.Collation)
 	if _, err := system.Exec(ctx, "mysql", "-u", "root", "-e", createDBSQL); err != nil {
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create database")
 	}
 
-	// Create user and grant privileges.
 	host := req.RemoteAccess
 	escapedPassword := strings.ReplaceAll(req.Password, "'", "\\'")
 	userSQL := fmt.Sprintf(
@@ -101,20 +106,57 @@ func (s *DatabaseService) Create(req CreateDBRequest) (*Database, error) {
 		req.Username, host, escapedPassword, req.Name, req.Username, host,
 	)
 	if _, err := system.Exec(ctx, "mysql", "-u", "root", "-e", userSQL); err != nil {
-		// Rollback: drop the database we just created.
 		dropSQL := fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", req.Name)
 		_, _ = system.Exec(ctx, "mysql", "-u", "root", "-e", dropSQL)
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create database user")
 	}
 
-	// Encrypt password for storage.
+	return s.persistDBRecord(req)
+}
+
+func (s *DatabaseService) createPostgres(ctx context.Context, req CreateDBRequest) (*Database, error) {
+	if req.Charset == "" {
+		req.Charset = "UTF8"
+	}
+	if req.Collation == "" {
+		req.Collation = "en_US.UTF-8"
+	}
+	if req.RemoteAccess == "" {
+		req.RemoteAccess = "localhost"
+	}
+
+	escapedPassword := strings.ReplaceAll(req.Password, "'", "''")
+
+	// Create role (user)
+	createUserSQL := fmt.Sprintf("CREATE ROLE %s WITH LOGIN PASSWORD '%s'", req.Username, escapedPassword)
+	if _, err := system.Exec(ctx, "sudo", "-u", "postgres", "psql", "-c", createUserSQL); err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create PostgreSQL user")
+	}
+
+	// Create database owned by the user
+	createDBSQL := fmt.Sprintf("CREATE DATABASE %s OWNER %s ENCODING '%s' LC_COLLATE '%s' LC_CTYPE '%s' TEMPLATE template0",
+		req.Name, req.Username, req.Charset, req.Collation, req.Collation)
+	if _, err := system.Exec(ctx, "sudo", "-u", "postgres", "psql", "-c", createDBSQL); err != nil {
+		// Rollback: drop user
+		_, _ = system.Exec(ctx, "sudo", "-u", "postgres", "psql", "-c", fmt.Sprintf("DROP ROLE IF EXISTS %s", req.Username))
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create PostgreSQL database")
+	}
+
+	// Grant all privileges
+	grantSQL := fmt.Sprintf("GRANT ALL PRIVILEGES ON DATABASE %s TO %s", req.Name, req.Username)
+	_, _ = system.Exec(ctx, "sudo", "-u", "postgres", "psql", "-c", grantSQL)
+
+	return s.persistDBRecord(req)
+}
+
+// persistDBRecord encrypts password and stores the database record in SQLite.
+func (s *DatabaseService) persistDBRecord(req CreateDBRequest) (*Database, error) {
 	cfg := config.Get()
 	encryptedPass, err := crypto.EncryptAES(req.Password, cfg.Auth.JWTSecret)
 	if err != nil {
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to encrypt password")
 	}
 
-	// Persist record in SQLite.
 	result, err := s.db.Exec(
 		`INSERT INTO databases (name, db_type, username, password, charset, collation, remote_access) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		req.Name, req.DBType, req.Username, encryptedPass, req.Charset, req.Collation, req.RemoteAccess,
@@ -125,7 +167,6 @@ func (s *DatabaseService) Create(req CreateDBRequest) (*Database, error) {
 
 	id, _ := result.LastInsertId()
 	logger.Info().Str("name", req.Name).Str("db_type", req.DBType).Msg("database created")
-
 	return s.GetByID(id)
 }
 
@@ -197,7 +238,7 @@ func (s *DatabaseService) GetByID(id int64) (*Database, error) {
 	return d, nil
 }
 
-// Delete drops the MySQL database and user, then removes the record.
+// Delete drops the database and user, then removes the record.
 func (s *DatabaseService) Delete(id int64) error {
 	d, err := s.GetByID(id)
 	if err != nil {
@@ -206,14 +247,10 @@ func (s *DatabaseService) Delete(id int64) error {
 
 	ctx := context.Background()
 
-	dropDBSQL := fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", d.Name)
-	if _, err := system.Exec(ctx, "mysql", "-u", "root", "-e", dropDBSQL); err != nil {
-		logger.Error().Err(err).Str("name", d.Name).Msg("failed to drop database")
-	}
-
-	dropUserSQL := fmt.Sprintf("DROP USER IF EXISTS '%s'@'%s'; FLUSH PRIVILEGES;", d.Username, d.RemoteAccess)
-	if _, err := system.Exec(ctx, "mysql", "-u", "root", "-e", dropUserSQL); err != nil {
-		logger.Error().Err(err).Str("username", d.Username).Msg("failed to drop database user")
+	if d.DBType == "postgresql" {
+		s.deletePostgres(ctx, d)
+	} else {
+		s.deleteMySQL(ctx, d)
 	}
 
 	if _, err := s.db.Exec("DELETE FROM databases WHERE id = ?", id); err != nil {
@@ -224,7 +261,33 @@ func (s *DatabaseService) Delete(id int64) error {
 	return nil
 }
 
-// ChangePassword updates the MySQL user password.
+func (s *DatabaseService) deleteMySQL(ctx context.Context, d *Database) {
+	dropDBSQL := fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", d.Name)
+	if _, err := system.Exec(ctx, "mysql", "-u", "root", "-e", dropDBSQL); err != nil {
+		logger.Error().Err(err).Str("name", d.Name).Msg("failed to drop database")
+	}
+	dropUserSQL := fmt.Sprintf("DROP USER IF EXISTS '%s'@'%s'; FLUSH PRIVILEGES;", d.Username, d.RemoteAccess)
+	if _, err := system.Exec(ctx, "mysql", "-u", "root", "-e", dropUserSQL); err != nil {
+		logger.Error().Err(err).Str("username", d.Username).Msg("failed to drop database user")
+	}
+}
+
+func (s *DatabaseService) deletePostgres(ctx context.Context, d *Database) {
+	// Terminate active connections first
+	termSQL := fmt.Sprintf("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '%s' AND pid <> pg_backend_pid()", d.Name)
+	_, _ = system.Exec(ctx, "sudo", "-u", "postgres", "psql", "-c", termSQL)
+
+	dropDBSQL := fmt.Sprintf("DROP DATABASE IF EXISTS %s", d.Name)
+	if _, err := system.Exec(ctx, "sudo", "-u", "postgres", "psql", "-c", dropDBSQL); err != nil {
+		logger.Error().Err(err).Str("name", d.Name).Msg("failed to drop PostgreSQL database")
+	}
+	dropUserSQL := fmt.Sprintf("DROP ROLE IF EXISTS %s", d.Username)
+	if _, err := system.Exec(ctx, "sudo", "-u", "postgres", "psql", "-c", dropUserSQL); err != nil {
+		logger.Error().Err(err).Str("username", d.Username).Msg("failed to drop PostgreSQL user")
+	}
+}
+
+// ChangePassword updates the database user password.
 func (s *DatabaseService) ChangePassword(id int64, newPassword string) error {
 	d, err := s.GetByID(id)
 	if err != nil {
@@ -232,11 +295,19 @@ func (s *DatabaseService) ChangePassword(id int64, newPassword string) error {
 	}
 
 	ctx := context.Background()
-	escapedPassword := strings.ReplaceAll(newPassword, "'", "\\'")
-	alterSQL := fmt.Sprintf("ALTER USER '%s'@'%s' IDENTIFIED BY '%s'; FLUSH PRIVILEGES;",
-		d.Username, d.RemoteAccess, escapedPassword)
-	if _, err := system.Exec(ctx, "mysql", "-u", "root", "-e", alterSQL); err != nil {
-		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to change database password")
+	if d.DBType == "postgresql" {
+		escapedPassword := strings.ReplaceAll(newPassword, "'", "''")
+		alterSQL := fmt.Sprintf("ALTER ROLE %s WITH PASSWORD '%s'", d.Username, escapedPassword)
+		if _, err := system.Exec(ctx, "sudo", "-u", "postgres", "psql", "-c", alterSQL); err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to change PostgreSQL password")
+		}
+	} else {
+		escapedPassword := strings.ReplaceAll(newPassword, "'", "\\'")
+		alterSQL := fmt.Sprintf("ALTER USER '%s'@'%s' IDENTIFIED BY '%s'; FLUSH PRIVILEGES;",
+			d.Username, d.RemoteAccess, escapedPassword)
+		if _, err := system.Exec(ctx, "mysql", "-u", "root", "-e", alterSQL); err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to change database password")
+		}
 	}
 
 	cfg := config.Get()
@@ -253,39 +324,43 @@ func (s *DatabaseService) ChangePassword(id int64, newPassword string) error {
 	return nil
 }
 
-// SetRemoteAccess recreates the MySQL user with a new host binding.
+// SetRemoteAccess updates the remote access binding for the database user.
 func (s *DatabaseService) SetRemoteAccess(id int64, hosts string) error {
 	d, err := s.GetByID(id)
 	if err != nil {
 		return err
 	}
 
-	// Decrypt stored password so we can recreate the user.
-	cfg := config.Get()
-	var encPassword string
-	if err := s.db.QueryRow("SELECT password FROM databases WHERE id = ?", id).Scan(&encPassword); err != nil {
-		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to read password")
-	}
-	password, err := crypto.DecryptAES(encPassword, cfg.Auth.JWTSecret)
-	if err != nil {
-		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to decrypt password")
-	}
-
 	ctx := context.Background()
 
-	// Drop old user.
-	dropSQL := fmt.Sprintf("DROP USER IF EXISTS '%s'@'%s'; FLUSH PRIVILEGES;", d.Username, d.RemoteAccess)
-	if _, err := system.Exec(ctx, "mysql", "-u", "root", "-e", dropSQL); err != nil {
-		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to drop old database user")
-	}
+	if d.DBType == "postgresql" {
+		// PostgreSQL remote access is via pg_hba.conf — just record the setting.
+		// Actual enforcement requires pg_hba.conf management which is done at install time.
+		logger.Info().Str("name", d.Name).Str("hosts", hosts).Msg("PostgreSQL remote access updated (record only)")
+	} else {
+		// MySQL: Decrypt stored password so we can recreate the user.
+		cfg := config.Get()
+		var encPassword string
+		if err := s.db.QueryRow("SELECT password FROM databases WHERE id = ?", id).Scan(&encPassword); err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to read password")
+		}
+		password, err := crypto.DecryptAES(encPassword, cfg.Auth.JWTSecret)
+		if err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to decrypt password")
+		}
 
-	// Create user with new host.
-	createSQL := fmt.Sprintf(
-		"CREATE USER '%s'@'%s' IDENTIFIED BY '%s'; GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%s'; FLUSH PRIVILEGES;",
-		d.Username, hosts, password, d.Name, d.Username, hosts,
-	)
-	if _, err := system.Exec(ctx, "mysql", "-u", "root", "-e", createSQL); err != nil {
-		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to create user with new host")
+		dropSQL := fmt.Sprintf("DROP USER IF EXISTS '%s'@'%s'; FLUSH PRIVILEGES;", d.Username, d.RemoteAccess)
+		if _, err := system.Exec(ctx, "mysql", "-u", "root", "-e", dropSQL); err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to drop old database user")
+		}
+
+		createSQL := fmt.Sprintf(
+			"CREATE USER '%s'@'%s' IDENTIFIED BY '%s'; GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%s'; FLUSH PRIVILEGES;",
+			d.Username, hosts, password, d.Name, d.Username, hosts,
+		)
+		if _, err := system.Exec(ctx, "mysql", "-u", "root", "-e", createSQL); err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to create user with new host")
+		}
 	}
 
 	if _, err := s.db.Exec("UPDATE databases SET remote_access = ? WHERE id = ?", hosts, id); err != nil {
@@ -296,7 +371,7 @@ func (s *DatabaseService) SetRemoteAccess(id int64, hosts string) error {
 	return nil
 }
 
-// Backup creates a mysqldump of the database and returns the file path.
+// Backup creates a dump of the database and returns the file path.
 func (s *DatabaseService) Backup(id int64) (string, error) {
 	d, err := s.GetByID(id)
 	if err != nil {
@@ -313,8 +388,14 @@ func (s *DatabaseService) Backup(id int64) (string, error) {
 	backupPath := filepath.Join(backupDir, fileName)
 
 	ctx := context.Background()
-	if _, err := system.Exec(ctx, "mysqldump", "-u", "root", "--result-file="+backupPath, d.Name); err != nil {
-		return "", apperrors.Wrap(err, apperrors.ErrInternal, "failed to backup database")
+	if d.DBType == "postgresql" {
+		if _, err := system.Exec(ctx, "sudo", "-u", "postgres", "pg_dump", "-f", backupPath, d.Name); err != nil {
+			return "", apperrors.Wrap(err, apperrors.ErrInternal, "failed to backup PostgreSQL database")
+		}
+	} else {
+		if _, err := system.Exec(ctx, "mysqldump", "-u", "root", "--result-file="+backupPath, d.Name); err != nil {
+			return "", apperrors.Wrap(err, apperrors.ErrInternal, "failed to backup database")
+		}
 	}
 
 	logger.Info().Str("name", d.Name).Str("path", backupPath).Msg("database backed up")
@@ -332,7 +413,6 @@ func (s *DatabaseService) Restore(id int64, filePath string) error {
 		return apperrors.New(apperrors.ErrNotFound, "backup file not found")
 	}
 
-	// Ensure file is within the backup directory.
 	backupDir := filepath.Join(config.Get().Paths.Backup, "database")
 	absFile, _ := filepath.Abs(filePath)
 	absBackup, _ := filepath.Abs(backupDir)
@@ -341,10 +421,16 @@ func (s *DatabaseService) Restore(id int64, filePath string) error {
 	}
 
 	ctx := context.Background()
-	// Use bash redirect; safe because d.Name is validated and filePath is path-checked.
-	cmd := fmt.Sprintf("mysql -u root %s < %s", d.Name, filePath)
-	if _, err := system.ExecShell(ctx, cmd); err != nil {
-		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to restore database")
+	if d.DBType == "postgresql" {
+		cmd := fmt.Sprintf("sudo -u postgres psql %s < %s", d.Name, filePath)
+		if _, err := system.ExecShell(ctx, cmd); err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to restore PostgreSQL database")
+		}
+	} else {
+		cmd := fmt.Sprintf("mysql -u root %s < %s", d.Name, filePath)
+		if _, err := system.ExecShell(ctx, cmd); err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to restore database")
+		}
 	}
 
 	logger.Info().Str("name", d.Name).Str("file", filePath).Msg("database restored")
@@ -364,7 +450,6 @@ func (s *DatabaseService) ImportSQL(id int64, filePath string) error {
 
 	ctx := context.Background()
 
-	// If gzipped, decompress first
 	importFile := filePath
 	if strings.HasSuffix(filePath, ".gz") {
 		importFile = strings.TrimSuffix(filePath, ".gz")
@@ -374,16 +459,23 @@ func (s *DatabaseService) ImportSQL(id int64, filePath string) error {
 		defer os.Remove(importFile)
 	}
 
-	cmd := fmt.Sprintf("mysql -u root %s < %s", d.Name, importFile)
-	if _, err := system.ExecShell(ctx, cmd); err != nil {
-		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to import SQL file")
+	if d.DBType == "postgresql" {
+		cmd := fmt.Sprintf("sudo -u postgres psql %s < %s", d.Name, importFile)
+		if _, err := system.ExecShell(ctx, cmd); err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to import SQL into PostgreSQL")
+		}
+	} else {
+		cmd := fmt.Sprintf("mysql -u root %s < %s", d.Name, importFile)
+		if _, err := system.ExecShell(ctx, cmd); err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to import SQL file")
+		}
 	}
 
 	logger.Info().Str("name", d.Name).Str("file", filePath).Msg("database imported")
 	return nil
 }
 
-// GetSize queries the actual database size from MySQL information_schema.
+// GetSize queries the actual database size.
 func (s *DatabaseService) GetSize(id int64) (int64, error) {
 	d, err := s.GetByID(id)
 	if err != nil {
@@ -391,27 +483,50 @@ func (s *DatabaseService) GetSize(id int64) (int64, error) {
 	}
 
 	ctx := context.Background()
-	sizeSQL := fmt.Sprintf(
-		"SELECT IFNULL(SUM(data_length + index_length), 0) FROM information_schema.TABLES WHERE table_schema = '%s'",
-		d.Name,
-	)
-	result, err := system.Exec(ctx, "mysql", "-u", "root", "-N", "-e", sizeSQL)
-	if err != nil {
-		return 0, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get database size")
+	var size int64
+
+	if d.DBType == "postgresql" {
+		sizeSQL := fmt.Sprintf("SELECT pg_database_size('%s')", d.Name)
+		result, err := system.Exec(ctx, "sudo", "-u", "postgres", "psql", "-t", "-c", sizeSQL)
+		if err != nil {
+			return 0, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get PostgreSQL database size")
+		}
+		fmt.Sscanf(strings.TrimSpace(result.Stdout), "%d", &size)
+	} else {
+		sizeSQL := fmt.Sprintf(
+			"SELECT IFNULL(SUM(data_length + index_length), 0) FROM information_schema.TABLES WHERE table_schema = '%s'",
+			d.Name,
+		)
+		result, err := system.Exec(ctx, "mysql", "-u", "root", "-N", "-e", sizeSQL)
+		if err != nil {
+			return 0, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get database size")
+		}
+		fmt.Sscanf(strings.TrimSpace(result.Stdout), "%d", &size)
 	}
 
-	var size int64
-	fmt.Sscanf(strings.TrimSpace(result.Stdout), "%d", &size)
-
-	// Cache size in SQLite.
 	_, _ = s.db.Exec("UPDATE databases SET size = ? WHERE id = ?", size, id)
-
 	return size, nil
 }
 
-// GetVersion returns the running MySQL/MariaDB version string (e.g. "MariaDB 10.6.23").
-func (s *DatabaseService) GetVersion() (string, error) {
+// GetVersion returns the running database version string.
+// If dbType is "postgresql", returns the PostgreSQL version; otherwise MySQL/MariaDB.
+func (s *DatabaseService) GetVersion(dbType ...string) (string, error) {
 	ctx := context.Background()
+
+	if len(dbType) > 0 && dbType[0] == "postgresql" {
+		result, err := system.Exec(ctx, "sudo", "-u", "postgres", "psql", "-t", "-c", "SELECT version()")
+		if err != nil {
+			return "", apperrors.Wrap(err, apperrors.ErrInternal, "failed to get PostgreSQL version")
+		}
+		raw := strings.TrimSpace(result.Stdout)
+		// raw is like "PostgreSQL 17.2 on x86_64-pc-linux-gnu, ..."
+		parts := strings.Fields(raw)
+		if len(parts) >= 2 {
+			return parts[0] + " " + parts[1], nil
+		}
+		return raw, nil
+	}
+
 	result, err := system.Exec(ctx, "mysql", "-u", "root", "-N", "-e", "SELECT VERSION()")
 	if err != nil {
 		return "", apperrors.Wrap(err, apperrors.ErrInternal, "failed to get database version")
@@ -434,9 +549,34 @@ func (s *DatabaseService) SetDiskQuota(id int64, quotaBytes int64) error {
 	return nil
 }
 
-// ServiceAction performs start/stop/restart/reload on the MySQL/MariaDB service.
-func (s *DatabaseService) ServiceAction(action string) error {
+// ServiceAction performs start/stop/restart/reload on a database service.
+func (s *DatabaseService) ServiceAction(action string, dbType ...string) error {
 	ctx := context.Background()
+
+	if len(dbType) > 0 && dbType[0] == "postgresql" {
+		svcNames := []string{"postgresql"}
+		// Also try version-specific service names
+		for _, v := range []string{"17", "16", "15", "14"} {
+			svcNames = append(svcNames, fmt.Sprintf("postgresql-%s", v))
+		}
+		var svc string
+		for _, n := range svcNames {
+			if r, _ := system.Exec(ctx, "systemctl", "is-enabled", n); r != nil && (strings.TrimSpace(r.Stdout) == "enabled" || strings.TrimSpace(r.Stdout) == "disabled") {
+				svc = n
+				break
+			}
+		}
+		if svc == "" {
+			return apperrors.New(apperrors.ErrNotFound, "no PostgreSQL service found")
+		}
+		_, err := system.Exec(ctx, "systemctl", action, svc)
+		if err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, fmt.Sprintf("failed to %s %s", action, svc))
+		}
+		return nil
+	}
+
+	// MySQL/MariaDB
 	svcNames := []string{"mariadb", "mysql", "mysqld"}
 	var svc string
 	for _, n := range svcNames {

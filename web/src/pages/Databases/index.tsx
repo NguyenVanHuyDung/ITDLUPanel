@@ -91,7 +91,9 @@ function DatabasesContent() {
   const handleServiceAction = async (action: string) => {
     setServiceActionLoading(action);
     try {
-      await api.post('/databases/service', { action });
+      const payload: { action: string; db_type?: string } = { action };
+      if (detectedDbType === 'postgresql') payload.db_type = 'postgresql';
+      await api.post('/databases/service', payload);
       message.success(`${action} successful`);
       if (action === 'stop') {
         setDbVersion('');
@@ -156,7 +158,9 @@ function DatabasesContent() {
       }
       const installed = sw.installed || [];
       const dbSw = installed.find((s: any) => s.type === 'database');
-      if (dbSw?.version) {
+      if (dbSw?.name === 'postgresql') {
+        setDetectedDbType('postgresql');
+      } else if (dbSw?.version) {
         setDetectedDbType(dbSw.version.startsWith('mariadb') ? 'mariadb' : 'mysql');
       }
     } catch {
@@ -166,10 +170,11 @@ function DatabasesContent() {
 
   const fetchDbVersion = useCallback(async () => {
     try {
-      const { data: resp } = await api.get('/databases/version');
+      const dbTypeParam = detectedDbType === 'postgresql' ? '?db_type=postgresql' : '';
+      const { data: resp } = await api.get(`/databases/version${dbTypeParam}`);
       if (resp.data?.version) setDbVersion(resp.data.version);
     } catch { /* ignore */ }
-  }, []);
+  }, [detectedDbType]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -1066,10 +1071,11 @@ function DatabasesContent() {
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           <Form.Item name="db_type" label={t('databases.db_type') || 'Database Type'} initialValue={detectedDbType || 'mysql'} rules={[{ required: true }]}>
             <Select disabled={!!detectedDbType} options={detectedDbType ? [
-              { value: detectedDbType, label: detectedDbType === 'mariadb' ? 'MariaDB' : 'MySQL' },
+              { value: detectedDbType, label: detectedDbType === 'mariadb' ? 'MariaDB' : detectedDbType === 'postgresql' ? 'PostgreSQL' : 'MySQL' },
             ] : [
               { value: 'mysql', label: 'MySQL' },
               { value: 'mariadb', label: 'MariaDB' },
+              { value: 'postgresql', label: 'PostgreSQL' },
             ]} />
           </Form.Item>
           <Form.Item
@@ -1111,8 +1117,12 @@ function DatabasesContent() {
               }
             />
           </Form.Item>
-          <Form.Item name="charset" label={t('databases.charset')} initialValue="utf8mb4">
-            <Select options={[
+          <Form.Item name="charset" label={t('databases.charset')} initialValue={detectedDbType === 'postgresql' ? 'UTF8' : 'utf8mb4'}>
+            <Select options={(detectedDbType === 'postgresql' || form.getFieldValue('db_type') === 'postgresql') ? [
+              { value: 'UTF8', label: 'UTF8 (Recommended)' },
+              { value: 'LATIN1', label: 'LATIN1' },
+              { value: 'SQL_ASCII', label: 'SQL_ASCII' },
+            ] : [
               { value: 'utf8mb4', label: 'utf8mb4 (Recommended)' },
               { value: 'utf8', label: 'utf8' },
               { value: 'latin1', label: 'latin1' },
@@ -1543,7 +1553,7 @@ function DatabasesContent() {
 export default function Databases() {
   const { t } = useTranslation();
   return (
-    <RequireSoftware softwareTypes={['database']} label={t('databases.title') || 'Database Server (MySQL/MariaDB)'}>
+    <RequireSoftware softwareTypes={['database']} label={t('databases.title') || 'Database Server (MySQL/MariaDB/PostgreSQL)'}>
       <DatabasesContent />
     </RequireSoftware>
   );

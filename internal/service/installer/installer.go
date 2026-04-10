@@ -334,5 +334,6 @@ func DefaultRegistry() *Registry {
 	r.Register(NewGoogleDriveInstaller())
 	r.Register(NewOneDriveInstaller())
 	r.Register(NewDockerInstaller())
+	r.Register(NewPostgreSQLInstaller())
 	return r
 }

@@ -314,9 +314,16 @@ func (h *DatabaseHandler) GetSize(c *gin.Context) {
 	response.Success(c, gin.H{"size": size})
 }
 
-// GetVersion returns the running MySQL/MariaDB engine version.
+// GetVersion returns the running database engine version.
 func (h *DatabaseHandler) GetVersion(c *gin.Context) {
-	ver, err := h.dbService.GetVersion()
+	dbType := c.Query("db_type")
+	var ver string
+	var err error
+	if dbType != "" {
+		ver, err = h.dbService.GetVersion(dbType)
+	} else {
+		ver, err = h.dbService.GetVersion()
+	}
 	if err != nil {
 		response.Error(c, err)
 		return
@@ -324,16 +331,23 @@ func (h *DatabaseHandler) GetVersion(c *gin.Context) {
 	response.Success(c, gin.H{"version": ver})
 }
 
-// ServiceAction performs start/stop/restart/reload on the MySQL/MariaDB service.
+// ServiceAction performs start/stop/restart/reload on a database service.
 func (h *DatabaseHandler) ServiceAction(c *gin.Context) {
 	var req struct {
 		Action string `json:"action" validate:"required,oneof=start stop restart reload"`
+		DBType string `json:"db_type"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid action"))
 		return
 	}
-	if err := h.dbService.ServiceAction(req.Action); err != nil {
+	var err error
+	if req.DBType != "" {
+		err = h.dbService.ServiceAction(req.Action, req.DBType)
+	} else {
+		err = h.dbService.ServiceAction(req.Action)
+	}
+	if err != nil {
 		response.Error(c, err)
 		return
 	}

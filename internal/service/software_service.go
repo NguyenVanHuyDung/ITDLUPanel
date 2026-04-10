@@ -140,6 +140,14 @@ var knownSoftware = map[string]softwareMeta{
 		InstallPath:    "/ITDLUPanel/server/docker",
 		DefaultVersion: "stable",
 	},
+	"postgresql": {
+		DisplayName:    "PostgreSQL",
+		Type:           "database",
+		ServiceName:    "postgresql",
+		ConfigPath:     "/ITDLUPanel/server/postgresql/conf/postgresql.conf",
+		InstallPath:    "/ITDLUPanel/server/postgresql",
+		DefaultVersion: "17",
+	},
 }
 
 func init() {
