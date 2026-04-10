@@ -83,6 +83,12 @@ function DatabasesContent() {
   const [customIpValue, setCustomIpValue] = useState('');
   const [quotaDb, setQuotaDb] = useState<Database | null>(null);
   const [detectedDbType, setDetectedDbType] = useState<string>('');
+  const [activeDbTab, setActiveDbTab] = useState<'mysql' | 'postgresql' | 'redis'>('mysql');
+  const [installedEngines, setInstalledEngines] = useState<Set<string>>(new Set());
+  const [pgDatabases, setPgDatabases] = useState<any[]>([]);
+  const [pgLoading, setPgLoading] = useState(false);
+  const [redisInfo, setRedisInfo] = useState<any>(null);
+  const [redisLoading, setRedisLoading] = useState(false);
   const [quotaInput, setQuotaInput] = useState(0);
   const [quotaUnit, setQuotaUnit] = useState<'MB' | 'GB'>('MB');
   const [quotaSaving, setQuotaSaving] = useState(false);
@@ -92,8 +98,13 @@ function DatabasesContent() {
     setServiceActionLoading(action);
     try {
       const payload: { action: string; db_type?: string } = { action };
-      if (detectedDbType === 'postgresql') payload.db_type = 'postgresql';
-      await api.post('/databases/service', payload);
+      if (activeDbTab === 'postgresql') payload.db_type = 'postgresql';
+      if (activeDbTab === 'redis') payload.db_type = 'redis';
+      if (activeDbTab === 'redis') {
+        await api.post(`/software/redis/${action}`);
+      } else {
+        await api.post('/databases/service', payload);
+      }
       message.success(`${action} successful`);
       if (action === 'stop') {
         setDbVersion('');
@@ -157,11 +168,25 @@ function DatabasesContent() {
         } catch { /* ignore */ }
       }
       const installed = sw.installed || [];
-      const dbSw = installed.find((s: any) => s.type === 'database');
-      if (dbSw?.name === 'postgresql') {
+      const engines = new Set<string>();
+      const mysqlSw = installed.find((s: any) => s.type === 'database' && (s.name === 'mysql' || s.name === 'mariadb'));
+      const pgSw = installed.find((s: any) => s.name === 'postgresql');
+      const redisSw = installed.find((s: any) => s.name === 'redis');
+      if (mysqlSw) {
+        engines.add('mysql');
+        setDetectedDbType(mysqlSw.version?.startsWith('mariadb') ? 'mariadb' : 'mysql');
+      }
+      if (pgSw) engines.add('postgresql');
+      if (redisSw) engines.add('redis');
+      setInstalledEngines(engines);
+      // Auto-select first available tab
+      if (engines.has('mysql')) {
+        setActiveDbTab('mysql');
+      } else if (engines.has('postgresql')) {
+        setActiveDbTab('postgresql');
         setDetectedDbType('postgresql');
-      } else if (dbSw?.version) {
-        setDetectedDbType(dbSw.version.startsWith('mariadb') ? 'mariadb' : 'mysql');
+      } else if (engines.has('redis')) {
+        setActiveDbTab('redis');
       }
     } catch {
       setPmaInstalled(false);
@@ -170,11 +195,11 @@ function DatabasesContent() {
 
   const fetchDbVersion = useCallback(async () => {
     try {
-      const dbTypeParam = detectedDbType === 'postgresql' ? '?db_type=postgresql' : '';
+      const dbTypeParam = activeDbTab === 'postgresql' ? '?db_type=postgresql' : '';
       const { data: resp } = await api.get(`/databases/version${dbTypeParam}`);
       if (resp.data?.version) setDbVersion(resp.data.version);
     } catch { /* ignore */ }
-  }, [detectedDbType]);
+  }, [activeDbTab]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -188,6 +213,34 @@ function DatabasesContent() {
     }
   }, []);
 
+  const fetchPgDatabases = useCallback(async () => {
+    setPgLoading(true);
+    try {
+      const { data: resp } = await api.get('/software/postgresql/databases');
+      setPgDatabases(resp.data || []);
+    } catch { /* ignore */ }
+    finally { setPgLoading(false); }
+  }, []);
+
+  const fetchRedisInfo = useCallback(async () => {
+    setRedisLoading(true);
+    try {
+      const [infoResp, sizeResp, memResp, clientsResp] = await Promise.all([
+        api.get('/redis/info').catch(() => null),
+        api.get('/redis/dbsize').catch(() => null),
+        api.get('/redis/memory').catch(() => null),
+        api.get('/redis/clients').catch(() => null),
+      ]);
+      setRedisInfo({
+        info: infoResp?.data?.data || {},
+        dbsize: sizeResp?.data?.data?.dbsize ?? 0,
+        memory: memResp?.data?.data || {},
+        clients: clientsResp?.data?.data || [],
+      });
+    } catch { /* ignore */ }
+    finally { setRedisLoading(false); }
+  }, []);
+
   const fetchBackupCounts = useCallback(async () => {
     try {
       const { data: resp } = await api.get<ApiResponse<Record<string, number>>>('/backups/database-counts');
@@ -199,6 +252,14 @@ function DatabasesContent() {
   }, []);
 
   useEffect(() => { fetchData(); checkPma(); fetchBackupCounts(); fetchDbVersion(); }, [fetchData, checkPma, fetchBackupCounts, fetchDbVersion]);
+
+  // Fetch tab-specific data when switching
+  useEffect(() => {
+    if (activeDbTab === 'postgresql' && installedEngines.has('postgresql')) fetchPgDatabases();
+    if (activeDbTab === 'redis' && installedEngines.has('redis')) fetchRedisInfo();
+    if (activeDbTab === 'mysql') fetchDbVersion();
+    if (activeDbTab === 'postgresql') fetchDbVersion();
+  }, [activeDbTab, installedEngines, fetchPgDatabases, fetchRedisInfo, fetchDbVersion]);
 
   const handleCreate = async () => {
     try {
@@ -799,7 +860,7 @@ function DatabasesContent() {
               fontSize: 11, padding: '2px 9px', borderRadius: 4,
               background: `${p.accent}15`, color: p.accent, fontWeight: 500,
             }}>
-              {databases.length} databases
+              {activeDbTab === 'mysql' ? `${databases.length} databases` : activeDbTab === 'postgresql' ? `${pgDatabases.length} databases` : 'Redis'}
             </span>
             {dbVersion && (
               <Popover
@@ -843,16 +904,18 @@ function DatabasesContent() {
               </Popover>
             )}
           </div>
-          <button
-            onClick={() => { form.setFieldsValue({ password: generatePassword(), db_type: detectedDbType || 'mysql' }); setModalOpen(true); }}
-            style={{
-              padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
-              background: p.accent, color: '#fff', fontSize: 13, fontWeight: 500,
-              display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'opacity 0.15s',
-            }}
-          >
-            <PlusOutlined /> {!isMobile && t('databases.add_database')}
-          </button>
+          {activeDbTab !== 'redis' && (
+            <button
+              onClick={() => { form.setFieldsValue({ password: generatePassword(), db_type: activeDbTab === 'postgresql' ? 'postgresql' : (detectedDbType || 'mysql') }); setModalOpen(true); }}
+              style={{
+                padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                background: p.accent, color: '#fff', fontSize: 13, fontWeight: 500,
+                display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'opacity 0.15s',
+              }}
+            >
+              <PlusOutlined /> {!isMobile && t('databases.add_database')}
+            </button>
+          )}
         </div>
 
         {/* Tab bar */}
@@ -861,33 +924,39 @@ function DatabasesContent() {
           borderBottom: `1px solid ${p.cardBorder}`,
           display: 'flex', gap: 4,
         }}>
-          <button style={{
-            padding: '6px 16px', borderRadius: 6,
-            border: 'none', cursor: 'pointer',
-            fontSize: 12, fontWeight: 500,
-            background: `${p.accent}15`, color: p.accent,
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-          }}>
-            <DatabaseOutlined /> {dbVersion ? (dbVersion.startsWith('MariaDB') ? 'MariaDB' : 'MySQL') : 'MySQL'}
-          </button>
-          <button disabled style={{
-            padding: '6px 16px', borderRadius: 6,
-            border: 'none', cursor: 'not-allowed',
-            fontSize: 12, fontWeight: 500, opacity: 0.45,
-            background: 'transparent', color: p.textMuted,
-          }}>
-            PostgreSQL
-          </button>
-          <button disabled style={{
-            padding: '6px 16px', borderRadius: 6,
-            border: 'none', cursor: 'not-allowed',
-            fontSize: 12, fontWeight: 500, opacity: 0.45,
-            background: 'transparent', color: p.textMuted,
-          }}>
-            Redis
-          </button>
+          {([
+            { key: 'mysql' as const, label: dbVersion ? (dbVersion.startsWith('MariaDB') ? 'MariaDB' : (dbVersion.toLowerCase().includes('postgres') ? 'MySQL' : 'MySQL')) : 'MySQL', color: '#3E6D8E', engine: 'mysql' },
+            { key: 'postgresql' as const, label: 'PostgreSQL', color: '#336791', engine: 'postgresql' },
+            { key: 'redis' as const, label: 'Redis', color: '#DC382D', engine: 'redis' },
+          ] as const).map(tab => {
+            const installed = installedEngines.has(tab.engine);
+            const active = activeDbTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                disabled={!installed}
+                onClick={() => installed && setActiveDbTab(tab.key)}
+                style={{
+                  padding: '6px 16px', borderRadius: 6,
+                  border: active ? `1px solid ${tab.color}40` : '1px solid transparent',
+                  cursor: installed ? 'pointer' : 'not-allowed',
+                  fontSize: 12, fontWeight: 500,
+                  opacity: installed ? 1 : 0.35,
+                  background: active ? `${tab.color}15` : 'transparent',
+                  color: active ? tab.color : (installed ? p.text : p.textMuted),
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  transition: 'all 0.15s',
+                }}
+              >
+                <DatabaseOutlined /> {tab.label}
+                {!installed && <span style={{ fontSize: 10 }}>(not installed)</span>}
+              </button>
+            );
+          })}
         </div>
 
+        {/* MySQL/MariaDB content */}
+        {activeDbTab === 'mysql' && (<>
         {/* Toolbar */}
         <div style={{
           display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8,
@@ -1049,6 +1118,97 @@ function DatabasesContent() {
             rowClassName={() => 'db-table-row'}
           />
         </div>
+        </>)}
+
+        {/* PostgreSQL content */}
+        {activeDbTab === 'postgresql' && (
+          <div style={{ padding: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>
+                PostgreSQL Databases
+              </span>
+              <button onClick={fetchPgDatabases} style={{
+                padding: '4px 12px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+                background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+              }}>
+                <ReloadOutlined /> Refresh
+              </button>
+            </div>
+            {pgLoading ? <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div> : (
+              <Table
+                dataSource={pgDatabases}
+                rowKey="name"
+                size="middle"
+                pagination={false}
+                style={{ fontSize: 13 }}
+                columns={[
+                  { title: 'Database', dataIndex: 'name', key: 'name', render: (v: string) => <span style={{ fontWeight: 500 }}>{v}</span> },
+                  { title: 'Owner', dataIndex: 'owner', key: 'owner' },
+                  { title: 'Encoding', dataIndex: 'encoding', key: 'encoding' },
+                  { title: 'Size', dataIndex: 'size', key: 'size', render: (v: number) => formatSize(v) },
+                ]}
+              />
+            )}
+          </div>
+        )}
+
+        {/* Redis content */}
+        {activeDbTab === 'redis' && (
+          <div style={{ padding: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>Redis Info</span>
+              <button onClick={fetchRedisInfo} style={{
+                padding: '4px 12px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+                background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+              }}>
+                <ReloadOutlined /> Refresh
+              </button>
+            </div>
+            {redisLoading ? <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div> : redisInfo ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
+                {[
+                  { label: 'Keys', value: redisInfo.dbsize?.toLocaleString?.() ?? '0', color: '#336791' },
+                  { label: 'Used Memory', value: redisInfo.memory?.used_memory_human || redisInfo.info?.used_memory_human || '—', color: '#DC382D' },
+                  { label: 'Peak Memory', value: redisInfo.memory?.used_memory_peak_human || redisInfo.info?.used_memory_peak_human || '—', color: '#FF9800' },
+                  { label: 'Connected Clients', value: redisInfo.info?.connected_clients || redisInfo.clients?.length || '—', color: '#4CAF50' },
+                  { label: 'Uptime (seconds)', value: redisInfo.info?.uptime_in_seconds || '—', color: '#9C27B0' },
+                  { label: 'Version', value: redisInfo.info?.redis_version || '—', color: '#607D8B' },
+                ].map(item => (
+                  <div key={item.label} style={{
+                    padding: '14px 16px', borderRadius: 8,
+                    border: `1px solid ${p.cardBorder}`, background: isDark ? p.card : '#fafafa',
+                  }}>
+                    <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4 }}>{item.label}</div>
+                    <div style={{ fontSize: 18, fontWeight: 600, color: item.color }}>{item.value}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: 40, color: p.textMuted }}>No Redis data available</div>
+            )}
+            {redisInfo?.clients?.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: p.text, marginBottom: 8 }}>Connected Clients</div>
+                <Table
+                  dataSource={redisInfo.clients}
+                  rowKey={(_: any, i: number | undefined) => String(i)}
+                  size="small"
+                  pagination={false}
+                  style={{ fontSize: 12 }}
+                  columns={[
+                    { title: 'Address', dataIndex: 'addr', key: 'addr' },
+                    { title: 'Name', dataIndex: 'name', key: 'name', render: (v: string) => v || '—' },
+                    { title: 'Age (s)', dataIndex: 'age', key: 'age' },
+                    { title: 'DB', dataIndex: 'db', key: 'db' },
+                    { title: 'Cmd', dataIndex: 'cmd', key: 'cmd' },
+                  ]}
+                />
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Add Database Modal */}
@@ -1553,7 +1713,7 @@ function DatabasesContent() {
 export default function Databases() {
   const { t } = useTranslation();
   return (
-    <RequireSoftware softwareTypes={['database']} label={t('databases.title') || 'Database Server (MySQL/MariaDB/PostgreSQL)'}>
+    <RequireSoftware softwareTypes={['database', 'cache']} label={t('databases.title') || 'Database Server (MySQL/MariaDB/PostgreSQL/Redis)'}>
       <DatabasesContent />
     </RequireSoftware>
   );
