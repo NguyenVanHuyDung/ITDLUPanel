@@ -162,15 +162,14 @@ export default function AppStore() {
       if (taskId) {
         addTask({
           id: taskId,
-          name: `Install ${stackId.toUpperCase()} Stack (${missing.join(', ')})`,
-          type: 'software_install',
+          name: JSON.stringify(missing),
+          type: 'stack_install',
           status: 'running',
           progress: 0,
           created_at: new Date().toISOString(),
         });
         openTaskModal(true);
         setTaskTab('tasks');
-        message.info(`Installing ${stackId.toUpperCase()} stack: ${missing.join(' → ')}…`);
       }
     } catch {
       message.error('Failed to start stack installation');

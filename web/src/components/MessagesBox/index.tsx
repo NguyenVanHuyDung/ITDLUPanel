@@ -9,11 +9,14 @@ import {
   EyeOutlined,
   DeleteOutlined,
   SyncOutlined,
+  MinusCircleOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { formatDateTime } from '@/lib/datetime';
 import { useTaskStore, type TaskDetail } from '@/stores/task';
 import { useThemeStore } from '@/stores/theme';
+import { getSoftwareIcon } from '@/pages/AppStore/SoftwareIcons';
 import type { ColumnsType } from 'antd/es/table';
 
 const { Text } = Typography;
@@ -53,8 +56,221 @@ const formatTaskName = (name: string, type: string) => {
   if (type === 'software_uninstall') {
     return `Uninstall ${name}`;
   }
+  // stack_install: name is JSON array like ["nginx","mysql","php"]
+  if (type === 'stack_install') {
+    try {
+      const components: string[] = JSON.parse(name);
+      if (Array.isArray(components)) {
+        return `Stack Install (${components.map(c => c.split(':')[0]).join(' → ')})`;
+      }
+    } catch { /* fallback */ }
+  }
   return name;
 };
+
+/* ────────────────────────────────────────────────────────────
+ * Stack Install – per-component progress + inline log
+ * ──────────────────────────────────────────────────────────── */
+
+interface StackComponent {
+  name: string;
+  status: 'waiting' | 'installing' | 'installed' | 'skipped' | 'failed';
+  progress: number;
+  message: string;
+}
+
+function parseStackProgress(taskName: string, log: string): StackComponent[] {
+  let components: string[];
+  try {
+    components = JSON.parse(taskName);
+    if (!Array.isArray(components)) return [];
+  } catch {
+    return [];
+  }
+
+  const statuses: StackComponent[] = components.map(c => ({
+    name: c.split(':')[0],
+    status: 'waiting' as const,
+    progress: 0,
+    message: '',
+  }));
+
+  if (!log) return statuses;
+
+  for (const line of log.split('\n').filter(Boolean)) {
+    const m = line.match(/\[(\d+)\/\d+\]\s+(.*)/);
+    if (!m) continue;
+    const idx = parseInt(m[1]) - 1;
+    const msg = m[2];
+    if (idx < 0 || idx >= statuses.length) continue;
+
+    if (/already installed|skipping/i.test(msg)) {
+      statuses[idx] = { ...statuses[idx], status: 'skipped', progress: 100, message: msg };
+    } else if (msg.includes('installed successfully')) {
+      statuses[idx] = { ...statuses[idx], status: 'installed', progress: 100, message: msg };
+    } else if (/[Ff]ailed/.test(msg)) {
+      statuses[idx] = { ...statuses[idx], status: 'failed', message: msg };
+    } else if (msg.includes('Installing')) {
+      const pct = msg.match(/(\d+)%/);
+      statuses[idx] = { ...statuses[idx], status: 'installing', progress: pct ? parseInt(pct[1]) : 0, message: msg };
+    } else if (msg.includes('Starting')) {
+      statuses[idx] = { ...statuses[idx], status: 'installing', progress: 0, message: msg };
+    }
+  }
+
+  return statuses;
+}
+
+function StackInstallCard({ task }: { task: TaskDetail }) {
+  const isDark = useThemeStore((s) => s.mode === 'dark');
+  const cancelTask = useTaskStore((s) => s.cancelTask);
+  const fetchTaskLog = useTaskStore((s) => s.fetchTaskLog);
+  const logRef = useRef<HTMLPreElement>(null);
+  const [log, setLog] = useState(task.log || '');
+
+  // Poll log for running tasks (WS may not always include full log)
+  useEffect(() => {
+    if (task.log) { setLog(task.log); return; }
+    if (task.status !== 'running' && task.status !== 'pending') return;
+    let alive = true;
+    const poll = async () => {
+      const content = await fetchTaskLog(task.id);
+      if (alive) setLog(content);
+    };
+    poll();
+    const iv = setInterval(poll, 2000);
+    return () => { alive = false; clearInterval(iv); };
+  }, [task.id, task.status, task.progress, task.log, fetchTaskLog]);
+
+  // Auto-scroll log
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [log]);
+
+  const components = parseStackProgress(task.name, log);
+  if (components.length === 0) return null;
+
+  const doneCount = components.filter(c => c.status === 'installed' || c.status === 'skipped').length;
+
+  const compInfo = (s: StackComponent['status']) => {
+    switch (s) {
+      case 'installed': return { icon: <CheckCircleOutlined />, color: '#52c41a', label: 'Installed' };
+      case 'installing': return { icon: <LoadingOutlined />, color: '#1565C0', label: 'Installing' };
+      case 'skipped':   return { icon: <MinusCircleOutlined />, color: '#8c8c8c', label: 'Skipped' };
+      case 'failed':    return { icon: <CloseCircleOutlined />, color: '#ff4d4f', label: 'Failed' };
+      default:          return { icon: <ClockCircleOutlined />, color: isDark ? '#555' : '#bbb', label: 'Waiting' };
+    }
+  };
+
+  return (
+    <div style={{ padding: '14px 16px', borderBottom: isDark ? '1px solid #30363d' : '1px solid #f0f0f0' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <Space size={8}>
+          <ThunderboltOutlined style={{ color: '#1565C0', fontSize: 16 }} />
+          <Text strong style={{ fontSize: 14 }}>Stack Installation</Text>
+          <Tag color="processing" style={{ fontSize: 11 }}>{doneCount}/{components.length}</Tag>
+          {task.duration && <Text type="secondary" style={{ fontSize: 11 }}>{task.duration}</Text>}
+        </Space>
+        <Tooltip title="Cancel">
+          <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={() => cancelTask(task.id)} />
+        </Tooltip>
+      </div>
+
+      {/* Per-component rows */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 10 }}>
+        {components.map((comp, i) => {
+          const info = compInfo(comp.status);
+          const isActive = comp.status === 'installing';
+          return (
+            <div
+              key={i}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '5px 8px',
+                borderRadius: 6,
+                background: isActive
+                  ? (isDark ? 'rgba(21,101,192,0.1)' : 'rgba(21,101,192,0.04)')
+                  : 'transparent',
+                border: isActive
+                  ? `1px solid ${isDark ? 'rgba(21,101,192,0.3)' : 'rgba(21,101,192,0.15)'}`
+                  : '1px solid transparent',
+                transition: 'all 0.3s',
+              }}
+            >
+              {/* Software icon (scaled to 20px) */}
+              <div style={{ width: 20, height: 20, flexShrink: 0, overflow: 'hidden' }}>
+                <div style={{ transform: 'scale(0.625)', transformOrigin: 'top left' }}>
+                  {getSoftwareIcon(comp.name)}
+                </div>
+              </div>
+
+              {/* Name */}
+              <Text style={{
+                fontSize: 13,
+                fontWeight: 600,
+                width: 100,
+                flexShrink: 0,
+                opacity: comp.status === 'waiting' ? 0.4 : 1,
+              }}>
+                {comp.name}
+              </Text>
+
+              {/* Progress bar or status label */}
+              {isActive ? (
+                <div style={{ flex: 1 }}>
+                  <Progress
+                    percent={comp.progress}
+                    size="small"
+                    status="active"
+                    strokeColor="#1565C0"
+                  />
+                </div>
+              ) : (
+                <Space size={4} style={{ flex: 1 }}>
+                  <span style={{ color: info.color, fontSize: 13 }}>{info.icon}</span>
+                  <Text style={{ fontSize: 12, color: info.color }}>{info.label}</Text>
+                </Space>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Overall progress */}
+      <Progress
+        percent={task.progress}
+        size="small"
+        status={task.status === 'running' ? 'active' : 'normal'}
+        strokeColor="#1565C0"
+        style={{ marginBottom: 8 }}
+      />
+
+      {/* Real-time execution log */}
+      <pre
+        ref={logRef}
+        style={{
+          margin: 0,
+          padding: 10,
+          background: isDark ? '#0d1117' : '#1a1a2e',
+          color: '#c9d1d9',
+          fontSize: 11,
+          lineHeight: 1.5,
+          maxHeight: 120,
+          overflowY: 'auto',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-all',
+          borderRadius: 6,
+          fontFamily: "'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace",
+        }}
+      >
+        {log || 'Waiting to start…'}
+      </pre>
+    </div>
+  );
+}
 
 function TaskListTab() {
   const { t } = useTranslation();
@@ -77,8 +293,11 @@ function TaskListTab() {
   }
 
   return (
-    <div style={{ maxHeight: 400, overflowY: 'auto' }}>
-      {activeTasks.map((task) => (
+    <div style={{ maxHeight: 500, overflowY: 'auto' }}>
+      {activeTasks.map((task) =>
+        task.type === 'stack_install' ? (
+          <StackInstallCard key={task.id} task={task} />
+        ) : (
         <div
           key={task.id}
           style={{
@@ -121,7 +340,8 @@ function TaskListTab() {
             </Text>
           )}
         </div>
-      ))}
+        )
+      )}
     </div>
   );
 }
