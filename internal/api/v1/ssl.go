@@ -254,14 +254,15 @@ func (h *SSLHandler) UploadCustomCert(c *gin.Context) {
 		keyData = []byte(req.Key)
 	}
 
-	if err := h.sslService.UploadCustomCert(domain, certData, keyData); err != nil {
+	certIdentity, err := h.sslService.UploadCustomCert(domain, certData, keyData)
+	if err != nil {
 		response.Error(c, err)
 		return
 	}
 
-	info, err := h.sslService.GetCertInfo(domain)
+	info, err := h.sslService.GetCertInfo(certIdentity)
 	if err != nil {
-		response.Created(c, gin.H{"message": "certificate uploaded successfully", "domain": domain})
+		response.Created(c, gin.H{"message": "certificate uploaded successfully", "domain": certIdentity})
 		return
 	}
 	response.Created(c, info)

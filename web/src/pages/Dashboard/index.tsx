@@ -241,6 +241,7 @@ export default function Dashboard() {
   const [gdStorageModalOpen, setGdStorageModalOpen] = useState(false);
   const [odStorageModalOpen, setOdStorageModalOpen] = useState(false);
   const [storageProviders, setStorageProviders] = useState<{ key: string; name: string; count: number; color: string; icon: React.ReactNode }[]>([]);
+  const [installedStorageNames, setInstalledStorageNames] = useState<string[]>([]);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevNetworkRef = useRef<{ sent: number; recv: number } | null>(null);
 
@@ -260,6 +261,7 @@ export default function Dashboard() {
       if (resp.data?.installed) {
         const storageNames = ['ftp_storage', 's3_storage', 'google_drive', 'onedrive'];
         setInstalledSoftware(resp.data.installed.filter((s: Software) => !storageNames.includes(s.name)));
+        setInstalledStorageNames(resp.data.installed.filter((s: Software) => storageNames.includes(s.name)).map((s: Software) => s.name));
       }
     } catch { /* ignore */ }
   }, []);
@@ -919,8 +921,8 @@ export default function Dashboard() {
         </Col>
       </Row>
 
-      {/* ══════ STORAGE PROVIDERS (only show when at least one has configs) ══════ */}
-      {storageProviders.some(sp => sp.count > 0) && (
+      {/* ══════ STORAGE PROVIDERS (show when any storage is installed) ══════ */}
+      {installedStorageNames.length > 0 && (
       <Row gutter={16} style={{ marginTop: 16 }}>
         <Col xs={24}>
           <Card
@@ -930,7 +932,10 @@ export default function Dashboard() {
             styles={{ body: { padding: 16 }, header: { fontWeight: 600 } }}
           >
             <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '140px' : '180px'}, 1fr))`, gap: 10 }}>
-              {storageProviders.filter(sp => sp.count > 0).map(sp => (
+              {storageProviders.filter(sp => {
+                const keyToName: Record<string, string> = { ftp: 'ftp_storage', s3: 's3_storage', gdrive: 'google_drive', onedrive: 'onedrive' };
+                return installedStorageNames.includes(keyToName[sp.key] || '');
+              }).map(sp => (
                 <div
                   key={sp.key}
                   style={{

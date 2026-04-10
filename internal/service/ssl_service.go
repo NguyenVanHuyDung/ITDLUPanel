@@ -459,14 +459,14 @@ func (s *SSLService) RenewCertificate(domain string) error {
 }
 
 // UploadCustomCert stores a user-provided certificate and key.
-func (s *SSLService) UploadCustomCert(domain string, cert, key []byte) error {
+func (s *SSLService) UploadCustomCert(domain string, cert, key []byte) (string, error) {
 	if domain == "" {
-		return apperrors.New(apperrors.ErrValidation, "domain is required")
+		return "", apperrors.New(apperrors.ErrValidation, "domain is required")
 	}
 
 	// Validate the certificate and key.
 	if _, err := tls.X509KeyPair(cert, key); err != nil {
-		return apperrors.New(apperrors.ErrValidation, "invalid certificate/key pair: "+err.Error())
+		return "", apperrors.New(apperrors.ErrValidation, "invalid certificate/key pair: "+err.Error())
 	}
 
 	// Parse cert to extract the primary identity (CN or first DNS name)
@@ -485,17 +485,17 @@ func (s *SSLService) UploadCustomCert(domain string, cert, key []byte) error {
 	// Store under the cert identity name (e.g., _wildcard_.dlu.edu.vn)
 	certDir := filepath.Join(customCertDir, certIdentity)
 	if err := os.MkdirAll(certDir, 0700); err != nil {
-		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to create certificate directory")
+		return "", apperrors.Wrap(err, apperrors.ErrInternal, "failed to create certificate directory")
 	}
 
 	certPath := filepath.Join(certDir, certFileName)
 	keyPath := filepath.Join(certDir, keyFileName)
 
 	if err := os.WriteFile(certPath, cert, 0600); err != nil {
-		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to write certificate")
+		return "", apperrors.Wrap(err, apperrors.ErrInternal, "failed to write certificate")
 	}
 	if err := os.WriteFile(keyPath, key, 0600); err != nil {
-		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to write private key")
+		return "", apperrors.Wrap(err, apperrors.ErrInternal, "failed to write private key")
 	}
 
 	if err := s.saveCertMeta(certIdentity, certTypeCustom, false); err != nil {
@@ -503,7 +503,7 @@ func (s *SSLService) UploadCustomCert(domain string, cert, key []byte) error {
 	}
 
 	logger.Info().Str("domain", domain).Str("cert_identity", certIdentity).Msg("custom certificate uploaded")
-	return nil
+	return certIdentity, nil
 }
 
 // sanitizeCertName converts a certificate CN/DNS name into a safe folder name.
