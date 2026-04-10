@@ -83,6 +83,21 @@ export default function OneClickInstall({ onRefresh }: { onRefresh?: () => void 
   const [installApp, setInstallApp] = useState<AppTemplate | null>(null);
   const [installLoading, setInstallLoading] = useState(false);
   const [installForm] = Form.useForm();
+  const [installedImages, setInstalledImages] = useState<Set<string>>(new Set());
+
+  const fetchInstalledContainers = useCallback(async () => {
+    try {
+      const res = await api.get<ApiResponse<any[]>>('/docker/containers?all=true');
+      const images = new Set<string>();
+      (res.data?.data ?? []).forEach((c: any) => {
+        const img = (c.image || '').split(':')[0].toLowerCase();
+        if (img) images.add(img);
+      });
+      setInstalledImages(images);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { fetchInstalledContainers(); }, [fetchInstalledContainers]);
 
   const filtered = selectedCategory === 'All' ? defaultApps : defaultApps.filter(a => a.category === selectedCategory);
 
@@ -126,6 +141,7 @@ export default function OneClickInstall({ onRefresh }: { onRefresh?: () => void 
       message.success(`${installApp?.name} installed and started!`);
       setInstallOpen(false);
       installForm.resetFields();
+      fetchInstalledContainers();
       onRefresh?.();
     } catch (err: any) {
       message.error(err?.response?.data?.message || 'Installation failed');
@@ -157,17 +173,20 @@ export default function OneClickInstall({ onRefresh }: { onRefresh?: () => void 
         gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(260px, 1fr))',
         gap: 12,
       }}>
-        {filtered.map(app => (
+        {filtered.map(app => {
+          const isInstalled = installedImages.has(app.image.toLowerCase());
+          return (
           <div key={app.name} style={{
             padding: 16, borderRadius: 10,
-            border: `1px solid ${p.cardBorder}`,
+            border: `1px solid ${isInstalled ? p.green + '60' : p.cardBorder}`,
+            background: isInstalled ? (isDark ? p.green + '08' : p.green + '06') : 'transparent',
             display: 'flex', flexDirection: 'column', gap: 8,
             transition: 'border-color 0.15s',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{
                 width: 36, height: 36, borderRadius: 8,
-                background: `${p.accent}12`, color: p.accent,
+                background: `${isInstalled ? p.green : p.accent}12`, color: isInstalled ? p.green : p.accent,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 18, fontWeight: 700,
               }}>
@@ -185,16 +204,27 @@ export default function OneClickInstall({ onRefresh }: { onRefresh?: () => void 
                 background: `${p.purple}15`, color: p.purple, fontWeight: 500,
                 lineHeight: 1,
               }}>{app.category}</span>
-              <button onClick={() => openInstall(app)} style={{
-                padding: '5px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
-                background: p.accent, color: '#fff', fontSize: 12, fontWeight: 500,
-                display: 'inline-flex', alignItems: 'center', gap: 4,
-              }}>
-                <RocketOutlined /> Install
-              </button>
+              {isInstalled ? (
+                <span style={{
+                  padding: '5px 14px', borderRadius: 6, fontSize: 12, fontWeight: 500,
+                  background: `${p.green}18`, color: p.green,
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                }}>
+                  <AppstoreOutlined /> Installed
+                </span>
+              ) : (
+                <button onClick={() => openInstall(app)} style={{
+                  padding: '5px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                  background: p.accent, color: '#fff', fontSize: 12, fontWeight: 500,
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                }}>
+                  <RocketOutlined /> Install
+                </button>
+              )}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Install Modal */}

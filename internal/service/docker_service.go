@@ -507,10 +507,18 @@ func (s *DockerService) CreateContainer(req CreateContainerRequest) (*Container,
 		body["ExposedPorts"] = exposedPorts
 	}
 
-	// Volumes / Binds.
+	// Volumes / Binds – pre-create host directories so containers that run
+	// as non-root (e.g. Grafana UID 472) can write to them.
 	var binds []string
 	for _, v := range req.Volumes {
 		binds = append(binds, v)
+		parts := strings.SplitN(v, ":", 2)
+		if len(parts) == 2 && strings.HasPrefix(parts[0], "/") {
+			hostDir := parts[0]
+			if err := os.MkdirAll(hostDir, 0777); err == nil {
+				os.Chmod(hostDir, 0777)
+			}
+		}
 	}
 
 	restartPolicy := "no"
