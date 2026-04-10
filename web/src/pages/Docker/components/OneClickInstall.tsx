@@ -18,6 +18,7 @@ interface AppTemplate {
   ports: Record<string, string>;
   env: string[];
   volumes: string[];
+  command?: string;
 }
 
 const defaultApps: AppTemplate[] = [
@@ -32,7 +33,7 @@ const defaultApps: AppTemplate[] = [
   { name: 'MongoDB', image: 'mongo', tag: '7', description: 'Document-oriented NoSQL database', category: 'Database', ports: { '27017': '27017' }, env: ['MONGO_INITDB_ROOT_USERNAME=admin', 'MONGO_INITDB_ROOT_PASSWORD=changeme'], volumes: ['/opt/mongo/data:/data/db'] },
   { name: 'MariaDB', image: 'mariadb', tag: '11', description: 'MySQL-compatible relational database', category: 'Database', ports: { '3306': '3306' }, env: ['MARIADB_ROOT_PASSWORD=changeme'], volumes: ['/opt/mariadb/data:/var/lib/mysql'] },
   { name: 'ClickHouse', image: 'clickhouse/clickhouse-server', tag: 'latest', description: 'Fast column-oriented OLAP database for analytics', category: 'Database', ports: { '8123': '8123', '9000': '9000' }, env: [], volumes: ['/opt/clickhouse/data:/var/lib/clickhouse'] },
-  { name: 'CockroachDB', image: 'cockroachdb/cockroach', tag: 'latest', description: 'Distributed SQL database built for scale', category: 'Database', ports: { '26257': '26257', '8080': '8080' }, env: [], volumes: ['/opt/cockroach/data:/cockroach/cockroach-data'] },
+  { name: 'CockroachDB', image: 'cockroachdb/cockroach', tag: 'latest', description: 'Distributed SQL database built for scale', category: 'Database', ports: { '26257': '26257', '8080': '8080' }, env: [], volumes: ['/opt/cockroach/data:/cockroach/cockroach-data'], command: 'start-single-node --insecure' },
   // Cache
   { name: 'Redis', image: 'redis', tag: 'alpine', description: 'In-memory data structure store, cache, and broker', category: 'Cache', ports: { '6379': '6379' }, env: [], volumes: ['/opt/redis/data:/data'] },
   { name: 'Memcached', image: 'memcached', tag: 'alpine', description: 'High-performance memory object caching system', category: 'Cache', ports: { '11211': '11211' }, env: [], volumes: [] },
@@ -42,7 +43,7 @@ const defaultApps: AppTemplate[] = [
   { name: 'Kafka', image: 'bitnami/kafka', tag: 'latest', description: 'Distributed event streaming platform', category: 'Queue', ports: { '9092': '9092' }, env: ['KAFKA_CFG_NODE_ID=0', 'KAFKA_CFG_PROCESS_ROLES=controller,broker', 'KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093', 'KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@kafka:9093', 'KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER'], volumes: ['/opt/kafka/data:/bitnami/kafka'] },
   { name: 'NATS', image: 'nats', tag: 'latest', description: 'High-performance cloud-native messaging system', category: 'Queue', ports: { '4222': '4222', '8222': '8222' }, env: [], volumes: [] },
   // Storage
-  { name: 'MinIO', image: 'minio/minio', tag: 'latest', description: 'S3-compatible object storage', category: 'Storage', ports: { '9000': '9000', '9001': '9001' }, env: ['MINIO_ROOT_USER=admin', 'MINIO_ROOT_PASSWORD=changeme123'], volumes: ['/opt/minio/data:/data'] },
+  { name: 'MinIO', image: 'minio/minio', tag: 'latest', description: 'S3-compatible object storage', category: 'Storage', ports: { '9000': '9000', '9001': '9001' }, env: ['MINIO_ROOT_USER=admin', 'MINIO_ROOT_PASSWORD=changeme123'], volumes: ['/opt/minio/data:/data'], command: 'server /data --console-address ":9001"' },
   // Search
   { name: 'Elasticsearch', image: 'elasticsearch', tag: '8.12.0', description: 'Distributed search and analytics engine', category: 'Search', ports: { '9200': '9200', '9300': '9300' }, env: ['discovery.type=single-node', 'xpack.security.enabled=false'], volumes: ['/opt/elasticsearch/data:/usr/share/elasticsearch/data'] },
   { name: 'Meilisearch', image: 'getmeili/meilisearch', tag: 'latest', description: 'Lightning-fast, typo-tolerant search engine', category: 'Search', ports: { '7700': '7700' }, env: ['MEILI_ENV=production', 'MEILI_MASTER_KEY=changeme'], volumes: ['/opt/meilisearch/data:/meili_data'] },
@@ -117,6 +118,7 @@ export default function OneClickInstall({ onRefresh }: { onRefresh?: () => void 
         env: values.env ? values.env.split('\n').filter(Boolean) : [],
         volumes: values.volumes ? values.volumes.split('\n').filter(Boolean) : [],
         restart_policy: 'unless-stopped',
+        command: installApp?.command || '',
       });
 
       await api.post(`/docker/containers/${values.name}/start`);
