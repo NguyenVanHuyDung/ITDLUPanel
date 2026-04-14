@@ -82,7 +82,7 @@ export default function MainLayout() {
   useTaskWebSocket();
 
   // Load global settings (timezone, panel name, etc.)
-  const { fetchSettings: fetchAppSettings, panelName } = useSettingsStore();
+  const { fetchSettings: fetchAppSettings, panelName, hiddenMenuKeys } = useSettingsStore();
   useEffect(() => { fetchAppSettings(); }, [fetchAppSettings]);
 
   const fetchSysInfo = useCallback(async () => {
@@ -137,7 +137,13 @@ export default function MainLayout() {
     { type: 'divider' as const },
     { key: '/settings', icon: <SettingOutlined />, label: t('sidebar.settings') },
     { key: '/users', icon: <UserOutlined />, label: t('sidebar.users') },
-  ];
+  ].filter(item => {
+    if (item.type === 'divider') return true;
+    const key = (item as { key: string }).key;
+    // Dashboard and Settings are always visible
+    if (key === '/' || key === '/settings') return true;
+    return !hiddenMenuKeys.includes(key);
+  });
 
   const languageItems: MenuProps['items'] = [
     { key: 'en', label: '🇺🇸 English' },

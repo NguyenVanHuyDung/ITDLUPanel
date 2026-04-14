@@ -101,6 +101,34 @@ const icons: Record<string, React.ReactNode> = {
       <line x1="16" y1="8" x2="16" y2="24" stroke="#47A248" strokeWidth="1.5" />
     </Icon>
   ),
+  golang: (
+    <Icon bg="#00ADD8">
+      <text x="16" y="21" textAnchor="middle" fill="white" fontSize="12" fontWeight="700" fontFamily="sans-serif">Go</text>
+    </Icon>
+  ),
+  supervisor: (
+    <Icon bg="#4B8BBE">
+      <circle cx="16" cy="12" r="4" fill="white" />
+      <path d="M8 24c0-4 3.6-7 8-7s8 3 8 7" fill="white" opacity="0.7" />
+      <path d="M22 10l3-3M22 14h4M22 10l3 3" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
+    </Icon>
+  ),
+  tomcat: (
+    <Icon bg="#F8DC75">
+      <circle cx="16" cy="14" r="7" fill="none" stroke="#D4451A" strokeWidth="2" />
+      <path d="M13 12c0 0 1.5 1 3 1s3-1 3-1" fill="none" stroke="#D4451A" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="13" cy="11" r="1" fill="#D4451A" />
+      <circle cx="19" cy="11" r="1" fill="#D4451A" />
+      <path d="M14 7c-1-2-3-2-3-2M18 7c1-2 3-2 3-2" fill="none" stroke="#D4451A" strokeWidth="1.3" strokeLinecap="round" />
+    </Icon>
+  ),
+  elasticsearch: (
+    <Icon bg="#FEC514">
+      <circle cx="16" cy="16" r="8" fill="none" stroke="#343741" strokeWidth="2" />
+      <path d="M9 13h14M9 19h14" stroke="#343741" strokeWidth="1.5" />
+      <rect x="11" y="13" width="10" height="6" fill="#343741" opacity="0.3" rx="1" />
+    </Icon>
+  ),
   openlitespeed: (
     <Icon bg="#3A7BD5">
       <path d="M18 6l-8 12h6l-2 8 8-12h-6l2-8z" fill="white" />

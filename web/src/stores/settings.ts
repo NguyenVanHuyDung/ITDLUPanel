@@ -14,17 +14,21 @@ interface SettingsState {
   timezone: string;
   panelName: string;
   loaded: boolean;
+  hiddenMenuKeys: string[];
   fetchSettings: () => Promise<void>;
   setTimezone: (tz: string) => void;
   setPanelName: (name: string) => void;
+  setHiddenMenuKeys: (keys: string[]) => void;
+  toggleMenuKey: (key: string) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       timezone: 'UTC',
       panelName: 'ITDLUPanel',
       loaded: false,
+      hiddenMenuKeys: [],
       fetchSettings: async () => {
         try {
           const { data } = await api.get<ApiResponse<PanelSettings>>('/settings');
@@ -45,10 +49,22 @@ export const useSettingsStore = create<SettingsState>()(
         document.title = name;
         set({ panelName: name });
       },
+      setHiddenMenuKeys: (keys: string[]) => set({ hiddenMenuKeys: keys }),
+      toggleMenuKey: (key: string) => {
+        const current = get().hiddenMenuKeys;
+        const next = current.includes(key)
+          ? current.filter(k => k !== key)
+          : [...current, key];
+        set({ hiddenMenuKeys: next });
+      },
     }),
     {
       name: 'itdlu-settings',
-      partialize: (state) => ({ timezone: state.timezone, panelName: state.panelName }),
+      partialize: (state) => ({
+        timezone: state.timezone,
+        panelName: state.panelName,
+        hiddenMenuKeys: state.hiddenMenuKeys,
+      }),
     }
   )
 );

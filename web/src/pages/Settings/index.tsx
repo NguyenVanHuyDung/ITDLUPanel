@@ -5,6 +5,12 @@ import {
   WarningOutlined, UploadOutlined, ReloadOutlined,
   CheckCircleOutlined, CloseCircleOutlined,
   LockOutlined, CopyOutlined, BellOutlined,
+  MenuOutlined, EyeOutlined, EyeInvisibleOutlined,
+  DashboardOutlined, GlobalOutlined, DatabaseOutlined,
+  CloudServerOutlined, FolderOutlined, ContainerOutlined,
+  MonitorOutlined, SafetyOutlined, FireOutlined,
+  FileTextOutlined, CodeOutlined, ClockCircleOutlined,
+  AppstoreOutlined, UserOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -83,8 +89,14 @@ interface PanelSettings {
 interface SSLInfo {
   enabled: boolean;
   issuer?: string;
+  issuer_cn?: string;
   expiry?: string;
   type?: string;
+  valid_from?: string;
+  valid_until?: string;
+  ssl_type?: string;
+  dns_names?: string[];
+  domain?: string;
 }
 
 interface PanelInfo {
@@ -112,6 +124,7 @@ export default function Settings() {
   const { t, i18n } = useTranslation();
   const isMobile = useIsMobile();
   const { p, isDark } = usePalette();
+  const { hiddenMenuKeys, toggleMenuKey } = useSettingsStore();
   const [generalForm] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false);
@@ -126,7 +139,7 @@ export default function Settings() {
   const [securityForm] = Form.useForm();
   const [securityLoading, setSecurityLoading] = useState(false);
   const [timezones, setTimezones] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<'general' | 'server' | 'ssl' | 'security' | 'danger'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'server' | 'ssl' | 'security' | 'notifications' | 'menu' | 'danger'>('general');
 
   const fetchSettings = useCallback(async () => {
     setLoading(true);
@@ -154,8 +167,20 @@ export default function Settings() {
   const fetchSSLInfo = useCallback(async () => {
     setSSLLoading(true);
     try {
-      const { data } = await api.get<ApiResponse<SSLInfo>>('/ssl/panel');
-      setSSLInfo(data.data);
+      const { data } = await api.get('/ssl/panel');
+      const d = data.data || {};
+      setSSLInfo({
+        enabled: true,
+        issuer: d.issuer,
+        issuer_cn: d.issuer_cn,
+        expiry: d.valid_until,
+        type: d.ssl_type,
+        valid_from: d.valid_from,
+        valid_until: d.valid_until,
+        ssl_type: d.ssl_type,
+        dns_names: d.dns_names,
+        domain: d.domain,
+      });
     } catch {
       setSSLInfo({ enabled: false });
     } finally {
@@ -277,6 +302,7 @@ export default function Settings() {
     { key: 'ssl' as const, icon: <SafetyCertificateOutlined />, label: 'SSL' },
     { key: 'security' as const, icon: <LockOutlined />, label: t('settings.security', 'Security') },
     { key: 'notifications' as const, icon: <BellOutlined />, label: 'Notifications' },
+    { key: 'menu' as const, icon: <MenuOutlined />, label: 'Menu' },
     { key: 'danger' as const, icon: <WarningOutlined />, label: 'Danger Zone' },
   ];
 
@@ -537,22 +563,55 @@ export default function Settings() {
               {sslInfo?.enabled ? 'Enabled' : 'Disabled'}
             </span>
           </div>
+          {sslInfo?.ssl_type && (
+            <div style={infoRow}>
+              <span style={{ fontSize: 13, color: p.textMuted }}>Type</span>
+              <span style={{
+                fontSize: 12, fontWeight: 500, padding: '2px 10px', borderRadius: 99,
+                background: sslInfo.ssl_type === 'self-signed' ? `${p.amber}15` : `${p.green}15`,
+                color: sslInfo.ssl_type === 'self-signed' ? p.amber : p.green,
+              }}>
+                {sslInfo.ssl_type === 'self-signed' ? 'Self-Signed' : sslInfo.ssl_type === 'letsencrypt' ? "Let's Encrypt" : 'Custom'}
+              </span>
+            </div>
+          )}
           {sslInfo?.issuer && (
             <div style={infoRow}>
               <span style={{ fontSize: 13, color: p.textMuted }}>Issuer</span>
               <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>{sslInfo.issuer}</span>
             </div>
           )}
-          {sslInfo?.expiry && (
+          {sslInfo?.domain && (
             <div style={infoRow}>
-              <span style={{ fontSize: 13, color: p.textMuted }}>Expiry</span>
-              <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>{sslInfo.expiry}</span>
+              <span style={{ fontSize: 13, color: p.textMuted }}>Common Name</span>
+              <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>{sslInfo.domain}</span>
             </div>
           )}
-          {sslInfo?.type && (
-            <div style={{ ...infoRow, borderBottom: 'none' }}>
-              <span style={{ fontSize: 13, color: p.textMuted }}>Type</span>
-              <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>{sslInfo.type}</span>
+          {sslInfo?.valid_from && (
+            <div style={infoRow}>
+              <span style={{ fontSize: 13, color: p.textMuted }}>Valid From</span>
+              <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>{formatDateTime(sslInfo.valid_from)}</span>
+            </div>
+          )}
+          {sslInfo?.valid_until && (
+            <div style={infoRow}>
+              <span style={{ fontSize: 13, color: p.textMuted }}>Valid Until</span>
+              <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>{formatDateTime(sslInfo.valid_until)}</span>
+            </div>
+          )}
+          {sslInfo?.dns_names && sslInfo.dns_names.length > 0 && (
+            <div style={{ ...infoRow, borderBottom: 'none', alignItems: 'flex-start' }}>
+              <span style={{ fontSize: 13, color: p.textMuted, paddingTop: 2 }}>SANs</span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'flex-end', maxWidth: '70%' }}>
+                {sslInfo.dns_names.map((name, i) => (
+                  <span key={i} style={{
+                    fontSize: 11, padding: '1px 8px', borderRadius: 4,
+                    background: `${p.accent}10`, color: p.accent, fontFamily: 'monospace',
+                  }}>
+                    {name}
+                  </span>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -561,7 +620,7 @@ export default function Settings() {
           <button onClick={handleGenerateSelfSigned} disabled={sslLoading} style={{
             ...btnOutline, opacity: sslLoading ? 0.6 : 1,
           }}>
-            <SafetyCertificateOutlined /> Generate Self-Signed
+            <SafetyCertificateOutlined /> Generate Self-Signed (10 years)
           </button>
           <Upload
             accept=".pem,.crt,.key"
@@ -615,6 +674,85 @@ export default function Settings() {
         </Form>
       </div>
     </Spin>
+  );
+
+  /* ─── Menu Visibility Tab ─── */
+  const allMenuItems = [
+    { key: '/', icon: <DashboardOutlined />, label: 'Dashboard', locked: true },
+    { key: '/websites', icon: <GlobalOutlined />, label: t('sidebar.websites') },
+    { key: '/databases', icon: <DatabaseOutlined />, label: t('sidebar.databases') },
+    { key: '/ftp', icon: <CloudServerOutlined />, label: t('sidebar.ftp') },
+    { key: '/storage', icon: <CloudServerOutlined />, label: 'Storage' },
+    { key: '/files', icon: <FolderOutlined />, label: t('sidebar.files') },
+    { key: '/docker', icon: <ContainerOutlined />, label: t('sidebar.docker') },
+    { key: '/monitor', icon: <MonitorOutlined />, label: t('sidebar.monitor') },
+    { key: '/security', icon: <SafetyOutlined />, label: t('sidebar.security') },
+    { key: '/firewall', icon: <FireOutlined />, label: 'Firewall' },
+    { key: '/logs', icon: <FileTextOutlined />, label: t('sidebar.logs') },
+    { key: '/terminal', icon: <CodeOutlined />, label: t('sidebar.terminal') },
+    { key: '/cron', icon: <ClockCircleOutlined />, label: t('sidebar.cron') },
+    { key: '/appstore', icon: <AppstoreOutlined />, label: t('sidebar.appstore') },
+    { key: '/settings', icon: <SettingOutlined />, label: t('sidebar.settings'), locked: true },
+    { key: '/users', icon: <UserOutlined />, label: t('sidebar.users') },
+  ];
+
+  const renderMenuTab = () => (
+    <div style={{ ...sectionBox, maxWidth: 'none' }}>
+      {sectionTitle(<MenuOutlined style={{ fontSize: 20, color: p.accent }} />, 'Menu Visibility')}
+      <p style={{ fontSize: 12, color: p.textMuted, marginBottom: 16 }}>
+        Toggle sidebar menu items on or off. Dashboard and Settings are always visible.
+      </p>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))',
+        gap: 8,
+      }}>
+        {allMenuItems.map(item => {
+          const isHidden = hiddenMenuKeys.includes(item.key);
+          const isLocked = item.locked;
+          return (
+            <button
+              key={item.key}
+              disabled={isLocked}
+              onClick={() => !isLocked && toggleMenuKey(item.key)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: '10px 14px', borderRadius: 8,
+                border: `1px solid ${isHidden ? p.cardBorder : `${p.accent}40`}`,
+                background: isHidden ? (isDark ? 'transparent' : '#fafafa') : `${p.accent}08`,
+                cursor: isLocked ? 'not-allowed' : 'pointer',
+                opacity: isLocked ? 0.5 : 1,
+                transition: 'all 0.15s',
+                textAlign: 'left',
+                width: '100%',
+              }}
+            >
+              <span style={{
+                fontSize: 16,
+                color: isHidden ? p.textMuted : p.accent,
+                display: 'flex', alignItems: 'center',
+              }}>
+                {item.icon}
+              </span>
+              <span style={{
+                flex: 1, fontSize: 13, fontWeight: 500,
+                color: isHidden ? p.textMuted : p.text,
+                textDecoration: isHidden ? 'line-through' : 'none',
+              }}>
+                {item.label}
+              </span>
+              <span style={{
+                fontSize: 14,
+                color: isHidden ? p.textMuted : p.green,
+                display: 'flex', alignItems: 'center',
+              }}>
+                {isLocked ? <LockOutlined /> : isHidden ? <EyeInvisibleOutlined /> : <EyeOutlined />}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 
   /* ─── Danger Zone Tab ─── */
@@ -703,6 +841,7 @@ export default function Settings() {
           {activeTab === 'ssl' && renderSSLTab()}
           {activeTab === 'security' && renderSecurityTab()}
           {activeTab === 'notifications' && <NotificationsTab />}
+          {activeTab === 'menu' && renderMenuTab()}
           {activeTab === 'danger' && renderDangerTab()}
         </div>
       </div>

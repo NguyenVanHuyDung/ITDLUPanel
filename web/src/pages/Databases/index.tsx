@@ -15,6 +15,8 @@ import api from '@/services/api';
 import type { Database } from '@/types';
 import { formatDateTime } from '@/lib/datetime';
 import RequireSoftware from '@/components/RequireSoftware';
+import PostgresqlManageModal from '@/components/PostgresqlManageModal';
+import PgAdminManageModal from '@/components/PgAdminManageModal';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { usePalette } from '@/hooks/usePalette';
 
@@ -94,6 +96,13 @@ function DatabasesContent() {
   const [quotaUnit, setQuotaUnit] = useState<'MB' | 'GB'>('MB');
   const [quotaSaving, setQuotaSaving] = useState(false);
   const [serviceActionLoading, setServiceActionLoading] = useState<string | null>(null);
+  const [pgManageOpen, setPgManageOpen] = useState(false);
+  const [pgSearchText, setPgSearchText] = useState('');
+  const [pgSelectedRowKeys, setPgSelectedRowKeys] = useState<React.Key[]>([]);
+  const [pgBatchAction, setPgBatchAction] = useState<'backup' | 'delete' | null>(null);
+  const [pgaInstalled, setPgaInstalled] = useState<boolean | null>(null);
+  const [pgaConfig, setPgaConfig] = useState<{ ssl_enabled?: boolean; ssl_port?: number; access_port?: number } | null>(null);
+  const [pgaManageOpen, setPgaManageOpen] = useState(false);
 
   const handleServiceAction = async (action: string) => {
     setServiceActionLoading(action);
@@ -166,6 +175,14 @@ function DatabasesContent() {
         try {
           const { data: cfgResp } = await api.get('/software/phpmyadmin/manager');
           setPmaConfig(cfgResp.data || null);
+        } catch { /* ignore */ }
+      }
+      const pga = available.find((s: { name: string; installed: boolean }) => s.name === 'pgadmin');
+      setPgaInstalled(pga?.installed ?? false);
+      if (pga?.installed) {
+        try {
+          const { data: cfgResp } = await api.get('/software/pgadmin/manager');
+          setPgaConfig(cfgResp.data || null);
         } catch { /* ignore */ }
       }
       const installed = sw.installed || [];
@@ -560,12 +577,28 @@ function DatabasesContent() {
     window.open(`${proto}://${host}:${port}/`, '_blank');
   };
 
+  const openPga = () => {
+    const host = window.location.hostname;
+    const proto = pgaConfig?.ssl_enabled ? 'https' : 'http';
+    const port = pgaConfig?.ssl_enabled ? (pgaConfig?.ssl_port || 5051) : (pgaConfig?.access_port || 5050);
+    window.open(`${proto}://${host}:${port}/`, '_blank');
+  };
+
   const filteredDatabases = searchText
     ? databases.filter(d =>
+        (d.db_type === 'mysql' || d.db_type === 'mariadb') && (
         d.name.toLowerCase().includes(searchText.toLowerCase()) ||
-        d.username.toLowerCase().includes(searchText.toLowerCase())
+        d.username.toLowerCase().includes(searchText.toLowerCase()))
       )
-    : databases;
+    : databases.filter(d => d.db_type === 'mysql' || d.db_type === 'mariadb');
+
+  const filteredPgDatabases = pgSearchText
+    ? databases.filter(d =>
+        d.db_type === 'postgresql' && (
+        d.name.toLowerCase().includes(pgSearchText.toLowerCase()) ||
+        d.username.toLowerCase().includes(pgSearchText.toLowerCase()))
+      )
+    : databases.filter(d => d.db_type === 'postgresql');
 
   const columns = [
     {
@@ -843,6 +876,313 @@ function DatabasesContent() {
     },
   ];
 
+  const pgColumns = [
+    {
+      title: t('databases.db_name'),
+      dataIndex: 'name',
+      key: 'name',
+      render: (name: string) => (
+        <div>
+          <span style={{ fontWeight: 500, color: p.text }}>
+            <DatabaseOutlined style={{ marginRight: 6, color: '#336791' }} />{name}
+          </span>
+        </div>
+      ),
+    },
+    {
+      title: t('databases.db_user'),
+      dataIndex: 'username',
+      key: 'username',
+      render: (username: string) => (
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <span style={{
+            fontSize: 12, padding: '1px 7px', borderRadius: 4,
+            background: '#33679115', color: '#336791', fontWeight: 500,
+          }}>{username}</span>
+          <Tooltip title="Copy">
+            <CopyOutlined style={{ cursor: 'pointer', color: p.textMuted, fontSize: 11 }} onClick={() => copyToClipboard(username, 'Username')} />
+          </Tooltip>
+        </div>
+      ),
+    },
+    {
+      title: 'Password',
+      key: 'password',
+      render: (_: unknown, r: Database) => {
+        const visible = visiblePasswords.has(r.id);
+        return (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+            <span style={{
+              fontSize: 12,
+              color: visible ? p.text : p.textMuted,
+              letterSpacing: visible ? 0 : 2,
+              minWidth: isMobile ? 50 : 80,
+              display: 'inline-block',
+            }}>
+              {visible ? (r.password || '—') : '••••••••'}
+            </span>
+            <Tooltip title={visible ? 'Hide' : 'Show'}>
+              <button
+                onClick={() => togglePasswordVisibility(r.id)}
+                style={{
+                  padding: '2px 4px', border: 'none', background: 'transparent',
+                  cursor: 'pointer', color: p.textMuted, fontSize: 12, display: 'inline-flex', alignItems: 'center',
+                }}
+              >
+                {visible ? <EyeInvisibleOutlined /> : <EyeOutlined />}
+              </button>
+            </Tooltip>
+            {r.password && (
+              <Tooltip title="Copy">
+                <CopyOutlined
+                  style={{ cursor: 'pointer', color: p.textMuted, fontSize: 11 }}
+                  onClick={() => copyToClipboard(r.password!, 'Password')}
+                />
+              </Tooltip>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      title: t('common.size') + ' / Quota',
+      key: 'size',
+      width: 120,
+      render: (_: unknown, r: Database) => {
+        const q = r.disk_quota || 0;
+        const pct = q > 0 ? Math.min(100, (r.size / q) * 100) : 0;
+        const overQuota = q > 0 && r.size > q;
+        return (
+          <Tooltip title="Click to set quota">
+            <button
+              onClick={() => openQuotaPopover(r)}
+              style={{
+                padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+                background: overQuota ? `${p.red}08` : 'transparent',
+                cursor: 'pointer', fontSize: 11, color: p.text,
+                display: 'flex', flexDirection: 'column', gap: 2,
+                textAlign: 'left', transition: 'all 0.15s',
+              }}
+            >
+              <span style={{ fontWeight: 500 }}>
+                {formatSize(r.size)}
+                {q > 0 && <span style={{ color: p.textMuted, fontWeight: 400 }}> / {formatSize(q)}</span>}
+              </span>
+              {q > 0 && (
+                <div style={{
+                  height: 3, width: '100%', borderRadius: 2,
+                  background: p.cardBorder, overflow: 'hidden',
+                }}>
+                  <div style={{
+                    height: '100%', borderRadius: 2,
+                    width: `${pct}%`,
+                    background: pct > 90 ? (p.red || '#ef4444') : pct > 70 ? (p.amber || '#f59e0b') : (p.green || '#22c55e'),
+                  }} />
+                </div>
+              )}
+            </button>
+          </Tooltip>
+        );
+      },
+    },
+    {
+      title: 'Backup',
+      key: 'backup',
+      width: 130,
+      render: (_: unknown, r: Database) => {
+        const count = backupCounts[r.id] || 0;
+        const isImporting = importingDbId === r.id;
+        return (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <Tooltip title={`${count} backup(s) — click to manage`}>
+              <button
+                onClick={() => openBackupModal(r)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  padding: '3px 10px', borderRadius: 6,
+                  border: `1px solid ${count > 0 ? `${p.green}40` : p.cardBorder}`,
+                  background: count > 0 ? `${p.green}08` : 'transparent',
+                  color: count > 0 ? p.green : p.textMuted,
+                  fontSize: 11, fontWeight: 500,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                }}
+              >
+                <CloudUploadOutlined style={{ fontSize: 13 }} />
+                {count > 0 ? count : '—'}
+              </button>
+            </Tooltip>
+            <Tooltip title="Import SQL file">
+              <button
+                onClick={() => handleImportSQL(r.id)}
+                disabled={isImporting}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '3px 8px', borderRadius: 6,
+                  border: `1px solid ${p.cardBorder}`,
+                  background: 'transparent',
+                  color: isImporting ? p.accent : p.textMuted,
+                  fontSize: 11, fontWeight: 500,
+                  cursor: isImporting ? 'wait' : 'pointer',
+                  opacity: isImporting ? 0.6 : 1,
+                  transition: 'all 0.15s',
+                }}
+              >
+                {isImporting ? <Spin size="small" /> : <ImportOutlined style={{ fontSize: 12 }} />}
+              </button>
+            </Tooltip>
+          </div>
+        );
+      },
+    },
+    {
+      title: 'Permission',
+      key: 'location',
+      width: 140,
+      render: (_: unknown, r: Database) => {
+        const host = r.remote_access || 'localhost';
+        const isChanging = accessChangingId === r.id;
+        const label = host === '%' ? 'Everyone' : host === 'localhost' ? 'Local Server' : host;
+        const icon = host === '%' ? <TeamOutlined /> : host === 'localhost' ? <LaptopOutlined /> : <AimOutlined />;
+        const color = host === '%' ? p.amber : host === 'localhost' ? p.green : p.accent;
+
+        const options = [
+          { key: 'localhost', label: 'Local Server', desc: 'Only localhost', icon: <LaptopOutlined />, color: p.green },
+          { key: '%', label: 'Everyone', desc: 'Allow all remote', icon: <TeamOutlined />, color: p.amber },
+          { key: 'custom', label: 'Specific IP', desc: 'Enter IP address', icon: <AimOutlined />, color: p.accent },
+        ];
+
+        const content = (
+          <div style={{ minWidth: 180 }}>
+            {options.map(opt => {
+              const isActive = opt.key === host || (opt.key === 'custom' && host !== 'localhost' && host !== '%');
+              return (
+                <button
+                  key={opt.key}
+                  onClick={() => handleChangeAccess(r, opt.key)}
+                  disabled={isChanging}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '8px 12px', border: 'none', borderRadius: 6,
+                    background: isActive ? `${opt.color}12` : 'transparent',
+                    color: isActive ? opt.color : p.text,
+                    cursor: isChanging ? 'wait' : 'pointer',
+                    fontSize: 12, textAlign: 'left',
+                    transition: 'all 0.15s',
+                    marginBottom: 2,
+                  }}
+                >
+                  <span style={{ fontSize: 14, width: 20, textAlign: 'center' }}>{opt.icon}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 500 }}>{opt.label}</div>
+                    <div style={{ fontSize: 10, color: p.textMuted, marginTop: 1 }}>{opt.desc}</div>
+                  </div>
+                  {isActive && <CheckOutlined style={{ fontSize: 11, color: opt.color }} />}
+                </button>
+              );
+            })}
+          </div>
+        );
+
+        return (
+          <Popover content={content} trigger="click" placement="bottomLeft" arrow={false}>
+            <button style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '3px 10px', borderRadius: 6,
+              border: `1px solid ${color}40`,
+              background: `${color}08`,
+              color,
+              fontSize: 11, fontWeight: 500,
+              cursor: isChanging ? 'wait' : 'pointer',
+              transition: 'all 0.15s',
+              whiteSpace: 'nowrap',
+            }}>
+              {isChanging ? <LoadingOutlined style={{ fontSize: 11 }} /> : <span style={{ fontSize: 12 }}>{icon}</span>}
+              {label}
+            </button>
+          </Popover>
+        );
+      },
+    },
+    {
+      title: t('common.actions'),
+      key: 'actions',
+      width: isMobile ? 120 : 240,
+      render: (_: unknown, r: Database) => (
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+          {pgaInstalled && (
+            <button onClick={openPga} style={{
+              padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+              background: 'transparent', color: p.textMuted, fontSize: 11, cursor: 'pointer',
+              transition: 'all 0.15s',
+            }}>
+              {isMobile ? 'PGA' : 'pgAdmin'}
+            </button>
+          )}
+          <button onClick={() => { setSelectedDb(r); setPasswordModalOpen(true); }} style={{
+            padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+            background: 'transparent', color: p.textMuted, fontSize: 11, cursor: 'pointer',
+            transition: 'all 0.15s',
+          }}>
+            {isMobile ? 'Pwd' : 'Password'}
+          </button>
+          <Popconfirm
+            title={t('common.confirm_delete')}
+            onConfirm={() => handleDelete(r.id)}
+            okText={t('common.yes')} cancelText={t('common.no')}
+            okButtonProps={{ danger: true }}
+          >
+            <button style={{
+              padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.red}`,
+              background: 'transparent', color: p.red, fontSize: 11, cursor: 'pointer',
+            }}>
+              Delete
+            </button>
+          </Popconfirm>
+        </div>
+      ),
+    },
+  ];
+
+  const handlePgBatchBackup = async () => {
+    if (pgSelectedRowKeys.length === 0) return;
+    setPgBatchAction('backup');
+    const hide = message.loading(`Backing up ${pgSelectedRowKeys.length} database(s)…`, 0);
+    let ok = 0, fail = 0;
+    for (const key of pgSelectedRowKeys) {
+      try {
+        await api.post('/backups', { type: 'database', target_id: Number(key) });
+        ok++;
+      } catch { fail++; }
+    }
+    hide();
+    if (ok > 0) message.success(`${ok} backup(s) created`);
+    if (fail > 0) message.error(`${fail} backup(s) failed`);
+    setPgSelectedRowKeys([]);
+    setPgBatchAction(null);
+    fetchBackupCounts();
+  };
+
+  const handlePgBatchDelete = async () => {
+    if (pgSelectedRowKeys.length === 0) return;
+    setPgBatchAction('delete');
+    const hide = message.loading(`Deleting ${pgSelectedRowKeys.length} database(s)…`, 0);
+    let ok = 0, fail = 0;
+    for (const key of pgSelectedRowKeys) {
+      try {
+        await api.delete(`/databases/${Number(key)}`);
+        ok++;
+      } catch { fail++; }
+    }
+    hide();
+    if (ok > 0) message.success(`${ok} database(s) deleted`);
+    if (fail > 0) message.error(`${fail} deletion(s) failed`);
+    setPgSelectedRowKeys([]);
+    setPgBatchAction(null);
+    fetchData();
+    fetchBackupCounts();
+  };
+
   return (
     <div>
       <div style={{
@@ -864,9 +1204,9 @@ function DatabasesContent() {
               fontSize: 11, padding: '2px 9px', borderRadius: 4,
               background: `${p.accent}15`, color: p.accent, fontWeight: 500,
             }}>
-              {activeDbTab === 'mysql' ? `${databases.length} databases` : activeDbTab === 'postgresql' ? `${pgDatabases.length} databases` : 'Redis'}
+              {activeDbTab === 'mysql' ? `${filteredDatabases.length} databases` : activeDbTab === 'postgresql' ? `${filteredPgDatabases.length} databases` : 'Redis'}
             </span>
-            {dbVersion && (
+            {dbVersion && activeDbTab !== 'redis' && (
               <Popover
                 trigger="hover"
                 placement="bottom"
@@ -929,7 +1269,7 @@ function DatabasesContent() {
           display: 'flex', gap: 4,
         }}>
           {([
-            { key: 'mysql' as const, label: dbVersion ? (dbVersion.startsWith('MariaDB') ? 'MariaDB' : (dbVersion.toLowerCase().includes('postgres') ? 'MySQL' : 'MySQL')) : 'MySQL', color: '#3E6D8E', engine: 'mysql' },
+            { key: 'mysql' as const, label: detectedDbType === 'mariadb' ? 'MariaDB' : 'MySQL', color: '#3E6D8E', engine: 'mysql' },
             { key: 'postgresql' as const, label: 'PostgreSQL', color: '#336791', engine: 'postgresql' },
             { key: 'redis' as const, label: 'Redis', color: '#DC382D', engine: 'redis' },
           ] as const).map(tab => {
@@ -958,6 +1298,9 @@ function DatabasesContent() {
             );
           })}
         </div>
+
+        {/* Tab content area */}
+        <div style={{ minHeight: 200 }}>
 
         {/* MySQL/MariaDB content */}
         {activeDbTab === 'mysql' && (<>
@@ -1125,37 +1468,176 @@ function DatabasesContent() {
         </>)}
 
         {/* PostgreSQL content */}
-        {activeDbTab === 'postgresql' && (
-          <div style={{ padding: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>
-                PostgreSQL Databases
-              </span>
-              <button onClick={fetchPgDatabases} style={{
-                padding: '4px 12px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
-                background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
-                display: 'inline-flex', alignItems: 'center', gap: 5,
+        {activeDbTab === 'postgresql' && (<>
+        {/* Toolbar */}
+        <div style={{
+          display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8,
+          padding: '10px 20px',
+          borderBottom: `1px solid ${p.cardBorder}`,
+        }}>
+          <button onClick={() => setPgManageOpen(true)} style={{
+            padding: '5px 14px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+            background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+          }}>
+            <DatabaseOutlined /> {!isMobile && 'Manage'}
+          </button>
+          <button onClick={() => message.info('Root password management coming soon')} style={{
+            padding: '5px 14px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+            background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+          }}>
+            <SafetyCertificateOutlined /> {!isMobile && 'Root password'}
+          </button>
+          {pgaInstalled ? (
+            <button onClick={openPga} style={{
+              padding: '5px 14px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+              background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+            }}>
+              <LinkOutlined /> {!isMobile && 'pgAdmin'}
+            </button>
+          ) : (
+            <Tooltip title="Install pgAdmin from App Store">
+              <button disabled style={{
+                padding: '5px 14px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+                background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'not-allowed',
+                display: 'inline-flex', alignItems: 'center', gap: 6, opacity: 0.5,
               }}>
-                <ReloadOutlined /> Refresh
+                <LinkOutlined /> {!isMobile && 'pgAdmin'}
               </button>
-            </div>
-            {pgLoading ? <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div> : (
-              <Table
-                dataSource={pgDatabases}
-                rowKey="name"
-                size="middle"
-                pagination={false}
-                style={{ fontSize: 13 }}
-                columns={[
-                  { title: 'Database', dataIndex: 'name', key: 'name', render: (v: string) => <span style={{ fontWeight: 500 }}>{v}</span> },
-                  { title: 'Owner', dataIndex: 'owner', key: 'owner' },
-                  { title: 'Encoding', dataIndex: 'encoding', key: 'encoding' },
-                  { title: 'Size', dataIndex: 'size', key: 'size', render: (v: number) => formatSize(v) },
-                ]}
-              />
-            )}
+            </Tooltip>
+          )}
+          <button onClick={() => message.info('Backup all coming soon')} style={{
+            padding: '5px 14px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+            background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+          }}>
+            <CloudDownloadOutlined /> {!isMobile && 'Backup All'}
+          </button>
+          <button onClick={() => message.info('Import coming soon')} style={{
+            padding: '5px 14px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+            background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+          }}>
+            <ImportOutlined /> {!isMobile && 'Import'}
+          </button>
+
+          <div style={{ flex: 1 }} />
+
+          <Input
+            placeholder="Database search"
+            prefix={<SearchOutlined style={{ color: p.textMuted }} />}
+            value={pgSearchText}
+            onChange={e => setPgSearchText(e.target.value)}
+            allowClear
+            style={{ width: isMobile ? 140 : 200 }}
+            size="middle"
+          />
+          <Tooltip title="Refresh">
+            <button onClick={() => { fetchData(); fetchPgDatabases(); }} style={{
+              padding: '5px 10px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+              background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', transition: 'all 0.15s',
+            }}>
+              <ReloadOutlined />
+            </button>
+          </Tooltip>
+        </div>
+
+        {/* Batch action bar */}
+        {pgSelectedRowKeys.length > 0 && (
+          <div style={{
+            padding: '8px 20px',
+            borderBottom: `1px solid ${p.cardBorder}`,
+            background: `#33679108`,
+            display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+          }}>
+            <span style={{ fontSize: 12, fontWeight: 500, color: '#336791' }}>
+              {pgSelectedRowKeys.length} selected
+            </span>
+            <Popconfirm
+              title={`Backup ${pgSelectedRowKeys.length} database(s)?`}
+              description="This will create a backup for each selected database."
+              onConfirm={handlePgBatchBackup}
+              okText="Backup All"
+            >
+              <button
+                disabled={pgBatchAction !== null}
+                style={{
+                  padding: '4px 12px', borderRadius: 6, border: `1px solid ${p.green}60`,
+                  background: `${p.green}12`, color: p.green,
+                  fontSize: 11, fontWeight: 600, cursor: pgBatchAction ? 'wait' : 'pointer',
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  opacity: pgBatchAction ? 0.6 : 1,
+                  transition: 'all 0.15s',
+                }}
+              >
+                <CloudUploadOutlined style={{ fontSize: 12 }} />
+                Backup Selected
+              </button>
+            </Popconfirm>
+            <Popconfirm
+              title={`Delete ${pgSelectedRowKeys.length} database(s)?`}
+              description="This action cannot be undone. All selected databases and their users will be permanently removed."
+              onConfirm={handlePgBatchDelete}
+              okText="Delete All"
+              okButtonProps={{ danger: true }}
+            >
+              <button
+                disabled={pgBatchAction !== null}
+                style={{
+                  padding: '4px 12px', borderRadius: 6, border: `1px solid ${p.red}60`,
+                  background: `${p.red}12`, color: p.red,
+                  fontSize: 11, fontWeight: 600, cursor: pgBatchAction ? 'wait' : 'pointer',
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  opacity: pgBatchAction ? 0.6 : 1,
+                  transition: 'all 0.15s',
+                }}
+              >
+                <DeleteOutlined style={{ fontSize: 12 }} />
+                Delete Selected
+              </button>
+            </Popconfirm>
+            <button
+              onClick={() => setPgSelectedRowKeys([])}
+              style={{
+                padding: '4px 12px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+                background: 'transparent', color: p.textMuted,
+                fontSize: 11, fontWeight: 500, cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}
+            >
+              Clear
+            </button>
           </div>
         )}
+
+        {/* Table */}
+        <div style={{ padding: 0 }}>
+          <Table
+            columns={pgColumns}
+            dataSource={filteredPgDatabases}
+            rowKey="id"
+            rowSelection={{
+              selectedRowKeys: pgSelectedRowKeys,
+              onChange: (keys) => setPgSelectedRowKeys(keys),
+            }}
+            loading={{ spinning: loading, indicator: <Spin /> }}
+            size="middle"
+            scroll={{ x: 800 }}
+            pagination={{
+              pageSize: 20,
+              showSizeChanger: true,
+              size: 'small',
+              showTotal: (total) => <span style={{ color: p.textMuted, fontSize: 13 }}>Total {total}</span>,
+              style: { padding: '8px 16px', margin: 0 },
+            }}
+            style={{ fontSize: 13 }}
+            rowClassName={() => 'db-table-row'}
+          />
+        </div>
+        </>)}
 
         {/* Redis content */}
         {activeDbTab === 'redis' && (
@@ -1213,6 +1695,8 @@ function DatabasesContent() {
             )}
           </div>
         )}
+
+        </div>{/* end tab content area */}
       </div>
 
       {/* Add Database Modal */}
@@ -1710,6 +2194,9 @@ function DatabasesContent() {
           </div>
         )}
       </Modal>
+
+      <PostgresqlManageModal open={pgManageOpen} onClose={() => setPgManageOpen(false)} />
+      <PgAdminManageModal open={pgaManageOpen} onClose={() => setPgaManageOpen(false)} />
     </div>
   );
 }

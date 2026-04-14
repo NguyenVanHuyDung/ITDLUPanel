@@ -349,5 +349,13 @@ func DefaultRegistry() *Registry {
 	r.Register(NewDockerInstaller())
 	r.Register(NewPostgreSQLInstaller())
 	r.Register(NewPgAdminInstaller())
+	r.Register(NewNodeJSInstaller())
+	r.Register(NewPythonInstaller())
+	r.Register(NewGolangInstaller())
+	r.Register(NewMemcachedInstaller())
+	r.Register(NewMongoDBInstaller())
+	r.Register(NewSupervisorInstaller())
+	r.Register(NewTomcatInstaller())
+	r.Register(NewElasticsearchInstaller())
 	return r
 }

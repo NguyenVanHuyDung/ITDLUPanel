@@ -156,6 +156,70 @@ var knownSoftware = map[string]softwareMeta{
 		InstallPath:    "/ITDLUPanel/server/pgadmin",
 		DefaultVersion: "latest",
 	},
+	"nodejs": {
+		DisplayName:    "Node.js",
+		Type:           "runtime",
+		ServiceName:    "",
+		ConfigPath:     "",
+		InstallPath:    "/ITDLUPanel/server/nodejs",
+		DefaultVersion: "22",
+	},
+	"python": {
+		DisplayName:    "Python",
+		Type:           "runtime",
+		ServiceName:    "",
+		ConfigPath:     "",
+		InstallPath:    "/ITDLUPanel/server/python",
+		DefaultVersion: "3.12",
+	},
+	"golang": {
+		DisplayName:    "Go",
+		Type:           "runtime",
+		ServiceName:    "",
+		ConfigPath:     "",
+		InstallPath:    "/ITDLUPanel/server/golang",
+		DefaultVersion: "1.24.4",
+	},
+	"memcached": {
+		DisplayName:    "Memcached",
+		Type:           "cache",
+		ServiceName:    "memcached",
+		ConfigPath:     "/etc/memcached.conf",
+		InstallPath:    "/ITDLUPanel/server/memcached",
+		DefaultVersion: "stable",
+	},
+	"mongodb": {
+		DisplayName:    "MongoDB",
+		Type:           "database",
+		ServiceName:    "mongod",
+		ConfigPath:     "/etc/mongod.conf",
+		InstallPath:    "/ITDLUPanel/server/mongodb",
+		DefaultVersion: "8.0",
+	},
+	"supervisor": {
+		DisplayName:    "Supervisor",
+		Type:           "tool",
+		ServiceName:    "supervisor",
+		ConfigPath:     "/etc/supervisor/supervisord.conf",
+		InstallPath:    "/ITDLUPanel/server/supervisor",
+		DefaultVersion: "stable",
+	},
+	"tomcat": {
+		DisplayName:    "Apache Tomcat",
+		Type:           "tool",
+		ServiceName:    "tomcat",
+		ConfigPath:     "/ITDLUPanel/server/tomcat/conf/server.xml",
+		InstallPath:    "/ITDLUPanel/server/tomcat",
+		DefaultVersion: "10.1",
+	},
+	"elasticsearch": {
+		DisplayName:    "Elasticsearch",
+		Type:           "tool",
+		ServiceName:    "elasticsearch",
+		ConfigPath:     "/etc/elasticsearch/elasticsearch.yml",
+		InstallPath:    "/ITDLUPanel/server/elasticsearch",
+		DefaultVersion: "8",
+	},
 }
 
 func init() {
@@ -183,6 +247,15 @@ func init() {
 		m5 := knownSoftware["php"]
 		m5.ServiceName = "php-fpm" // Will be resolved dynamically by resolveServiceName
 		knownSoftware["php"] = m5
+
+		m6 := knownSoftware["supervisor"]
+		m6.ServiceName = "supervisord"
+		m6.ConfigPath = "/etc/supervisord.conf"
+		knownSoftware["supervisor"] = m6
+
+		m7 := knownSoftware["memcached"]
+		m7.ConfigPath = "/etc/sysconfig/memcached"
+		knownSoftware["memcached"] = m7
 	}
 }
 
