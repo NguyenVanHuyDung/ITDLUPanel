@@ -144,13 +144,10 @@ export default function NotificationsTab() {
     return map[color] ?? p.textMuted;
   };
 
-  const sectionTitle = (icon: React.ReactNode, title: string, extra?: React.ReactNode, iconColor?: string) => (
+  const sectionTitle = (icon: React.ReactNode, title: string, extra?: React.ReactNode) => (
     <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{
-          width: 32, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: `${iconColor || p.accent}12`, color: iconColor || p.accent, fontSize: 16,
-        }}>{icon}</div>
+        <div style={{ width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', color: p.accent }}>{icon}</div>
         <span style={{ fontSize: 16, fontWeight: 600, color: p.text }}>{title}</span>
       </div>
       {extra}
@@ -347,19 +344,17 @@ export default function NotificationsTab() {
   };
 
   /* ---------- Nav buttons ---------- */
-  const navBtnColors: Record<string, string> = { channels: '#4f46e5', rules: '#059669', logs: '#d97706' };
   const navBtn = (key: typeof section, icon: React.ReactNode, label: string, count?: number) => {
     const active = section === key;
-    const color = navBtnColors[key] || p.accent;
     return (
       <button
         onClick={() => setSection(key)}
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 6,
           padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-          border: active ? `1.5px solid ${color}` : `1px solid ${p.cardBorder}`,
-          background: active ? `${color}10` : 'transparent',
-          color: active ? color : p.textMuted,
+          border: active ? `1.5px solid ${p.accent}` : `1px solid ${p.cardBorder}`,
+          background: active ? `${p.accent}12` : 'transparent',
+          color: active ? p.accent : p.textMuted,
           cursor: 'pointer', transition: 'all 0.15s',
         }}
       >
@@ -368,8 +363,8 @@ export default function NotificationsTab() {
         {count !== undefined && count > 0 && (
           <span style={{
             fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 8,
-            background: active ? `${color}20` : `${p.textMuted}18`,
-            color: active ? color : p.textMuted,
+            background: active ? `${p.accent}20` : `${p.textMuted}15`,
+            color: active ? p.accent : p.textMuted,
           }}>{count}</span>
         )}
       </button>
@@ -377,156 +372,97 @@ export default function NotificationsTab() {
   };
 
   /* ================================================================ */
-  /*  RENDER: Channels — modern card design                            */
+  /*  RENDER: Channels — clean row list (matches Domain Certificates)  */
   /* ================================================================ */
   const renderChannels = () => {
-    const emailColor = '#4f46e5'; // indigo
-    const telegramColor = '#0891b2'; // cyan
+    return (<div style={sectionBox}>
+      {sectionTitle(
+        <BellOutlined style={{ fontSize: 18 }} />,
+        'Notification Channels',
+        <button style={btnPrimary} onClick={openNewChannel}>
+          <PlusOutlined /> Add Channel
+        </button>
+      )}
 
-    const emailIcon = (
-      <div style={{
-        width: 44, height: 44, borderRadius: 12,
-        background: `${emailColor}15`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <MailOutlined style={{ fontSize: 22, color: emailColor }} />
-      </div>
-    );
-    const telegramIcon = (
-      <div style={{
-        width: 44, height: 44, borderRadius: 12,
-        background: `${telegramColor}15`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <SendOutlined style={{ fontSize: 22, color: telegramColor }} />
-      </div>
-    );
-
-    return (
-      <div style={sectionBox}>
-        {sectionTitle(
-          <BellOutlined />,
-          'Notification Channels',
+      {channels.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+          <BellOutlined style={{ fontSize: 36, color: p.textDim, display: 'block', marginBottom: 8 }} />
+          <div style={{ fontSize: 14, fontWeight: 600, color: p.text, marginBottom: 4 }}>No channels configured</div>
+          <div style={{ fontSize: 12, color: p.textMuted, marginBottom: 14 }}>Add an Email or Telegram channel to start receiving notifications</div>
           <button style={btnPrimary} onClick={openNewChannel}>
-            <PlusOutlined /> Add Channel
-          </button>,
-          '#4f46e5'
-        )}
-
-        {channels.length === 0 ? (
-          <div style={{
-            textAlign: 'center', padding: '48px 20px',
-            borderRadius: 12, border: `2px dashed ${p.cardBorder}`,
-            background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)',
-          }}>
-            <BellOutlined style={{ fontSize: 40, color: p.textDim, marginBottom: 12 }} />
-            <div style={{ fontSize: 15, fontWeight: 600, color: p.text, marginBottom: 4 }}>No channels configured</div>
-            <div style={{ fontSize: 13, color: p.textMuted, marginBottom: 16 }}>Add an Email or Telegram channel to start receiving notifications</div>
-            <button style={btnPrimary} onClick={openNewChannel}>
-              <PlusOutlined /> Add Your First Channel
-            </button>
-          </div>
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(380px, 1fr))', gap: 14 }}>
-            {channels.map((ch) => {
-              const cfg = parseConfig(ch.config);
-              const isEmail = ch.type === 'email';
-              const chColor = isEmail ? emailColor : telegramColor;
-              return (
-                <div key={ch.id} style={{
-                  borderRadius: 10, overflow: 'hidden',
-                  background: isDark ? p.rowAlt : '#fff',
-                  border: `1px solid ${p.cardBorder}`,
-                  borderLeft: ch.is_enabled ? `3px solid ${chColor}` : `1px solid ${p.cardBorder}`,
-                  transition: 'all 0.2s',
+            <PlusOutlined /> Add Your First Channel
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {channels.map((ch) => {
+            const cfg = parseConfig(ch.config);
+            const isEmail = ch.type === 'email';
+            return (
+              <div key={ch.id} style={{
+                display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', gap: 12,
+                padding: '12px 14px', borderRadius: 8,
+                background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                border: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`,
+                flexDirection: isMobile ? 'column' : 'row',
+              }}>
+                {/* Icon */}
+                <div style={{
+                  width: 36, height: 36, borderRadius: 8, flexShrink: 0,
+                  background: `${p.accent}15`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
+                  {isEmail
+                    ? <MailOutlined style={{ fontSize: 18, color: p.accent }} />
+                    : <SendOutlined style={{ fontSize: 18, color: p.accent }} />}
+                </div>
 
-                  <div style={{ padding: '16px 18px' }}>
-                    {/* Header: icon + name + status */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-                      {isEmail ? emailIcon : telegramIcon}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-                          <span style={{ fontSize: 15, fontWeight: 700, color: p.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ch.name}</span>
-                          <span style={{
-                            fontSize: 10, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase',
-                            padding: '2px 8px', borderRadius: 6,
-                            background: ch.is_enabled ? `${p.green}18` : `${p.textMuted}15`,
-                            color: ch.is_enabled ? p.green : p.textMuted,
-                          }}>{ch.is_enabled ? 'Active' : 'Disabled'}</span>
-                        </div>
-                        <div style={{ fontSize: 11, color: p.textMuted, textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: 600 }}>
-                          {isEmail ? '📧 Email (SMTP)' : '📨 Telegram Bot'}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Connection details */}
-                    <div style={{
-                      padding: '10px 12px', borderRadius: 8, marginBottom: 14,
-                      background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-                      border: `1px solid ${p.cardBorder}`,
-                    }}>
-                      {isEmail ? (
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px', fontSize: 12 }}>
-                          <div>
-                            <span style={{ color: p.textDim, fontSize: 10, fontWeight: 600, textTransform: 'uppercase' }}>Server</span>
-                            <div style={{ color: p.text, fontFamily: 'monospace', fontSize: 12 }}>{cfg.host || '—'}:{cfg.port || '—'}</div>
-                          </div>
-                          <div>
-                            <span style={{ color: p.textDim, fontSize: 10, fontWeight: 600, textTransform: 'uppercase' }}>Encryption</span>
-                            <div style={{ color: p.text }}>{(cfg.encryption || 'starttls').toUpperCase()}</div>
-                          </div>
-                          <div>
-                            <span style={{ color: p.textDim, fontSize: 10, fontWeight: 600, textTransform: 'uppercase' }}>From</span>
-                            <div style={{ color: p.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cfg.from || cfg.username || '—'}</div>
-                          </div>
-                          <div>
-                            <span style={{ color: p.textDim, fontSize: 10, fontWeight: 600, textTransform: 'uppercase' }}>To</span>
-                            <div style={{ color: p.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cfg.to || '—'}</div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px', fontSize: 12 }}>
-                          <div>
-                            <span style={{ color: p.textDim, fontSize: 10, fontWeight: 600, textTransform: 'uppercase' }}>Bot Token</span>
-                            <div style={{ color: p.text, fontFamily: 'monospace', fontSize: 12 }}>••••{(cfg.bot_token || '').slice(-6)}</div>
-                          </div>
-                          <div>
-                            <span style={{ color: p.textDim, fontSize: 10, fontWeight: 600, textTransform: 'uppercase' }}>Chat ID</span>
-                            <div style={{ color: p.text, fontFamily: 'monospace', fontSize: 12 }}>{cfg.chat_id || '—'}</div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Action buttons */}
-                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                      <button
-                        title="Send test notification"
-                        style={btnOutline}
-                        onClick={() => handleTestChannel(ch.id)}
-                        disabled={testing === ch.id}
-                      >
-                        <ExperimentOutlined /> {testing === ch.id ? 'Testing…' : 'Test'}
-                      </button>
-                      <button title="Edit channel settings" style={btnOutline} onClick={() => openEditChannel(ch)}>
-                        <EditOutlined /> Edit
-                      </button>
-                      <button
-                        title="Delete this channel and all its rules"
-                        style={btnDanger}
-                        onClick={() => { if (window.confirm('Delete this channel? All rules for this channel will also be removed.')) handleDeleteChannel(ch.id); }}
-                      >
-                        <DeleteOutlined /> Delete
-                      </button>
-                    </div>
+                {/* Info */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: p.text }}>{ch.name}</span>
+                    <span style={{
+                      fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4,
+                      background: ch.is_enabled ? `${p.green}15` : `${p.textMuted}12`,
+                      color: ch.is_enabled ? p.green : p.textMuted,
+                      textTransform: 'uppercase', letterSpacing: 0.5,
+                    }}>{ch.is_enabled ? 'Active' : 'Disabled'}</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: p.textMuted, display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 2 }}>
+                    <span>{isEmail ? 'Email (SMTP)' : 'Telegram Bot'}</span>
+                    {isEmail
+                      ? <span>{cfg.host || '—'}:{cfg.port || '—'} · {(cfg.encryption || 'starttls').toUpperCase()}</span>
+                      : <span>Chat: {cfg.chat_id || '—'}</span>}
+                    {isEmail && cfg.to && <span>→ {cfg.to}</span>}
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
+
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                  <button
+                    title="Send test notification"
+                    style={{ ...btnOutline, padding: '4px 10px' }}
+                    onClick={() => handleTestChannel(ch.id)}
+                    disabled={testing === ch.id}
+                  >
+                    <ExperimentOutlined /> {testing === ch.id ? '…' : 'Test'}
+                  </button>
+                  <button title="Edit" style={{ ...btnOutline, padding: '4px 10px' }} onClick={() => openEditChannel(ch)}>
+                    <EditOutlined />
+                  </button>
+                  <button
+                    title="Delete"
+                    style={{ ...btnOutline, padding: '4px 10px', color: p.red, borderColor: `${p.red}40` }}
+                    onClick={() => { if (window.confirm('Delete this channel? All rules will also be removed.')) handleDeleteChannel(ch.id); }}
+                  >
+                    <DeleteOutlined />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* ---- Channel Modal ---- */}
       <Modal
@@ -683,12 +619,11 @@ export default function NotificationsTab() {
 
     return (
       <div style={sectionBox}>
-        {sectionTitle(<CheckCircleOutlined />, 'Event Rules', undefined, '#059669')}
+        {sectionTitle(<CheckCircleOutlined style={{ fontSize: 18 }} />, 'Event Rules')}
 
         {activeChannels.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-            <CheckCircleOutlined style={{ fontSize: 36, color: p.textDim, display: 'block', marginBottom: 8 }} />
-            <div style={{ fontSize: 13, color: p.textMuted }}>Create and enable a channel first</div>
+          <div style={{ textAlign: 'center', padding: '32px 20px', color: p.textMuted, fontSize: 13 }}>
+            Create and enable a channel first
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
@@ -772,18 +707,16 @@ export default function NotificationsTab() {
                         colSpan={activeChannels.length + (activeChannels.length > 1 ? 2 : 1)}
                         style={{
                           padding: '10px 12px 6px',
-                          background: isDark ? `${cat.tint}10` : `${cat.tint}08`,
+                          background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
                           borderTop: `1px solid ${p.cardBorder}`,
-                          borderLeft: `3px solid ${cat.tint}`,
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <span style={{ fontSize: 15 }}>{cat.icon}</span>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: cat.tint }}>{cat.label}</span>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: p.text }}>{cat.label}</span>
                           <span style={{
-                            fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 6,
-                            background: `${cat.tint}12`, color: cat.tint,
-                          }}>{cat.events.length}</span>
+                            fontSize: 10, color: p.textMuted, fontWeight: 500,
+                          }}>({cat.events.length})</span>
                         </div>
                       </td>
                     </tr>
@@ -927,7 +860,7 @@ export default function NotificationsTab() {
 
     return (
       <div style={sectionBox}>
-        {sectionTitle(<MailOutlined />, 'Notification Logs', undefined, '#d97706')}
+        {sectionTitle(<MailOutlined style={{ fontSize: 18 }} />, 'Notification Logs')}
         <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <button style={btnOutline} onClick={() => fetchLogs()}>
             <ReloadOutlined /> Refresh
@@ -940,9 +873,8 @@ export default function NotificationsTab() {
         </div>
 
         {logs.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-            <MailOutlined style={{ fontSize: 36, color: p.textDim, display: 'block', marginBottom: 8 }} />
-            <div style={{ fontSize: 13, color: p.textMuted }}>No notification logs yet</div>
+          <div style={{ textAlign: 'center', padding: '32px 20px', color: p.textMuted, fontSize: 13 }}>
+            No notification logs yet
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>

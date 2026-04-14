@@ -410,7 +410,7 @@ function PHPVersionPanel({ siteId, currentVersion, phpVersions }: { siteId: numb
   const handleSwitch = async () => {
     setSaving(true);
     try {
-      await api.put(`/sites/${siteId}/php`, { version });
+      await api.put(`/sites/${siteId}/php`, { php_version: version });
       message.success('PHP version updated');
     } catch {
       message.error('Failed to switch PHP version');
