@@ -343,18 +343,24 @@ export default function NotificationsTab() {
     return rule?.is_enabled ?? false;
   };
 
+  /* ---------- Semantic colors for channel types ---------- */
+  const emailColor = p.accent;
+  const telegramColor = p.green;
+
   /* ---------- Nav buttons ---------- */
+  const navColors: Record<string, string> = { channels: p.accent, rules: p.green, logs: p.amber };
   const navBtn = (key: typeof section, icon: React.ReactNode, label: string, count?: number) => {
     const active = section === key;
+    const color = navColors[key] || p.accent;
     return (
       <button
         onClick={() => setSection(key)}
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 6,
           padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-          border: active ? `1.5px solid ${p.accent}` : `1px solid ${p.cardBorder}`,
-          background: active ? `${p.accent}12` : 'transparent',
-          color: active ? p.accent : p.textMuted,
+          border: active ? `1.5px solid ${color}` : `1px solid ${p.cardBorder}`,
+          background: active ? `${color}12` : 'transparent',
+          color: active ? color : p.textMuted,
           cursor: 'pointer', transition: 'all 0.15s',
         }}
       >
@@ -363,8 +369,8 @@ export default function NotificationsTab() {
         {count !== undefined && count > 0 && (
           <span style={{
             fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 8,
-            background: active ? `${p.accent}20` : `${p.textMuted}15`,
-            color: active ? p.accent : p.textMuted,
+            background: active ? `${color}20` : `${p.textMuted}15`,
+            color: active ? color : p.textMuted,
           }}>{count}</span>
         )}
       </button>
@@ -398,23 +404,25 @@ export default function NotificationsTab() {
           {channels.map((ch) => {
             const cfg = parseConfig(ch.config);
             const isEmail = ch.type === 'email';
+            const typeColor = isEmail ? emailColor : telegramColor;
             return (
               <div key={ch.id} style={{
                 display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', gap: 12,
                 padding: '12px 14px', borderRadius: 8,
                 background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
                 border: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`,
+                borderLeft: `3px solid ${ch.is_enabled ? typeColor : (isDark ? '#555' : '#ccc')}`,
                 flexDirection: isMobile ? 'column' : 'row',
               }}>
                 {/* Icon */}
                 <div style={{
                   width: 36, height: 36, borderRadius: 8, flexShrink: 0,
-                  background: `${p.accent}15`,
+                  background: `${typeColor}15`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
                   {isEmail
-                    ? <MailOutlined style={{ fontSize: 18, color: p.accent }} />
-                    : <SendOutlined style={{ fontSize: 18, color: p.accent }} />}
+                    ? <MailOutlined style={{ fontSize: 18, color: typeColor }} />
+                    : <SendOutlined style={{ fontSize: 18, color: typeColor }} />}
                 </div>
 
                 {/* Info */}
@@ -423,17 +431,21 @@ export default function NotificationsTab() {
                     <span style={{ fontSize: 13, fontWeight: 600, color: p.text }}>{ch.name}</span>
                     <span style={{
                       fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4,
-                      background: ch.is_enabled ? `${p.green}15` : `${p.textMuted}12`,
-                      color: ch.is_enabled ? p.green : p.textMuted,
+                      background: `${typeColor}12`, color: typeColor,
                       textTransform: 'uppercase', letterSpacing: 0.5,
-                    }}>{ch.is_enabled ? 'Active' : 'Disabled'}</span>
+                    }}>{isEmail ? 'Email' : 'Telegram'}</span>
+                    <span style={{
+                      fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4,
+                      background: ch.is_enabled ? `${p.green}15` : `${p.red}12`,
+                      color: ch.is_enabled ? p.green : p.red,
+                      letterSpacing: 0.5,
+                    }}>{ch.is_enabled ? '● Active' : '○ Disabled'}</span>
                   </div>
-                  <div style={{ fontSize: 11, color: p.textMuted, display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 2 }}>
-                    <span>{isEmail ? 'Email (SMTP)' : 'Telegram Bot'}</span>
+                  <div style={{ fontSize: 11, color: p.textMuted, display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 3 }}>
                     {isEmail
                       ? <span>{cfg.host || '—'}:{cfg.port || '—'} · {(cfg.encryption || 'starttls').toUpperCase()}</span>
                       : <span>Chat: {cfg.chat_id || '—'}</span>}
-                    {isEmail && cfg.to && <span>→ {cfg.to}</span>}
+                    {isEmail && cfg.to && <span style={{ color: p.text }}>→ {cfg.to}</span>}
                   </div>
                 </div>
 
@@ -707,16 +719,18 @@ export default function NotificationsTab() {
                         colSpan={activeChannels.length + (activeChannels.length > 1 ? 2 : 1)}
                         style={{
                           padding: '10px 12px 6px',
-                          background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                          background: isDark ? `${cat.tint}08` : `${cat.tint}06`,
                           borderTop: `1px solid ${p.cardBorder}`,
+                          borderLeft: `3px solid ${cat.tint}`,
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <span style={{ fontSize: 15 }}>{cat.icon}</span>
                           <span style={{ fontSize: 12, fontWeight: 600, color: p.text }}>{cat.label}</span>
                           <span style={{
-                            fontSize: 10, color: p.textMuted, fontWeight: 500,
-                          }}>({cat.events.length})</span>
+                            fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 6,
+                            background: `${cat.tint}12`, color: cat.tint,
+                          }}>{cat.events.length}</span>
                         </div>
                       </td>
                     </tr>
@@ -915,19 +929,26 @@ export default function NotificationsTab() {
                           {info.emoji} {info.label}
                         </span>
                       </td>
-                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}`, color: p.text }}>
-                        {log.channel_type === 'email' ? '📧 Email' : '📨 Telegram'}
+                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}` }}>
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                          fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6,
+                          background: log.channel_type === 'email' ? `${emailColor}10` : `${telegramColor}10`,
+                          color: log.channel_type === 'email' ? emailColor : telegramColor,
+                        }}>
+                          {log.channel_type === 'email' ? '📧 Email' : '📨 Telegram'}
+                        </span>
                       </td>
                       <td style={{ padding: '8px 12px', borderBottom: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}`, color: p.text, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {log.recipient}
                       </td>
                       <td style={{ padding: '8px 12px', borderBottom: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}` }}>
                         {log.status === 'sent' ? (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: p.green }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: `${p.green}12`, color: p.green }}>
                             <CheckCircleOutlined /> Sent
                           </span>
                         ) : (
-                          <span title={log.status} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: p.red }}>
+                          <span title={log.status} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: `${p.red}12`, color: p.red }}>
                             <CloseCircleOutlined /> Failed
                           </span>
                         )}
