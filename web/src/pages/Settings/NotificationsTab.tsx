@@ -46,17 +46,18 @@ interface EventCategory {
   key: string;
   label: string;
   icon: string;
+  tint: string; // hex color for subtle tinted backgrounds
   events: string[];
 }
 
 const EVENT_CATEGORIES: EventCategory[] = [
-  { key: 'cron',     label: 'Scheduled Tasks',    icon: '🕐', events: ['cron_success', 'cron_failed'] },
-  { key: 'ssl',      label: 'SSL Certificates',   icon: '🔐', events: ['ssl_expiry_warning', 'ssl_expired'] },
-  { key: 'backup',   label: 'Backups',             icon: '💾', events: ['backup_completed', 'backup_failed'] },
-  { key: 'software', label: 'Software',            icon: '📦', events: ['software_installed', 'software_install_failed'] },
-  { key: 'sites',    label: 'Websites',            icon: '🌐', events: ['site_created', 'site_deleted'] },
-  { key: 'system',   label: 'System Resources',    icon: '📊', events: ['cpu_high', 'memory_high', 'disk_high'] },
-  { key: 'security', label: 'Security',            icon: '🛡️', events: ['service_down', 'login_failed'] },
+  { key: 'cron',     label: 'Scheduled Tasks',    icon: '🕐', tint: '#7c3aed', events: ['cron_success', 'cron_failed'] },
+  { key: 'ssl',      label: 'SSL Certificates',   icon: '🔐', tint: '#e11d48', events: ['ssl_expiry_warning', 'ssl_expired'] },
+  { key: 'backup',   label: 'Backups',             icon: '💾', tint: '#0891b2', events: ['backup_completed', 'backup_failed'] },
+  { key: 'software', label: 'Software',            icon: '📦', tint: '#059669', events: ['software_installed', 'software_install_failed'] },
+  { key: 'sites',    label: 'Websites',            icon: '🌐', tint: '#6366f1', events: ['site_created', 'site_deleted'] },
+  { key: 'system',   label: 'System Resources',    icon: '📊', tint: '#d97706', events: ['cpu_high', 'memory_high', 'disk_high'] },
+  { key: 'security', label: 'Security',            icon: '🛡️', tint: '#dc2626', events: ['service_down', 'login_failed'] },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -143,10 +144,13 @@ export default function NotificationsTab() {
     return map[color] ?? p.textMuted;
   };
 
-  const sectionTitle = (icon: React.ReactNode, title: string, extra?: React.ReactNode) => (
+  const sectionTitle = (icon: React.ReactNode, title: string, extra?: React.ReactNode, iconColor?: string) => (
     <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', color: p.accent }}>{icon}</div>
+        <div style={{
+          width: 32, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: `${iconColor || p.accent}12`, color: iconColor || p.accent, fontSize: 16,
+        }}>{icon}</div>
         <span style={{ fontSize: 16, fontWeight: 600, color: p.text }}>{title}</span>
       </div>
       {extra}
@@ -343,50 +347,58 @@ export default function NotificationsTab() {
   };
 
   /* ---------- Nav buttons ---------- */
-  const navBtn = (key: typeof section, icon: React.ReactNode, label: string, count?: number) => (
-    <button
-      onClick={() => setSection(key)}
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: 6,
-        padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-        border: section === key ? `1.5px solid ${p.accent}` : `1px solid ${p.cardBorder}`,
-        background: section === key ? `${p.accent}14` : 'transparent',
-        color: section === key ? p.accent : p.textMuted,
-        cursor: 'pointer', transition: 'all 0.15s',
-      }}
-    >
-      {icon}
-      {label}
-      {count !== undefined && count > 0 && (
-        <span style={{
-          fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 8,
-          background: section === key ? `${p.accent}25` : `${p.textMuted}18`,
-          color: section === key ? p.accent : p.textMuted,
-        }}>{count}</span>
-      )}
-    </button>
-  );
+  const navBtnColors: Record<string, string> = { channels: '#4f46e5', rules: '#059669', logs: '#d97706' };
+  const navBtn = (key: typeof section, icon: React.ReactNode, label: string, count?: number) => {
+    const active = section === key;
+    const color = navBtnColors[key] || p.accent;
+    return (
+      <button
+        onClick={() => setSection(key)}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+          border: active ? `1.5px solid ${color}` : `1px solid ${p.cardBorder}`,
+          background: active ? `${color}10` : 'transparent',
+          color: active ? color : p.textMuted,
+          cursor: 'pointer', transition: 'all 0.15s',
+        }}
+      >
+        {icon}
+        {label}
+        {count !== undefined && count > 0 && (
+          <span style={{
+            fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 8,
+            background: active ? `${color}20` : `${p.textMuted}18`,
+            color: active ? color : p.textMuted,
+          }}>{count}</span>
+        )}
+      </button>
+    );
+  };
 
   /* ================================================================ */
   /*  RENDER: Channels — modern card design                            */
   /* ================================================================ */
   const renderChannels = () => {
+    const emailColor = '#4f46e5'; // indigo
+    const telegramColor = '#0891b2'; // cyan
+
     const emailIcon = (
       <div style={{
         width: 44, height: 44, borderRadius: 12,
-        background: `${p.accent}15`,
+        background: `${emailColor}15`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        <MailOutlined style={{ fontSize: 22, color: p.accent }} />
+        <MailOutlined style={{ fontSize: 22, color: emailColor }} />
       </div>
     );
     const telegramIcon = (
       <div style={{
         width: 44, height: 44, borderRadius: 12,
-        background: `${p.accent}15`,
+        background: `${telegramColor}15`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        <SendOutlined style={{ fontSize: 22, color: p.accent }} />
+        <SendOutlined style={{ fontSize: 22, color: telegramColor }} />
       </div>
     );
 
@@ -397,7 +409,8 @@ export default function NotificationsTab() {
           'Notification Channels',
           <button style={btnPrimary} onClick={openNewChannel}>
             <PlusOutlined /> Add Channel
-          </button>
+          </button>,
+          '#4f46e5'
         )}
 
         {channels.length === 0 ? (
@@ -418,12 +431,13 @@ export default function NotificationsTab() {
             {channels.map((ch) => {
               const cfg = parseConfig(ch.config);
               const isEmail = ch.type === 'email';
+              const chColor = isEmail ? emailColor : telegramColor;
               return (
                 <div key={ch.id} style={{
                   borderRadius: 10, overflow: 'hidden',
-                  background: isDark ? p.rowAlt : p.headerBg,
+                  background: isDark ? p.rowAlt : '#fff',
                   border: `1px solid ${p.cardBorder}`,
-                  borderLeft: ch.is_enabled ? `3px solid ${p.accent}` : `1px solid ${p.cardBorder}`,
+                  borderLeft: ch.is_enabled ? `3px solid ${chColor}` : `1px solid ${p.cardBorder}`,
                   transition: 'all 0.2s',
                 }}>
 
@@ -669,11 +683,12 @@ export default function NotificationsTab() {
 
     return (
       <div style={sectionBox}>
-        {sectionTitle(<BellOutlined style={{ color: p.accent }} />, 'Event Rules')}
+        {sectionTitle(<CheckCircleOutlined />, 'Event Rules', undefined, '#059669')}
 
         {activeChannels.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '32px 20px', color: p.textMuted, fontSize: 13 }}>
-            Create and enable a channel first
+          <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+            <CheckCircleOutlined style={{ fontSize: 36, color: p.textDim, display: 'block', marginBottom: 8 }} />
+            <div style={{ fontSize: 13, color: p.textMuted }}>Create and enable a channel first</div>
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
@@ -757,13 +772,18 @@ export default function NotificationsTab() {
                         colSpan={activeChannels.length + (activeChannels.length > 1 ? 2 : 1)}
                         style={{
                           padding: '10px 12px 6px',
-                          background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                          background: isDark ? `${cat.tint}10` : `${cat.tint}08`,
                           borderTop: `1px solid ${p.cardBorder}`,
+                          borderLeft: `3px solid ${cat.tint}`,
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <span style={{ fontSize: 15 }}>{cat.icon}</span>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: p.text }}>{cat.label}</span>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: cat.tint }}>{cat.label}</span>
+                          <span style={{
+                            fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 6,
+                            background: `${cat.tint}12`, color: cat.tint,
+                          }}>{cat.events.length}</span>
                         </div>
                       </td>
                     </tr>
@@ -907,7 +927,7 @@ export default function NotificationsTab() {
 
     return (
       <div style={sectionBox}>
-        {sectionTitle(<BellOutlined />, 'Notification Logs')}
+        {sectionTitle(<MailOutlined />, 'Notification Logs', undefined, '#d97706')}
         <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <button style={btnOutline} onClick={() => fetchLogs()}>
             <ReloadOutlined /> Refresh
@@ -920,8 +940,9 @@ export default function NotificationsTab() {
         </div>
 
         {logs.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '32px 20px', color: p.textMuted, fontSize: 13 }}>
-            No notification logs
+          <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+            <MailOutlined style={{ fontSize: 36, color: p.textDim, display: 'block', marginBottom: 8 }} />
+            <div style={{ fontSize: 13, color: p.textMuted }}>No notification logs yet</div>
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
@@ -932,6 +953,7 @@ export default function NotificationsTab() {
                     <th key={h} style={{
                       textAlign: 'left', padding: '8px 12px',
                       borderBottom: `2px solid ${p.cardBorder}`,
+                      background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
                       color: p.textMuted, fontSize: 11, fontWeight: 600,
                       whiteSpace: 'nowrap',
                     }}>{h}</th>
@@ -940,13 +962,14 @@ export default function NotificationsTab() {
               </thead>
               <tbody>
                 {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                {pagedLogs.map((log: any) => {
+                {pagedLogs.map((log: any, idx: number) => {
                   const info = eventLabel(log.event_type);
                   const sc = sevColor(info.color);
+                  const stripe = idx % 2 === 1 ? (isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)') : 'transparent';
                   return (
-                    <tr key={log.id} style={{ transition: 'background 0.15s' }}
+                    <tr key={log.id} style={{ transition: 'background 0.15s', background: stripe }}
                       onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = isDark ? p.rowHover : '#fafbfc'; }}
-                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = stripe; }}
                     >
                       <td style={{ padding: '8px 12px', borderBottom: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}`, whiteSpace: 'nowrap', color: p.textMuted }}>
                         {new Date(log.created_at).toLocaleString()}
@@ -1047,8 +1070,8 @@ export default function NotificationsTab() {
         <div style={{
           padding: '10px 14px',
           borderRadius: 8,
-          background: isDark ? 'rgba(24,144,255,0.08)' : '#e6f7ff',
-          border: `1px solid ${isDark ? 'rgba(24,144,255,0.2)' : '#91d5ff'}`,
+          background: `${p.accent}08`,
+          border: `1px solid ${p.accent}20`,
           fontSize: 12,
           color: p.text,
           lineHeight: 1.7,
