@@ -85,7 +85,7 @@ function DatabasesContent() {
   const [customIpValue, setCustomIpValue] = useState('');
   const [quotaDb, setQuotaDb] = useState<Database | null>(null);
   const [detectedDbType, setDetectedDbType] = useState<string>('');
-  const [activeDbTab, setActiveDbTab] = useState<'mysql' | 'postgresql' | 'redis'>('mysql');
+  const [activeDbTab, setActiveDbTab] = useState<'mysql' | 'postgresql' | 'redis' | 'mongodb'>('mysql');
   const [installedEngines, setInstalledEngines] = useState<Set<string>>(new Set());
   const initialTabSet = useRef(false);
   const [pgDatabases, setPgDatabases] = useState<any[]>([]);
@@ -104,14 +104,36 @@ function DatabasesContent() {
   const [pgaConfig, setPgaConfig] = useState<{ ssl_enabled?: boolean; ssl_port?: number; access_port?: number } | null>(null);
   const [pgaManageOpen, setPgaManageOpen] = useState(false);
 
+  // MongoDB state
+  const [mongoDatabases, setMongoDatabases] = useState<any[]>([]);
+  const [mongoLoading, setMongoLoading] = useState(false);
+  const [mongoStats, setMongoStats] = useState<any>(null);
+  const [mongoUsers, setMongoUsers] = useState<any[]>([]);
+  const [mongoSearchText, setMongoSearchText] = useState('');
+  const [mongoSelectedDb, setMongoSelectedDb] = useState<string | null>(null);
+  const [mongoCollections, setMongoCollections] = useState<any[]>([]);
+  const [mongoCollLoading, setMongoCollLoading] = useState(false);
+  const [mongoCreateDbOpen, setMongoCreateDbOpen] = useState(false);
+  const [mongoCreateCollOpen, setMongoCreateCollOpen] = useState(false);
+  const [mongoCreateUserOpen, setMongoCreateUserOpen] = useState(false);
+  const [mongoSubmitting, setMongoSubmitting] = useState(false);
+  const [mongoDbForm] = Form.useForm();
+  const [mongoCollForm] = Form.useForm();
+  const [mongoUserForm] = Form.useForm();
+  const [mongoSelectedRowKeys, setMongoSelectedRowKeys] = useState<React.Key[]>([]);
+  const [mongoView, setMongoView] = useState<'databases' | 'users'>('databases');
+
   const handleServiceAction = async (action: string) => {
     setServiceActionLoading(action);
     try {
       const payload: { action: string; db_type?: string } = { action };
       if (activeDbTab === 'postgresql') payload.db_type = 'postgresql';
       if (activeDbTab === 'redis') payload.db_type = 'redis';
+      if (activeDbTab === 'mongodb') payload.db_type = 'mongodb';
       if (activeDbTab === 'redis') {
         await api.post(`/software/redis/${action}`);
+      } else if (activeDbTab === 'mongodb') {
+        await api.post(`/software/mongodb/${action}`);
       } else {
         await api.post('/databases/service', payload);
       }
@@ -196,6 +218,8 @@ function DatabasesContent() {
       }
       if (pgSw) engines.add('postgresql');
       if (redisSw) engines.add('redis');
+      const mongoSw = installed.find((s: any) => s.name === 'mongodb');
+      if (mongoSw) engines.add('mongodb');
       setInstalledEngines(engines);
       // Auto-select first available tab (only on first load)
       if (!initialTabSet.current) {
@@ -205,6 +229,8 @@ function DatabasesContent() {
         } else if (engines.has('postgresql')) {
           setActiveDbTab('postgresql');
           setDetectedDbType('postgresql');
+        } else if (engines.has('mongodb')) {
+          setActiveDbTab('mongodb');
         } else if (engines.has('redis')) {
           setActiveDbTab('redis');
         }
@@ -262,6 +288,30 @@ function DatabasesContent() {
     finally { setRedisLoading(false); }
   }, []);
 
+  const fetchMongoDatabases = useCallback(async () => {
+    setMongoLoading(true);
+    try {
+      const [dbResp, statsResp, usersResp] = await Promise.all([
+        api.get('/software/mongodb/databases').catch(() => null),
+        api.get('/software/mongodb/stats').catch(() => null),
+        api.get('/software/mongodb/users').catch(() => null),
+      ]);
+      setMongoDatabases(dbResp?.data?.data || []);
+      setMongoStats(statsResp?.data?.data || null);
+      setMongoUsers(usersResp?.data?.data || []);
+    } catch { /* ignore */ }
+    finally { setMongoLoading(false); }
+  }, []);
+
+  const fetchMongoCollections = useCallback(async (dbName: string) => {
+    setMongoCollLoading(true);
+    try {
+      const { data: resp } = await api.get(`/software/mongodb/databases/${dbName}/collections`);
+      setMongoCollections(resp.data || []);
+    } catch { /* ignore */ }
+    finally { setMongoCollLoading(false); }
+  }, []);
+
   const fetchBackupCounts = useCallback(async () => {
     try {
       const { data: resp } = await api.get<ApiResponse<Record<string, number>>>('/backups/database-counts');
@@ -278,9 +328,10 @@ function DatabasesContent() {
   useEffect(() => {
     if (activeDbTab === 'postgresql' && installedEngines.has('postgresql')) fetchPgDatabases();
     if (activeDbTab === 'redis' && installedEngines.has('redis')) fetchRedisInfo();
+    if (activeDbTab === 'mongodb' && installedEngines.has('mongodb')) fetchMongoDatabases();
     if (activeDbTab === 'mysql') fetchDbVersion();
     if (activeDbTab === 'postgresql') fetchDbVersion();
-  }, [activeDbTab, installedEngines, fetchPgDatabases, fetchRedisInfo, fetchDbVersion]);
+  }, [activeDbTab, installedEngines, fetchPgDatabases, fetchRedisInfo, fetchMongoDatabases, fetchDbVersion]);
 
   const handleCreate = async () => {
     try {
@@ -1204,9 +1255,9 @@ function DatabasesContent() {
               fontSize: 11, padding: '2px 9px', borderRadius: 4,
               background: `${p.accent}15`, color: p.accent, fontWeight: 500,
             }}>
-              {activeDbTab === 'mysql' ? `${filteredDatabases.length} databases` : activeDbTab === 'postgresql' ? `${filteredPgDatabases.length} databases` : 'Redis'}
+              {activeDbTab === 'mysql' ? `${filteredDatabases.length} databases` : activeDbTab === 'postgresql' ? `${filteredPgDatabases.length} databases` : activeDbTab === 'mongodb' ? `${mongoDatabases.length} databases` : 'Redis'}
             </span>
-            {dbVersion && activeDbTab !== 'redis' && (
+            {dbVersion && activeDbTab !== 'redis' && activeDbTab !== 'mongodb' && (
               <Popover
                 trigger="hover"
                 placement="bottom"
@@ -1248,7 +1299,7 @@ function DatabasesContent() {
               </Popover>
             )}
           </div>
-          {activeDbTab !== 'redis' && (
+          {activeDbTab !== 'redis' && activeDbTab !== 'mongodb' && (
             <button
               onClick={() => { form.setFieldsValue({ password: generatePassword(), db_type: activeDbTab === 'postgresql' ? 'postgresql' : (detectedDbType || 'mysql') }); setModalOpen(true); }}
               style={{
@@ -1271,6 +1322,7 @@ function DatabasesContent() {
           {([
             { key: 'mysql' as const, label: detectedDbType === 'mariadb' ? 'MariaDB' : 'MySQL', color: '#3E6D8E', engine: 'mysql' },
             { key: 'postgresql' as const, label: 'PostgreSQL', color: '#336791', engine: 'postgresql' },
+            { key: 'mongodb' as const, label: 'MongoDB', color: '#47A248', engine: 'mongodb' },
             { key: 'redis' as const, label: 'Redis', color: '#DC382D', engine: 'redis' },
           ] as const).map(tab => {
             const installed = installedEngines.has(tab.engine);
@@ -1692,6 +1744,391 @@ function DatabasesContent() {
                   ]}
                 />
               </div>
+            )}
+          </div>
+        )}
+
+        {/* MongoDB content */}
+        {activeDbTab === 'mongodb' && (
+          <div style={{ padding: 0 }}>
+            {/* MongoDB Toolbar */}
+            <div style={{
+              display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8,
+              padding: '10px 20px',
+              borderBottom: `1px solid ${p.cardBorder}`,
+            }}>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {(['databases', 'users'] as const).map(v => (
+                  <button key={v} onClick={() => setMongoView(v)} style={{
+                    padding: '4px 12px', borderRadius: 6,
+                    border: mongoView === v ? `1px solid #47A24840` : `1px solid ${p.cardBorder}`,
+                    background: mongoView === v ? '#47A24815' : 'transparent',
+                    color: mongoView === v ? '#47A248' : p.textMuted,
+                    fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                  }}>
+                    {v === 'databases' ? <><DatabaseOutlined /> Databases</> : <><TeamOutlined /> Users</>}
+                  </button>
+                ))}
+              </div>
+              <div style={{ flex: 1 }} />
+              {mongoStats?.version && (
+                <Popover
+                  trigger="hover"
+                  placement="bottom"
+                  arrow={false}
+                  overlayInnerStyle={{ padding: 0, background: p.card, border: `1px solid ${p.cardBorder}`, borderRadius: 8 }}
+                  content={
+                    <div style={{ display: 'flex', gap: 4, padding: '6px 8px' }}>
+                      {([
+                        { action: 'restart', icon: <SyncOutlined />, label: 'Restart', color: p.amber },
+                        { action: 'stop', icon: <PoweroffOutlined />, label: 'Stop', color: p.error },
+                        { action: 'start', icon: <PlayCircleOutlined />, label: 'Start', color: p.success },
+                      ] as const).map(btn => (
+                        <Tooltip key={btn.action} title={btn.label}>
+                          <button
+                            onClick={() => handleServiceAction(btn.action)}
+                            disabled={!!serviceActionLoading}
+                            style={{
+                              width: 30, height: 30, borderRadius: 6,
+                              border: `1px solid ${p.cardBorder}`, background: 'transparent',
+                              color: btn.color, cursor: 'pointer', display: 'inline-flex',
+                              alignItems: 'center', justifyContent: 'center', fontSize: 13,
+                            }}
+                          >
+                            {serviceActionLoading === btn.action ? <LoadingOutlined /> : btn.icon}
+                          </button>
+                        </Tooltip>
+                      ))}
+                    </div>
+                  }
+                >
+                  <span style={{
+                    fontSize: 11, padding: '2px 9px', borderRadius: 4,
+                    background: '#47A24815', color: '#47A248', fontWeight: 500,
+                    cursor: 'pointer', transition: 'all 0.15s',
+                  }}>
+                    v{mongoStats.version}
+                  </span>
+                </Popover>
+              )}
+              <button onClick={fetchMongoDatabases} style={{
+                padding: '4px 12px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+                background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+              }}>
+                <ReloadOutlined /> Refresh
+              </button>
+              {mongoView === 'databases' && (
+                <button onClick={() => setMongoCreateDbOpen(true)} style={{
+                  padding: '5px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                  background: '#47A248', color: '#fff', fontSize: 12, fontWeight: 500,
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                }}>
+                  <PlusOutlined /> Create Database
+                </button>
+              )}
+              {mongoView === 'users' && (
+                <button onClick={() => setMongoCreateUserOpen(true)} style={{
+                  padding: '5px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                  background: '#47A248', color: '#fff', fontSize: 12, fontWeight: 500,
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                }}>
+                  <PlusOutlined /> Create User
+                </button>
+              )}
+            </div>
+
+            {/* MongoDB Stats Overview */}
+            {mongoStats && (
+              <div style={{ padding: '12px 20px', borderBottom: `1px solid ${p.cardBorder}` }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
+                  {[
+                    { label: 'Storage Engine', value: mongoStats.storageEngine || '—', color: '#47A248' },
+                    { label: 'Uptime', value: mongoStats.uptime ? `${Math.floor(mongoStats.uptime / 3600)}h ${Math.floor((mongoStats.uptime % 3600) / 60)}m` : '—', color: '#336791' },
+                    { label: 'Connections', value: mongoStats.connections?.current?.toString() || '0', color: '#DC382D' },
+                    { label: 'Memory (Res)', value: mongoStats.mem?.resident ? `${mongoStats.mem.resident} MB` : '—', color: '#FF9800' },
+                    { label: 'Inserts', value: mongoStats.opcounters?.insert?.toLocaleString?.() || '0', color: '#4CAF50' },
+                    { label: 'Queries', value: mongoStats.opcounters?.query?.toLocaleString?.() || '0', color: '#2196F3' },
+                  ].map((stat, idx) => (
+                    <div key={idx} style={{
+                      padding: '8px 12px', borderRadius: 8,
+                      background: `${stat.color}08`, border: `1px solid ${stat.color}20`,
+                    }}>
+                      <div style={{ fontSize: 10, color: p.textMuted, marginBottom: 2 }}>{stat.label}</div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: stat.color }}>{stat.value}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {mongoLoading ? <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div> : (
+              <>
+                {/* Databases view */}
+                {mongoView === 'databases' && (
+                  <div style={{ padding: '0 20px 20px' }}>
+                    {/* Search */}
+                    <div style={{ padding: '12px 0 8px' }}>
+                      <Input
+                        prefix={<SearchOutlined style={{ color: p.textMuted }} />}
+                        placeholder="Search databases..."
+                        value={mongoSearchText}
+                        onChange={e => setMongoSearchText(e.target.value)}
+                        style={{ width: 260, borderRadius: 6 }}
+                        allowClear
+                      />
+                    </div>
+
+                    {/* Two-panel: DB list + collections */}
+                    <div style={{ display: 'flex', gap: 16, minHeight: 300 }}>
+                      {/* DB List */}
+                      <div style={{ flex: mongoSelectedDb ? '0 0 340px' : 1, transition: 'flex 0.2s' }}>
+                        <Table
+                          dataSource={mongoDatabases
+                            .filter(d => !mongoSearchText || d.name?.toLowerCase().includes(mongoSearchText.toLowerCase()))
+                          }
+                          rowKey="name"
+                          size="small"
+                          pagination={false}
+                          rowSelection={{
+                            selectedRowKeys: mongoSelectedRowKeys,
+                            onChange: keys => setMongoSelectedRowKeys(keys),
+                          }}
+                          onRow={record => ({
+                            onClick: () => {
+                              setMongoSelectedDb(record.name);
+                              fetchMongoCollections(record.name);
+                            },
+                            style: {
+                              cursor: 'pointer',
+                              background: mongoSelectedDb === record.name ? `${p.accent}08` : undefined,
+                            },
+                          })}
+                          columns={[
+                            {
+                              title: 'Database', dataIndex: 'name', key: 'name',
+                              render: (name: string) => (
+                                <span style={{ fontWeight: 500, color: p.text }}>
+                                  <DatabaseOutlined style={{ marginRight: 6, color: '#47A248' }} />{name}
+                                </span>
+                              ),
+                            },
+                            {
+                              title: 'Size', dataIndex: 'sizeOnDisk', key: 'size', width: 100,
+                              render: (size: number) => <span style={{ color: p.textMuted, fontSize: 12 }}>{formatSize(size || 0)}</span>,
+                            },
+                            {
+                              title: '', key: 'actions', width: 60, align: 'center' as const,
+                              render: (_: any, record: any) => (
+                                <Popconfirm
+                                  title={`Drop database "${record.name}"?`}
+                                  description="This action cannot be undone."
+                                  onConfirm={async (e) => {
+                                    e?.stopPropagation();
+                                    try {
+                                      await api.delete(`/software/mongodb/databases/${record.name}`);
+                                      message.success('Database dropped');
+                                      if (mongoSelectedDb === record.name) {
+                                        setMongoSelectedDb(null);
+                                        setMongoCollections([]);
+                                      }
+                                      fetchMongoDatabases();
+                                    } catch { message.error('Failed to drop database'); }
+                                  }}
+                                  onCancel={e => e?.stopPropagation()}
+                                >
+                                  <button onClick={e => e.stopPropagation()} style={{
+                                    background: 'transparent', border: 'none', cursor: 'pointer',
+                                    color: p.error, fontSize: 13, padding: '4px 6px', borderRadius: 4,
+                                  }}>
+                                    <DeleteOutlined />
+                                  </button>
+                                </Popconfirm>
+                              ),
+                            },
+                          ]}
+                        />
+                        {mongoSelectedRowKeys.length > 0 && (
+                          <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <span style={{ fontSize: 12, color: p.textMuted }}>{mongoSelectedRowKeys.length} selected</span>
+                            <Popconfirm
+                              title={`Drop ${mongoSelectedRowKeys.length} database(s)?`}
+                              onConfirm={async () => {
+                                for (const name of mongoSelectedRowKeys) {
+                                  try { await api.delete(`/software/mongodb/databases/${name}`); } catch { /* skip */ }
+                                }
+                                setMongoSelectedRowKeys([]);
+                                setMongoSelectedDb(null);
+                                setMongoCollections([]);
+                                fetchMongoDatabases();
+                                message.success('Databases dropped');
+                              }}
+                            >
+                              <button style={{
+                                padding: '3px 10px', borderRadius: 5, border: `1px solid ${p.error}40`,
+                                background: `${p.error}10`, color: p.error, fontSize: 11, cursor: 'pointer',
+                              }}>
+                                <DeleteOutlined /> Drop Selected
+                              </button>
+                            </Popconfirm>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Collections panel */}
+                      {mongoSelectedDb && (
+                        <div style={{
+                          flex: 1, borderLeft: `1px solid ${p.cardBorder}`, paddingLeft: 16,
+                          animation: 'fadeIn 0.2s',
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: p.text }}>
+                              <DatabaseOutlined style={{ color: '#47A248', marginRight: 6 }} />
+                              {mongoSelectedDb}
+                              <span style={{ fontSize: 11, color: p.textMuted, marginLeft: 8 }}>
+                                ({mongoCollections.length} collection{mongoCollections.length !== 1 ? 's' : ''})
+                              </span>
+                            </span>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <button onClick={() => fetchMongoCollections(mongoSelectedDb)} style={{
+                                padding: '3px 10px', borderRadius: 5, border: `1px solid ${p.cardBorder}`,
+                                background: 'transparent', color: p.textMuted, fontSize: 11, cursor: 'pointer',
+                              }}>
+                                <ReloadOutlined />
+                              </button>
+                              <button onClick={() => setMongoCreateCollOpen(true)} style={{
+                                padding: '3px 10px', borderRadius: 5, border: 'none',
+                                background: '#47A248', color: '#fff', fontSize: 11, cursor: 'pointer',
+                              }}>
+                                <PlusOutlined /> Collection
+                              </button>
+                              <button onClick={() => { setMongoSelectedDb(null); setMongoCollections([]); }} style={{
+                                padding: '3px 8px', borderRadius: 5, border: `1px solid ${p.cardBorder}`,
+                                background: 'transparent', color: p.textMuted, fontSize: 11, cursor: 'pointer',
+                              }}>
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+                          {mongoCollLoading ? <div style={{ textAlign: 'center', padding: 20 }}><Spin size="small" /></div> : (
+                            <Table
+                              dataSource={mongoCollections}
+                              rowKey="name"
+                              size="small"
+                              pagination={false}
+                              columns={[
+                                {
+                                  title: 'Collection', dataIndex: 'name', key: 'name',
+                                  render: (name: string, record: any) => (
+                                    <span style={{ fontWeight: 500, color: p.text, fontSize: 12 }}>
+                                      {name}
+                                      {record.type === 'view' && <span style={{ marginLeft: 6, fontSize: 10, color: p.amber }}>(view)</span>}
+                                    </span>
+                                  ),
+                                },
+                                {
+                                  title: 'Documents', dataIndex: 'count', key: 'count', width: 90,
+                                  render: (v: number) => <span style={{ color: p.textMuted, fontSize: 12 }}>{(v || 0).toLocaleString()}</span>,
+                                },
+                                {
+                                  title: 'Size', dataIndex: 'size', key: 'size', width: 90,
+                                  render: (v: number) => <span style={{ color: p.textMuted, fontSize: 12 }}>{formatSize(v || 0)}</span>,
+                                },
+                                {
+                                  title: 'Indexes', dataIndex: 'indexCount', key: 'indexCount', width: 70,
+                                  render: (v: number) => <span style={{ color: p.textMuted, fontSize: 12 }}>{v || 0}</span>,
+                                },
+                                {
+                                  title: '', key: 'actions', width: 50, align: 'center' as const,
+                                  render: (_: any, record: any) => (
+                                    <Popconfirm
+                                      title={`Drop collection "${record.name}"?`}
+                                      onConfirm={async () => {
+                                        try {
+                                          await api.delete(`/software/mongodb/databases/${mongoSelectedDb}/collections/${record.name}`);
+                                          message.success('Collection dropped');
+                                          fetchMongoCollections(mongoSelectedDb);
+                                          fetchMongoDatabases();
+                                        } catch { message.error('Failed to drop collection'); }
+                                      }}
+                                    >
+                                      <button style={{
+                                        background: 'transparent', border: 'none', cursor: 'pointer',
+                                        color: p.error, fontSize: 12,
+                                      }}>
+                                        <DeleteOutlined />
+                                      </button>
+                                    </Popconfirm>
+                                  ),
+                                },
+                              ]}
+                            />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Users view */}
+                {mongoView === 'users' && (
+                  <div style={{ padding: '12px 20px 20px' }}>
+                    <Table
+                      dataSource={mongoUsers}
+                      rowKey={(r: any) => `${r.db}/${r.user}`}
+                      size="small"
+                      pagination={false}
+                      columns={[
+                        {
+                          title: 'Username', dataIndex: 'user', key: 'user',
+                          render: (user: string) => <span style={{ fontWeight: 500, color: p.text }}><TeamOutlined style={{ marginRight: 6, color: '#47A248' }} />{user}</span>,
+                        },
+                        {
+                          title: 'Database', dataIndex: 'db', key: 'db',
+                          render: (db: string) => <span style={{ color: p.textMuted, fontSize: 12 }}>{db}</span>,
+                        },
+                        {
+                          title: 'Roles', dataIndex: 'roles', key: 'roles',
+                          render: (roles: any[]) => (
+                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                              {(roles || []).map((r: any, i: number) => (
+                                <span key={i} style={{
+                                  fontSize: 10, padding: '1px 6px', borderRadius: 4,
+                                  background: `#47A24815`, color: '#47A248', fontWeight: 500,
+                                }}>
+                                  {r.role}@{r.db}
+                                </span>
+                              ))}
+                            </div>
+                          ),
+                        },
+                        {
+                          title: '', key: 'actions', width: 50, align: 'center' as const,
+                          render: (_: any, record: any) => (
+                            <Popconfirm
+                              title={`Drop user "${record.user}" from "${record.db}"?`}
+                              onConfirm={async () => {
+                                try {
+                                  await api.delete(`/software/mongodb/users/${record.db}/${record.user}`);
+                                  message.success('User dropped');
+                                  fetchMongoDatabases();
+                                } catch { message.error('Failed to drop user'); }
+                              }}
+                            >
+                              <button style={{
+                                background: 'transparent', border: 'none', cursor: 'pointer',
+                                color: p.error, fontSize: 13,
+                              }}>
+                                <DeleteOutlined />
+                              </button>
+                            </Popconfirm>
+                          ),
+                        },
+                      ]}
+                    />
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
@@ -2197,6 +2634,128 @@ function DatabasesContent() {
 
       <PostgresqlManageModal open={pgManageOpen} onClose={() => setPgManageOpen(false)} />
       <PgAdminManageModal open={pgaManageOpen} onClose={() => setPgaManageOpen(false)} />
+
+      {/* MongoDB Create Database Modal */}
+      <Modal
+        title={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><DatabaseOutlined style={{ color: '#47A248' }} /> Create MongoDB Database</span>}
+        open={mongoCreateDbOpen}
+        onOk={async () => {
+          try {
+            const values = await mongoDbForm.validateFields();
+            setMongoSubmitting(true);
+            await api.post('/software/mongodb/databases', { name: values.name });
+            message.success('Database created');
+            setMongoCreateDbOpen(false);
+            mongoDbForm.resetFields();
+            fetchMongoDatabases();
+          } catch { message.error('Failed to create database'); }
+          finally { setMongoSubmitting(false); }
+        }}
+        onCancel={() => { setMongoCreateDbOpen(false); mongoDbForm.resetFields(); }}
+        confirmLoading={mongoSubmitting}
+        okText="Create"
+        cancelText="Cancel"
+        destroyOnHidden
+        width={420}
+      >
+        <Form form={mongoDbForm} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item name="name" label="Database Name" rules={[
+            { required: true, message: 'Database name is required' },
+            { pattern: /^[a-zA-Z_][a-zA-Z0-9_-]*$/, message: 'Invalid database name' },
+          ]}>
+            <Input placeholder="my_database" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* MongoDB Create Collection Modal */}
+      <Modal
+        title={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><DatabaseOutlined style={{ color: '#47A248' }} /> Create Collection in {mongoSelectedDb}</span>}
+        open={mongoCreateCollOpen}
+        onOk={async () => {
+          try {
+            const values = await mongoCollForm.validateFields();
+            setMongoSubmitting(true);
+            await api.post(`/software/mongodb/databases/${mongoSelectedDb}/collections`, { name: values.name });
+            message.success('Collection created');
+            setMongoCreateCollOpen(false);
+            mongoCollForm.resetFields();
+            if (mongoSelectedDb) fetchMongoCollections(mongoSelectedDb);
+            fetchMongoDatabases();
+          } catch { message.error('Failed to create collection'); }
+          finally { setMongoSubmitting(false); }
+        }}
+        onCancel={() => { setMongoCreateCollOpen(false); mongoCollForm.resetFields(); }}
+        confirmLoading={mongoSubmitting}
+        okText="Create"
+        cancelText="Cancel"
+        destroyOnHidden
+        width={420}
+      >
+        <Form form={mongoCollForm} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item name="name" label="Collection Name" rules={[
+            { required: true, message: 'Collection name is required' },
+            { pattern: /^[a-zA-Z_][a-zA-Z0-9_.-]*$/, message: 'Invalid collection name' },
+          ]}>
+            <Input placeholder="my_collection" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* MongoDB Create User Modal */}
+      <Modal
+        title={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><TeamOutlined style={{ color: '#47A248' }} /> Create MongoDB User</span>}
+        open={mongoCreateUserOpen}
+        onOk={async () => {
+          try {
+            const values = await mongoUserForm.validateFields();
+            setMongoSubmitting(true);
+            await api.post('/software/mongodb/users', {
+              database: values.database,
+              username: values.username,
+              password: values.password,
+              roles: [values.role || 'readWrite'],
+            });
+            message.success('User created');
+            setMongoCreateUserOpen(false);
+            mongoUserForm.resetFields();
+            fetchMongoDatabases();
+          } catch { message.error('Failed to create user'); }
+          finally { setMongoSubmitting(false); }
+        }}
+        onCancel={() => { setMongoCreateUserOpen(false); mongoUserForm.resetFields(); }}
+        confirmLoading={mongoSubmitting}
+        okText="Create"
+        cancelText="Cancel"
+        destroyOnHidden
+        width={480}
+      >
+        <Form form={mongoUserForm} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item name="database" label="Database" rules={[{ required: true }]}>
+            <Select
+              placeholder="Select database"
+              options={mongoDatabases.map(d => ({ value: d.name, label: d.name }))}
+            />
+          </Form.Item>
+          <Form.Item name="username" label="Username" rules={[{ required: true }]}>
+            <Input placeholder="username" />
+          </Form.Item>
+          <Form.Item name="password" label="Password" rules={[{ required: true, min: 6 }]}>
+            <Input.Password placeholder="password" />
+          </Form.Item>
+          <Form.Item name="role" label="Role" initialValue="readWrite">
+            <Select options={[
+              { value: 'readWrite', label: 'readWrite' },
+              { value: 'read', label: 'read (read only)' },
+              { value: 'dbAdmin', label: 'dbAdmin' },
+              { value: 'dbOwner', label: 'dbOwner' },
+              { value: 'userAdmin', label: 'userAdmin' },
+              { value: 'clusterAdmin', label: 'clusterAdmin' },
+              { value: 'root', label: 'root (superuser)' },
+            ]} />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }
@@ -2204,7 +2763,7 @@ function DatabasesContent() {
 export default function Databases() {
   const { t } = useTranslation();
   return (
-    <RequireSoftware softwareTypes={['database', 'cache']} label={t('databases.title') || 'Database Server (MySQL/MariaDB/PostgreSQL/Redis)'}>
+    <RequireSoftware softwareTypes={['database', 'cache']} label={t('databases.title') || 'Database Server (MySQL/MariaDB/PostgreSQL/MongoDB/Redis)'}>
       <DatabasesContent />
     </RequireSoftware>
   );

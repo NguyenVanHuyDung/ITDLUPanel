@@ -73,6 +73,18 @@ func (h *SoftwareHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gi
 		sw.GET("/postgresql/connections", h.getPostgreSQLConnections)
 		sw.GET("/postgresql/databases", h.getPostgreSQLDatabases)
 
+		// MongoDB management
+		sw.GET("/mongodb/databases", h.getMongoDBDatabases)
+		sw.POST("/mongodb/databases", h.createMongoDBDatabase)
+		sw.DELETE("/mongodb/databases/:dbname", h.dropMongoDBDatabase)
+		sw.GET("/mongodb/databases/:dbname/collections", h.getMongoDBCollections)
+		sw.POST("/mongodb/databases/:dbname/collections", h.createMongoDBCollection)
+		sw.DELETE("/mongodb/databases/:dbname/collections/:collname", h.dropMongoDBCollection)
+		sw.GET("/mongodb/stats", h.getMongoDBStats)
+		sw.GET("/mongodb/users", h.getMongoDBUsers)
+		sw.POST("/mongodb/users", h.createMongoDBUser)
+		sw.DELETE("/mongodb/users/:dbname/:username", h.dropMongoDBUser)
+
 		// PHP management
 		sw.GET("/php/:version/extensions", h.getPHPExtensions)
 		sw.POST("/php/:version/extensions/install", h.installPHPExtension)
@@ -983,4 +995,128 @@ func (h *SoftwareHandler) getPostgreSQLDatabases(c *gin.Context) {
 		return
 	}
 	response.Success(c, databases)
+}
+
+// --------------- MongoDB API Handlers ---------------
+
+func (h *SoftwareHandler) getMongoDBDatabases(c *gin.Context) {
+	databases, err := h.softwareService.GetMongoDBDatabases()
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get MongoDB databases"))
+		return
+	}
+	response.Success(c, databases)
+}
+
+func (h *SoftwareHandler) createMongoDBDatabase(c *gin.Context) {
+	var req struct {
+		Name string `json:"name" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "name is required"))
+		return
+	}
+	if err := h.softwareService.CreateMongoDBDatabase(req.Name); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create MongoDB database"))
+		return
+	}
+	response.Success(c, gin.H{"message": "database created"})
+}
+
+func (h *SoftwareHandler) dropMongoDBDatabase(c *gin.Context) {
+	dbName := c.Param("dbname")
+	if dbName == "" {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "database name is required"))
+		return
+	}
+	if err := h.softwareService.DropMongoDBDatabase(dbName); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to drop MongoDB database"))
+		return
+	}
+	response.Success(c, gin.H{"message": "database dropped"})
+}
+
+func (h *SoftwareHandler) getMongoDBCollections(c *gin.Context) {
+	dbName := c.Param("dbname")
+	collections, err := h.softwareService.GetMongoDBCollections(dbName)
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get collections"))
+		return
+	}
+	response.Success(c, collections)
+}
+
+func (h *SoftwareHandler) createMongoDBCollection(c *gin.Context) {
+	dbName := c.Param("dbname")
+	var req struct {
+		Name string `json:"name" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "collection name is required"))
+		return
+	}
+	if err := h.softwareService.CreateMongoDBCollection(dbName, req.Name); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create collection"))
+		return
+	}
+	response.Success(c, gin.H{"message": "collection created"})
+}
+
+func (h *SoftwareHandler) dropMongoDBCollection(c *gin.Context) {
+	dbName := c.Param("dbname")
+	collName := c.Param("collname")
+	if err := h.softwareService.DropMongoDBCollection(dbName, collName); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to drop collection"))
+		return
+	}
+	response.Success(c, gin.H{"message": "collection dropped"})
+}
+
+func (h *SoftwareHandler) getMongoDBStats(c *gin.Context) {
+	stats, err := h.softwareService.GetMongoDBStats()
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get MongoDB stats"))
+		return
+	}
+	response.Success(c, stats)
+}
+
+func (h *SoftwareHandler) getMongoDBUsers(c *gin.Context) {
+	users, err := h.softwareService.GetMongoDBUsers()
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get MongoDB users"))
+		return
+	}
+	response.Success(c, users)
+}
+
+func (h *SoftwareHandler) createMongoDBUser(c *gin.Context) {
+	var req struct {
+		Database string   `json:"database" binding:"required"`
+		Username string   `json:"username" binding:"required"`
+		Password string   `json:"password" binding:"required"`
+		Roles    []string `json:"roles"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "database, username and password are required"))
+		return
+	}
+	if len(req.Roles) == 0 {
+		req.Roles = []string{"readWrite"}
+	}
+	if err := h.softwareService.CreateMongoDBUser(req.Database, req.Username, req.Password, req.Roles); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create MongoDB user"))
+		return
+	}
+	response.Success(c, gin.H{"message": "user created"})
+}
+
+func (h *SoftwareHandler) dropMongoDBUser(c *gin.Context) {
+	dbName := c.Param("dbname")
+	username := c.Param("username")
+	if err := h.softwareService.DropMongoDBUser(dbName, username); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to drop MongoDB user"))
+		return
+	}
+	response.Success(c, gin.H{"message": "user dropped"})
 }

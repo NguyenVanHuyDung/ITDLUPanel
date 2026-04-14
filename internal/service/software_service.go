@@ -4055,3 +4055,217 @@ func safeIndex(parts []string, idx int) string {
 	}
 	return ""
 }
+
+// --------------- MongoDB Management ---------------
+
+// GetMongoDBDatabases returns all MongoDB databases with stats.
+func (s *SoftwareService) GetMongoDBDatabases() ([]map[string]interface{}, error) {
+	ctx := context.Background()
+	// Use mongosh to list databases as JSON
+	script := `db.adminCommand({listDatabases: 1}).databases.forEach(function(d) {
+		print(JSON.stringify({name: d.name, sizeOnDisk: d.sizeOnDisk, empty: d.empty}));
+	})`
+	result, err := system.Exec(ctx, "mongosh", "--quiet", "--eval", script)
+	if err != nil {
+		// Fallback: try legacy mongo shell
+		result, err = system.Exec(ctx, "mongo", "--quiet", "--eval", script)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list MongoDB databases: %w", err)
+		}
+	}
+
+	var databases []map[string]interface{}
+	for _, line := range strings.Split(strings.TrimSpace(result.Stdout), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.HasPrefix(line, "{") {
+			continue
+		}
+		var db map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &db); err == nil {
+			databases = append(databases, db)
+		}
+	}
+	return databases, nil
+}
+
+// GetMongoDBCollections returns all collections in a database.
+func (s *SoftwareService) GetMongoDBCollections(dbName string) ([]map[string]interface{}, error) {
+	ctx := context.Background()
+	script := fmt.Sprintf(`db.getSiblingDB("%s").getCollectionInfos().forEach(function(c) {
+		var stats = db.getSiblingDB("%s").getCollection(c.name).stats();
+		print(JSON.stringify({name: c.name, type: c.type, count: stats.count || 0, size: stats.size || 0, storageSize: stats.storageSize || 0, indexCount: stats.nindexes || 0}));
+	})`, dbName, dbName)
+	result, err := system.Exec(ctx, "mongosh", "--quiet", "--eval", script)
+	if err != nil {
+		result, err = system.Exec(ctx, "mongo", "--quiet", "--eval", script)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list collections: %w", err)
+		}
+	}
+
+	var collections []map[string]interface{}
+	for _, line := range strings.Split(strings.TrimSpace(result.Stdout), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.HasPrefix(line, "{") {
+			continue
+		}
+		var col map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &col); err == nil {
+			collections = append(collections, col)
+		}
+	}
+	return collections, nil
+}
+
+// CreateMongoDBDatabase creates a MongoDB database by inserting a placeholder document into an init collection.
+func (s *SoftwareService) CreateMongoDBDatabase(dbName string) error {
+	ctx := context.Background()
+	script := fmt.Sprintf(`db.getSiblingDB("%s").createCollection("_init")`, dbName)
+	_, err := system.Exec(ctx, "mongosh", "--quiet", "--eval", script)
+	if err != nil {
+		_, err = system.Exec(ctx, "mongo", "--quiet", "--eval", script)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to create MongoDB database: %w", err)
+	}
+	return nil
+}
+
+// DropMongoDBDatabase drops a MongoDB database.
+func (s *SoftwareService) DropMongoDBDatabase(dbName string) error {
+	ctx := context.Background()
+	script := fmt.Sprintf(`db.getSiblingDB("%s").dropDatabase()`, dbName)
+	_, err := system.Exec(ctx, "mongosh", "--quiet", "--eval", script)
+	if err != nil {
+		_, err = system.Exec(ctx, "mongo", "--quiet", "--eval", script)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to drop MongoDB database: %w", err)
+	}
+	return nil
+}
+
+// CreateMongoDBCollection creates a collection in a database.
+func (s *SoftwareService) CreateMongoDBCollection(dbName, collName string) error {
+	ctx := context.Background()
+	script := fmt.Sprintf(`db.getSiblingDB("%s").createCollection("%s")`, dbName, collName)
+	_, err := system.Exec(ctx, "mongosh", "--quiet", "--eval", script)
+	if err != nil {
+		_, err = system.Exec(ctx, "mongo", "--quiet", "--eval", script)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to create collection: %w", err)
+	}
+	return nil
+}
+
+// DropMongoDBCollection drops a collection from a database.
+func (s *SoftwareService) DropMongoDBCollection(dbName, collName string) error {
+	ctx := context.Background()
+	script := fmt.Sprintf(`db.getSiblingDB("%s").getCollection("%s").drop()`, dbName, collName)
+	_, err := system.Exec(ctx, "mongosh", "--quiet", "--eval", script)
+	if err != nil {
+		_, err = system.Exec(ctx, "mongo", "--quiet", "--eval", script)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to drop collection: %w", err)
+	}
+	return nil
+}
+
+// GetMongoDBStats returns server status info.
+func (s *SoftwareService) GetMongoDBStats() (map[string]interface{}, error) {
+	ctx := context.Background()
+	script := `var s = db.serverStatus(); print(JSON.stringify({
+		version: s.version,
+		uptime: s.uptime,
+		connections: {current: s.connections.current, available: s.connections.available, totalCreated: s.connections.totalCreated},
+		opcounters: s.opcounters,
+		mem: {resident: s.mem.resident, virtual: s.mem.virtual},
+		storageEngine: s.storageEngine ? s.storageEngine.name : "unknown"
+	}))`
+	result, err := system.Exec(ctx, "mongosh", "--quiet", "--eval", script)
+	if err != nil {
+		result, err = system.Exec(ctx, "mongo", "--quiet", "--eval", script)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get MongoDB stats: %w", err)
+		}
+	}
+
+	// Find the JSON line
+	for _, line := range strings.Split(strings.TrimSpace(result.Stdout), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "{") {
+			var stats map[string]interface{}
+			if err := json.Unmarshal([]byte(line), &stats); err == nil {
+				return stats, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("failed to parse MongoDB stats")
+}
+
+// CreateMongoDBUser creates a MongoDB user in a specific database.
+func (s *SoftwareService) CreateMongoDBUser(dbName, username, password string, roles []string) error {
+	ctx := context.Background()
+	rolesJSON := "["
+	for i, role := range roles {
+		if i > 0 {
+			rolesJSON += ","
+		}
+		rolesJSON += fmt.Sprintf(`{role:"%s",db:"%s"}`, role, dbName)
+	}
+	rolesJSON += "]"
+
+	script := fmt.Sprintf(`db.getSiblingDB("%s").createUser({user:"%s",pwd:"%s",roles:%s})`, dbName, username, password, rolesJSON)
+	_, err := system.Exec(ctx, "mongosh", "--quiet", "--eval", script)
+	if err != nil {
+		_, err = system.Exec(ctx, "mongo", "--quiet", "--eval", script)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to create MongoDB user: %w", err)
+	}
+	return nil
+}
+
+// DropMongoDBUser drops a user from a database.
+func (s *SoftwareService) DropMongoDBUser(dbName, username string) error {
+	ctx := context.Background()
+	script := fmt.Sprintf(`db.getSiblingDB("%s").dropUser("%s")`, dbName, username)
+	_, err := system.Exec(ctx, "mongosh", "--quiet", "--eval", script)
+	if err != nil {
+		_, err = system.Exec(ctx, "mongo", "--quiet", "--eval", script)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to drop MongoDB user: %w", err)
+	}
+	return nil
+}
+
+// GetMongoDBUsers lists all users across all databases.
+func (s *SoftwareService) GetMongoDBUsers() ([]map[string]interface{}, error) {
+	ctx := context.Background()
+	script := `db.getSiblingDB("admin").system.users.find({}).forEach(function(u) {
+		print(JSON.stringify({user: u.user, db: u.db, roles: u.roles}));
+	})`
+	result, err := system.Exec(ctx, "mongosh", "--quiet", "--eval", script)
+	if err != nil {
+		result, err = system.Exec(ctx, "mongo", "--quiet", "--eval", script)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list MongoDB users: %w", err)
+		}
+	}
+
+	var users []map[string]interface{}
+	for _, line := range strings.Split(strings.TrimSpace(result.Stdout), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.HasPrefix(line, "{") {
+			continue
+		}
+		var u map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &u); err == nil {
+			users = append(users, u)
+		}
+	}
+	return users, nil
+}
