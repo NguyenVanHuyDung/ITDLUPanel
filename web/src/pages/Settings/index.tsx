@@ -3,7 +3,7 @@ import { Form, Input, Select, Upload, Spin, InputNumber, message } from 'antd';
 import {
   SettingOutlined, SafetyCertificateOutlined,
   WarningOutlined, UploadOutlined, ReloadOutlined,
-  CheckCircleOutlined, CloseCircleOutlined,
+  CheckCircleOutlined, CloseCircleOutlined, DeleteOutlined,
   LockOutlined, CopyOutlined, BellOutlined,
   MenuOutlined, EyeOutlined, EyeInvisibleOutlined,
   DashboardOutlined, GlobalOutlined, DatabaseOutlined,
@@ -99,6 +99,18 @@ interface SSLInfo {
   domain?: string;
 }
 
+interface DomainCert {
+  domain: string;
+  ssl_name?: string;
+  issuer?: string;
+  issuer_cn?: string;
+  valid_from?: string;
+  valid_until?: string;
+  ssl_type?: string;
+  auto_renew?: boolean;
+  dns_names?: string[];
+}
+
 interface PanelInfo {
   version: string;
   uptime: string;
@@ -130,6 +142,8 @@ export default function Settings() {
   const [saveLoading, setSaveLoading] = useState(false);
   const [sslInfo, setSSLInfo] = useState<SSLInfo | null>(null);
   const [sslLoading, setSSLLoading] = useState(false);
+  const [domainCerts, setDomainCerts] = useState<DomainCert[]>([]);
+  const [domainCertsLoading, setDomainCertsLoading] = useState(false);
   const [panelInfo, setPanelInfo] = useState<PanelInfo | null>(null);
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
   const [infoLoading, setInfoLoading] = useState(false);
@@ -188,6 +202,28 @@ export default function Settings() {
     }
   }, []);
 
+  const fetchDomainCerts = useCallback(async () => {
+    setDomainCertsLoading(true);
+    try {
+      const { data } = await api.get<ApiResponse<DomainCert[]>>('/ssl/certificates');
+      setDomainCerts(data.data || []);
+    } catch {
+      setDomainCerts([]);
+    } finally {
+      setDomainCertsLoading(false);
+    }
+  }, []);
+
+  const handleDeleteCert = async (domain: string) => {
+    try {
+      await api.delete(`/ssl/certificates/${encodeURIComponent(domain)}`);
+      message.success(`Certificate for ${domain} deleted`);
+      fetchDomainCerts();
+    } catch {
+      message.error('Failed to delete certificate');
+    }
+  };
+
   const fetchPanelInfo = useCallback(async () => {
     setInfoLoading(true);
     try {
@@ -224,6 +260,7 @@ export default function Settings() {
   useEffect(() => {
     fetchSettings();
     fetchSSLInfo();
+    fetchDomainCerts();
     fetchPanelInfo();
     fetchServerInfo();
     fetchTimezones();
@@ -646,6 +683,70 @@ export default function Settings() {
             </button>
           </Upload>
         </div>
+      </div>
+
+      {/* ─── Domain Certificates ─── */}
+      <div style={{ ...sectionBox, marginTop: 16 }}>
+        {sectionTitle(<SafetyCertificateOutlined style={{ fontSize: 20, color: p.accent }} />, 'Domain Certificates')}
+        <Spin spinning={domainCertsLoading}>
+          {domainCerts.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '24px 0', color: p.textMuted, fontSize: 13 }}>
+              No domain certificates found
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {domainCerts.map((cert) => {
+                const isExpired = cert.valid_until ? new Date(cert.valid_until) < new Date() : false;
+                return (
+                  <div key={cert.domain} style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '10px 14px', borderRadius: 8,
+                    background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                    border: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`,
+                  }}>
+                    <SafetyCertificateOutlined style={{ fontSize: 18, color: isExpired ? p.red : p.green, flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: p.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {cert.domain}
+                      </div>
+                      <div style={{ fontSize: 11, color: p.textMuted, display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 2 }}>
+                        {cert.ssl_type && <span>{cert.ssl_type === 'custom' ? 'Custom' : cert.ssl_type === 'letsencrypt' ? "Let's Encrypt" : cert.ssl_type}</span>}
+                        {cert.issuer && <span>Issuer: {cert.issuer}</span>}
+                        {cert.valid_until && <span style={{ color: isExpired ? p.red : undefined }}>Expires: {cert.valid_until}</span>}
+                      </div>
+                      {cert.dns_names && cert.dns_names.length > 0 && (
+                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
+                          {cert.dns_names.map((name, i) => (
+                            <span key={i} style={{
+                              fontSize: 10, padding: '0 6px', borderRadius: 3,
+                              background: `${p.accent}10`, color: p.accent, fontFamily: 'monospace',
+                            }}>
+                              {name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (window.confirm(`Delete certificate for "${cert.domain}"?`)) {
+                          handleDeleteCert(cert.domain);
+                        }
+                      }}
+                      style={{
+                        ...btnOutline, padding: '4px 10px', color: p.red,
+                        borderColor: `${p.red}40`, flexShrink: 0,
+                      }}
+                      title="Delete certificate"
+                    >
+                      <DeleteOutlined />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Spin>
       </div>
     </Spin>
   );
