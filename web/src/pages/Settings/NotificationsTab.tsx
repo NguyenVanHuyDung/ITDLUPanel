@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Form, Input, InputNumber, Select, Switch, Button, Table, Modal,
-  Space, Tag, Tooltip, Popconfirm, Spin, message, Badge, Empty, Typography,
+  Form, Input, InputNumber, Select, Switch, Modal,
+  Spin, message,
 } from 'antd';
 import {
   MailOutlined, SendOutlined, PlusOutlined, DeleteOutlined,
@@ -17,7 +17,6 @@ import { useNotificationStore } from '@/stores/notification';
 import type { NotificationChannel } from '@/stores/notification';
 
 const { TextArea } = Input;
-const { Text } = Typography;
 
 /* ------------------------------------------------------------------ */
 /*  Event type labels, categories & severity colors                    */
@@ -47,18 +46,17 @@ interface EventCategory {
   key: string;
   label: string;
   icon: string;
-  gradient: [string, string];
   events: string[];
 }
 
 const EVENT_CATEGORIES: EventCategory[] = [
-  { key: 'cron',     label: 'Scheduled Tasks',    icon: '🕐', gradient: ['#667eea', '#764ba2'], events: ['cron_success', 'cron_failed'] },
-  { key: 'ssl',      label: 'SSL Certificates',   icon: '🔐', gradient: ['#f093fb', '#f5576c'], events: ['ssl_expiry_warning', 'ssl_expired'] },
-  { key: 'backup',   label: 'Backups',             icon: '💾', gradient: ['#4facfe', '#00f2fe'], events: ['backup_completed', 'backup_failed'] },
-  { key: 'software', label: 'Software',            icon: '📦', gradient: ['#43e97b', '#38f9d7'], events: ['software_installed', 'software_install_failed'] },
-  { key: 'sites',    label: 'Websites',            icon: '🌐', gradient: ['#a18cd1', '#fbc2eb'], events: ['site_created', 'site_deleted'] },
-  { key: 'system',   label: 'System Resources',    icon: '📊', gradient: ['#fccb90', '#d57eeb'], events: ['cpu_high', 'memory_high', 'disk_high'] },
-  { key: 'security', label: 'Security',            icon: '🛡️', gradient: ['#ff9a9e', '#fecfef'], events: ['service_down', 'login_failed'] },
+  { key: 'cron',     label: 'Scheduled Tasks',    icon: '🕐', events: ['cron_success', 'cron_failed'] },
+  { key: 'ssl',      label: 'SSL Certificates',   icon: '🔐', events: ['ssl_expiry_warning', 'ssl_expired'] },
+  { key: 'backup',   label: 'Backups',             icon: '💾', events: ['backup_completed', 'backup_failed'] },
+  { key: 'software', label: 'Software',            icon: '📦', events: ['software_installed', 'software_install_failed'] },
+  { key: 'sites',    label: 'Websites',            icon: '🌐', events: ['site_created', 'site_deleted'] },
+  { key: 'system',   label: 'System Resources',    icon: '📊', events: ['cpu_high', 'memory_high', 'disk_high'] },
+  { key: 'security', label: 'Security',            icon: '🛡️', events: ['service_down', 'login_failed'] },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -87,6 +85,7 @@ export default function NotificationsTab() {
   const [testingEvent, setTestingEvent] = useState<string | null>(null);
   const [section, setSection] = useState<'channels' | 'rules' | 'logs'>('channels');
   const [activeRuleChannel, setActiveRuleChannel] = useState<number | null>(null); // kept for potential future use
+  const [logPage, setLogPage] = useState(1);
 
   // Template editor state
   const [tplModal, setTplModal] = useState(false);
@@ -113,18 +112,44 @@ export default function NotificationsTab() {
 
   /* ---------- Styles ---------- */
   const sectionBox: React.CSSProperties = {
-    borderRadius: 12,
-    background: isDark ? p.card : '#fff',
+    maxWidth: 'none', borderRadius: 10,
+    background: isDark ? p.rowAlt : p.headerBg,
     border: `1px solid ${p.cardBorder}`,
-    padding: isMobile ? 14 : 20,
+    padding: isMobile ? 16 : 28,
     marginBottom: 16,
-    boxShadow: isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.04)',
   };
 
-  const sectionTitle = (icon: React.ReactNode, title: string) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-      {icon}
-      <span style={{ fontSize: 16, fontWeight: 600, color: p.text }}>{title}</span>
+  const btnPrimary: React.CSSProperties = {
+    padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
+    background: p.accent, color: '#fff', fontSize: 12, fontWeight: 500,
+    transition: 'opacity 0.15s', display: 'inline-flex', alignItems: 'center', gap: 6,
+  };
+
+  const btnOutline: React.CSSProperties = {
+    padding: '6px 16px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+    background: 'transparent', color: p.text, fontSize: 12, fontWeight: 500, cursor: 'pointer',
+    display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+  };
+
+  const btnDanger: React.CSSProperties = {
+    padding: '6px 16px', borderRadius: 6, border: `1px solid ${p.red}`,
+    background: 'transparent', color: p.red, fontSize: 12, fontWeight: 500,
+    cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
+    transition: 'all 0.15s',
+  };
+
+  const sevColor = (color: string): string => {
+    const map: Record<string, string> = { green: p.green, red: p.red, orange: p.amber, blue: p.accent, default: p.textMuted };
+    return map[color] ?? p.textMuted;
+  };
+
+  const sectionTitle = (icon: React.ReactNode, title: string, extra?: React.ReactNode) => (
+    <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', color: p.accent }}>{icon}</div>
+        <span style={{ fontSize: 16, fontWeight: 600, color: p.text }}>{title}</span>
+      </div>
+      {extra}
     </div>
   );
 
@@ -349,42 +374,31 @@ export default function NotificationsTab() {
     const emailIcon = (
       <div style={{
         width: 44, height: 44, borderRadius: 12,
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        background: `${p.accent}15`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        boxShadow: '0 4px 12px rgba(102,126,234,0.3)',
       }}>
-        <MailOutlined style={{ fontSize: 22, color: '#fff' }} />
+        <MailOutlined style={{ fontSize: 22, color: p.accent }} />
       </div>
     );
     const telegramIcon = (
       <div style={{
         width: 44, height: 44, borderRadius: 12,
-        background: 'linear-gradient(135deg, #0088cc 0%, #00b4d8 100%)',
+        background: `${p.accent}15`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        boxShadow: '0 4px 12px rgba(0,136,204,0.3)',
       }}>
-        <SendOutlined style={{ fontSize: 22, color: '#fff' }} />
+        <SendOutlined style={{ fontSize: 22, color: p.accent }} />
       </div>
     );
 
     return (
       <div style={sectionBox}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <BellOutlined style={{ fontSize: 18, color: p.accent }} />
-            <span style={{ fontSize: 17, fontWeight: 700, color: p.text }}>Notification Channels</span>
-            {channels.length > 0 && (
-              <span style={{
-                fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10,
-                background: `${p.accent}18`, color: p.accent,
-              }}>{channels.length}</span>
-            )}
-          </div>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openNewChannel}
-            style={{ borderRadius: 8, fontWeight: 600, height: 36, boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
-            Add Channel
-          </Button>
-        </div>
+        {sectionTitle(
+          <BellOutlined />,
+          'Notification Channels',
+          <button style={btnPrimary} onClick={openNewChannel}>
+            <PlusOutlined /> Add Channel
+          </button>
+        )}
 
         {channels.length === 0 ? (
           <div style={{
@@ -395,9 +409,9 @@ export default function NotificationsTab() {
             <BellOutlined style={{ fontSize: 40, color: p.textDim, marginBottom: 12 }} />
             <div style={{ fontSize: 15, fontWeight: 600, color: p.text, marginBottom: 4 }}>No channels configured</div>
             <div style={{ fontSize: 13, color: p.textMuted, marginBottom: 16 }}>Add an Email or Telegram channel to start receiving notifications</div>
-            <Button type="primary" icon={<PlusOutlined />} onClick={openNewChannel} style={{ borderRadius: 8 }}>
-              Add Your First Channel
-            </Button>
+            <button style={btnPrimary} onClick={openNewChannel}>
+              <PlusOutlined /> Add Your First Channel
+            </button>
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(380px, 1fr))', gap: 14 }}>
@@ -406,19 +420,12 @@ export default function NotificationsTab() {
               const isEmail = ch.type === 'email';
               return (
                 <div key={ch.id} style={{
-                  borderRadius: 12, overflow: 'hidden',
-                  background: isDark ? p.card : '#fff',
-                  border: `1px solid ${ch.is_enabled ? (isEmail ? '#667eea30' : '#0088cc30') : p.cardBorder}`,
-                  boxShadow: isDark ? 'none' : '0 2px 8px rgba(0,0,0,0.04)',
+                  borderRadius: 10, overflow: 'hidden',
+                  background: isDark ? p.rowAlt : p.headerBg,
+                  border: `1px solid ${p.cardBorder}`,
+                  borderLeft: ch.is_enabled ? `3px solid ${p.accent}` : `1px solid ${p.cardBorder}`,
                   transition: 'all 0.2s',
                 }}>
-                  {/* Top accent bar */}
-                  <div style={{
-                    height: 3,
-                    background: ch.is_enabled
-                      ? (isEmail ? 'linear-gradient(90deg, #667eea, #764ba2)' : 'linear-gradient(90deg, #0088cc, #00b4d8)')
-                      : p.cardBorder,
-                  }} />
 
                   <div style={{ padding: '16px 18px' }}>
                     {/* Header: icon + name + status */}
@@ -481,32 +488,24 @@ export default function NotificationsTab() {
 
                     {/* Action buttons */}
                     <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                      <Tooltip title="Send test notification">
-                        <Button
-                          size="small"
-                          icon={<ExperimentOutlined />}
-                          loading={testing === ch.id}
-                          onClick={() => handleTestChannel(ch.id)}
-                          style={{
-                            borderRadius: 8, fontWeight: 600, fontSize: 12, height: 32,
-                            borderColor: p.accent, color: p.accent,
-                          }}
-                        >
-                          Test
-                        </Button>
-                      </Tooltip>
-                      <Tooltip title="Edit channel settings">
-                        <Button size="small" icon={<EditOutlined />} onClick={() => openEditChannel(ch)}
-                          style={{ borderRadius: 8, height: 32 }}
-                        >
-                          Edit
-                        </Button>
-                      </Tooltip>
-                      <Popconfirm title="Delete this channel?" description="All rules for this channel will also be removed." onConfirm={() => handleDeleteChannel(ch.id)}>
-                        <Button size="small" danger icon={<DeleteOutlined />} style={{ borderRadius: 8, height: 32 }}>
-                          Delete
-                        </Button>
-                      </Popconfirm>
+                      <button
+                        title="Send test notification"
+                        style={btnOutline}
+                        onClick={() => handleTestChannel(ch.id)}
+                        disabled={testing === ch.id}
+                      >
+                        <ExperimentOutlined /> {testing === ch.id ? 'Testing…' : 'Test'}
+                      </button>
+                      <button title="Edit channel settings" style={btnOutline} onClick={() => openEditChannel(ch)}>
+                        <EditOutlined /> Edit
+                      </button>
+                      <button
+                        title="Delete this channel and all its rules"
+                        style={btnDanger}
+                        onClick={() => { if (window.confirm('Delete this channel? All rules for this channel will also be removed.')) handleDeleteChannel(ch.id); }}
+                      >
+                        <DeleteOutlined /> Delete
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -528,6 +527,7 @@ export default function NotificationsTab() {
         footer={null}
         destroyOnClose
         width={480}
+        styles={{ content: { background: isDark ? p.card : '#fff' } }}
       >
         <Form form={form} layout="vertical" onFinish={handleSaveChannel}>
           <Form.Item name="name" label="Name" rules={[{ required: true }]}>
@@ -594,14 +594,14 @@ export default function NotificationsTab() {
           )}
 
           <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
-            <Space>
-              <Button onClick={() => { setChannelModal(false); setEditingChannel(null); }}>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button style={btnOutline} type="button" onClick={() => { setChannelModal(false); setEditingChannel(null); }}>
                 Cancel
-              </Button>
-              <Button type="primary" htmlType="submit">
+              </button>
+              <button style={btnPrimary} type="submit">
                 {editingChannel ? 'Update' : 'Create'}
-              </Button>
-            </Space>
+              </button>
+            </div>
           </Form.Item>
         </Form>
       </Modal>
@@ -672,7 +672,9 @@ export default function NotificationsTab() {
         {sectionTitle(<BellOutlined style={{ color: p.accent }} />, 'Event Rules')}
 
         {activeChannels.length === 0 ? (
-          <Empty description="Create and enable a channel first" />
+          <div style={{ textAlign: 'center', padding: '32px 20px', color: p.textMuted, fontSize: 13 }}>
+            Create and enable a channel first
+          </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             {/* ---- Matrix table ---- */}
@@ -719,20 +721,16 @@ export default function NotificationsTab() {
                         </span>
                         {/* Column toggle all */}
                         <div style={{ display: 'flex', gap: 2 }}>
-                          <Tooltip title="Enable all">
-                            <Button
-                              size="small" type="text"
-                              onClick={() => toggleAllForChannel(ch.id, true)}
-                              style={{ fontSize: 10, padding: '0 4px', height: 20, color: p.green }}
-                            >All</Button>
-                          </Tooltip>
-                          <Tooltip title="Disable all">
-                            <Button
-                              size="small" type="text"
-                              onClick={() => toggleAllForChannel(ch.id, false)}
-                              style={{ fontSize: 10, padding: '0 4px', height: 20, color: p.textMuted }}
-                            >None</Button>
-                          </Tooltip>
+                          <button
+                            title="Enable all"
+                            onClick={() => toggleAllForChannel(ch.id, true)}
+                            style={{ fontSize: 10, padding: '0 4px', height: 20, color: p.green, background: 'transparent', border: 'none', cursor: 'pointer' }}
+                          >All</button>
+                          <button
+                            title="Disable all"
+                            onClick={() => toggleAllForChannel(ch.id, false)}
+                            style={{ fontSize: 10, padding: '0 4px', height: 20, color: p.textMuted, background: 'transparent', border: 'none', cursor: 'pointer' }}
+                          >None</button>
                         </div>
                       </div>
                     </th>
@@ -759,9 +757,7 @@ export default function NotificationsTab() {
                         colSpan={activeChannels.length + (activeChannels.length > 1 ? 2 : 1)}
                         style={{
                           padding: '10px 12px 6px',
-                          background: isDark
-                            ? `linear-gradient(135deg, ${cat.gradient[0]}12, ${cat.gradient[1]}08)`
-                            : `linear-gradient(135deg, ${cat.gradient[0]}0a, ${cat.gradient[1]}06)`,
+                          background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
                           borderTop: `1px solid ${p.cardBorder}`,
                         }}
                       >
@@ -855,18 +851,18 @@ export default function NotificationsTab() {
                                         color: p.green,
                                       }}>TPL</span>
                                     )}
-                                    <Tooltip title="Edit template">
+                                    <span title="Edit template">
                                       <FormOutlined
                                         style={{ fontSize: 11, color: customized ? p.green : p.textMuted, cursor: 'pointer' }}
                                         onClick={() => openTemplateEditor(ch.id, ev)}
                                       />
-                                    </Tooltip>
-                                    <Tooltip title={`Test "${info.label}" → ${ch.name}`}>
+                                    </span>
+                                    <span title={`Test "${info.label}" → ${ch.name}`}>
                                       <ExperimentOutlined
                                         style={{ fontSize: 11, color: p.accent, cursor: 'pointer', opacity: testingEvent === testKey ? 0.5 : 1 }}
                                         onClick={() => handleTestEvent(ch.id, ev)}
                                       />
-                                    </Tooltip>
+                                    </span>
                                   </div>
                                 </div>
                               </td>
@@ -904,86 +900,112 @@ export default function NotificationsTab() {
   /* ================================================================ */
   /*  RENDER: Logs                                                     */
   /* ================================================================ */
-  const logColumns = [
-    {
-      title: 'Time',
-      dataIndex: 'created_at',
-      key: 'created_at',
-      width: 160,
-      render: (v: string) => new Date(v).toLocaleString(),
-    },
-    {
-      title: 'Event',
-      dataIndex: 'event_type',
-      key: 'event_type',
-      width: 180,
-      render: (v: string) => {
-        const info = eventLabel(v);
-        return <Tag color={info.color}>{info.emoji} {info.label}</Tag>;
-      },
-    },
-    {
-      title: 'Channel',
-      dataIndex: 'channel_type',
-      key: 'channel_type',
-      width: 90,
-      render: (v: string) => (v === 'email' ? '📧 Email' : '📨 Telegram'),
-    },
-    {
-      title: 'Recipient',
-      dataIndex: 'recipient',
-      key: 'recipient',
-      ellipsis: true,
-    },
-    {
-      title: 'Status',
-      dataIndex: 'status',
-      key: 'status',
-      width: 100,
-      render: (v: string) =>
-        v === 'sent' ? (
-          <Tag icon={<CheckCircleOutlined />} color="success">Sent</Tag>
-        ) : (
-          <Tooltip title={v}>
-            <Tag icon={<CloseCircleOutlined />} color="error">Failed</Tag>
-          </Tooltip>
-        ),
-    },
-    {
-      title: 'Error',
-      dataIndex: 'error',
-      key: 'error',
-      ellipsis: true,
-      render: (v: string) => v || '-',
-    },
-  ];
+  const renderLogs = () => {
+    const pageSize = 20;
+    const totalPages = Math.ceil(logs.length / pageSize);
+    const pagedLogs = logs.slice((logPage - 1) * pageSize, logPage * pageSize);
 
-  const renderLogs = () => (
-    <div style={sectionBox}>
-      {sectionTitle(<BellOutlined style={{ color: p.accent }} />, 'Notification Logs')}
-      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Button icon={<ReloadOutlined />} onClick={() => fetchLogs()} size="small" style={{ borderRadius: 6 }}>
-          Refresh
-        </Button>
-        {logs.length > 0 && (
-          <Popconfirm title="Clear all logs?" onConfirm={clearLogs}>
-            <Button danger size="small" icon={<DeleteOutlined />} style={{ borderRadius: 6 }}>
-              Clear All
-            </Button>
-          </Popconfirm>
+    return (
+      <div style={sectionBox}>
+        {sectionTitle(<BellOutlined />, 'Notification Logs')}
+        <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <button style={btnOutline} onClick={() => fetchLogs()}>
+            <ReloadOutlined /> Refresh
+          </button>
+          {logs.length > 0 && (
+            <button style={btnDanger} onClick={() => { if (window.confirm('Clear all logs?')) clearLogs(); }}>
+              <DeleteOutlined /> Clear All
+            </button>
+          )}
+        </div>
+
+        {logs.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '32px 20px', color: p.textMuted, fontSize: 13 }}>
+            No notification logs
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 12 }}>
+              <thead>
+                <tr>
+                  {['Time', 'Event', 'Channel', 'Recipient', 'Status', 'Error'].map((h) => (
+                    <th key={h} style={{
+                      textAlign: 'left', padding: '8px 12px',
+                      borderBottom: `2px solid ${p.cardBorder}`,
+                      color: p.textMuted, fontSize: 11, fontWeight: 600,
+                      whiteSpace: 'nowrap',
+                    }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                {pagedLogs.map((log: any) => {
+                  const info = eventLabel(log.event_type);
+                  const sc = sevColor(info.color);
+                  return (
+                    <tr key={log.id} style={{ transition: 'background 0.15s' }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = isDark ? p.rowHover : '#fafbfc'; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                    >
+                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}`, whiteSpace: 'nowrap', color: p.textMuted }}>
+                        {new Date(log.created_at).toLocaleString()}
+                      </td>
+                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}` }}>
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                          fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6,
+                          background: `${sc}15`, color: sc,
+                        }}>
+                          {info.emoji} {info.label}
+                        </span>
+                      </td>
+                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}`, color: p.text }}>
+                        {log.channel_type === 'email' ? '📧 Email' : '📨 Telegram'}
+                      </td>
+                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}`, color: p.text, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {log.recipient}
+                      </td>
+                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}` }}>
+                        {log.status === 'sent' ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: p.green }}>
+                            <CheckCircleOutlined /> Sent
+                          </span>
+                        ) : (
+                          <span title={log.status} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: p.red }}>
+                            <CloseCircleOutlined /> Failed
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}`, color: p.textMuted, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {log.error || '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginTop: 12 }}>
+                <button
+                  style={{ ...btnOutline, padding: '4px 10px', opacity: logPage <= 1 ? 0.4 : 1 }}
+                  disabled={logPage <= 1}
+                  onClick={() => setLogPage((prev) => Math.max(1, prev - 1))}
+                >Prev</button>
+                <span style={{ fontSize: 12, color: p.textMuted }}>{logPage} / {totalPages}</span>
+                <button
+                  style={{ ...btnOutline, padding: '4px 10px', opacity: logPage >= totalPages ? 0.4 : 1 }}
+                  disabled={logPage >= totalPages}
+                  onClick={() => setLogPage((prev) => Math.min(totalPages, prev + 1))}
+                >Next</button>
+              </div>
+            )}
+          </div>
         )}
       </div>
-      <Table
-        dataSource={logs}
-        columns={logColumns}
-        rowKey="id"
-        size="small"
-        pagination={{ pageSize: 20, showSizeChanger: false }}
-        scroll={{ x: 700 }}
-        locale={{ emptyText: <Empty description="No notification logs" /> }}
-      />
-    </div>
-  );
+    );
+  };
 
   /* ================================================================ */
   /*  Template Editor Modal                                            */
@@ -998,24 +1020,25 @@ export default function NotificationsTab() {
         <span>
           <FormOutlined style={{ marginRight: 8 }} />
           Customize Template — {tplInfo.emoji} {tplInfo.label}
-          {tplChannel && <Text type="secondary" style={{ marginLeft: 8, fontSize: 13 }}>
+          {tplChannel && <span style={{ marginLeft: 8, fontSize: 13, color: p.textMuted }}>
             via {tplChannel.type === 'email' ? '📧' : '📨'} {tplChannel.name}
-          </Text>}
+          </span>}
         </span>
       }
       width={640}
       onCancel={() => setTplModal(false)}
+      styles={{ content: { background: isDark ? p.card : '#fff' } }}
       footer={
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <Button icon={<UndoOutlined />} onClick={handleResetTemplate}>
-            Reset to Default
-          </Button>
-          <Space>
-            <Button onClick={() => setTplModal(false)}>Cancel</Button>
-            <Button type="primary" loading={tplSaving} onClick={handleSaveTemplate}>
-              Save Template
-            </Button>
-          </Space>
+          <button style={btnOutline} onClick={handleResetTemplate}>
+            <UndoOutlined /> Reset to Default
+          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button style={btnOutline} onClick={() => setTplModal(false)}>Cancel</button>
+            <button style={btnPrimary} disabled={tplSaving} onClick={handleSaveTemplate}>
+              {tplSaving ? 'Saving…' : 'Save Template'}
+            </button>
+          </div>
         </div>
       }
       destroyOnClose
@@ -1032,9 +1055,9 @@ export default function NotificationsTab() {
         }}>
           <strong>Available variables:</strong><br />
           <code style={{ fontSize: 11 }}>{tplVariables || '{{.Title}}, {{.Detail}}, {{.EventType}}, {{.Severity}}, {{.Timestamp}}, {{.ServerName}}, {{.PanelURL}}'}</code><br />
-          <Text type="secondary" style={{ fontSize: 11 }}>
+          <span style={{ fontSize: 11, color: p.textMuted }}>
             Leave fields empty to use the default template. Variables use Go template syntax.
-          </Text>
+          </span>
         </div>
       </div>
 
@@ -1049,7 +1072,7 @@ export default function NotificationsTab() {
           style={{ fontFamily: 'monospace', fontSize: 12 }}
         />
         {tplDefaultSubject && (
-          <Text type="secondary" style={{ fontSize: 11 }}>Default: {tplDefaultSubject}</Text>
+          <span style={{ fontSize: 11, color: p.textMuted }}>Default: {tplDefaultSubject}</span>
         )}
       </div>
 
@@ -1076,29 +1099,23 @@ export default function NotificationsTab() {
         )}
       </div>
 
-      <div style={{ marginBottom: 8 }}>
-        <Space>
-          <Button
-            size="small"
-            icon={<EyeOutlined />}
-            loading={tplPreviewing}
-            onClick={() => handlePreviewTemplate(tplBody || tplDefaultBody)}
-            style={{ borderRadius: 4 }}
+      <div style={{ marginBottom: 8, display: 'flex', gap: 8 }}>
+        <button
+          style={btnOutline}
+          disabled={tplPreviewing}
+          onClick={() => handlePreviewTemplate(tplBody || tplDefaultBody)}
+        >
+          <EyeOutlined /> {tplPreviewing ? 'Loading…' : 'Preview Body'}
+        </button>
+        {tplSubject && (
+          <button
+            style={btnOutline}
+            disabled={tplPreviewing}
+            onClick={() => handlePreviewTemplate(tplSubject || tplDefaultSubject)}
           >
-            Preview Body
-          </Button>
-          {tplSubject && (
-            <Button
-              size="small"
-              icon={<EyeOutlined />}
-              loading={tplPreviewing}
-              onClick={() => handlePreviewTemplate(tplSubject || tplDefaultSubject)}
-              style={{ borderRadius: 4 }}
-            >
-              Preview Subject
-            </Button>
-          )}
-        </Space>
+            <EyeOutlined /> {tplPreviewing ? 'Loading…' : 'Preview Subject'}
+          </button>
+        )}
       </div>
 
       {tplPreview && (
@@ -1114,9 +1131,9 @@ export default function NotificationsTab() {
           overflow: 'auto',
           color: p.text,
         }}>
-          <Text type="secondary" style={{ fontSize: 10, display: 'block', marginBottom: 6 }}>
+          <span style={{ fontSize: 10, display: 'block', marginBottom: 6, color: p.textMuted }}>
             Preview (with sample data):
-          </Text>
+          </span>
           {tplPreview}
         </div>
       )}
