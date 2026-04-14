@@ -321,30 +321,28 @@ func AuditMiddleware(db *sql.DB) gin.HandlerFunc {
 
 		c.Next()
 
-		// Log after the request is processed
+		// Capture values before goroutine (c is reused).
 		userID, _ := c.Get("user_id")
 		username, _ := c.Get("username")
-
 		usernameStr, _ := username.(string)
 		var userIDVal interface{}
 		if uid, ok := userID.(int64); ok && uid > 0 {
 			userIDVal = uid
 		}
+		path := c.Request.URL.Path
+		paramID := c.Param("id")
+		ip := c.ClientIP()
+		ua := c.Request.UserAgent()
 
-		_, err := db.Exec(
-			`INSERT INTO audit_logs (user_id, username, action, resource, resource_id, detail, ip, user_agent, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-			userIDVal,
-			usernameStr,
-			method,
-			c.Request.URL.Path,
-			c.Param("id"),
-			"",
-			c.ClientIP(),
-			c.Request.UserAgent(),
-		)
-		if err != nil {
-			logger.Error().Err(err).Str("path", c.Request.URL.Path).Msg("Failed to write audit log")
-		}
+		go func() {
+			_, err := db.Exec(
+				`INSERT INTO audit_logs (user_id, username, action, resource, resource_id, detail, ip, user_agent, created_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+				userIDVal, usernameStr, method, path, paramID, "", ip, ua,
+			)
+			if err != nil {
+				logger.Error().Err(err).Str("path", path).Msg("Failed to write audit log")
+			}
+		}()
 	}
 }

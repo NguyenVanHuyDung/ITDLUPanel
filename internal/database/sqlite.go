@@ -30,20 +30,27 @@ func New(dbPath string) (*DB, error) {
 		return nil, fmt.Errorf("failed to create database directory: %w", err)
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	// Use DSN parameters so pragmas apply to every connection in the pool.
+	dsn := fmt.Sprintf("%s?_pragma=busy_timeout%%2810000%%29&_pragma=journal_mode%%28WAL%%29&_pragma=foreign_keys%%28ON%%29&_pragma=journal_size_limit%%2867108864%%29", dbPath)
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
+
+	// SQLite supports only one writer; limit pool to avoid contention.
+	db.SetMaxOpenConns(4)
+	db.SetMaxIdleConns(2)
 
 	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
+	// Verify WAL mode is active (DSN pragmas may not work on all drivers).
 	pragmas := []string{
 		"PRAGMA journal_mode=WAL",
 		"PRAGMA foreign_keys=ON",
-		"PRAGMA busy_timeout=5000",
+		"PRAGMA busy_timeout=10000",
 		"PRAGMA journal_size_limit=67108864",
 	}
 	for _, p := range pragmas {
