@@ -1,15 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Table, message, Popconfirm, Modal, Form, Input, Select, Descriptions, Tag, InputNumber, Space } from 'antd';
+import { message, Modal, Form, Input, Select, Spin } from 'antd';
 import {
   DeleteOutlined, PlayCircleOutlined, PauseCircleOutlined, RedoOutlined,
   PlusOutlined, EyeOutlined, FileTextOutlined, StopOutlined,
+  CloudServerOutlined, SearchOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { usePalette } from '@/hooks/usePalette';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import type { ApiResponse } from '@/types';
 import api from '@/services/api';
-import { formatDateTime } from '@/lib/datetime';
 
 interface DockerContainer {
   id: string;
@@ -141,142 +141,224 @@ export default function ContainerList({ onRefresh }: { onRefresh?: () => void })
   const stateColor = (state: string): string => {
     if (state === 'running') return p.green;
     if (state === 'paused') return p.amber;
-    return p.red;
+    if (state === 'exited') return p.red;
+    return p.textMuted;
+  };
+
+  const stateLabel = (state: string): string => {
+    const map: Record<string, string> = { running: 'Running', paused: 'Paused', exited: 'Exited', created: 'Created', restarting: 'Restarting', dead: 'Dead' };
+    return map[state] || state;
   };
 
   const formatPorts = (ports: DockerContainer['ports']) => {
-    if (!ports?.length) return '-';
-    return ports.filter(pp => pp.public_port).map(pp => `${pp.public_port}→${pp.private_port}`).join(', ') || '-';
+    if (!ports?.length) return null;
+    const mapped = ports.filter(pp => pp.public_port);
+    if (!mapped.length) return null;
+    return mapped.map(pp => `${pp.public_port}→${pp.private_port}/${pp.type}`);
   };
 
-  const columns = [
-    {
-      title: t('common.name'),
-      dataIndex: 'name',
-      key: 'name',
-      render: (val: string, r: DockerContainer) => (
-        <button onClick={() => viewDetail(r.id)} style={{
-          fontWeight: 600, color: p.accent, background: 'none', border: 'none',
-          cursor: 'pointer', padding: 0, fontSize: 13,
-        }}>{val}</button>
-      ),
-    },
-    { title: 'Image', dataIndex: 'image', key: 'image', ellipsis: true },
-    {
-      title: t('common.status'),
-      key: 'state',
-      render: (_: unknown, r: DockerContainer) => {
-        const color = stateColor(r.state);
-        return (
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 5,
-            padding: '3px 10px', borderRadius: 99,
-            background: `${color}15`, color, fontSize: 11, fontWeight: 500,
-            lineHeight: 1,
-          }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }} />
-            {r.state}
-          </span>
-        );
-      },
-    },
-    {
-      title: 'Ports',
-      key: 'ports',
-      render: (_: unknown, r: DockerContainer) => (
-        <span style={{ fontSize: 12 }}>{formatPorts(r.ports)}</span>
-      ),
-    },
-    {
-      title: 'Created',
-      dataIndex: 'created',
-      key: 'created',
-      render: (val: number) => <span style={{ fontSize: 12, color: p.textMuted }}>{val ? new Date(val * 1000).toLocaleDateString() : '-'}</span>,
-    },
-    {
-      title: t('common.actions'),
-      key: 'actions',
-      width: 300,
-      render: (_: unknown, r: DockerContainer) => (
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-          {r.state !== 'running' && r.state !== 'paused' && (
-            <button onClick={() => containerAction(r.id, 'start')} style={{
-              padding: '3px 8px', borderRadius: 6, border: 'none', cursor: 'pointer',
-              background: p.accent, color: '#fff', fontSize: 11, fontWeight: 500,
-              display: 'inline-flex', alignItems: 'center', gap: 4,
-            }}>
-              <PlayCircleOutlined /> Start
-            </button>
-          )}
-          {r.state === 'running' && (
-            <>
-              <button onClick={() => containerAction(r.id, 'stop')} style={{
-                padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
-                background: 'transparent', color: p.textMuted, fontSize: 11, cursor: 'pointer',
-                display: 'inline-flex', alignItems: 'center', gap: 4,
-              }}>
-                <StopOutlined /> Stop
-              </button>
-              <button onClick={() => containerAction(r.id, 'pause')} style={{
-                padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
-                background: 'transparent', color: p.textMuted, fontSize: 11, cursor: 'pointer',
-                display: 'inline-flex', alignItems: 'center', gap: 4,
-              }}>
-                <PauseCircleOutlined /> Pause
-              </button>
-            </>
-          )}
-          {r.state === 'paused' && (
-            <button onClick={() => containerAction(r.id, 'unpause')} style={{
-              padding: '3px 8px', borderRadius: 6, border: 'none', cursor: 'pointer',
-              background: p.green, color: '#fff', fontSize: 11, fontWeight: 500,
-              display: 'inline-flex', alignItems: 'center', gap: 4,
-            }}>
-              <PlayCircleOutlined /> Unpause
-            </button>
-          )}
-          <button onClick={() => containerAction(r.id, 'restart')} style={{
-            padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
-            background: 'transparent', color: p.textMuted, fontSize: 11, cursor: 'pointer',
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-          }}>
-            <RedoOutlined /> Restart
-          </button>
-          <button onClick={() => viewLogs(r)} style={{
-            padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
-            background: 'transparent', color: p.textMuted, fontSize: 11, cursor: 'pointer',
-          }}>
-            <FileTextOutlined /> Logs
-          </button>
-          <Popconfirm title={t('common.confirm_delete')} onConfirm={() => containerAction(r.id, 'remove')}>
-            <button style={{
-              padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.red}`,
-              background: 'transparent', color: p.red, fontSize: 11, cursor: 'pointer',
-              display: 'inline-flex', alignItems: 'center', gap: 4,
-            }}>
-              <DeleteOutlined />
-            </button>
-          </Popconfirm>
-        </div>
-      ),
-    },
-  ];
+  const [search, setSearch] = useState('');
+  const [filterState, setFilterState] = useState<string>('all');
+
+  const filtered = containers.filter(c => {
+    if (filterState !== 'all' && c.state !== filterState) return false;
+    if (search && !c.name.toLowerCase().includes(search.toLowerCase()) && !c.image.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  const runningCount = containers.filter(c => c.state === 'running').length;
+  const stoppedCount = containers.filter(c => c.state !== 'running' && c.state !== 'paused').length;
+
+  /* ---------- Styles ---------- */
+  const isDark = (p as Record<string, unknown>).card !== '#fff' && (p as Record<string, unknown>).card !== '#ffffff';
+  const btnSm: React.CSSProperties = {
+    padding: '4px 10px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+    background: 'transparent', color: p.textMuted, fontSize: 11, fontWeight: 500,
+    cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4,
+    transition: 'all 0.15s', whiteSpace: 'nowrap',
+  };
 
   return (
     <div>
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
+      {/* Toolbar */}
+      <div style={{
+        display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap',
+        alignItems: 'center', justifyContent: 'space-between',
+      }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', flex: 1 }}>
+          {/* Search */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '5px 12px', borderRadius: 6,
+            border: `1px solid ${p.cardBorder}`,
+            background: 'transparent', minWidth: 180, maxWidth: 280, flex: 1,
+          }}>
+            <SearchOutlined style={{ color: p.textMuted, fontSize: 13 }} />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search containers..."
+              style={{
+                border: 'none', outline: 'none', background: 'transparent',
+                color: p.text, fontSize: 12, width: '100%',
+              }}
+            />
+          </div>
+          {/* State filter pills */}
+          <div style={{ display: 'flex', gap: 4 }}>
+            {[
+              { key: 'all', label: `All (${containers.length})` },
+              { key: 'running', label: `Running (${runningCount})` },
+              { key: 'exited', label: `Stopped (${stoppedCount})` },
+            ].map(f => (
+              <button key={f.key} onClick={() => setFilterState(f.key)} style={{
+                padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 500,
+                border: filterState === f.key ? `1.5px solid ${p.accent}` : `1px solid ${p.cardBorder}`,
+                background: filterState === f.key ? `${p.accent}12` : 'transparent',
+                color: filterState === f.key ? p.accent : p.textMuted,
+                cursor: 'pointer', transition: 'all 0.15s',
+              }}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <button onClick={() => setCreateOpen(true)} style={{
           padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
-          background: p.accent, color: '#fff', fontSize: 13, fontWeight: 500,
+          background: p.accent, color: '#fff', fontSize: 12, fontWeight: 500,
           display: 'inline-flex', alignItems: 'center', gap: 6,
         }}>
-          <PlusOutlined /> Create Container
+          <PlusOutlined /> Create
         </button>
       </div>
 
-      <Table columns={columns} dataSource={containers} rowKey="id"
-        loading={loading} pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50] }}
-        scroll={isMobile ? { x: 800 } : undefined} />
+      {/* Container Cards */}
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
+      ) : filtered.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+          <CloudServerOutlined style={{ fontSize: 36, color: p.textDim, display: 'block', marginBottom: 8 }} />
+          <div style={{ fontSize: 13, color: p.textMuted }}>
+            {containers.length === 0 ? 'No containers found' : 'No containers match your filter'}
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {filtered.map(c => {
+            const color = stateColor(c.state);
+            const ports = formatPorts(c.ports);
+            return (
+              <div key={c.id} style={{
+                display: 'flex', alignItems: isMobile ? 'flex-start' : 'center',
+                flexDirection: isMobile ? 'column' : 'row',
+                gap: isMobile ? 10 : 14,
+                padding: '12px 16px', borderRadius: 10,
+                background: isDark ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.015)',
+                border: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`,
+                borderLeft: `3px solid ${color}`,
+                transition: 'background 0.15s',
+              }}>
+                {/* Left: icon + info */}
+                <div style={{ display: 'flex', gap: 12, flex: 1, minWidth: 0, alignItems: 'flex-start' }}>
+                  {/* Status icon */}
+                  <div style={{
+                    width: 38, height: 38, borderRadius: 8, flexShrink: 0,
+                    background: `${color}12`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <CloudServerOutlined style={{ fontSize: 18, color }} />
+                  </div>
+                  {/* Info */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 3 }}>
+                      <button onClick={() => viewDetail(c.id)} style={{
+                        fontSize: 13, fontWeight: 600, color: p.accent,
+                        background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                      }}>
+                        {c.name}
+                      </button>
+                      <span style={{
+                        fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 4,
+                        background: `${color}15`, color,
+                        textTransform: 'uppercase', letterSpacing: 0.5,
+                      }}>
+                        {stateLabel(c.state)}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 11, color: p.textMuted, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span style={{
+                        fontFamily: "'SFMono-Regular', Consolas, monospace", fontSize: 11,
+                        maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>{c.image}</span>
+                      {ports && (
+                        <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                          {ports.map((pt, i) => (
+                            <span key={i} style={{
+                              fontSize: 10, padding: '0 5px', borderRadius: 3,
+                              background: `${p.accent}10`, color: p.accent, fontWeight: 500,
+                              fontFamily: "'SFMono-Regular', Consolas, monospace",
+                            }}>{pt}</span>
+                          ))}
+                        </span>
+                      )}
+                      <span style={{ fontSize: 10, color: p.textDim }}>
+                        {c.created ? new Date(c.created * 1000).toLocaleDateString() : ''}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right: actions */}
+                <div style={{ display: 'flex', gap: 4, flexShrink: 0, flexWrap: 'wrap' }}>
+                  {/* State-specific primary action */}
+                  {c.state !== 'running' && c.state !== 'paused' && (
+                    <button onClick={() => containerAction(c.id, 'start')} style={{
+                      ...btnSm, background: p.accent, color: '#fff', border: 'none',
+                    }}>
+                      <PlayCircleOutlined /> Start
+                    </button>
+                  )}
+                  {c.state === 'running' && (
+                    <button onClick={() => containerAction(c.id, 'stop')} style={{
+                      ...btnSm, color: p.amber, borderColor: `${p.amber}40`,
+                    }}>
+                      <StopOutlined /> Stop
+                    </button>
+                  )}
+                  {c.state === 'paused' && (
+                    <button onClick={() => containerAction(c.id, 'unpause')} style={{
+                      ...btnSm, background: p.green, color: '#fff', border: 'none',
+                    }}>
+                      <PlayCircleOutlined /> Resume
+                    </button>
+                  )}
+                  {c.state === 'running' && (
+                    <button onClick={() => containerAction(c.id, 'pause')} title="Pause" style={btnSm}>
+                      <PauseCircleOutlined />
+                    </button>
+                  )}
+                  <button onClick={() => containerAction(c.id, 'restart')} title="Restart" style={btnSm}>
+                    <RedoOutlined />
+                  </button>
+                  <button onClick={() => viewLogs(c)} title="Logs" style={btnSm}>
+                    <FileTextOutlined />
+                  </button>
+                  <button onClick={() => viewDetail(c.id)} title="Details" style={btnSm}>
+                    <EyeOutlined />
+                  </button>
+                  <button
+                    title="Remove"
+                    onClick={() => { if (window.confirm(`Remove container "${c.name}"? This action cannot be undone.`)) containerAction(c.id, 'remove'); }}
+                    style={{ ...btnSm, color: p.red, borderColor: `${p.red}40` }}
+                  >
+                    <DeleteOutlined />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Create Container Modal */}
       <Modal
@@ -325,41 +407,105 @@ export default function ContainerList({ onRefresh }: { onRefresh?: () => void })
         footer={null}
         width={isMobile ? '95%' : 700}
       >
-        {detailData && (
-          <Descriptions column={1} bordered size="small">
-            <Descriptions.Item label="ID"><span style={{ fontFamily: "'SFMono-Regular', Consolas, monospace", fontSize: 12 }}>{detailData.id}</span></Descriptions.Item>
-            <Descriptions.Item label="Name">{detailData.name}</Descriptions.Item>
-            <Descriptions.Item label="Image">{detailData.image}</Descriptions.Item>
-            <Descriptions.Item label="Status">
-              <span style={{ color: stateColor(detailData.state) }}>{detailData.state}</span>
-            </Descriptions.Item>
-            <Descriptions.Item label="Created">{detailData.created}</Descriptions.Item>
-            <Descriptions.Item label="Command">{detailData.command || '-'}</Descriptions.Item>
-            <Descriptions.Item label="Restart Policy">{detailData.restart_policy || '-'}</Descriptions.Item>
-            <Descriptions.Item label="Networks">
-              {Object.entries(detailData.networks ?? {}).map(([name, ip]) => (
-                <Tag key={name}>{name}: {ip}</Tag>
-              ))}
-            </Descriptions.Item>
-            <Descriptions.Item label="Ports">
-              {detailData.ports?.map((pp, i) => (
-                <Tag key={i}>{pp.public_port || '*'}:{pp.private_port}/{pp.type}</Tag>
-              )) || '-'}
-            </Descriptions.Item>
-            <Descriptions.Item label="Mounts">
-              {detailData.mounts?.map((m, i) => (
-                <div key={i} style={{ fontSize: 12, fontFamily: 'monospace' }}>
-                  {m.source} → {m.destination} ({m.type}, {m.rw ? 'rw' : 'ro'})
+        {detailData && (() => {
+          const color = stateColor(detailData.state);
+          const infoRow: React.CSSProperties = {
+            display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+            padding: '8px 0', borderBottom: `1px solid ${p.cardBorder}`,
+            fontSize: 12, gap: 12,
+          };
+          const label: React.CSSProperties = { color: p.textMuted, fontWeight: 500, minWidth: 100, flexShrink: 0 };
+          const val: React.CSSProperties = { color: p.text, textAlign: 'right' as const, wordBreak: 'break-all' as const, flex: 1 };
+          const mono: React.CSSProperties = { fontFamily: "'SFMono-Regular', Consolas, monospace", fontSize: 11 };
+
+          return (
+            <div>
+              {/* Status banner */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '10px 14px', borderRadius: 8, marginBottom: 16,
+                background: `${color}08`, border: `1px solid ${color}20`,
+              }}>
+                <CloudServerOutlined style={{ fontSize: 20, color }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: p.text }}>{detailData.name}</div>
+                  <div style={{ fontSize: 11, color: p.textMuted }}>{detailData.image}</div>
                 </div>
-              )) || '-'}
-            </Descriptions.Item>
-            <Descriptions.Item label="Environment">
-              <div style={{ maxHeight: 120, overflow: 'auto', fontSize: 11, fontFamily: 'monospace' }}>
-                {detailData.env?.map((e, i) => <div key={i}>{e}</div>) || '-'}
+                <span style={{
+                  fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6,
+                  background: `${color}15`, color, textTransform: 'uppercase',
+                }}>{detailData.state}</span>
               </div>
-            </Descriptions.Item>
-          </Descriptions>
-        )}
+
+              <div style={infoRow}>
+                <span style={label}>ID</span>
+                <span style={{ ...val, ...mono }}>{detailData.id.substring(0, 12)}</span>
+              </div>
+              <div style={infoRow}>
+                <span style={label}>Created</span>
+                <span style={val}>{detailData.created}</span>
+              </div>
+              <div style={infoRow}>
+                <span style={label}>Command</span>
+                <span style={{ ...val, ...mono }}>{detailData.command || '—'}</span>
+              </div>
+              <div style={infoRow}>
+                <span style={label}>Restart</span>
+                <span style={val}>{detailData.restart_policy || '—'}</span>
+              </div>
+              <div style={infoRow}>
+                <span style={label}>Networks</span>
+                <span style={{ ...val, display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  {Object.entries(detailData.networks ?? {}).map(([name, ip]) => (
+                    <span key={name} style={{
+                      fontSize: 10, padding: '1px 6px', borderRadius: 4,
+                      background: `${p.accent}10`, color: p.accent, fontWeight: 500,
+                    }}>{name}: {ip}</span>
+                  ))}
+                  {!Object.keys(detailData.networks ?? {}).length && '—'}
+                </span>
+              </div>
+              <div style={infoRow}>
+                <span style={label}>Ports</span>
+                <span style={{ ...val, display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  {detailData.ports?.map((pp, i) => (
+                    <span key={i} style={{
+                      fontSize: 10, padding: '1px 6px', borderRadius: 4, ...mono,
+                      background: `${p.green}10`, color: p.green, fontWeight: 500,
+                    }}>{pp.public_port || '*'}:{pp.private_port}/{pp.type}</span>
+                  )) || '—'}
+                </span>
+              </div>
+              {detailData.mounts?.length > 0 && (
+                <div style={{ ...infoRow, flexDirection: 'column', gap: 4 }}>
+                  <span style={label}>Mounts</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, width: '100%' }}>
+                    {detailData.mounts.map((m, i) => (
+                      <div key={i} style={{
+                        ...mono, fontSize: 11, padding: '4px 8px', borderRadius: 4,
+                        background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                      }}>
+                        {m.source} → {m.destination} <span style={{ color: p.textMuted }}>({m.type}, {m.rw ? 'rw' : 'ro'})</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {detailData.env?.length > 0 && (
+                <div style={{ ...infoRow, flexDirection: 'column', gap: 4, borderBottom: 'none' }}>
+                  <span style={label}>Environment</span>
+                  <div style={{
+                    maxHeight: 140, overflow: 'auto', width: '100%',
+                    ...mono, fontSize: 11, padding: '8px 10px', borderRadius: 6,
+                    background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                  }}>
+                    {detailData.env.map((e, i) => <div key={i} style={{ padding: '1px 0' }}>{e}</div>)}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </Modal>
 
       {/* Logs Modal */}
