@@ -78,11 +78,15 @@ func (i *PgAdminInstaller) Install(ctx context.Context, version string, progress
 	// pgAdmin web mode runs via Apache/WSGI by default — we override with Gunicorn + nginx
 	i.setupGunicornService(ctx)
 
-	progress(95)
+	progress(92)
 	// Start the service
 	system.ExecWithTimeout(10*time.Second, "systemctl", "daemon-reload")
 	system.ExecWithTimeout(10*time.Second, "systemctl", "enable", "pgadmin4")
 	system.ExecWithTimeout(10*time.Second, "systemctl", "start", "pgadmin4")
+
+	progress(95)
+	// Seed default local PostgreSQL server connection
+	i.seedDefaultServer(ctx)
 
 	progress(100)
 	logger.Info().Msg("pgAdmin4 installed successfully")
@@ -280,6 +284,75 @@ func (i *PgAdminInstaller) generateSSLCert() {
 	} else {
 		logger.Warn().Msg("failed to generate pgAdmin SSL cert")
 	}
+}
+
+// seedDefaultServer imports a local PostgreSQL server into pgAdmin so users
+// don't see an empty server list on first login.
+func (i *PgAdminInstaller) seedDefaultServer(ctx context.Context) {
+	serversJSON := `{
+  "Servers": {
+    "1": {
+      "Name": "Local PostgreSQL",
+      "Group": "Servers",
+      "Host": "127.0.0.1",
+      "Port": 5432,
+      "MaintenanceDB": "postgres",
+      "Username": "postgres",
+      "SSLMode": "prefer"
+    }
+  }
+}`
+	tmpFile := "/tmp/pgadmin_servers.json"
+	if err := os.WriteFile(tmpFile, []byte(serversJSON), 0644); err != nil {
+		logger.Warn().Err(err).Msg("failed to write pgAdmin servers.json")
+		return
+	}
+	defer os.Remove(tmpFile)
+
+	// Try pgadmin4-cli (newer versions)
+	cliPaths := []string{
+		"/usr/pgadmin4/bin/pgadmin4-cli",
+		"/usr/share/pgadmin4/bin/pgadmin4-cli",
+	}
+	for _, cli := range cliPaths {
+		if _, err := os.Stat(cli); err == nil {
+			result, err := system.ExecWithTimeout(30*time.Second, cli,
+				"load-servers", tmpFile, "--user", "admin@itdlupanel.local")
+			if err == nil && result.ExitCode == 0 {
+				logger.Info().Msg("seeded default PostgreSQL server via pgadmin4-cli")
+				return
+			}
+			logger.Warn().Err(err).Msg("pgadmin4-cli load-servers failed, trying setup.py")
+			break
+		}
+	}
+
+	// Fallback: use setup.py with venv python
+	setupPy := findPgAdminSetupPy()
+	if setupPy == "" {
+		logger.Warn().Msg("cannot find pgAdmin setup script to seed servers")
+		return
+	}
+
+	venvPy := "/usr/pgadmin4/venv/bin/python3"
+	if _, err := os.Stat(venvPy); err != nil {
+		venvPy = "python3"
+	}
+
+	// Determine the working directory
+	webDir := "/usr/pgadmin4/web"
+	if _, err := os.Stat(webDir); os.IsNotExist(err) {
+		webDir = "/usr/share/pgadmin4/web"
+	}
+
+	cmd := fmt.Sprintf("cd %s && %s %s load-servers %s --user admin@itdlupanel.local",
+		webDir, venvPy, setupPy, tmpFile)
+	result, err := system.ExecWithTimeout(30*time.Second, "bash", "-c", cmd)
+	if err != nil || result.ExitCode != 0 {
+		logger.Warn().Err(err).Msg("failed to seed default PostgreSQL server in pgAdmin")
+		return
+	}
+	logger.Info().Msg("seeded default PostgreSQL server via setup.py")
 }
 
 func (i *PgAdminInstaller) Uninstall(ctx context.Context) error {
