@@ -115,10 +115,11 @@ func (s *DatabaseService) createMySQL(ctx context.Context, req CreateDBRequest) 
 }
 
 func (s *DatabaseService) createPostgres(ctx context.Context, req CreateDBRequest) (*Database, error) {
-	if req.Charset == "" {
+	// PostgreSQL uses "UTF8", not MySQL's "utf8mb4"
+	if req.Charset == "" || strings.EqualFold(req.Charset, "utf8mb4") || strings.EqualFold(req.Charset, "utf8") {
 		req.Charset = "UTF8"
 	}
-	if req.Collation == "" {
+	if req.Collation == "" || strings.Contains(req.Collation, "utf8mb4") {
 		req.Collation = "en_US.UTF-8"
 	}
 	if req.RemoteAccess == "" {
