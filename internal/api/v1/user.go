@@ -32,6 +32,7 @@ func (h *UserHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gin.Ha
 	{
 		users.GET("", h.ListUsers)
 		users.POST("", h.CreateUser)
+		users.GET("/:id", h.GetUser)
 		users.PUT("/:id", h.UpdateUser)
 		users.PUT("/:id/password", h.ResetPassword)
 		users.DELETE("/:id", h.DeleteUser)
@@ -111,6 +112,27 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 		Total:      total,
 		TotalPages: totalPages,
 	})
+}
+
+// GetUser returns a single user by ID.
+func (h *UserHandler) GetUser(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.Response{
+			Code:    http.StatusBadRequest,
+			Message: "invalid user ID",
+		})
+		return
+	}
+
+	user, err := h.userService.GetUser(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, user)
 }
 
 type updateUserRequest struct {

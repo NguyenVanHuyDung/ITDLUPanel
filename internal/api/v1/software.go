@@ -921,7 +921,7 @@ func (h *SoftwareHandler) getMariaDBSlowLog(c *gin.Context) {
 	}
 	content, path, err := h.softwareService.GetMariaDBSlowLog(lines)
 	if err != nil {
-		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, err.Error()))
+		response.Error(c, err)
 		return
 	}
 	response.Success(c, gin.H{"content": content, "path": path})

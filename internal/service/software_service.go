@@ -19,6 +19,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/ITDLUPanel/panel/internal/pkg/logger"
+	apperrors "github.com/ITDLUPanel/panel/internal/pkg/errors"
 	"github.com/ITDLUPanel/panel/internal/service/installer"
 	"github.com/ITDLUPanel/panel/internal/system"
 	"github.com/ITDLUPanel/panel/internal/task"
@@ -3709,12 +3710,12 @@ func (s *SoftwareService) GetMariaDBSlowLog(lines int) (string, string, error) {
 			if lines > 2000 { lines = 2000 }
 			res, err := system.ExecWithTimeout(10*time.Second, "tail", "-n", strconv.Itoa(lines), p)
 			if err != nil {
-				return "", p, err
+				return "", p, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read slow query log")
 			}
 			return res.Stdout, p, nil
 		}
 	}
-	return "", "", fmt.Errorf("slow query log is not enabled or log file not found. Enable it in Optimization → Logging section (slow_query_log = 1)")
+	return "", "", apperrors.New(apperrors.ErrNotFound, "slow query log is not enabled or log file not found. Enable it in Optimization → Logging section (slow_query_log = 1)")
 }
 
 // GetMariaDBBinaryLogs lists binary log files and sizes.

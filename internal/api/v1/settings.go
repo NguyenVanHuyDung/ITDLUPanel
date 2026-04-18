@@ -151,7 +151,7 @@ func (h *SettingsHandler) SetAdminPath(c *gin.Context) {
 }
 
 type setLanguageRequest struct {
-	Lang string `json:"lang" binding:"required"`
+	Lang string `json:"language" binding:"required"`
 }
 
 // SetLanguage updates the panel language.
@@ -159,7 +159,7 @@ func (h *SettingsHandler) SetLanguage(c *gin.Context) {
 	var req setLanguageRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.ValidationError(c, []response.FieldError{
-			{Field: "lang", Message: "lang is required"},
+			{Field: "language", Message: "language is required"},
 		})
 		return
 	}
