@@ -551,15 +551,25 @@ func (s *SSLService) GetCertInfo(domain string) (*CertInfo, error) {
 func (s *SSLService) DeleteCertificate(domain string) error {
 	deleted := false
 
-	for _, dir := range []string{
-		filepath.Join(letsencryptDir, domain),
-		filepath.Join(customCertDir, domain),
-	} {
-		if _, err := os.Stat(dir); err == nil {
-			if err := os.RemoveAll(dir); err != nil {
-				return apperrors.Wrap(err, apperrors.ErrInternal, "failed to delete certificate files")
+	// Try both the raw domain and the sanitized folder name
+	// (e.g. "*.dlu.edu.vn" → "_wildcard_.dlu.edu.vn")
+	lookups := []string{domain}
+	sanitized := sanitizeCertName(domain)
+	if sanitized != domain {
+		lookups = append(lookups, sanitized)
+	}
+
+	for _, lookup := range lookups {
+		for _, dir := range []string{
+			filepath.Join(letsencryptDir, lookup),
+			filepath.Join(customCertDir, lookup),
+		} {
+			if _, err := os.Stat(dir); err == nil {
+				if err := os.RemoveAll(dir); err != nil {
+					return apperrors.Wrap(err, apperrors.ErrInternal, "failed to delete certificate files")
+				}
+				deleted = true
 			}
-			deleted = true
 		}
 	}
 
@@ -568,6 +578,7 @@ func (s *SSLService) DeleteCertificate(domain string) error {
 	}
 
 	s.deleteCertMeta(domain)
+	s.deleteCertMeta(sanitized)
 	logger.Info().Str("domain", domain).Msg("certificate deleted")
 	return nil
 }
@@ -873,16 +884,22 @@ func (s *SSLService) parseCertFile(certPath, keyPath, domain, certType string) (
 		issuerOrg = cert.Issuer.Organization[0]
 	}
 
+	// Derive display domain from the certificate's actual identity
+	displayDomain := domain
+	if len(cert.DNSNames) > 0 {
+		displayDomain = cert.DNSNames[0]
+	} else if cert.Subject.CommonName != "" {
+		displayDomain = cert.Subject.CommonName
+	}
+
 	// Build a human-readable SSL name from DNS names or CN
-	sslName := domain
+	sslName := displayDomain
 	if len(cert.DNSNames) > 0 {
 		sslName = strings.Join(cert.DNSNames, ", ")
-	} else if cert.Subject.CommonName != "" {
-		sslName = cert.Subject.CommonName
 	}
 
 	return &CertInfo{
-		Domain:     domain,
+		Domain:     displayDomain,
 		SSLName:    sslName,
 		Issuer:     issuerOrg,
 		IssuerCN:   cert.Issuer.CommonName,
