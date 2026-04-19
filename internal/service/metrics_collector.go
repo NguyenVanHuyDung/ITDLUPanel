@@ -17,11 +17,16 @@ import (
 type MetricsCollector struct {
 	db       *sql.DB
 	monitor  *MonitorService
+	notifier *NotificationService
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
 	mu       sync.Mutex
 	running  bool
 	interval time.Duration
+
+	// prevServiceState tracks which services were running on the last check
+	// so we only alert when a service transitions from running → stopped.
+	prevServiceState map[string]bool
 }
 
 // NewMetricsCollector creates a MetricsCollector (does not start it).
@@ -32,6 +37,9 @@ func NewMetricsCollector(db *sql.DB, monitor *MonitorService) *MetricsCollector 
 		interval: 60 * time.Second,
 	}
 }
+
+// SetNotifier sets the notification service for resource alerts.
+func (mc *MetricsCollector) SetNotifier(n *NotificationService) { mc.notifier = n }
 
 // Start begins the background collection loop. Safe to call multiple times.
 func (mc *MetricsCollector) Start() {
@@ -57,6 +65,9 @@ func (mc *MetricsCollector) Start() {
 
 	mc.wg.Add(1)
 	go mc.aggregateLoop(ctx)
+
+	mc.wg.Add(1)
+	go mc.serviceCheckLoop(ctx)
 
 	logger.Info().
 		Dur("interval", mc.interval).
@@ -149,6 +160,95 @@ func (mc *MetricsCollector) collectOnce() {
 	)
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to insert raw metrics")
+	}
+
+	// Resource threshold alerts
+	if mc.notifier != nil {
+		if overview.CPU.UsagePercent > 90 {
+			mc.notifier.Notify(NotificationEvent{
+				Type:   EventCPUHigh,
+				Title:  fmt.Sprintf("High CPU Usage Alert: %.0f%%", overview.CPU.UsagePercent),
+				Detail: fmt.Sprintf("CPU usage: %.1f%%\nLoad average: %.2f, %.2f, %.2f", overview.CPU.UsagePercent, l1, l5, l15),
+			})
+		}
+		if overview.Memory.UsagePercent > 90 {
+			mc.notifier.Notify(NotificationEvent{
+				Type:   EventMemoryHigh,
+				Title:  fmt.Sprintf("High Memory Usage Alert: %.0f%%", overview.Memory.UsagePercent),
+				Detail: fmt.Sprintf("Memory usage: %.1f%%\nUsed: %d MB / Total: %d MB", overview.Memory.UsagePercent, overview.Memory.Used/(1024*1024), overview.Memory.Total/(1024*1024)),
+			})
+		}
+		if overview.Disk.UsagePercent > 90 {
+			mc.notifier.Notify(NotificationEvent{
+				Type:   EventDiskHigh,
+				Title:  fmt.Sprintf("Disk Space Critical: %.0f%%", overview.Disk.UsagePercent),
+				Detail: fmt.Sprintf("Disk usage: %.1f%%\nUsed: %d GB / Total: %d GB", overview.Disk.UsagePercent, overview.Disk.Used/(1024*1024*1024), overview.Disk.Total/(1024*1024*1024)),
+			})
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Service health check loop
+// ---------------------------------------------------------------------------
+
+func (mc *MetricsCollector) serviceCheckLoop(ctx context.Context) {
+	defer mc.wg.Done()
+
+	// Initial snapshot: record which services are currently running
+	// without alerting (avoids false positives on startup).
+	if statuses, err := mc.monitor.GetServiceStatuses(); err == nil {
+		mc.mu.Lock()
+		mc.prevServiceState = make(map[string]bool, len(statuses))
+		for _, s := range statuses {
+			if s.Status != "not-installed" {
+				mc.prevServiceState[s.Name] = s.IsRunning
+			}
+		}
+		mc.mu.Unlock()
+	}
+
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			mc.checkServices()
+		}
+	}
+}
+
+func (mc *MetricsCollector) checkServices() {
+	if mc.notifier == nil {
+		return
+	}
+	statuses, err := mc.monitor.GetServiceStatuses()
+	if err != nil {
+		logger.Error().Err(err).Msg("Failed to get service statuses for health check")
+		return
+	}
+
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+
+	for _, s := range statuses {
+		if s.Status == "not-installed" {
+			continue
+		}
+		wasRunning, known := mc.prevServiceState[s.Name]
+		mc.prevServiceState[s.Name] = s.IsRunning
+
+		// Alert only on transition: was running (or first-seen running) → now stopped
+		if known && wasRunning && !s.IsRunning {
+			mc.notifier.Notify(NotificationEvent{
+				Type:   EventServiceDown,
+				Title:  fmt.Sprintf("Service Down: %s", s.Name),
+				Detail: fmt.Sprintf("Service %s has stopped unexpectedly. Current status: %s", s.Name, s.Status),
+			})
+		}
 	}
 }
 

@@ -272,6 +272,8 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		sslService.SetNotifier(notificationService)
 		softwareService.SetNotifier(notificationService)
 		siteService.SetNotifier(notificationService)
+		authService.SetNotifier(notificationService)
+		metricsCollector.SetNotifier(notificationService)
 
 		// -------------------------------------------------------
 		// WebSocket endpoints (terminal handles its own JWT auth via query param)

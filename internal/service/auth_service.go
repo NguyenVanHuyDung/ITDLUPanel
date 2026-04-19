@@ -2,6 +2,7 @@ package service
 
 import (
 	"database/sql"
+	"fmt"
 	"sync"
 	"time"
 
@@ -48,6 +49,7 @@ func init() {
 type AuthService struct {
 	db       *sql.DB
 	userRepo *models.UserRepository
+	notifier *NotificationService
 }
 
 // NewAuthService creates a new AuthService.
@@ -57,6 +59,9 @@ func NewAuthService(db *sql.DB) *AuthService {
 		userRepo: models.NewUserRepository(db),
 	}
 }
+
+// SetNotifier sets the notification service for event dispatching.
+func (s *AuthService) SetNotifier(n *NotificationService) { s.notifier = n }
 
 // GetDB returns the underlying database connection.
 func (s *AuthService) GetDB() *sql.DB {
@@ -90,6 +95,13 @@ func (s *AuthService) Login(username, password string) (string, string, *models.
 
 	if !crypto.CheckPassword(password, user.Password) {
 		s.recordLoginFailure(username)
+		if s.notifier != nil {
+			s.notifier.Notify(NotificationEvent{
+				Type:   EventLoginFailed,
+				Title:  fmt.Sprintf("Failed login attempt for user: %s", username),
+				Detail: fmt.Sprintf("Username: %s\nSource: panel login form\nReason: invalid password", username),
+			})
+		}
 		return "", "", nil, apperrors.New(apperrors.ErrUnauthorized, "invalid username or password")
 	}
 
