@@ -234,6 +234,7 @@ var AllPermissions = []PermissionGroup{
 			{Key: "docker.read", Label: "View Containers"},
 			{Key: "docker.manage", Label: "Start/Stop Containers"},
 			{Key: "docker.create", Label: "Create/Delete Containers"},
+			{Key: "docker.cleanup", Label: "Docker Auto-Cleanup"},
 		},
 	},
 	{

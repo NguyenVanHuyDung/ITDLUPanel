@@ -1,6 +1,6 @@
 module github.com/ITDLUPanel/panel
 
-go 1.25.9
+go 1.18
 
 require (
 	github.com/creack/pty v1.1.24

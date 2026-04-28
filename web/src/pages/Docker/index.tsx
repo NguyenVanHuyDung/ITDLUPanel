@@ -5,7 +5,7 @@ import {
   DownloadOutlined, AppstoreOutlined, DashboardOutlined,
   CloudDownloadOutlined, HddOutlined, ApartmentOutlined,
   DatabaseOutlined, BuildOutlined, SafetyOutlined, SettingOutlined,
-  LoadingOutlined,
+  LoadingOutlined, ClearOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -24,6 +24,7 @@ import NetworkList from './components/NetworkList';
 import VolumeList from './components/VolumeList';
 import Repository from './components/Repository';
 import Settings from './components/Settings';
+import CleanupTab from './CleanupTab';
 
 interface DockerInfo {
   installed: boolean;
@@ -46,6 +47,7 @@ const tabs = [
   { key: 'volume', label: 'Volume', icon: <DatabaseOutlined /> },
   { key: 'repository', label: 'Repository', icon: <SafetyOutlined /> },
   { key: 'settings', label: 'Settings', icon: <SettingOutlined /> },
+  { key: 'cleanup', label: 'Cleanup', icon: <ClearOutlined /> },
 ];
 
 export default function Docker() {
@@ -243,6 +245,7 @@ export default function Docker() {
         {activeTab === 'volume' && <VolumeList key={refreshKey} onRefresh={refreshAll} />}
         {activeTab === 'repository' && <Repository key={refreshKey} />}
         {activeTab === 'settings' && <Settings key={refreshKey} />}
+        {activeTab === 'cleanup' && <CleanupTab key={refreshKey} />}
       </div>
     </div>
   );

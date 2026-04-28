@@ -276,6 +276,15 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		metricsCollector.SetNotifier(notificationService)
 
 		// -------------------------------------------------------
+		// Docker Cleanup management
+		// -------------------------------------------------------
+		dockerCleanupService := service.NewDockerCleanupService(db, dockerService)
+		dockerCleanupService.SetNotifier(notificationService)
+		dockerCleanupService.StartScheduler()
+		dockerCleanupHandler := v1.NewDockerCleanupHandler(dockerCleanupService)
+		dockerCleanupHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
+
+		// -------------------------------------------------------
 		// WebSocket endpoints (terminal handles its own JWT auth via query param)
 		// -------------------------------------------------------
 		apiV1.GET("/terminal", ws.HandleTerminal(terminalService, CheckPermission))

@@ -20,6 +20,8 @@ export interface NotificationRule {
   channel_id: number;
   event_type: string;
   is_enabled: boolean;
+  custom_subject?: string;
+  custom_body?: string;
 }
 
 export interface NotificationLog {

@@ -1731,6 +1731,168 @@ func (s *DockerService) GetDaemonConfig() ([]string, error) {
 	return result, nil
 }
 
+// ---------------------------------------------------------------------------
+// Cleanup helpers — used by DockerCleanupService
+// ---------------------------------------------------------------------------
+
+// PruneContainers removes all stopped containers.
+// Returns (count removed, space reclaimed in bytes, error).
+func (s *DockerService) PruneContainers() (int, int64, error) {
+	resp, err := s.post("/containers/prune", "")
+	if err != nil {
+		return 0, 0, fmt.Errorf("prune containers: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, 0, s.readError(resp)
+	}
+
+	var raw struct {
+		ContainersDeleted []string `json:"ContainersDeleted"`
+		SpaceReclaimed    int64    `json:"SpaceReclaimed"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return 0, 0, fmt.Errorf("prune containers decode: %w", err)
+	}
+	logger.Info().Int("count", len(raw.ContainersDeleted)).Int64("reclaimed", raw.SpaceReclaimed).Msg("containers pruned")
+	return len(raw.ContainersDeleted), raw.SpaceReclaimed, nil
+}
+
+// PruneBuildCache removes Docker build cache.
+func (s *DockerService) PruneBuildCache() (int64, error) {
+	resp, err := s.post("/build/prune", "")
+	if err != nil {
+		return 0, fmt.Errorf("prune build cache: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, s.readError(resp)
+	}
+
+	var raw struct {
+		SpaceReclaimed int64 `json:"SpaceReclaimed"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return 0, fmt.Errorf("prune build cache decode: %w", err)
+	}
+	logger.Info().Int64("reclaimed", raw.SpaceReclaimed).Msg("build cache pruned")
+	return raw.SpaceReclaimed, nil
+}
+
+// ContainerSummaryForCleanup is a lightweight container view for dry-run display.
+type ContainerSummaryForCleanup struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Created int64  `json:"created"`
+	State   string `json:"state"`
+}
+
+// ListStoppedContainers returns all containers in the exited/dead state.
+func (s *DockerService) ListStoppedContainers() ([]ContainerSummaryForCleanup, error) {
+	resp, err := s.get(`/containers/json?filters={"status":["exited","dead"]}&all=true`)
+	if err != nil {
+		return nil, fmt.Errorf("list stopped containers: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, s.readError(resp)
+	}
+
+	var raw []struct {
+		ID      string   `json:"Id"`
+		Names   []string `json:"Names"`
+		Created int64    `json:"Created"`
+		State   string   `json:"State"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("list stopped containers decode: %w", err)
+	}
+
+	result := make([]ContainerSummaryForCleanup, 0, len(raw))
+	for _, c := range raw {
+		name := c.ID[:12]
+		if len(c.Names) > 0 {
+			name = strings.TrimPrefix(c.Names[0], "/")
+		}
+		result = append(result, ContainerSummaryForCleanup{
+			ID:      c.ID[:12],
+			Name:    name,
+			Created: c.Created,
+			State:   c.State,
+		})
+	}
+	return result, nil
+}
+
+// ImageSummaryForCleanup is a lightweight image view for dry-run display.
+type ImageSummaryForCleanup struct {
+	ID   string   `json:"id"`
+	Tags []string `json:"tags"`
+	Size int64    `json:"size"`
+}
+
+// ListDanglingImages returns images with no tags (dangling).
+func (s *DockerService) ListDanglingImages() ([]ImageSummaryForCleanup, error) {
+	resp, err := s.get(`/images/json?filters={"dangling":["true"]}`)
+	if err != nil {
+		return nil, fmt.Errorf("list dangling images: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, s.readError(resp)
+	}
+
+	var raw []struct {
+		ID       string   `json:"Id"`
+		RepoTags []string `json:"RepoTags"`
+		Size     int64    `json:"Size"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("list dangling images decode: %w", err)
+	}
+
+	result := make([]ImageSummaryForCleanup, 0, len(raw))
+	for _, img := range raw {
+		id := img.ID
+		if len(id) > 19 {
+			id = id[7:19] // strip "sha256:" prefix, take 12 chars
+		}
+		result = append(result, ImageSummaryForCleanup{
+			ID:   id,
+			Tags: img.RepoTags,
+			Size: img.Size,
+		})
+	}
+	return result, nil
+}
+
+// ListUnusedVolumeNames returns names of volumes not used by any container.
+func (s *DockerService) ListUnusedVolumeNames() ([]string, error) {
+	resp, err := s.get(`/volumes?filters={"dangling":["true"]}`)
+	if err != nil {
+		return nil, fmt.Errorf("list unused volumes: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, s.readError(resp)
+	}
+
+	var raw struct {
+		Volumes []struct {
+			Name string `json:"Name"`
+		} `json:"Volumes"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("list unused volumes decode: %w", err)
+	}
+
+	names := make([]string, 0, len(raw.Volumes))
+	for _, v := range raw.Volumes {
+		names = append(names, v.Name)
+	}
+	return names, nil
+}
+
 // SaveDaemonConfig writes registry mirrors to /etc/docker/daemon.json,
 // preserving other fields if the file already exists.
 func (s *DockerService) SaveDaemonConfig(mirrors []string) error {

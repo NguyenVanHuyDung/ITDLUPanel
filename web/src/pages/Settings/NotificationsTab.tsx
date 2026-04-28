@@ -12,52 +12,103 @@ import {
 import { useTranslation } from 'react-i18next';
 import { usePalette } from '@/hooks/usePalette';
 import { useIsMobile } from '@/hooks/useIsMobile';
-import { useThemeStore } from '@/stores/theme';
 import { useNotificationStore } from '@/stores/notification';
 import type { NotificationChannel } from '@/stores/notification';
 
 const { TextArea } = Input;
 
 /* ------------------------------------------------------------------ */
-/*  Event type labels, categories & severity colors                    */
+/*  SVG Icon set — consistent with Settings SetIcon                      */
 /* ------------------------------------------------------------------ */
 
-const EVENT_LABELS: Record<string, { label: string; color: string; emoji: string; desc: string }> = {
-  cron_success:            { label: 'Cron Success',            color: 'green',   emoji: '✅', desc: 'Scheduled task completed' },
-  cron_failed:             { label: 'Cron Failed',             color: 'red',     emoji: '❌', desc: 'Scheduled task failed' },
-  ssl_expiry_warning:      { label: 'SSL Expiry Warning',      color: 'orange',  emoji: '⚠️', desc: 'Certificate expiring soon' },
-  ssl_expired:             { label: 'SSL Expired',             color: 'red',     emoji: '🔴', desc: 'Certificate has expired' },
-  backup_completed:        { label: 'Backup Completed',        color: 'green',   emoji: '✅', desc: 'Backup finished successfully' },
-  backup_failed:           { label: 'Backup Failed',           color: 'red',     emoji: '❌', desc: 'Backup operation failed' },
-  software_installed:      { label: 'Software Installed',      color: 'green',   emoji: '📦', desc: 'Package installed successfully' },
-  software_install_failed: { label: 'Software Install Failed', color: 'red',     emoji: '❌', desc: 'Package installation failed' },
-  site_created:            { label: 'Site Created',            color: 'blue',    emoji: '🌐', desc: 'New website created' },
-  site_deleted:            { label: 'Site Deleted',            color: 'orange',  emoji: '🗑️', desc: 'Website removed' },
-  cpu_high:                { label: 'CPU High',                color: 'orange',  emoji: '🔥', desc: 'CPU threshold exceeded' },
-  memory_high:             { label: 'Memory High',             color: 'orange',  emoji: '💾', desc: 'Memory usage critical' },
-  disk_high:               { label: 'Disk High',               color: 'red',     emoji: '💿', desc: 'Disk space running low' },
-  service_down:            { label: 'Service Down',            color: 'red',     emoji: '🔻', desc: 'Service stopped responding' },
-  login_failed:            { label: 'Login Failed',            color: 'orange',  emoji: '🔒', desc: 'Failed login attempt' },
+const NotifIcon = {
+  Clock: ({ size = 16, color = '#64748B' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  ),
+  Lock: ({ size = 16, color = '#64748B' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  ),
+  Shield: ({ size = 16, color = '#64748B' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </svg>
+  ),
+  Package: ({ size = 16, color = '#64748B' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="16.5" y1="9.4" x2="7.5" y2="4.21" />
+      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+      <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+      <line x1="12" y1="22.08" x2="12" y2="12" />
+    </svg>
+  ),
+  Globe: ({ size = 16, color = '#64748B' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+    </svg>
+  ),
+  Chart: ({ size = 16, color = '#64748B' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="20" x2="18" y2="10" />
+      <line x1="12" y1="20" x2="12" y2="4" />
+      <line x1="6" y1="20" x2="6" y2="14" />
+    </svg>
+  ),
+  AlertTriangle: ({ size = 16, color = '#64748B' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  ),
 };
 
-const eventLabel = (t: string) => EVENT_LABELS[t] ?? { label: t, color: 'default', emoji: '🔔', desc: '' };
+/* ------------------------------------------------------------------ */
+/*  Event type labels, categories & severity colors                      */
+/* ------------------------------------------------------------------ */
+
+const EVENT_LABELS: Record<string, { label: string; color: string; desc: string }> = {
+  cron_success:            { label: 'Cron Success',            color: 'green',   desc: 'Scheduled task completed' },
+  cron_failed:             { label: 'Cron Failed',             color: 'red',     desc: 'Scheduled task failed' },
+  ssl_expiry_warning:      { label: 'SSL Expiry Warning',      color: 'orange',  desc: 'Certificate expiring soon' },
+  ssl_expired:             { label: 'SSL Expired',             color: 'red',     desc: 'Certificate has expired' },
+  backup_completed:        { label: 'Backup Completed',        color: 'green',   desc: 'Backup finished successfully' },
+  backup_failed:           { label: 'Backup Failed',           color: 'red',     desc: 'Backup operation failed' },
+  software_installed:      { label: 'Software Installed',      color: 'green',   desc: 'Package installed successfully' },
+  software_install_failed: { label: 'Software Install Failed', color: 'red',     desc: 'Package installation failed' },
+  site_created:            { label: 'Site Created',            color: 'blue',    desc: 'New website created' },
+  site_deleted:            { label: 'Site Deleted',            color: 'orange',  desc: 'Website removed' },
+  cpu_high:                { label: 'CPU High',                color: 'orange',  desc: 'CPU threshold exceeded' },
+  memory_high:             { label: 'Memory High',             color: 'orange',  desc: 'Memory usage critical' },
+  disk_high:               { label: 'Disk High',               color: 'red',     desc: 'Disk space running low' },
+  service_down:            { label: 'Service Down',            color: 'red',     desc: 'Service stopped responding' },
+  login_failed:            { label: 'Login Failed',            color: 'orange',  desc: 'Failed login attempt' },
+};
+
+const eventLabel = (t: string) => EVENT_LABELS[t] ?? { label: t, color: 'default', desc: '' };
 
 interface EventCategory {
   key: string;
   label: string;
-  icon: string;
-  tint: string; // hex color for subtle tinted backgrounds
+  Icon: React.ComponentType<{ size?: number; color?: string }>;
+  tint: string;
   events: string[];
 }
 
 const EVENT_CATEGORIES: EventCategory[] = [
-  { key: 'cron',     label: 'Scheduled Tasks',    icon: '🕐', tint: '#7c3aed', events: ['cron_success', 'cron_failed'] },
-  { key: 'ssl',      label: 'SSL Certificates',   icon: '🔐', tint: '#e11d48', events: ['ssl_expiry_warning', 'ssl_expired'] },
-  { key: 'backup',   label: 'Backups',             icon: '💾', tint: '#0891b2', events: ['backup_completed', 'backup_failed'] },
-  { key: 'software', label: 'Software',            icon: '📦', tint: '#059669', events: ['software_installed', 'software_install_failed'] },
-  { key: 'sites',    label: 'Websites',            icon: '🌐', tint: '#6366f1', events: ['site_created', 'site_deleted'] },
-  { key: 'system',   label: 'System Resources',    icon: '📊', tint: '#d97706', events: ['cpu_high', 'memory_high', 'disk_high'] },
-  { key: 'security', label: 'Security',            icon: '🛡️', tint: '#dc2626', events: ['service_down', 'login_failed'] },
+  { key: 'cron',     label: 'Scheduled Tasks',    Icon: NotifIcon.Clock,        tint: '#7c3aed', events: ['cron_success', 'cron_failed'] },
+  { key: 'ssl',      label: 'SSL Certificates',   Icon: NotifIcon.Shield,       tint: '#e11d48', events: ['ssl_expiry_warning', 'ssl_expired'] },
+  { key: 'backup',   label: 'Backups',             Icon: NotifIcon.Package,      tint: '#0891b2', events: ['backup_completed', 'backup_failed'] },
+  { key: 'software', label: 'Software',            Icon: NotifIcon.Package,      tint: '#059669', events: ['software_installed', 'software_install_failed'] },
+  { key: 'sites',    label: 'Websites',            Icon: NotifIcon.Globe,       tint: '#6366f1', events: ['site_created', 'site_deleted'] },
+  { key: 'system',   label: 'System Resources',    Icon: NotifIcon.Chart,       tint: '#d97706', events: ['cpu_high', 'memory_high', 'disk_high'] },
+  { key: 'security', label: 'Security',            Icon: NotifIcon.Lock,        tint: '#dc2626', events: ['service_down', 'login_failed'] },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -66,9 +117,8 @@ const EVENT_CATEGORIES: EventCategory[] = [
 
 export default function NotificationsTab() {
   const { t } = useTranslation();
-  const p = usePalette();
+  const { p, isDark } = usePalette();
   const isMobile = useIsMobile();
-  const isDark = useThemeStore((s) => s.mode) === 'dark';
 
   const {
     channels, rules, logs, eventTypes, criticalTypes, loading,
@@ -85,10 +135,8 @@ export default function NotificationsTab() {
   const [testing, setTesting] = useState<number | null>(null);
   const [testingEvent, setTestingEvent] = useState<string | null>(null);
   const [section, setSection] = useState<'channels' | 'rules' | 'logs'>('channels');
-  const [activeRuleChannel, setActiveRuleChannel] = useState<number | null>(null); // kept for potential future use
   const [logPage, setLogPage] = useState(1);
 
-  // Template editor state
   const [tplModal, setTplModal] = useState(false);
   const [tplChannelId, setTplChannelId] = useState<number>(0);
   const [tplEventType, setTplEventType] = useState('');
@@ -111,9 +159,17 @@ export default function NotificationsTab() {
 
   useEffect(() => { reload(); }, [reload]);
 
-  /* ---------- Styles ---------- */
+  /* ---------- Unified Design System Styles ---------- */
   const sectionBox: React.CSSProperties = {
     maxWidth: 'none', borderRadius: 10,
+    background: isDark ? p.rowAlt : p.headerBg,
+    border: `1px solid ${p.cardBorder}`,
+    padding: isMobile ? 16 : 28,
+    marginBottom: 16,
+  };
+
+  const sectionBoxNarrow: React.CSSProperties = {
+    maxWidth: 640, borderRadius: 10,
     background: isDark ? p.rowAlt : p.headerBg,
     border: `1px solid ${p.cardBorder}`,
     padding: isMobile ? 16 : 28,
@@ -154,6 +210,43 @@ export default function NotificationsTab() {
     </div>
   );
 
+  /* ---------- Nav buttons — text-style tabs matching Settings ---------- */
+  const tabs = [
+    { key: 'channels' as const, icon: <BellOutlined />, label: 'Channels', count: channels.length },
+    { key: 'rules' as const, icon: <CheckCircleOutlined />, label: 'Event Rules' },
+    { key: 'logs' as const, icon: <MailOutlined />, label: 'Logs', count: logs.length },
+  ];
+
+  const navTab = (key: typeof section, icon: React.ReactNode, label: string, count?: number) => {
+    const active = section === key;
+    return (
+      <button
+        key={key}
+        onClick={() => setSection(key)}
+        style={{
+          padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
+          fontSize: 12, fontWeight: 500,
+          background: active ? `${p.accent}15` : 'transparent',
+          color: active ? p.accent : p.textMuted,
+          transition: 'all 0.15s',
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+        }}
+      >
+        {icon}
+        {label}
+        {count !== undefined && count > 0 && (
+          <span style={{
+            fontSize: 10, fontWeight: 500, padding: '1px 6px', borderRadius: 8,
+            background: active ? `${p.accent}20` : `${p.textMuted}15`,
+            color: active ? p.accent : p.textMuted,
+          }}>
+            {count}
+          </span>
+        )}
+      </button>
+    );
+  };
+
   /* ---------- Channel CRUD ---------- */
   const handleSaveChannel = async (values: Record<string, unknown>) => {
     try {
@@ -167,11 +260,11 @@ export default function NotificationsTab() {
           if (values[k] !== undefined && values[k] !== '') config[k] = String(values[k]);
         }
       }
-      const payload = {
-        type: values.type,
-        name: values.name,
-        config,
-        is_enabled: values.is_enabled ?? true,
+      const payload: Partial<NotificationChannel> = {
+        type: values.type as 'email' | 'telegram',
+        name: values.name as string,
+        config: JSON.stringify(config),
+        is_enabled: (values.is_enabled as boolean) ?? true,
       };
       if (editingChannel) {
         await updateChannel(editingChannel.id, payload);
@@ -185,8 +278,7 @@ export default function NotificationsTab() {
       form.resetFields();
       await fetchChannels();
     } catch (e: unknown) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const axiosErr = e as any;
+      const axiosErr = e as { response?: { data?: { error?: string } }; message?: string };
       const errMsg = axiosErr?.response?.data?.error || axiosErr?.message || 'Failed';
       message.error(errMsg, 6);
     }
@@ -198,8 +290,7 @@ export default function NotificationsTab() {
       const msg = await testChannel(id);
       message.success(msg);
     } catch (e: unknown) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const axiosErr = e as any;
+      const axiosErr = e as { response?: { data?: { error?: string } }; message?: string };
       const errMsg = axiosErr?.response?.data?.error || axiosErr?.message || 'Test failed';
       message.error(errMsg, 6);
     } finally {
@@ -214,8 +305,7 @@ export default function NotificationsTab() {
       const msg = await testEvent(channelId, eventType);
       message.success(msg);
     } catch (e: unknown) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const axiosErr = e as any;
+      const axiosErr = e as { response?: { data?: { error?: string } }; message?: string };
       const errMsg = axiosErr?.response?.data?.error || axiosErr?.message || 'Test failed';
       message.error(errMsg, 6);
     } finally {
@@ -223,7 +313,6 @@ export default function NotificationsTab() {
     }
   };
 
-  /* ---------- Template Editor ---------- */
   const openTemplateEditor = async (channelId: number, eventType: string) => {
     setTplChannelId(channelId);
     setTplEventType(eventType);
@@ -261,8 +350,7 @@ export default function NotificationsTab() {
       const result = await previewTemplate(tpl, tplEventType);
       setTplPreview(result);
     } catch (e: unknown) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const axiosErr = e as any;
+      const axiosErr = e as { response?: { data?: { error?: string } }; message?: string };
       const errMsg = axiosErr?.response?.data?.error || axiosErr?.message || 'Preview failed';
       message.error(errMsg, 4);
       setTplPreview('');
@@ -313,7 +401,6 @@ export default function NotificationsTab() {
     setChannelModal(true);
   };
 
-  /* ---------- Rules toggle ---------- */
   const handleRuleToggle = async (channelId: number, eventType: string, enabled: boolean) => {
     const existing = rules.find((r) => r.channel_id === channelId && r.event_type === eventType);
     const updated = existing
@@ -343,231 +430,198 @@ export default function NotificationsTab() {
     return rule?.is_enabled ?? false;
   };
 
-  /* ---------- Semantic colors for channel types ---------- */
   const emailColor = p.accent;
   const telegramColor = p.green;
 
-  /* ---------- Nav buttons ---------- */
-  const navColors: Record<string, string> = { channels: p.accent, rules: p.green, logs: p.amber };
-  const navBtn = (key: typeof section, icon: React.ReactNode, label: string, count?: number) => {
-    const active = section === key;
-    const color = navColors[key] || p.accent;
-    return (
-      <button
-        onClick={() => setSection(key)}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-          border: active ? `1.5px solid ${color}` : `1px solid ${p.cardBorder}`,
-          background: active ? `${color}12` : 'transparent',
-          color: active ? color : p.textMuted,
-          cursor: 'pointer', transition: 'all 0.15s',
-        }}
-      >
-        {icon}
-        {label}
-        {count !== undefined && count > 0 && (
-          <span style={{
-            fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 8,
-            background: active ? `${color}20` : `${p.textMuted}15`,
-            color: active ? color : p.textMuted,
-          }}>{count}</span>
-        )}
-      </button>
-    );
-  };
-
   /* ================================================================ */
-  /*  RENDER: Channels — clean row list (matches Domain Certificates)  */
+  /*  RENDER: Channels                                                  */
   /* ================================================================ */
   const renderChannels = () => {
-    return (<div style={sectionBox}>
-      {sectionTitle(
-        <BellOutlined style={{ fontSize: 18 }} />,
-        'Notification Channels',
-        <button style={btnPrimary} onClick={openNewChannel}>
-          <PlusOutlined /> Add Channel
-        </button>
-      )}
-
-      {channels.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-          <BellOutlined style={{ fontSize: 36, color: p.textDim, display: 'block', marginBottom: 8 }} />
-          <div style={{ fontSize: 14, fontWeight: 600, color: p.text, marginBottom: 4 }}>No channels configured</div>
-          <div style={{ fontSize: 12, color: p.textMuted, marginBottom: 14 }}>Add an Email or Telegram channel to start receiving notifications</div>
+    return (
+      <div style={sectionBoxNarrow}>
+        {sectionTitle(
+          <BellOutlined style={{ fontSize: 18 }} />,
+          'Notification Channels',
           <button style={btnPrimary} onClick={openNewChannel}>
-            <PlusOutlined /> Add Your First Channel
+            <PlusOutlined /> Add Channel
           </button>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {channels.map((ch) => {
-            const cfg = parseConfig(ch.config);
-            const isEmail = ch.type === 'email';
-            const typeColor = isEmail ? emailColor : telegramColor;
-            return (
-              <div key={ch.id} style={{
-                display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', gap: 12,
-                padding: '12px 14px', borderRadius: 8,
-                background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-                border: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`,
-                borderLeft: `3px solid ${ch.is_enabled ? typeColor : (isDark ? '#555' : '#ccc')}`,
-                flexDirection: isMobile ? 'column' : 'row',
-              }}>
-                {/* Icon */}
-                <div style={{
-                  width: 36, height: 36, borderRadius: 8, flexShrink: 0,
-                  background: `${typeColor}15`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  {isEmail
-                    ? <MailOutlined style={{ fontSize: 18, color: typeColor }} />
-                    : <SendOutlined style={{ fontSize: 18, color: typeColor }} />}
-                </div>
+        )}
 
-                {/* Info */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: p.text }}>{ch.name}</span>
-                    <span style={{
-                      fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4,
-                      background: `${typeColor}12`, color: typeColor,
-                      textTransform: 'uppercase', letterSpacing: 0.5,
-                    }}>{isEmail ? 'Email' : 'Telegram'}</span>
-                    <span style={{
-                      fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4,
-                      background: ch.is_enabled ? `${p.green}15` : `${p.red}12`,
-                      color: ch.is_enabled ? p.green : p.red,
-                      letterSpacing: 0.5,
-                    }}>{ch.is_enabled ? '● Active' : '○ Disabled'}</span>
-                  </div>
-                  <div style={{ fontSize: 11, color: p.textMuted, display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 3 }}>
-                    {isEmail
-                      ? <span>{cfg.host || '—'}:{cfg.port || '—'} · {(cfg.encryption || 'starttls').toUpperCase()}</span>
-                      : <span>Chat: {cfg.chat_id || '—'}</span>}
-                    {isEmail && cfg.to && <span style={{ color: p.text }}>→ {cfg.to}</span>}
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                  <button
-                    title="Send test notification"
-                    style={{ ...btnOutline, padding: '4px 10px' }}
-                    onClick={() => handleTestChannel(ch.id)}
-                    disabled={testing === ch.id}
-                  >
-                    <ExperimentOutlined /> {testing === ch.id ? '…' : 'Test'}
-                  </button>
-                  <button title="Edit" style={{ ...btnOutline, padding: '4px 10px' }} onClick={() => openEditChannel(ch)}>
-                    <EditOutlined />
-                  </button>
-                  <button
-                    title="Delete"
-                    style={{ ...btnOutline, padding: '4px 10px', color: p.red, borderColor: `${p.red}40` }}
-                    onClick={() => { if (window.confirm('Delete this channel? All rules will also be removed.')) handleDeleteChannel(ch.id); }}
-                  >
-                    <DeleteOutlined />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ---- Channel Modal ---- */}
-      <Modal
-        open={channelModal}
-        title={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {editingChannel ? <EditOutlined style={{ color: p.accent }} /> : <PlusOutlined style={{ color: p.accent }} />}
-            <span>{editingChannel ? 'Edit Channel' : 'New Notification Channel'}</span>
+        {channels.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+            <BellOutlined style={{ fontSize: 36, color: p.textMuted, display: 'block', marginBottom: 8 }} />
+            <div style={{ fontSize: 14, fontWeight: 600, color: p.text, marginBottom: 4 }}>No channels configured</div>
+            <div style={{ fontSize: 12, color: p.textMuted, marginBottom: 14 }}>Add an Email or Telegram channel to start receiving notifications</div>
+            <button style={btnPrimary} onClick={openNewChannel}>
+              <PlusOutlined /> Add Your First Channel
+            </button>
           </div>
-        }
-        onCancel={() => { setChannelModal(false); setEditingChannel(null); }}
-        footer={null}
-        destroyOnClose
-        width={480}
-        styles={{ content: { background: isDark ? p.card : '#fff' } }}
-      >
-        <Form form={form} layout="vertical" onFinish={handleSaveChannel}>
-          <Form.Item name="name" label="Name" rules={[{ required: true }]}>
-            <Input placeholder="My Email / My Telegram" />
-          </Form.Item>
-          <Form.Item name="type" label="Type" rules={[{ required: true }]}>
-            <Select
-              onChange={(v: 'email' | 'telegram') => setChannelType(v)}
-              options={[
-                { value: 'email', label: '📧 Email (SMTP)' },
-                { value: 'telegram', label: '📨 Telegram Bot' },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item name="is_enabled" label="Enabled" valuePropName="checked" initialValue={true}>
-            <Switch />
-          </Form.Item>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {channels.map((ch) => {
+              const cfg = parseConfig(ch.config);
+              const isEmail = ch.type === 'email';
+              const typeColor = isEmail ? emailColor : telegramColor;
+              return (
+                <div key={ch.id} style={{
+                  display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', gap: 12,
+                  padding: '12px 14px', borderRadius: 8,
+                  background: isDark ? p.rowAlt : p.headerBg,
+                  border: `1px solid ${p.cardBorder}`,
+                  borderLeft: `3px solid ${ch.is_enabled ? typeColor : p.cardBorder}`,
+                  flexDirection: isMobile ? 'column' : 'row',
+                }}>
+                  <div style={{
+                    width: 36, height: 36, borderRadius: 8, flexShrink: 0,
+                    background: `${typeColor}15`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {isEmail
+                      ? <MailOutlined style={{ fontSize: 18, color: typeColor }} />
+                      : <SendOutlined style={{ fontSize: 18, color: typeColor }} />}
+                  </div>
 
-          {channelType === 'email' && (
-            <>
-              <Form.Item name="host" label="SMTP Host" rules={[{ required: true }]}>
-                <Input placeholder="smtp.gmail.com" />
-              </Form.Item>
-              <Form.Item name="port" label="SMTP Port" rules={[{ required: true }]}>
-                <InputNumber min={1} max={65535} style={{ width: '100%' }} />
-              </Form.Item>
-              <Form.Item name="encryption" label="Encryption">
-                <Select
-                  options={[
-                    { value: 'starttls', label: 'STARTTLS (587)' },
-                    { value: 'ssl', label: 'SSL/TLS (465)' },
-                    { value: 'none', label: 'None (25)' },
-                  ]}
-                />
-              </Form.Item>
-              <Form.Item name="username" label="Username" rules={[{ required: true }]}>
-                <Input placeholder="user@example.com" />
-              </Form.Item>
-              <Form.Item name="password" label="Password" rules={[{ required: true }]}>
-                <Input.Password placeholder="App password" />
-              </Form.Item>
-              <Form.Item name="from" label="From Address">
-                <Input placeholder="noreply@example.com (defaults to username)" />
-              </Form.Item>
-              <Form.Item name="to" label="To Address" rules={[{ required: true }]}>
-                <Input placeholder="admin@example.com" />
-              </Form.Item>
-            </>
-          )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: p.text }}>{ch.name}</span>
+                      <span style={{
+                        fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4,
+                        background: `${typeColor}12`, color: typeColor,
+                        textTransform: 'uppercase', letterSpacing: 0.5,
+                      }}>{isEmail ? 'Email' : 'Telegram'}</span>
+                      <span style={{
+                        fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4,
+                        background: ch.is_enabled ? `${p.green}15` : `${p.red}12`,
+                        color: ch.is_enabled ? p.green : p.red,
+                        letterSpacing: 0.5,
+                      }}>{ch.is_enabled ? 'Active' : 'Disabled'}</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: p.textMuted, display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 3 }}>
+                      {isEmail
+                        ? <span>{cfg.host || '—'}:{cfg.port || '—'} · {(cfg.encryption || 'starttls').toUpperCase()}</span>
+                        : <span>Chat: {cfg.chat_id || '—'}</span>}
+                      {isEmail && cfg.to && <span style={{ color: p.text }}>→ {cfg.to}</span>}
+                    </div>
+                  </div>
 
-          {channelType === 'telegram' && (
-            <>
-              <Form.Item name="bot_token" label="Bot Token" rules={[{ required: true }]}
-                extra="Get from @BotFather on Telegram"
-              >
-                <Input.Password placeholder="123456:ABC-DEF..." />
-              </Form.Item>
-              <Form.Item name="chat_id" label="Chat ID" rules={[{ required: true }]}
-                extra="Send /start to your bot, then get chat ID from @userinfobot"
-              >
-                <Input placeholder="-1001234567890" />
-              </Form.Item>
-            </>
-          )}
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    <button
+                      title="Send test notification"
+                      style={{ ...btnOutline, padding: '4px 10px' }}
+                      onClick={() => handleTestChannel(ch.id)}
+                      disabled={testing === ch.id}
+                    >
+                      <ExperimentOutlined /> {testing === ch.id ? '…' : 'Test'}
+                    </button>
+                    <button title="Edit" style={{ ...btnOutline, padding: '4px 10px' }} onClick={() => openEditChannel(ch)}>
+                      <EditOutlined />
+                    </button>
+                    <button
+                      title="Delete"
+                      style={{ ...btnOutline, padding: '4px 10px', color: p.red, borderColor: `${p.red}40` }}
+                      onClick={() => { if (window.confirm('Delete this channel? All rules will also be removed.')) handleDeleteChannel(ch.id); }}
+                    >
+                      <DeleteOutlined />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
-          <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button style={btnOutline} type="button" onClick={() => { setChannelModal(false); setEditingChannel(null); }}>
-                Cancel
-              </button>
-              <button style={btnPrimary} type="submit">
-                {editingChannel ? 'Update' : 'Create'}
-              </button>
+        {/* Channel Modal */}
+        <Modal
+          open={channelModal}
+          title={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {editingChannel ? <EditOutlined style={{ color: p.accent }} /> : <PlusOutlined style={{ color: p.accent }} />}
+              <span>{editingChannel ? 'Edit Channel' : 'New Notification Channel'}</span>
             </div>
-          </Form.Item>
-        </Form>
-      </Modal>
-    </div>
+          }
+          onCancel={() => { setChannelModal(false); setEditingChannel(null); }}
+          footer={null}
+          destroyOnClose
+          width={480}
+          styles={{ body: { background: isDark ? p.card : '#fff' } }}
+        >
+          <Form form={form} layout="vertical" onFinish={handleSaveChannel}>
+            <Form.Item name="name" label="Name" rules={[{ required: true }]}>
+              <Input placeholder="My Email / My Telegram" />
+            </Form.Item>
+            <Form.Item name="type" label="Type" rules={[{ required: true }]}>
+              <Select
+                onChange={(v: 'email' | 'telegram') => setChannelType(v)}
+                options={[
+                  { value: 'email',    label: 'Email (SMTP)' },
+                  { value: 'telegram', label: 'Telegram Bot' },
+                ]}
+              />
+            </Form.Item>
+            <Form.Item name="is_enabled" label="Enabled" valuePropName="checked" initialValue={true}>
+              <Switch />
+            </Form.Item>
+
+            {channelType === 'email' && (
+              <>
+                <Form.Item name="host" label="SMTP Host" rules={[{ required: true }]}>
+                  <Input placeholder="smtp.gmail.com" />
+                </Form.Item>
+                <Form.Item name="port" label="SMTP Port" rules={[{ required: true }]}>
+                  <InputNumber min={1} max={65535} style={{ width: '100%' }} />
+                </Form.Item>
+                <Form.Item name="encryption" label="Encryption">
+                  <Select
+                    options={[
+                      { value: 'starttls', label: 'STARTTLS (587)' },
+                      { value: 'ssl', label: 'SSL/TLS (465)' },
+                      { value: 'none', label: 'None (25)' },
+                    ]}
+                  />
+                </Form.Item>
+                <Form.Item name="username" label="Username" rules={[{ required: true }]}>
+                  <Input placeholder="user@example.com" />
+                </Form.Item>
+                <Form.Item name="password" label="Password" rules={[{ required: true }]}>
+                  <Input.Password placeholder="App password" />
+                </Form.Item>
+                <Form.Item name="from" label="From Address">
+                  <Input placeholder="noreply@example.com (defaults to username)" />
+                </Form.Item>
+                <Form.Item name="to" label="To Address" rules={[{ required: true }]}>
+                  <Input placeholder="admin@example.com" />
+                </Form.Item>
+              </>
+            )}
+
+            {channelType === 'telegram' && (
+              <>
+                <Form.Item name="bot_token" label="Bot Token" rules={[{ required: true }]}
+                  extra="Get from @BotFather on Telegram"
+                >
+                  <Input.Password placeholder="123456:ABC-DEF..." />
+                </Form.Item>
+                <Form.Item name="chat_id" label="Chat ID" rules={[{ required: true }]}
+                  extra="Send /start to your bot, then get chat ID from @userinfobot"
+                >
+                  <Input placeholder="-1001234567890" />
+                </Form.Item>
+              </>
+            )}
+
+            <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button style={btnOutline} type="button" onClick={() => { setChannelModal(false); setEditingChannel(null); }}>
+                  Cancel
+                </button>
+                <button style={btnPrimary} type="submit">
+                  {editingChannel ? 'Update' : 'Create'}
+                </button>
+              </div>
+            </Form.Item>
+          </Form>
+        </Modal>
+      </div>
     );
   };
 
@@ -577,18 +631,15 @@ export default function NotificationsTab() {
   const renderRules = () => {
     const activeChannels = channels.filter((c) => c.is_enabled);
 
-    // Severity dot color
     const sevDot = (ev: string): string => {
       const sev = eventTypes.find((e) => e.type === ev)?.severity;
       const map: Record<string, string> = { info: p.accent, success: p.green, warning: p.amber, error: p.red, critical: p.red };
       return map[sev ?? ''] ?? p.textMuted;
     };
 
-    // Summary per channel
     const channelEnabledCount = (chId: number) =>
       rules.filter((r) => r.channel_id === chId && r.is_enabled).length;
 
-    // Batch toggle: enable/disable all events for a channel
     const toggleAllForChannel = async (chId: number, enable: boolean) => {
       const allEvents = EVENT_CATEGORIES.flatMap((cat) => cat.events);
       const batch = allEvents.map((ev) => ({
@@ -596,7 +647,6 @@ export default function NotificationsTab() {
         event_type: ev,
         is_enabled: enable,
       }));
-      // Preserve rules for other channels
       const otherRules = rules
         .filter((r) => r.channel_id !== chId)
         .map((r) => ({ channel_id: r.channel_id, event_type: r.event_type, is_enabled: r.is_enabled }));
@@ -607,7 +657,6 @@ export default function NotificationsTab() {
       } catch { message.error('Failed'); }
     };
 
-    // Batch toggle: enable/disable all channels for an event
     const toggleAllForEvent = async (ev: string, enable: boolean) => {
       const batch = activeChannels.map((ch) => ({
         channel_id: ch.id,
@@ -623,11 +672,11 @@ export default function NotificationsTab() {
       } catch { message.error('Failed'); }
     };
 
-    // Check if all channels are enabled for an event
     const allChannelsEnabled = (ev: string) =>
       activeChannels.length > 0 && activeChannels.every((ch) => isRuleEnabled(ch.id, ev));
 
     const colWidth = activeChannels.length <= 2 ? 100 : 80;
+    const rowBg = isDark ? p.card : '#fff';
 
     return (
       <div style={sectionBox}>
@@ -639,14 +688,12 @@ export default function NotificationsTab() {
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            {/* ---- Matrix table ---- */}
             <table style={{
               width: '100%',
               borderCollapse: 'separate',
               borderSpacing: 0,
               fontSize: 13,
             }}>
-              {/* Header: channel columns */}
               <thead>
                 <tr>
                   <th style={{
@@ -654,7 +701,7 @@ export default function NotificationsTab() {
                     borderBottom: `2px solid ${p.cardBorder}`,
                     color: p.textMuted, fontSize: 12, fontWeight: 600,
                     position: 'sticky', left: 0, zIndex: 2,
-                    background: isDark ? p.card : '#fff',
+                    background: rowBg,
                     minWidth: isMobile ? 140 : 200,
                   }}>
                     Event
@@ -666,7 +713,11 @@ export default function NotificationsTab() {
                       minWidth: colWidth,
                     }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                        <span style={{ fontSize: 18 }}>{ch.type === 'email' ? '📧' : '📨'}</span>
+                        <div style={{ width: 24, height: 24, borderRadius: 6, background: `${ch.type === 'email' ? emailColor : telegramColor}15`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {ch.type === 'email'
+                            ? <MailOutlined style={{ fontSize: 14, color: emailColor }} />
+                            : <SendOutlined style={{ fontSize: 14, color: telegramColor }} />}
+                        </div>
                         <span style={{
                           fontSize: 11, fontWeight: 600, color: p.text,
                           maxWidth: colWidth, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -676,12 +727,11 @@ export default function NotificationsTab() {
                         <span style={{
                           fontSize: 10, fontWeight: 600,
                           padding: '1px 6px', borderRadius: 8,
-                          background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                          background: channelEnabledCount(ch.id) > 0 ? `${p.green}15` : `${p.textMuted}15`,
                           color: channelEnabledCount(ch.id) > 0 ? p.green : p.textMuted,
                         }}>
                           {channelEnabledCount(ch.id)}/{EVENT_CATEGORIES.flatMap((c) => c.events).length}
                         </span>
-                        {/* Column toggle all */}
                         <div style={{ display: 'flex', gap: 2 }}>
                           <button
                             title="Enable all"
@@ -697,7 +747,6 @@ export default function NotificationsTab() {
                       </div>
                     </th>
                   ))}
-                  {/* "All" column header */}
                   {activeChannels.length > 1 && (
                     <th style={{
                       textAlign: 'center', padding: '8px 6px',
@@ -711,151 +760,144 @@ export default function NotificationsTab() {
               </thead>
 
               <tbody>
-                {EVENT_CATEGORIES.map((cat) => (
-                  <React.Fragment key={cat.key}>
-                    {/* Category header row */}
-                    <tr>
-                      <td
-                        colSpan={activeChannels.length + (activeChannels.length > 1 ? 2 : 1)}
-                        style={{
-                          padding: '10px 12px 6px',
-                          background: isDark ? `${cat.tint}08` : `${cat.tint}06`,
-                          borderTop: `1px solid ${p.cardBorder}`,
-                          borderLeft: `3px solid ${cat.tint}`,
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontSize: 15 }}>{cat.icon}</span>
-                          <span style={{ fontSize: 12, fontWeight: 600, color: p.text }}>{cat.label}</span>
-                          <span style={{
-                            fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 6,
-                            background: `${cat.tint}12`, color: cat.tint,
-                          }}>{cat.events.length}</span>
-                        </div>
-                      </td>
-                    </tr>
-
-                    {/* Event rows */}
-                    {cat.events.map((ev) => {
-                      const info = eventLabel(ev);
-                      const isCritical = criticalTypes.includes(ev);
-                      const anyEnabled = activeChannels.some((ch) => isRuleEnabled(ch.id, ev));
-
-                      return (
-                        <tr
-                          key={ev}
-                          style={{ transition: 'background 0.15s' }}
-                          onMouseEnter={(e) => {
-                            (e.currentTarget as HTMLElement).style.background = isDark ? p.rowHover : '#fafbfc';
-                          }}
-                          onMouseLeave={(e) => {
-                            (e.currentTarget as HTMLElement).style.background = 'transparent';
+                {EVENT_CATEGORIES.map((cat) => {
+                  const CatIcon = cat.Icon;
+                  return (
+                    <React.Fragment key={cat.key}>
+                      <tr>
+                        <td
+                          colSpan={activeChannels.length + (activeChannels.length > 1 ? 2 : 1)}
+                          style={{
+                            padding: '10px 12px 6px',
+                            background: isDark ? `${cat.tint}08` : `${cat.tint}06`,
+                            borderTop: `1px solid ${p.cardBorder}`,
+                            borderLeft: `3px solid ${cat.tint}`,
                           }}
                         >
-                          {/* Event label cell */}
-                          <td style={{
-                            padding: isMobile ? '8px 10px' : '8px 12px',
-                            borderBottom: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}`,
-                            position: 'sticky', left: 0, zIndex: 1,
-                            background: isDark ? p.card : '#fff',
-                          }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <div style={{
-                                width: 7, height: 7, borderRadius: '50%',
-                                background: anyEnabled ? sevDot(ev) : (isDark ? '#444' : '#d9d9d9'),
-                                flexShrink: 0,
-                                boxShadow: anyEnabled ? `0 0 5px ${sevDot(ev)}40` : 'none',
-                              }} />
-                              <span style={{ fontSize: 13 }}>{info.emoji}</span>
-                              <span style={{
-                                fontSize: 12, fontWeight: 600,
-                                color: anyEnabled ? p.text : p.textMuted,
-                              }}>
-                                {info.label}
-                              </span>
-                              {isCritical && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <CatIcon size={15} color={cat.tint} />
+                            <span style={{ fontSize: 12, fontWeight: 600, color: p.text }}>{cat.label}</span>
+                            <span style={{
+                              fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 6,
+                              background: `${cat.tint}12`, color: cat.tint,
+                            }}>{cat.events.length}</span>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {cat.events.map((ev) => {
+                        const info = eventLabel(ev);
+                        const isCritical = criticalTypes.includes(ev);
+                        const anyEnabled = activeChannels.some((ch) => isRuleEnabled(ch.id, ev));
+
+                        return (
+                          <tr
+                            key={ev}
+                            style={{ transition: 'background 0.15s' }}
+                            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = isDark ? p.rowHover : '#fafbfc'; }}
+                            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                          >
+                            <td style={{
+                              padding: isMobile ? '8px 10px' : '8px 12px',
+                              borderBottom: `1px solid ${p.cardBorder}`,
+                              position: 'sticky', left: 0, zIndex: 1,
+                              background: rowBg,
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <div style={{
+                                  width: 7, height: 7, borderRadius: '50%',
+                                  background: anyEnabled ? sevDot(ev) : p.cardBorder,
+                                  flexShrink: 0,
+                                  boxShadow: anyEnabled ? `0 0 5px ${sevDot(ev)}40` : 'none',
+                                }} />
                                 <span style={{
-                                  fontSize: 9, fontWeight: 700, letterSpacing: 0.5,
-                                  padding: '1px 5px', borderRadius: 3,
-                                  background: isDark ? 'rgba(255,77,79,0.15)' : '#fff1f0',
-                                  color: p.red, textTransform: 'uppercase',
+                                  fontSize: 12, fontWeight: 600,
+                                  color: anyEnabled ? p.text : p.textMuted,
                                 }}>
-                                  Critical
+                                  {info.label}
                                 </span>
-                              )}
-                            </div>
-                            {!isMobile && (
-                              <div style={{ fontSize: 10, color: p.textMuted, marginTop: 2, marginLeft: 28 }}>
-                                {info.desc}
+                                {isCritical && (
+                                  <span style={{
+                                    fontSize: 9, fontWeight: 600, letterSpacing: 0.5,
+                                    padding: '1px 5px', borderRadius: 3,
+                                    background: isDark ? `${p.red}20` : '#fff1f0',
+                                    color: p.red, textTransform: 'uppercase',
+                                  }}>
+                                    Critical
+                                  </span>
+                                )}
                               </div>
-                            )}
-                          </td>
+                              {!isMobile && (
+                                <div style={{ fontSize: 10, color: p.textMuted, marginTop: 2, marginLeft: 15 }}>
+                                  {info.desc}
+                                </div>
+                              )}
+                            </td>
 
-                          {/* Channel switch cells */}
-                          {activeChannels.map((ch) => {
-                            const enabled = isRuleEnabled(ch.id, ev);
-                            const customized = hasCustomTemplate(ch.id, ev);
-                            const testKey = `${ch.id}-${ev}`;
+                            {activeChannels.map((ch) => {
+                              const enabled = isRuleEnabled(ch.id, ev);
+                              const customized = hasCustomTemplate(ch.id, ev);
+                              const testKey = `${ch.id}-${ev}`;
 
-                            return (
-                              <td key={ch.id} style={{
+                              return (
+                                <td key={ch.id} style={{
+                                  textAlign: 'center', padding: '6px 4px',
+                                  borderBottom: `1px solid ${p.cardBorder}`,
+                                  verticalAlign: 'middle',
+                                }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                                    <Switch
+                                      size="small"
+                                      checked={enabled}
+                                      onChange={(checked) => handleRuleToggle(ch.id, ev, checked)}
+                                    />
+                                    <div style={{ display: 'flex', gap: 2 }}>
+                                      {customized && (
+                                        <span style={{
+                                          fontSize: 8, fontWeight: 600,
+                                          padding: '0 3px', borderRadius: 3,
+                                          background: isDark ? `${p.green}15` : '#f6ffed',
+                                          color: p.green,
+                                        }}>TPL</span>
+                                      )}
+                                      <span title="Edit template">
+                                        <FormOutlined
+                                          style={{ fontSize: 11, color: customized ? p.green : p.textMuted, cursor: 'pointer' }}
+                                          onClick={() => openTemplateEditor(ch.id, ev)}
+                                        />
+                                      </span>
+                                      <span title={`Test "${info.label}" → ${ch.name}`}>
+                                        <ExperimentOutlined
+                                          style={{ fontSize: 11, color: p.accent, cursor: 'pointer', opacity: testingEvent === testKey ? 0.5 : 1 }}
+                                          onClick={() => handleTestEvent(ch.id, ev)}
+                                        />
+                                      </span>
+                                    </div>
+                                  </div>
+                                </td>
+                              );
+                            })}
+
+                            {activeChannels.length > 1 && (
+                              <td style={{
                                 textAlign: 'center', padding: '6px 4px',
-                                borderBottom: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}`,
+                                borderBottom: `1px solid ${p.cardBorder}`,
                                 verticalAlign: 'middle',
                               }}>
-                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                                  <Switch
-                                    size="small"
-                                    checked={enabled}
-                                    onChange={(checked) => handleRuleToggle(ch.id, ev, checked)}
-                                  />
-                                  <div style={{ display: 'flex', gap: 2 }}>
-                                    {customized && (
-                                      <span style={{
-                                        fontSize: 8, fontWeight: 600,
-                                        padding: '0 3px', borderRadius: 3,
-                                        background: isDark ? 'rgba(82,196,26,0.12)' : '#f6ffed',
-                                        color: p.green,
-                                      }}>TPL</span>
-                                    )}
-                                    <span title="Edit template">
-                                      <FormOutlined
-                                        style={{ fontSize: 11, color: customized ? p.green : p.textMuted, cursor: 'pointer' }}
-                                        onClick={() => openTemplateEditor(ch.id, ev)}
-                                      />
-                                    </span>
-                                    <span title={`Test "${info.label}" → ${ch.name}`}>
-                                      <ExperimentOutlined
-                                        style={{ fontSize: 11, color: p.accent, cursor: 'pointer', opacity: testingEvent === testKey ? 0.5 : 1 }}
-                                        onClick={() => handleTestEvent(ch.id, ev)}
-                                      />
-                                    </span>
-                                  </div>
-                                </div>
+                                <Switch
+                                  size="small"
+                                  checked={allChannelsEnabled(ev)}
+                                  onChange={(checked) => toggleAllForEvent(ev, checked)}
+                                  style={{ opacity: 0.8 }}
+                                />
                               </td>
-                            );
-                          })}
-
-                          {/* "All" toggle cell */}
-                          {activeChannels.length > 1 && (
-                            <td style={{
-                              textAlign: 'center', padding: '6px 4px',
-                              borderBottom: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}`,
-                              verticalAlign: 'middle',
-                            }}>
-                              <Switch
-                                size="small"
-                                checked={allChannelsEnabled(ev)}
-                                onChange={(checked) => toggleAllForEvent(ev, checked)}
-                                style={{ opacity: 0.8 }}
-                              />
-                            </td>
-                          )}
-                        </tr>
-                      );
-                    })}
-                  </React.Fragment>
-                ))}
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -865,7 +907,7 @@ export default function NotificationsTab() {
   };
 
   /* ================================================================ */
-  /*  RENDER: Logs                                                     */
+  /*  RENDER: Logs                                                       */
   /* ================================================================ */
   const renderLogs = () => {
     const pageSize = 20;
@@ -873,7 +915,7 @@ export default function NotificationsTab() {
     const pagedLogs = logs.slice((logPage - 1) * pageSize, logPage * pageSize);
 
     return (
-      <div style={sectionBox}>
+      <div style={sectionBoxNarrow}>
         {sectionTitle(<MailOutlined style={{ fontSize: 18 }} />, 'Notification Logs')}
         <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <button style={btnOutline} onClick={() => fetchLogs()}>
@@ -899,7 +941,7 @@ export default function NotificationsTab() {
                     <th key={h} style={{
                       textAlign: 'left', padding: '8px 12px',
                       borderBottom: `2px solid ${p.cardBorder}`,
-                      background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                      background: isDark ? p.rowAlt : p.headerBg,
                       color: p.textMuted, fontSize: 11, fontWeight: 600,
                       whiteSpace: 'nowrap',
                     }}>{h}</th>
@@ -907,42 +949,44 @@ export default function NotificationsTab() {
                 </tr>
               </thead>
               <tbody>
-                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                {pagedLogs.map((log: any, idx: number) => {
+                {pagedLogs.map((log, idx: number) => {
                   const info = eventLabel(log.event_type);
                   const sc = sevColor(info.color);
-                  const stripe = idx % 2 === 1 ? (isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)') : 'transparent';
+                  const stripe = idx % 2 === 1 ? (isDark ? p.rowAlt : p.headerBg) : 'transparent';
                   return (
                     <tr key={log.id} style={{ transition: 'background 0.15s', background: stripe }}
                       onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = isDark ? p.rowHover : '#fafbfc'; }}
                       onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = stripe; }}
                     >
-                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}`, whiteSpace: 'nowrap', color: p.textMuted }}>
+                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${p.cardBorder}`, whiteSpace: 'nowrap', color: p.textMuted }}>
                         {new Date(log.created_at).toLocaleString()}
                       </td>
-                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}` }}>
+                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${p.cardBorder}` }}>
                         <span style={{
                           display: 'inline-flex', alignItems: 'center', gap: 4,
                           fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6,
                           background: `${sc}15`, color: sc,
                         }}>
-                          {info.emoji} {info.label}
+                          {info.label}
                         </span>
                       </td>
-                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}` }}>
+                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${p.cardBorder}` }}>
                         <span style={{
                           display: 'inline-flex', alignItems: 'center', gap: 4,
                           fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6,
                           background: log.channel_type === 'email' ? `${emailColor}10` : `${telegramColor}10`,
                           color: log.channel_type === 'email' ? emailColor : telegramColor,
                         }}>
-                          {log.channel_type === 'email' ? '📧 Email' : '📨 Telegram'}
+                          {log.channel_type === 'email'
+                            ? <MailOutlined style={{ fontSize: 11 }} />
+                            : <SendOutlined style={{ fontSize: 11 }} />}
+                          {' '}{log.channel_type === 'email' ? 'Email' : 'Telegram'}
                         </span>
                       </td>
-                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}`, color: p.text, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${p.cardBorder}`, color: p.text, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {log.recipient}
                       </td>
-                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}` }}>
+                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${p.cardBorder}` }}>
                         {log.status === 'sent' ? (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: `${p.green}12`, color: p.green }}>
                             <CheckCircleOutlined /> Sent
@@ -953,7 +997,7 @@ export default function NotificationsTab() {
                           </span>
                         )}
                       </td>
-                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}`, color: p.textMuted, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <td style={{ padding: '8px 12px', borderBottom: `1px solid ${p.cardBorder}`, color: p.textMuted, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {log.error || '—'}
                       </td>
                     </tr>
@@ -984,7 +1028,7 @@ export default function NotificationsTab() {
   };
 
   /* ================================================================ */
-  /*  Template Editor Modal                                            */
+  /*  Template Editor Modal                                              */
   /* ================================================================ */
   const tplInfo = eventLabel(tplEventType);
   const tplChannel = channels.find((c) => c.id === tplChannelId);
@@ -995,15 +1039,20 @@ export default function NotificationsTab() {
       title={
         <span>
           <FormOutlined style={{ marginRight: 8 }} />
-          Customize Template — {tplInfo.emoji} {tplInfo.label}
-          {tplChannel && <span style={{ marginLeft: 8, fontSize: 13, color: p.textMuted }}>
-            via {tplChannel.type === 'email' ? '📧' : '📨'} {tplChannel.name}
-          </span>}
+          Customize Template — {tplInfo.label}
+          {tplChannel && (
+            <span style={{ marginLeft: 8, fontSize: 13, color: p.textMuted }}>
+              via {tplChannel.type === 'email'
+                ? <MailOutlined style={{ fontSize: 12, marginRight: 4 }} />
+                : <SendOutlined style={{ fontSize: 12, marginRight: 4 }} />}
+              {tplChannel.name}
+            </span>
+          )}
         </span>
       }
       width={640}
       onCancel={() => setTplModal(false)}
-      styles={{ content: { background: isDark ? p.card : '#fff' } }}
+      styles={{ body: { background: isDark ? p.card : '#fff' } }}
       footer={
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
           <button style={btnOutline} onClick={handleResetTemplate}>
@@ -1038,7 +1087,7 @@ export default function NotificationsTab() {
       </div>
 
       <div style={{ marginBottom: 14 }}>
-        <label style={{ fontWeight: 600, fontSize: 13, color: p.text, display: 'block', marginBottom: 4 }}>
+        <label style={{ fontWeight: 500, fontSize: 13, color: p.text, display: 'block', marginBottom: 4 }}>
           Subject / Title
         </label>
         <Input
@@ -1053,7 +1102,7 @@ export default function NotificationsTab() {
       </div>
 
       <div style={{ marginBottom: 14 }}>
-        <label style={{ fontWeight: 600, fontSize: 13, color: p.text, display: 'block', marginBottom: 4 }}>
+        <label style={{ fontWeight: 500, fontSize: 13, color: p.text, display: 'block', marginBottom: 4 }}>
           Body / Message
         </label>
         <TextArea
@@ -1068,7 +1117,7 @@ export default function NotificationsTab() {
             <summary style={{ fontSize: 11, color: p.textMuted, cursor: 'pointer' }}>
               Show default body
             </summary>
-            <pre style={{ fontSize: 11, color: p.textMuted, margin: '4px 0 0', whiteSpace: 'pre-wrap', background: isDark ? 'rgba(0,0,0,0.2)' : '#f5f5f5', padding: 8, borderRadius: 6 }}>
+            <pre style={{ fontSize: 11, color: p.textMuted, margin: '4px 0 0', whiteSpace: 'pre-wrap', background: isDark ? p.rowAlt : p.headerBg, padding: 8, borderRadius: 6 }}>
               {tplDefaultBody}
             </pre>
           </details>
@@ -1098,7 +1147,7 @@ export default function NotificationsTab() {
         <div style={{
           padding: 12,
           borderRadius: 8,
-          background: isDark ? 'rgba(0,0,0,0.3)' : '#fafafa',
+          background: isDark ? p.rowAlt : p.headerBg,
           border: `1px solid ${p.cardBorder}`,
           fontSize: 12,
           whiteSpace: 'pre-wrap',
@@ -1117,14 +1166,12 @@ export default function NotificationsTab() {
   );
 
   /* ================================================================ */
-  /*  MAIN RENDER                                                      */
+  /*  MAIN RENDER                                                        */
   /* ================================================================ */
   return (
     <Spin spinning={loading}>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
-        {navBtn('channels', <BellOutlined />, 'Channels', channels.length)}
-        {navBtn('rules', <CheckCircleOutlined />, 'Event Rules')}
-        {navBtn('logs', <MailOutlined />, 'Logs', logs.length)}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 18, flexWrap: 'wrap' }}>
+        {tabs.map(tab => navTab(tab.key, tab.icon, tab.label, tab.count))}
       </div>
 
       {section === 'channels' && renderChannels()}

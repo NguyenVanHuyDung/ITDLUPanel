@@ -25,5 +25,6 @@ func All() []Migration {
 		&Migration012Notifications{},
 		&Migration013NotificationTemplates{},
 		&Migration014SiteType{},
+		&Migration015DockerCleanup{},
 	}
 }
