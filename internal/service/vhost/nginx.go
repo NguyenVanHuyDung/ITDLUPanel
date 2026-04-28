@@ -29,9 +29,9 @@ const nginxTemplate = `server {
     }
 
     # ACME challenge for SSL certificate renewal
-    location ~ \.well-known {
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
         allow all;
-        root {{ .DocRoot }};
     }
     #HTTP_TO_HTTPS_END
 {{ else }}
@@ -56,6 +56,7 @@ const nginxTemplate = `server {
 
     # ACME challenge for SSL certificate issuance
     location ~ \.well-known {
+        root /var/www/html;
         allow all;
     }
 
@@ -157,6 +158,7 @@ const nginxTemplate = `server {
 
     # ACME challenge for SSL certificate issuance
     location ~ \.well-known {
+        root /var/www/html;
         allow all;
     }
 
@@ -292,6 +294,7 @@ server {
 
     # ACME challenge for SSL certificate renewal
     location ~ \.well-known {
+        root /var/www/html;
         allow all;
     }
 
