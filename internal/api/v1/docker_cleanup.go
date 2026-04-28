@@ -59,7 +59,7 @@ type createRuleRequest struct {
 func (h *DockerCleanupHandler) createRule(c *gin.Context) {
 	var req createRuleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, apperrors.New(apperrors.ErrBadRequest, err.Error()))
+		response.Error(c, apperrors.New(apperrors.ErrValidation, err.Error()))
 		return
 	}
 	enabled := true
@@ -116,7 +116,7 @@ func (h *DockerCleanupHandler) updateRule(c *gin.Context) {
 	}
 	var req createRuleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, apperrors.New(apperrors.ErrBadRequest, err.Error()))
+		response.Error(c, apperrors.New(apperrors.ErrValidation, err.Error()))
 		return
 	}
 	enabled := true
@@ -241,7 +241,7 @@ type dryRunRequest struct {
 func (h *DockerCleanupHandler) dryRun(c *gin.Context) {
 	var req dryRunRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, apperrors.New(apperrors.ErrBadRequest, err.Error()))
+		response.Error(c, apperrors.New(apperrors.ErrValidation, err.Error()))
 		return
 	}
 	result, err := h.svc.DryRun(req.Types)
@@ -255,15 +255,6 @@ func (h *DockerCleanupHandler) dryRun(c *gin.Context) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-func parseID(c *gin.Context, param string) (int64, error) {
-	id, err := strconv.ParseInt(c.Param(param), 10, 64)
-	if err != nil {
-		response.Error(c, apperrors.New(apperrors.ErrBadRequest, "invalid id"))
-		return 0, err
-	}
-	return id, nil
-}
 
 func getUserID(c *gin.Context) *int64 {
 	if v, exists := c.Get("user_id"); exists {
