@@ -1749,6 +1749,8 @@ func (s *SiteService) setConfigExtraField(id int64, site *Site, field, value str
 	if err != nil {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to update config_extra")
 	}
+	// Keep the in-memory site object in sync so callers see the updated value immediately.
+	site.ConfigExtra = &extra
 	return nil
 }
 
