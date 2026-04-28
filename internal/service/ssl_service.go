@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"golang.org/x/crypto/acme"
-	"golang.org/x/crypto/acme/autocert"
 
 	"github.com/ITDLUPanel/panel/internal/pkg/logger"
 	apperrors "github.com/ITDLUPanel/panel/internal/pkg/errors"
@@ -113,98 +112,126 @@ func (s *SSLService) IssueLetsEncrypt(domain, email string) error {
 		}
 	}
 
-	// Authorize the domain.
-	authz, err := client.Authorize(ctx, domain)
+	// Create ACME v2 order (RFC 8555).
+	order, err := client.AuthorizeOrder(ctx, []acme.AuthzID{{Type: "dns", Value: domain}})
 	if err != nil {
-		return apperrors.Wrap(err, apperrors.ErrInternal, "ACME authorization failed")
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to create ACME order")
 	}
 
-	// Find the HTTP-01 challenge.
-	var chal *acme.Challenge
-	for _, c := range authz.Challenges {
-		if c.Type == "http-01" {
-			chal = c
-			break
-		}
+	// Collect HTTP-01 challenges for all pending authorizations.
+	type pendingAuth struct {
+		authzURL          string
+		chal              *acme.Challenge
+		challengeFilePath string
+		challengeWritten  bool
 	}
-	if chal == nil {
-		return apperrors.New(apperrors.ErrInternal, "no HTTP-01 challenge offered by ACME server")
-	}
-
-	// Serve the challenge token.
-	tokenPath := client.HTTP01ChallengePath(chal.Token)
-	tokenResponse, err := client.HTTP01ChallengeResponse(chal.Token)
-	if err != nil {
-		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to compute challenge response")
-	}
-
-	// Write challenge file to well-known path for external web servers.
-	wellKnownDir := "/var/www/html/.well-known/acme-challenge"
-	if err := os.MkdirAll(wellKnownDir, 0755); err != nil {
-		logger.Warn().Err(err).Msg("could not create .well-known directory, starting temporary server")
-	}
-
-	challengeFileName := filepath.Base(tokenPath)
-	challengeFilePath := filepath.Join(wellKnownDir, challengeFileName)
-	challengeWritten := false
-	if err := os.WriteFile(challengeFilePath, []byte(tokenResponse), 0644); err == nil {
-		challengeWritten = true
-	}
-
-	// Start a temporary HTTP server on port 80 as fallback.
+	var pendingAuths []pendingAuth
 	mux := http.NewServeMux()
-	mux.HandleFunc(tokenPath, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		fmt.Fprint(w, tokenResponse)
-	})
 
+	for _, authzURL := range order.AuthzURLs {
+		authz, err := client.GetAuthorization(ctx, authzURL)
+		if err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to get ACME authorization")
+		}
+		if authz.Status == acme.StatusValid {
+			continue
+		}
+
+		var chal *acme.Challenge
+		for _, c := range authz.Challenges {
+			if c.Type == "http-01" {
+				chal = c
+				break
+			}
+		}
+		if chal == nil {
+			return apperrors.New(apperrors.ErrInternal, "no HTTP-01 challenge offered by ACME server")
+		}
+
+		tokenPath := client.HTTP01ChallengePath(chal.Token)
+		tokenResponse, err := client.HTTP01ChallengeResponse(chal.Token)
+		if err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to compute challenge response")
+		}
+
+		// Register HTTP handler (capture tokenResponse per-iteration).
+		tr := tokenResponse
+		mux.HandleFunc(tokenPath, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			fmt.Fprint(w, tr)
+		})
+
+		// Write challenge file for external web servers.
+		wellKnownDir := "/var/www/html/.well-known/acme-challenge"
+		_ = os.MkdirAll(wellKnownDir, 0755)
+		challengeFilePath := filepath.Join(wellKnownDir, filepath.Base(tokenPath))
+		challengeWritten := os.WriteFile(challengeFilePath, []byte(tokenResponse), 0644) == nil
+
+		pendingAuths = append(pendingAuths, pendingAuth{
+			authzURL:          authzURL,
+			chal:              chal,
+			challengeFilePath: challengeFilePath,
+			challengeWritten:  challengeWritten,
+		})
+	}
+
+	// Start temporary HTTP server on port 80 as fallback.
 	srv := &http.Server{
 		Addr:              ":80",
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-
-	srvErrCh := make(chan error, 1)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			srvErrCh <- err
+			logger.Warn().Err(err).Msg("ACME challenge server error")
 		}
-		close(srvErrCh)
 	}()
-
-	// Give the server a moment to start.
 	time.Sleep(500 * time.Millisecond)
 
-	// Accept the challenge.
-	if _, err := client.Accept(ctx, chal); err != nil {
-		s.shutdownChallengeServer(srv, challengeFilePath, challengeWritten)
-		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to accept ACME challenge")
+	shutdownAll := func() {
+		sctx, scancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer scancel()
+		_ = srv.Shutdown(sctx)
+		for _, pa := range pendingAuths {
+			if pa.challengeWritten {
+				_ = os.Remove(pa.challengeFilePath)
+			}
+		}
 	}
 
-	// Wait for authorization to be valid.
-	if _, err := client.WaitAuthorization(ctx, authz.URI); err != nil {
-		s.shutdownChallengeServer(srv, challengeFilePath, challengeWritten)
-		return apperrors.Wrap(err, apperrors.ErrInternal, "ACME authorization validation failed")
+	// Accept and wait for each pending authorization.
+	for _, pa := range pendingAuths {
+		if _, err := client.Accept(ctx, pa.chal); err != nil {
+			shutdownAll()
+			return apperrors.Wrap(err, apperrors.ErrInternal, "failed to accept ACME challenge")
+		}
+		if _, err := client.WaitAuthorization(ctx, pa.authzURL); err != nil {
+			shutdownAll()
+			return apperrors.Wrap(err, apperrors.ErrInternal, "ACME authorization validation failed")
+		}
+	}
+	shutdownAll()
+
+	// Wait for order to become ready, then finalize.
+	order, err = client.WaitOrder(ctx, order.URI)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "ACME order not ready after authorizations")
 	}
 
 	// Create CSR.
 	csr, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
-		Subject: pkix.Name{CommonName: domain},
+		Subject:  pkix.Name{CommonName: domain},
 		DNSNames: []string{domain},
 	}, certKey)
 	if err != nil {
-		s.shutdownChallengeServer(srv, challengeFilePath, challengeWritten)
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to create CSR")
 	}
 
-	// Request the certificate.
-	der, _, err := client.CreateCert(ctx, csr, 90*24*time.Hour, true)
+	// Finalize order and obtain certificate (RFC 8555).
+	der, _, err := client.CreateOrderCert(ctx, order.FinalizeURL, csr, true)
 	if err != nil {
-		s.shutdownChallengeServer(srv, challengeFilePath, challengeWritten)
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to obtain certificate from Let's Encrypt")
 	}
-
-	s.shutdownChallengeServer(srv, challengeFilePath, challengeWritten)
 
 	// Write certificate chain.
 	var certPEM []byte
@@ -248,6 +275,7 @@ type DNSChallengeInfo struct {
 	certKey    *ecdsa.PrivateKey   `json:"-"`
 	chalURI    string              `json:"-"`
 	authzURI   string              `json:"-"`
+	orderURI   string              `json:"-"`
 }
 
 // pending DNS challenges keyed by domain
@@ -285,9 +313,18 @@ func (s *SSLService) InitDNSChallenge(domain, email string) (*DNSChallengeInfo, 
 		}
 	}
 
-	authz, err := client.Authorize(ctx, domain)
+	// Create ACME v2 order (RFC 8555).
+	order, err := client.AuthorizeOrder(ctx, []acme.AuthzID{{Type: "dns", Value: domain}})
 	if err != nil {
-		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "ACME authorization failed")
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create ACME order")
+	}
+	if len(order.AuthzURLs) == 0 {
+		return nil, apperrors.New(apperrors.ErrInternal, "ACME order has no authorizations")
+	}
+
+	authz, err := client.GetAuthorization(ctx, order.AuthzURLs[0])
+	if err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get ACME authorization")
 	}
 
 	var chal *acme.Challenge
@@ -321,6 +358,7 @@ func (s *SSLService) InitDNSChallenge(domain, email string) (*DNSChallengeInfo, 
 		certKey:    certKey,
 		chalURI:    chal.URI,
 		authzURI:   authz.URI,
+		orderURI:   order.URI,
 	}
 
 	pendingDNS.mu.Lock()
@@ -383,7 +421,12 @@ func (s *SSLService) CompleteDNSChallenge(domain, email string) error {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to create CSR")
 	}
 
-	der, _, err := info.acmeClient.CreateCert(ctx, csr, 90*24*time.Hour, true)
+	// Wait for order to become ready, then finalize (RFC 8555).
+	readyOrder, err := info.acmeClient.WaitOrder(ctx, info.orderURI)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "ACME order not ready after DNS-01 authorization")
+	}
+	der, _, err := info.acmeClient.CreateOrderCert(ctx, readyOrder.FinalizeURL, csr, true)
 	if err != nil {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to obtain certificate from Let's Encrypt")
 	}
@@ -443,7 +486,7 @@ func (s *SSLService) RenewCertificate(domain string) error {
 
 	switch info.SSLType {
 	case certTypeLetsEncrypt:
-		// Re-issue using autocert manager as a simpler renewal path.
+		// Re-issue the certificate via Let's Encrypt.
 		email := s.getStoredEmail(domain)
 		if email == "" {
 			email = "admin@" + domain
@@ -961,6 +1004,3 @@ func (s *SSLService) ensureCertTable() {
 		)
 	`)
 }
-
-// Ensure autocert.Manager is usable — suppress unused import warning.
-var _ = autocert.Manager{}
