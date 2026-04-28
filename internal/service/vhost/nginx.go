@@ -245,8 +245,8 @@ server {
 {{ if .SupportsQUIC }}
     listen 443 ssl{{ if not .UsesHTTP2Directive }} http2{{ end }};
     listen [::]:443 ssl{{ if not .UsesHTTP2Directive }} http2{{ end }};
-    listen 443 quic reuseport;
-    listen [::]:443 quic reuseport;
+    listen 443 quic;
+    listen [::]:443 quic;
 {{ else }}
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
