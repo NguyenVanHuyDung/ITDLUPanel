@@ -632,8 +632,19 @@ func GetAvailableNginxVersions(ctx context.Context) (*NginxAvailableVersions, er
 
 		// Detect architecture for the Packages file URL
 		arch := "amd64"
-		if a := runtime.GOARCH; a == "arm64" {
+		if runtime.GOARCH == "arm64" {
 			arch = "arm64"
+		}
+
+		// Detect primary codename and fallback for compatibility
+		// Ubuntu 24.04 (noble) may not be in nginx.org's dists yet;
+		// use jammy (22.04) as fallback since packages are compatible.
+		fallbackCodename := ""
+		switch codename {
+		case "noble":
+			fallbackCodename = "jammy"
+		case "bookworm":
+			fallbackCodename = "bullseye"
 		}
 
 		// Fetch both repos in parallel
@@ -643,13 +654,27 @@ func GetAvailableNginxVersions(ctx context.Context) (*NginxAvailableVersions, er
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			url := fmt.Sprintf("http://nginx.org/packages/%s/dists/%s/nginx/binary-%s/Packages", distroID, codename, arch)
-			stableVersions = fetchNginxRepoVersions(ctx, url, "stable")
+			versions := fetchNginxRepoVersions(ctx,
+				fmt.Sprintf("http://nginx.org/packages/%s/dists/%s/nginx/binary-%s/Packages", distroID, codename, arch),
+				"stable")
+			if len(versions) == 0 && fallbackCodename != "" {
+				versions = fetchNginxRepoVersions(ctx,
+					fmt.Sprintf("http://nginx.org/packages/%s/dists/%s/nginx/binary-%s/Packages", distroID, fallbackCodename, arch),
+					"stable")
+			}
+			stableVersions = versions
 		}()
 		go func() {
 			defer wg.Done()
-			url := fmt.Sprintf("http://nginx.org/packages/mainline/%s/dists/%s/nginx/binary-%s/Packages", distroID, codename, arch)
-			mainlineVersions = fetchNginxRepoVersions(ctx, url, "mainline")
+			versions := fetchNginxRepoVersions(ctx,
+				fmt.Sprintf("http://nginx.org/packages/mainline/%s/dists/%s/nginx/binary-%s/Packages", distroID, codename, arch),
+				"mainline")
+			if len(versions) == 0 && fallbackCodename != "" {
+				versions = fetchNginxRepoVersions(ctx,
+					fmt.Sprintf("http://nginx.org/packages/mainline/%s/dists/%s/nginx/binary-%s/Packages", distroID, fallbackCodename, arch),
+					"mainline")
+			}
+			mainlineVersions = versions
 		}()
 		wg.Wait()
 

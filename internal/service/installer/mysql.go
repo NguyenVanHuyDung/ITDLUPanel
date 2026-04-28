@@ -243,6 +243,17 @@ func setupMariaDBRepoAPT(ctx context.Context, osInfo *system.OSInfo, majorMinor 
 		return fmt.Errorf("could not detect distro codename for MariaDB repo")
 	}
 
+	// Fallback codename mapping for newer Ubuntu/Debian releases not yet
+	// explicitly in the MariaDB repo index (e.g. noble may not be indexed yet).
+	switch codename {
+	case "noble":
+		codename = "jammy"
+	case "trixie":
+		codename = "bookworm"
+	case "forky":
+		codename = "bookworm"
+	}
+
 	distroID := osInfo.ID
 	if distroID != "ubuntu" && distroID != "debian" {
 		distroID = "ubuntu"
@@ -315,6 +326,16 @@ func setupMySQLRepoAPT(ctx context.Context, osInfo *system.OSInfo, majorMinor st
 	codename := getDistroCodename()
 	if codename == "" {
 		return fmt.Errorf("could not detect distro codename for MySQL repo")
+	}
+
+	// Fallback codename for newer Ubuntu/Debian releases not yet explicitly indexed.
+	switch codename {
+	case "noble":
+		codename = "jammy"
+	case "trixie":
+		codename = "bookworm"
+	case "forky":
+		codename = "bookworm"
 	}
 
 	distroID := osInfo.ID

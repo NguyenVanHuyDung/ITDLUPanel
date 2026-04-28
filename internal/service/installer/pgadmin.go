@@ -104,11 +104,16 @@ func (i *PgAdminInstaller) addAptRepo(ctx context.Context) error {
 		return fmt.Errorf("failed to import pgAdmin GPG key: %w", err)
 	}
 
-	// Determine codename
-	result, err := system.ExecWithTimeout(5*time.Second, "lsb_release", "-cs")
-	codename := "jammy"
-	if err == nil {
-		codename = strings.TrimSpace(result.Stdout)
+	// Determine codename with fallback for Ubuntu 24.04 (noble)
+	codename := getDistroCodename()
+	if codename == "" {
+		codename = "jammy" // Ubuntu 22.04 fallback
+	}
+	// pgAdmin may not yet have a noble-specific repo; fall back to jammy if needed
+	if codename == "noble" {
+		codename = "jammy"
+	} else if codename == "bookworm" || codename == "trixie" {
+		codename = "bullseye"
 	}
 
 	// Add repository

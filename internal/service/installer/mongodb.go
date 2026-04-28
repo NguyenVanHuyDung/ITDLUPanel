@@ -82,8 +82,18 @@ func setupMongoDBRepo(ctx context.Context, osInfo *system.OSInfo, version string
 			return fmt.Errorf("failed to import MongoDB GPG key: %w", err)
 		}
 
-		// Detect codename
+		// Detect codename — MongoDB may not have Ubuntu 24.04 (noble) yet.
+		// Fall back to jammy (22.04) for which packages are compatible.
 		codename := getDistroCodename()
+		switch codename {
+		case "noble":
+			codename = "jammy" // MongoDB may not have noble yet; jammy packages are compatible
+		case "bookworm":
+			codename = "bullseye"
+		case "trixie":
+			codename = "bookworm"
+		}
+
 		repoLine := fmt.Sprintf(
 			"deb [signed-by=/usr/share/keyrings/mongodb-server-%s.gpg] https://repo.mongodb.org/apt/ubuntu %s/mongodb-org/%s multiverse",
 			version, codename, version)

@@ -222,6 +222,7 @@ func (i *PHPInstaller) Install(ctx context.Context, version string, progress fun
 }
 
 // setupPHPRepoAPT configures the ondrej/sury PHP repository for Debian/Ubuntu.
+// Uses packages.sury.org with signed-by for better compatibility (including Ubuntu 24.04).
 func setupPHPRepoAPT(ctx context.Context, osInfo *system.OSInfo) error {
 	if osInfo.ID == "debian" {
 		// Debian: use packages.sury.org with signed keyring
@@ -236,12 +237,20 @@ func setupPHPRepoAPT(ctx context.Context, osInfo *system.OSInfo) error {
 		return os.WriteFile("/etc/apt/sources.list.d/php-sury.list", []byte(repoLine+"\n"), 0644)
 	}
 
-	// Ubuntu: use ondrej/php PPA
-	if _, err := system.Exec(ctx, "apt", "install", "-y", "software-properties-common"); err != nil {
-		logger.Warn().Err(err).Msg("failed to install software-properties-common")
+	// Ubuntu: use packages.sury.org (same as Debian) — works on all Ubuntu versions including 24.04
+	// The deprecated add-apt-repository ppa:ondrej/php is not used here.
+	if _, err := system.Exec(ctx, "apt", "install", "-y", "software-properties-common",
+		"apt-transport-https", "ca-certificates", "curl"); err != nil {
+		logger.Warn().Err(err).Msg("failed to install prerequisites for PHP sury repo")
 	}
-	if _, err := system.Exec(ctx, "add-apt-repository", "-y", "ppa:ondrej/php"); err != nil {
-		return fmt.Errorf("add ondrej PPA: %w", err)
+	if _, err := system.Exec(ctx, "bash", "-c",
+		"curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --batch --yes --dearmor -o /usr/share/keyrings/deb.sury.org-php.gpg"); err != nil {
+		return fmt.Errorf("fetch sury GPG key: %w", err)
+	}
+	codename := getDistroCodename()
+	repoLine := fmt.Sprintf("deb [signed-by=/usr/share/keyrings/deb.sury.org-php.gpg] https://packages.sury.org/php/ %s main", codename)
+	if err := os.WriteFile("/etc/apt/sources.list.d/php-sury.list", []byte(repoLine+"\n"), 0644); err != nil {
+		return fmt.Errorf("write php sury repo file: %w", err)
 	}
 	return nil
 }
