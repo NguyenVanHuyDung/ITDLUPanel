@@ -31,6 +31,7 @@ vendor/
 # Logs
 *.log
 logs/
+nohup.out
 
 # Env
 .env
