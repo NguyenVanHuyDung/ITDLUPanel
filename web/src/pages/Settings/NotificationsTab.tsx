@@ -168,14 +168,6 @@ export default function NotificationsTab() {
     marginBottom: 16,
   };
 
-  const sectionBoxNarrow: React.CSSProperties = {
-    maxWidth: 640, borderRadius: 10,
-    background: isDark ? p.rowAlt : p.headerBg,
-    border: `1px solid ${p.cardBorder}`,
-    padding: isMobile ? 16 : 28,
-    marginBottom: 16,
-  };
-
   const btnPrimary: React.CSSProperties = {
     padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
     background: p.accent, color: '#fff', fontSize: 12, fontWeight: 500,
@@ -438,7 +430,7 @@ export default function NotificationsTab() {
   /* ================================================================ */
   const renderChannels = () => {
     return (
-      <div style={sectionBoxNarrow}>
+      <div style={sectionBox}>
         {sectionTitle(
           <BellOutlined style={{ fontSize: 18 }} />,
           'Notification Channels',
@@ -915,7 +907,7 @@ export default function NotificationsTab() {
     const pagedLogs = logs.slice((logPage - 1) * pageSize, logPage * pageSize);
 
     return (
-      <div style={sectionBoxNarrow}>
+      <div style={sectionBox}>
         {sectionTitle(<MailOutlined style={{ fontSize: 18 }} />, 'Notification Logs')}
         <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <button style={btnOutline} onClick={() => fetchLogs()}>

@@ -74,17 +74,38 @@ func (i *DockerInstaller) Install(ctx context.Context, version string, progress 
 			return fmt.Errorf("failed to install docker: %w", err)
 		}
 	} else {
-		// RHEL/CentOS/Fedora
+		// RHEL/CentOS/AlmaLinux/Rocky/Fedora
 		if _, err := system.Exec(ctx, "dnf", "install", "-y", "dnf-plugins-core"); err != nil {
 			logger.Warn().Err(err).Msg("failed to install dnf-plugins-core")
 		}
 
 		progress(30)
-		// Use rhel repo (works for CentOS, AlmaLinux, Rocky, RHEL); fall back to centos then fedora
-		if _, err := system.Exec(ctx, "dnf", "config-manager", "--add-repo",
-			"https://download.docker.com/linux/rhel/docker-ce.repo"); err != nil {
-			if _, err2 := system.Exec(ctx, "dnf", "config-manager", "--add-repo",
-				"https://download.docker.com/linux/centos/docker-ce.repo"); err2 != nil {
+		// Docker officially supports centos repo for RHEL-based derivatives (CentOS, AlmaLinux, Rocky, RHEL).
+		// Try version-specific path first, then fall back to generic centos, then fedora.
+		var added bool
+		versionID := osInfo.VersionID // e.g. "8.9", "9.3", "8"
+		var majorVersion string
+		if len(versionID) >= 1 {
+			majorVersion = versionID[:1]
+			if len(versionID) >= 3 && versionID[1] == '.' {
+				majorVersion = versionID[:3] // "8.9" → "8"
+			}
+		}
+
+		// Try version-specific centos repo (e.g. centos/8, centos/9)
+		if majorVersion != "" && (majorVersion == "8" || majorVersion == "9") {
+			repoURL := fmt.Sprintf("https://download.docker.com/linux/centos/%s/docker-ce.repo", majorVersion)
+			if _, err := system.Exec(ctx, "dnf", "config-manager", "--add-repo", repoURL); err == nil {
+				logger.Info().Str("repo", repoURL).Msg("added docker repo")
+				added = true
+			}
+		}
+
+		// Fall back to generic centos repo
+		if !added {
+			if _, err := system.Exec(ctx, "dnf", "config-manager", "--add-repo",
+				"https://download.docker.com/linux/centos/docker-ce.repo"); err != nil {
+				// Last resort: fedora repo (may work on newer RHEL derivatives)
 				if _, err3 := system.Exec(ctx, "dnf", "config-manager", "--add-repo",
 					"https://download.docker.com/linux/fedora/docker-ce.repo"); err3 != nil {
 					return fmt.Errorf("failed to add Docker repository: %w", err)

@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Table, Input, Select, Popconfirm, Tooltip, message, Tag, DatePicker } from 'antd';
+import { Table, Input, Select, Popconfirm, Tooltip, message, Tag, DatePicker, Modal, Form } from 'antd';
 import {
   ReloadOutlined, SearchOutlined, ClearOutlined, InfoCircleOutlined,
   WarningOutlined, BugOutlined, CloseCircleOutlined, GlobalOutlined,
   RightOutlined, LeftOutlined, BarChartOutlined,
   FileTextOutlined, ExclamationCircleOutlined, CalendarOutlined,
+  StopOutlined, PlusOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -209,9 +210,9 @@ function DistributionBar({ segments, p }: {
   );
 }
 
-function RankList({ items, maxCount, color, p, onClickItem }: {
+function RankList({ items, maxCount, color, p, onClickItem, onBlockItem }: {
   items: { value: string; count: number }[]; maxCount: number; color: string;
-  p: Palette; onClickItem?: (v: string) => void;
+  p: Palette; onClickItem?: (v: string) => void; onBlockItem?: (v: string) => void;
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -243,6 +244,23 @@ function RankList({ items, maxCount, color, p, onClickItem }: {
               }} />
             </div>
           </div>
+          {onBlockItem && (
+            <Tooltip title={`Block ${item.value}`}>
+              <button
+                onClick={(e) => { e.stopPropagation(); onBlockItem(item.value); }}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: p.red, padding: '2px 3px', display: 'flex', alignItems: 'center',
+                  borderRadius: 3, opacity: 0.5, flexShrink: 0,
+                  transition: 'opacity 0.15s',
+                }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '0.5'; }}
+              >
+                <StopOutlined style={{ fontSize: 11 }} />
+              </button>
+            </Tooltip>
+          )}
         </div>
       ))}
     </div>
@@ -283,6 +301,31 @@ export default function Logs() {
   const [wsPathFilter, setWsPathFilter] = useState('');
   const [wsSidePanelOpen, setWsSidePanelOpen] = useState(false);
   const [wsExpandedRows, setWsExpandedRows] = useState<Set<number>>(new Set());
+
+  // SSH IP filter
+  const [sshIpFilter, setSshIpFilter] = useState('');
+
+  // Block IP from logs
+  const [blockIPModalOpen, setBlockIPModalOpen] = useState(false);
+  const [blockIPValue, setBlockIPValue] = useState('');
+  const [blockIPLoading, setBlockIPLoading] = useState(false);
+  const [blockIPForm] = Form.useForm();
+
+  const handleBlockIPFromLog = async () => {
+    if (!blockIPValue.trim()) return;
+    setBlockIPLoading(true);
+    try {
+      await api.post('/firewall/blocked-ips', { ip: blockIPValue.trim() });
+      message.success(`IP ${blockIPValue} blocked successfully`);
+      setBlockIPModalOpen(false);
+      setBlockIPValue('');
+      blockIPForm.resetFields();
+    } catch {
+      message.error('Failed to block IP. Is the firewall installed?');
+    } finally {
+      setBlockIPLoading(false);
+    }
+  };
 
   /* ─── API Calls (unchanged) ─── */
 
@@ -431,6 +474,12 @@ export default function Logs() {
     if (durationFilter > 0 && activeTab === 'panel') {
       data = data.filter((l) => l.duration != null && l.duration > durationFilter);
     }
+    if (sshIpFilter && activeTab === 'ssh') {
+      data = data.filter((l) => {
+        const m = l.raw.match(/(?:from|for)\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+        return m && m[1] === sshIpFilter;
+      });
+    }
     if (search.trim()) {
       const q = search.toLowerCase();
       data = data.filter((l) =>
@@ -442,7 +491,7 @@ export default function Logs() {
       );
     }
     return data;
-  }, [parsed, levelFilter, search, durationFilter, activeTab]);
+  }, [parsed, levelFilter, search, durationFilter, activeTab, sshIpFilter]);
 
   // Panel stats
   const panelStats = useMemo(() => {
@@ -692,10 +741,34 @@ export default function Logs() {
       },
     },
     {
-      title: 'IP', key: 'ip_addr', width: isMobile ? 90 : 120,
+      title: 'IP', key: 'ip_addr', width: isMobile ? 90 : 160,
       render: (_: unknown, record: ParsedLog) => {
         const m = record.raw.match(/(?:from|for)\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
-        return m ? <span style={{ fontSize: 11, color: p.textMuted }}>{m[1]}</span> : null;
+        return m ? (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span
+              onClick={() => setSshIpFilter(m[1])}
+              style={{ fontSize: 11, color: p.accent, cursor: 'pointer', borderBottom: `1px dashed ${p.accent}` }}
+            >{m[1]}</span>
+            {!isMobile && (
+              <Tooltip title={`Block ${m[1]}`}>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setBlockIPValue(m[1]); setBlockIPModalOpen(true); }}
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: p.red, padding: '1px 3px', display: 'flex', alignItems: 'center',
+                    borderRadius: 3, opacity: 0.6,
+                    transition: 'opacity 0.15s',
+                  }}
+                  onMouseEnter={(e) => { (e.target as HTMLElement).style.opacity = '1'; }}
+                  onMouseLeave={(e) => { (e.target as HTMLElement).style.opacity = '0.6'; }}
+                >
+                  <StopOutlined style={{ fontSize: 12 }} />
+                </button>
+              </Tooltip>
+            )}
+          </span>
+        ) : null;
       },
     },
   ];
@@ -773,12 +846,31 @@ export default function Logs() {
       render: (v: string) => <span style={{ fontSize: 11, color: p.textMuted, whiteSpace: 'nowrap' }}>{v}</span>,
     },
     {
-      title: 'IP', dataIndex: 'ip', key: 'ip', width: isMobile ? 90 : 130,
+      title: 'IP', dataIndex: 'ip', key: 'ip', width: isMobile ? 90 : 160,
       render: (v: string) => v ? (
-        <span
-          onClick={(e) => { e.stopPropagation(); setWsIpFilter(v); }}
-          style={{ fontSize: 11, color: p.textMuted, cursor: 'pointer', borderBottom: `1px dashed ${p.textDim}` }}
-        >{v}</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span
+            onClick={(e) => { e.stopPropagation(); setWsIpFilter(v); }}
+            style={{ fontSize: 11, color: p.textMuted, cursor: 'pointer', borderBottom: `1px dashed ${p.textDim}` }}
+          >{v}</span>
+          {!isMobile && (
+            <Tooltip title={`Block ${v}`}>
+              <button
+                onClick={(e) => { e.stopPropagation(); setBlockIPValue(v); setBlockIPModalOpen(true); }}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: p.red, padding: '1px 3px', display: 'flex', alignItems: 'center',
+                  borderRadius: 3, opacity: 0.6,
+                  transition: 'opacity 0.15s',
+                }}
+                onMouseEnter={(e) => { (e.target as HTMLElement).style.opacity = '1'; }}
+                onMouseLeave={(e) => { (e.target as HTMLElement).style.opacity = '0.6'; }}
+              >
+                <StopOutlined style={{ fontSize: 12 }} />
+              </button>
+            </Tooltip>
+          )}
+        </span>
       ) : null,
     },
     {
@@ -1001,7 +1093,9 @@ export default function Logs() {
             <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 6, fontWeight: 600 }}>
               Top Attackers (Failed Attempts)
             </div>
-            <RankList items={topAttackers} maxCount={topAttackers[0]?.count || 1} color={p.red} p={p} />
+            <RankList items={topAttackers} maxCount={topAttackers[0]?.count || 1} color={p.red} p={p}
+              onClickItem={(ip) => setSshIpFilter(ip)}
+              onBlockItem={(ip) => { setBlockIPValue(ip); setBlockIPModalOpen(true); }} />
           </div>
         )}
 
@@ -1015,6 +1109,23 @@ export default function Logs() {
                 label={lvl === 'all' ? 'ALL' : lvl.toUpperCase()} onClick={() => setLevelFilter(lvl)} p={p} />
             );
           })}
+          <span style={{ width: 1, height: 20, background: p.cardBorder, margin: '0 4px' }} />
+          <Input
+            placeholder="Filter by IP"
+            value={sshIpFilter}
+            onChange={(e) => setSshIpFilter(e.target.value)}
+            allowClear
+            size="small"
+            style={{ width: 130 }}
+            prefix={<SearchOutlined style={{ color: p.textDim, fontSize: 10 }} />}
+          />
+          {sshIpFilter && (
+            <Tag color="blue" style={{ fontSize: 10, margin: 0, cursor: 'pointer' }}
+              closable onClose={() => setSshIpFilter('')}
+            >
+              IP: {sshIpFilter}
+            </Tag>
+          )}
         </div>
 
         {/* Table */}
@@ -1245,10 +1356,13 @@ export default function Logs() {
             }}>
               {/* Top IPs */}
               <div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: p.text, marginBottom: 8 }}>Top 10 IPs</div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: p.text }}>Top 10 IPs</div>
+                </div>
                 {wsTopIps.length > 0 ? (
                   <RankList items={wsTopIps} maxCount={wsTopIps[0].count} color={p.accent} p={p}
-                    onClickItem={(ip) => setWsIpFilter(ip)} />
+                    onClickItem={(ip) => setWsIpFilter(ip)}
+                    onBlockItem={(ip) => { setBlockIPValue(ip); setBlockIPModalOpen(true); }} />
                 ) : (
                   <div style={{ fontSize: 11, color: p.textDim }}>No data</div>
                 )}
@@ -1436,6 +1550,9 @@ export default function Logs() {
               setSearch('');
               setLevelFilter('all');
               setDurationFilter(0);
+              setSshIpFilter('');
+              setWsIpFilter('');
+              setWsPathFilter('');
             }}
             style={{
               padding: '6px 16px', borderRadius: 6,
@@ -1469,6 +1586,65 @@ export default function Logs() {
         .log-row-error td { background: ${isDark ? 'rgba(248,81,73,0.06)' : '#fff1f0'} !important; }
         .ant-table-row:hover .log-row-error td { background: ${isDark ? 'rgba(248,81,73,0.1)' : '#ffccc7'} !important; }
       `}</style>
+
+      {/* Block IP Modal */}
+      <Modal
+        title={
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <StopOutlined style={{ color: p.red }} />
+            Block IP Address
+          </span>
+        }
+        open={blockIPModalOpen}
+        onCancel={() => { setBlockIPModalOpen(false); setBlockIPValue(''); blockIPForm.resetFields(); }}
+        footer={null}
+        destroyOnHidden
+        width={440}
+      >
+        <div style={{
+          marginBottom: 12, padding: '10px 12px', borderRadius: 8,
+          background: `${p.red}10`, border: `1px solid ${p.red}20`,
+          fontSize: 12, color: p.text,
+        }}>
+          This will immediately block all incoming traffic from <b>{blockIPValue}</b> at the firewall level.
+        </div>
+        <Form form={blockIPForm} layout="vertical" onFinish={handleBlockIPFromLog} preserve={false}>
+          <Form.Item
+            name="ip"
+            label="IP Address"
+            rules={[{ required: true, message: 'Enter an IP address' }]}
+            initialValue={blockIPValue}
+            extra="Single IP (192.168.1.100) or CIDR (10.0.0.0/24)"
+          >
+            <Input placeholder="192.168.1.100" style={{ fontFamily: 'monospace' }} />
+          </Form.Item>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
+            <button
+              type="button"
+              onClick={() => { setBlockIPModalOpen(false); setBlockIPValue(''); blockIPForm.resetFields(); }}
+              style={{
+                padding: '5px 14px', borderRadius: 6,
+                border: `1px solid ${p.cardBorder}`, background: 'transparent',
+                color: p.textMuted, fontSize: 12, cursor: 'pointer',
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={blockIPLoading}
+              style={{
+                padding: '5px 14px', borderRadius: 6, border: 'none', cursor: blockIPLoading ? 'wait' : 'pointer',
+                background: p.red, color: '#fff', fontSize: 12, fontWeight: 500,
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                opacity: blockIPLoading ? 0.6 : 1,
+              }}
+            >
+              {blockIPLoading ? 'Blocking...' : 'Block IP'}
+            </button>
+          </div>
+        </Form>
+      </Modal>
     </div>
   );
 }

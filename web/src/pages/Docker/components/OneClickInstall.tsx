@@ -125,8 +125,9 @@ export default function OneClickInstall({ onRefresh }: { onRefresh?: () => void 
         });
       }
 
-      await api.post('/docker/images/pull', { name: values.image });
-
+      // Docker Engine auto-pulls the image if not present when creating a container.
+      // This avoids the race condition of a separate pull call returning before the image
+      // is fully available on the daemon.
       await api.post('/docker/containers', {
         name: values.name,
         image: values.image,
@@ -148,7 +149,6 @@ export default function OneClickInstall({ onRefresh }: { onRefresh?: () => void 
     } catch (err: any) {
       const errMsg = err?.response?.data?.message || 'Installation failed';
       message.error(errMsg);
-      // If container was created but start failed, clean up
       if (containerCreated) {
         try {
           await api.delete(`/docker/containers/${values.name}?force=true`);

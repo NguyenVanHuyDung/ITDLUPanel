@@ -67,7 +67,9 @@ type DryRunResult struct {
 	StoppedContainers []ContainerSummaryForCleanup `json:"stopped_containers,omitempty"`
 	DanglingImages    []ImageSummaryForCleanup     `json:"dangling_images,omitempty"`
 	UnusedVolumes     []string                     `json:"unused_volumes,omitempty"`
-	TotalReclaimable  int64                        `json:"total_reclaimable_bytes"`
+	UnusedNetworks   []string                     `json:"unused_networks,omitempty"`
+	BuildCacheSize  int64                        `json:"build_cache_size,omitempty"`
+	TotalReclaimable int64                        `json:"total_reclaimable_bytes"`
 }
 
 // CleanupStats holds disk + docker resource overview for the stats endpoint.
@@ -95,11 +97,15 @@ type DockerCleanupService struct {
 	dockerService *DockerService
 	notifier      *NotificationService
 
-	mu          sync.Mutex
-	inFlight    map[int64]bool // rule_id → currently running
-	schedulerMu sync.Once
-	cancel      context.CancelFunc
+	mu            sync.Mutex
+	inFlight       map[int64]bool // rule_id → currently running
+	lastThresholdRun time.Time    // last threshold-based cleanup run (cooldown)
+	schedulerMu   sync.Once
+	cancel        context.CancelFunc
 }
+
+// ThresholdCooldown is the minimum interval between threshold-based cleanup runs.
+const ThresholdCooldown = 30 * time.Minute
 
 // NewDockerCleanupService creates a new DockerCleanupService.
 func NewDockerCleanupService(db *sql.DB, dockerService *DockerService) *DockerCleanupService {
@@ -208,7 +214,12 @@ func (s *DockerCleanupService) UpdateRule(id int64, name string, cleanupTypes []
 
 // DeleteRule removes a rule and all its logs.
 func (s *DockerCleanupService) DeleteRule(id int64) error {
-	_, err := s.db.Exec(`DELETE FROM docker_cleanup_rules WHERE id=?`, id)
+	// Delete logs first, then delete the rule
+	_, err := s.db.Exec(`DELETE FROM docker_cleanup_logs WHERE rule_id=?`, id)
+	if err != nil {
+		return fmt.Errorf("failed to delete logs: %w", err)
+	}
+	_, err = s.db.Exec(`DELETE FROM docker_cleanup_rules WHERE id=?`, id)
 	return err
 }
 
@@ -346,6 +357,12 @@ func (s *DockerCleanupService) RunCleanup(ruleID int64, triggeredBy string) (*Cl
 func (s *DockerCleanupService) DryRun(types []string) (*DryRunResult, error) {
 	result := &DryRunResult{}
 
+	// Get system disk usage once to get build cache size
+	du, err := s.dockerService.GetSystemDiskUsage()
+	if err == nil {
+		result.BuildCacheSize = du.BuildCacheSize
+	}
+
 	for _, ct := range types {
 		switch ct {
 		case "stopped_containers":
@@ -369,6 +386,20 @@ func (s *DockerCleanupService) DryRun(types []string) (*DryRunResult, error) {
 				return nil, err
 			}
 			result.UnusedVolumes = names
+			// Estimate volume sizes from disk usage (proportional to unused count)
+			if du != nil && du.VolumesCount > 0 && len(names) > 0 {
+				avgSize := du.VolumesSize / int64(du.VolumesCount)
+				result.TotalReclaimable += avgSize * int64(len(names))
+			}
+		case "unused_networks":
+			names, err := s.dockerService.PruneNetworksDryRun()
+			if err != nil {
+				return nil, err
+			}
+			result.UnusedNetworks = names
+		case "build_cache":
+			// build_cache_size already populated above from GetSystemDiskUsage
+			result.TotalReclaimable += result.BuildCacheSize
 		}
 	}
 	return result, nil
@@ -508,6 +539,11 @@ func (s *DockerCleanupService) runScheduledRules(now time.Time) {
 }
 
 func (s *DockerCleanupService) runThresholdRules() {
+	// Enforce cooldown between threshold-based cleanup runs to prevent spamming.
+	if time.Since(s.lastThresholdRun) < ThresholdCooldown {
+		return
+	}
+
 	stats, err := s.GetStats()
 	if err != nil {
 		return
@@ -523,11 +559,14 @@ func (s *DockerCleanupService) runThresholdRules() {
 			continue
 		}
 		if usagePct >= *rule.ThresholdPct {
+			s.lastThresholdRun = time.Now()
 			go func(r CleanupRule) {
 				if _, err := s.RunCleanup(r.ID, "threshold"); err != nil {
 					logger.Warn().Err(err).Int64("rule_id", r.ID).Msg("threshold cleanup failed")
 				}
 			}(rule)
+			// Only trigger one rule per cooldown window to avoid excessive cleanups
+			return
 		}
 	}
 }
@@ -537,27 +576,76 @@ func (s *DockerCleanupService) runThresholdRules() {
 // ---------------------------------------------------------------------------
 
 // matchCron checks whether a 5-field cron expression matches the given time.
-// Supports * and comma-separated values. Does NOT support ranges or step values.
+// Supports *, comma-separated values, ranges (e.g. 1-5), and step values (e.g. */2, 1-5/2).
 func matchCron(expr string, t time.Time) bool {
 	fields := strings.Fields(expr)
 	if len(fields) != 5 {
 		return false
 	}
-	return matchField(fields[0], t.Minute()) &&
-		matchField(fields[1], t.Hour()) &&
-		matchField(fields[2], t.Day()) &&
-		matchField(fields[3], int(t.Month())) &&
-		matchField(fields[4], int(t.Weekday()))
+	minF, hrF, domF, monF, dowF := fields[0], fields[1], fields[2], fields[3], fields[4]
+	if !matchField(minF, t.Minute()) {
+		return false
+	}
+	if !matchField(hrF, t.Hour()) {
+		return false
+	}
+	// DOM and DOW: standard cron OR logic (if both are not *, either matching triggers the job)
+	domMatches := matchField(domF, t.Day())
+	dowMatches := matchField(dowF, int(t.Weekday()))
+	if domF != "*" && dowF != "*" {
+		// Standard cron: job fires if EITHER DOM OR DOW matches
+		if !domMatches && !dowMatches {
+			return false
+		}
+	} else if domF != "*" && !domMatches {
+		return false
+	} else if dowF != "*" && !dowMatches {
+		return false
+	}
+	if !matchField(monF, int(t.Month())) {
+		return false
+	}
+	return true
 }
 
+// matchField checks if a cron field matches a given value.
+// Supports: * (any), comma-separated (1,3,5), ranges (1-5), steps (*/2), and range+step (1-5/2).
 func matchField(field string, val int) bool {
 	if field == "*" {
 		return true
 	}
 	for _, part := range strings.Split(field, ",") {
-		n, err := strconv.Atoi(strings.TrimSpace(part))
-		if err == nil && n == val {
-			return true
+		part = strings.TrimSpace(part)
+		// Handle step: */2 or 1-5/2
+		var rangePart, stepPart string
+		if strings.Contains(part, "/") {
+			parts2 := strings.SplitN(part, "/", 2)
+			rangePart, stepPart = parts2[0], parts2[1]
+		} else {
+			rangePart = part
+		}
+		step := 1
+		if stepPart != "" {
+			if s, err := strconv.Atoi(stepPart); err == nil && s > 0 {
+				step = s
+			}
+		}
+		// Expand range
+		var start, end int
+		if rangePart == "*" {
+			start, end = 0, 59 // will be clipped per field in caller
+		} else if strings.Contains(rangePart, "-") {
+			r := strings.SplitN(rangePart, "-", 2)
+			start, _ = strconv.Atoi(r[0])
+			end, _ = strconv.Atoi(r[1])
+		} else {
+			start, _ = strconv.Atoi(rangePart)
+			end = start
+		}
+		for v := start; v <= end; v += step {
+			if v == val {
+				return true
+			}
 		}
 	}
 	return false

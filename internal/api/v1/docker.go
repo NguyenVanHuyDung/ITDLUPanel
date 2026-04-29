@@ -88,12 +88,27 @@ func (h *DockerHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFu
 // ---------------------------------------------------------------------------
 
 func (h *DockerHandler) info(c *gin.Context) {
-	if !h.dockerService.IsDockerInstalled() {
+	installed := h.dockerService.IsDockerInstalled()
+	if !installed {
 		c.JSON(http.StatusOK, response.Response{
 			Code:    http.StatusOK,
 			Message: "success",
 			Data: gin.H{
 				"installed": false,
+				"running":   false,
+			},
+		})
+		return
+	}
+
+	running := h.dockerService.IsDockerRunning()
+	if !running {
+		c.JSON(http.StatusOK, response.Response{
+			Code:    http.StatusOK,
+			Message: "success",
+			Data: gin.H{
+				"installed": true,
+				"running":   false,
 			},
 		})
 		return
@@ -107,6 +122,7 @@ func (h *DockerHandler) info(c *gin.Context) {
 
 	response.Success(c, gin.H{
 		"installed": true,
+		"running":   true,
 		"info":      info,
 	})
 }

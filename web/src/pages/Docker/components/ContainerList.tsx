@@ -170,7 +170,7 @@ export default function ContainerList({ onRefresh }: { onRefresh?: () => void })
   const stoppedCount = containers.filter(c => c.state !== 'running' && c.state !== 'paused').length;
 
   /* ---------- Styles ---------- */
-  const isDark = (p as Record<string, unknown>).card !== '#fff' && (p as Record<string, unknown>).card !== '#ffffff';
+  const isDark = (p as any).card !== '#fff' && (p as any).card !== '#ffffff';
   const btnSm: React.CSSProperties = {
     padding: '4px 10px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
     background: 'transparent', color: p.textMuted, fontSize: 11, fontWeight: 500,

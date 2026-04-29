@@ -51,6 +51,8 @@ export interface DryRunResult {
   stopped_containers?: { id: string; name: string; created: number; state: string }[];
   dangling_images?: { id: string; tags: string[]; size: number }[];
   unused_volumes?: string[];
+  unused_networks?: string[];
+  build_cache_size?: number;
   total_reclaimable_bytes: number;
 }
 

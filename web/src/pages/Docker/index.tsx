@@ -3,7 +3,7 @@ import { message, Alert } from 'antd';
 import {
   ReloadOutlined, CloudServerOutlined, FileImageOutlined,
   DownloadOutlined, AppstoreOutlined, DashboardOutlined,
-  CloudDownloadOutlined, HddOutlined, ApartmentOutlined,
+  CloudDownloadOutlined, ApartmentOutlined,
   DatabaseOutlined, BuildOutlined, SafetyOutlined, SettingOutlined,
   LoadingOutlined, ClearOutlined,
 } from '@ant-design/icons';
@@ -28,6 +28,7 @@ import CleanupTab from './CleanupTab';
 
 interface DockerInfo {
   installed: boolean;
+  running?: boolean;
   info?: {
     server_version: string;
     containers: number;
@@ -35,20 +36,6 @@ interface DockerInfo {
     images: number;
   };
 }
-
-const tabs = [
-  { key: 'oneclick', label: 'One-Click', icon: <AppstoreOutlined /> },
-  { key: 'overview', label: 'Overview', icon: <DashboardOutlined /> },
-  { key: 'containers', label: 'Container', icon: <CloudServerOutlined /> },
-  { key: 'cloud-image', label: 'Cloud Image', icon: <CloudDownloadOutlined /> },
-  { key: 'local-image', label: 'Local Image', icon: <FileImageOutlined /> },
-  { key: 'compose', label: 'Compose', icon: <BuildOutlined /> },
-  { key: 'network', label: 'Network', icon: <ApartmentOutlined /> },
-  { key: 'volume', label: 'Volume', icon: <DatabaseOutlined /> },
-  { key: 'repository', label: 'Repository', icon: <SafetyOutlined /> },
-  { key: 'settings', label: 'Settings', icon: <SettingOutlined /> },
-  { key: 'cleanup', label: 'Cleanup', icon: <ClearOutlined /> },
-];
 
 export default function Docker() {
   const { t } = useTranslation();
@@ -59,7 +46,6 @@ export default function Docker() {
   const [activeTab, setActiveTab] = useState<string>('overview');
   const [dockerInfo, setDockerInfo] = useState<DockerInfo | null>(null);
   const [loadingInfo, setLoadingInfo] = useState(true);
-  const [notInstalled, setNotInstalled] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [installing, setInstalling] = useState(false);
 
@@ -69,10 +55,9 @@ export default function Docker() {
       const { data } = await api.get<ApiResponse<DockerInfo>>('/docker/info');
       if (data.data) {
         setDockerInfo(data.data);
-        setNotInstalled(!data.data.installed);
       }
     } catch {
-      setNotInstalled(true);
+      setDockerInfo({ installed: false, running: false });
     } finally {
       setLoadingInfo(false);
     }
@@ -109,7 +94,6 @@ export default function Docker() {
     }
   }, [addTask, openTaskModal, setTaskTab]);
 
-  // Auto-refresh when Docker install task completes
   useEffect(() => {
     for (const task of Object.values(tasks)) {
       if (task.type === 'software_install' && task.name === 'Install Docker' && task.status === 'completed') {
@@ -119,7 +103,11 @@ export default function Docker() {
     }
   }, [tasks, fetchInfo]);
 
-  if (notInstalled && !loadingInfo) {
+  const isInstalled = dockerInfo?.installed ?? false;
+  const isRunning = dockerInfo?.running ?? false;
+  const info = dockerInfo?.info;
+
+  if (!isInstalled && !loadingInfo) {
     return (
       <div style={{
         background: p.card, borderRadius: 12,
@@ -137,17 +125,17 @@ export default function Docker() {
         </div>
         <div style={{ padding: 16 }}>
           <Alert
-            message="Docker Not Installed"
-            description="Docker is not installed or not running on this server. Please install Docker to manage containers."
+            message={t('docker.not_installed')}
+            description={t('docker.not_installed_desc')}
             type="warning"
             showIcon
             action={
               <button onClick={handleInstallDocker} disabled={installing} style={{
                 padding: '6px 16px', borderRadius: 6, border: 'none', cursor: installing ? 'not-allowed' : 'pointer',
-                background: installing ? p.border : p.accent, color: '#fff', fontSize: 13, fontWeight: 500,
+                background: installing ? p.cardBorder : p.accent, color: '#fff', fontSize: 13, fontWeight: 500,
                 display: 'inline-flex', alignItems: 'center', gap: 6,
               }}>
-                {installing ? <LoadingOutlined /> : <DownloadOutlined />} {installing ? 'Installing...' : t('common.install')}
+                {installing ? <LoadingOutlined /> : <DownloadOutlined />} {installing ? t('docker.installing') : t('common.install')}
               </button>
             }
           />
@@ -156,7 +144,63 @@ export default function Docker() {
     );
   }
 
-  const info = dockerInfo?.info;
+  if (!isRunning && !loadingInfo && isInstalled) {
+    return (
+      <div style={{
+        background: p.card, borderRadius: 12,
+        border: `1px solid ${p.cardBorder}`,
+        boxShadow: isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.06)',
+        overflow: 'hidden',
+      }}>
+        <div style={{
+          padding: '14px 20px',
+          borderBottom: `1px solid ${p.cardBorder}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: p.headerBg,
+        }}>
+          <span style={{ fontSize: 15, fontWeight: 600, color: p.text }}>{t('sidebar.docker')}</span>
+          <button onClick={refreshAll} style={{
+            padding: '5px 14px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+            background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+          }}>
+            <ReloadOutlined /> {t('common.refresh')}
+          </button>
+        </div>
+        <div style={{ padding: 16 }}>
+          <Alert
+            message={t('docker.daemon_status')}
+            description={t('docker.not_running')}
+            type="error"
+            showIcon
+          />
+          <div style={{ marginTop: 16 }}>
+            <button onClick={() => setActiveTab('settings')} style={{
+              padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',
+              background: p.accent, color: '#fff', fontSize: 13, fontWeight: 500,
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+            }}>
+              <SettingOutlined /> {t('common.settings')}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const tabDefs = [
+    { key: 'oneclick',     label: 'One-Click',  icon: <AppstoreOutlined /> },
+    { key: 'overview',     label: 'Overview',     icon: <DashboardOutlined /> },
+    { key: 'containers',   label: t('docker.container_tabs') || 'Container', icon: <CloudServerOutlined /> },
+    { key: 'cloud-image',  label: 'Cloud Image',  icon: <CloudDownloadOutlined /> },
+    { key: 'local-image',  label: 'Local Image',  icon: <FileImageOutlined /> },
+    { key: 'compose',      label: 'Compose',      icon: <BuildOutlined /> },
+    { key: 'network',      label: 'Network',      icon: <ApartmentOutlined /> },
+    { key: 'volume',       label: 'Volume',       icon: <DatabaseOutlined /> },
+    { key: 'repository',   label: 'Repository',   icon: <SafetyOutlined /> },
+    { key: 'settings',     label: t('common.settings') || 'Settings', icon: <SettingOutlined /> },
+    { key: 'cleanup',      label: 'Cleanup',      icon: <ClearOutlined /> },
+  ];
 
   return (
     <div style={{
@@ -217,7 +261,7 @@ export default function Docker() {
         overflowX: 'auto',
         WebkitOverflowScrolling: 'touch',
       }}>
-        {tabs.map(tab => (
+        {tabDefs.map(tab => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
             padding: '6px 14px', borderRadius: 6,
             border: 'none', cursor: 'pointer',

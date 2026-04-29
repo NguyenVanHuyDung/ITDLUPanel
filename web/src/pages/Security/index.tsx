@@ -151,13 +151,13 @@ function useStyles() {
   const isMobile = useIsMobile();
 
   const sectionBox: React.CSSProperties = {
-    maxWidth: 640, borderRadius: 10,
+    maxWidth: 'none', borderRadius: 10,
     background: isDark ? p.rowAlt : p.headerBg,
     border: `1px solid ${p.cardBorder}`,
     padding: isMobile ? 16 : 28,
   };
 
-  const wideBox: React.CSSProperties = { ...sectionBox, maxWidth: 'none' };
+  const wideBox: React.CSSProperties = { ...sectionBox };
 
   const btnPrimary: React.CSSProperties = {
     padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer',

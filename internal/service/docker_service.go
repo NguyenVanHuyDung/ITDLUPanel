@@ -267,8 +267,19 @@ func NewDockerService() *DockerService {
 	}
 }
 
-// IsDockerInstalled checks whether the Docker socket is reachable.
+// IsDockerInstalled checks whether the Docker binary is installed (not whether the daemon is running).
 func (s *DockerService) IsDockerInstalled() bool {
+	// Check for Docker binary at common locations
+	for _, path := range []string{"/usr/bin/docker", "/usr/sbin/docker", "/usr/local/bin/docker"} {
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// IsDockerRunning checks whether the Docker daemon is running by pinging its socket.
+func (s *DockerService) IsDockerRunning() bool {
 	resp, err := s.get("/_ping")
 	if err != nil {
 		return false
@@ -1428,6 +1439,22 @@ func (s *DockerService) PruneNetworks() ([]string, error) {
 	}
 	logger.Info().Int("count", len(raw.NetworksDeleted)).Msg("networks pruned")
 	return raw.NetworksDeleted, nil
+}
+
+// PruneNetworksDryRun returns which networks would be pruned without actually pruning.
+func (s *DockerService) PruneNetworksDryRun() ([]string, error) {
+	// List all networks and identify unused ones
+	networks, err := s.ListNetworks()
+	if err != nil {
+		return nil, err
+	}
+	var unused []string
+	for _, n := range networks {
+		if n.ContainerCount == 0 && n.Name != "bridge" && n.Name != "host" && n.Name != "none" {
+			unused = append(unused, n.Name)
+		}
+	}
+	return unused, nil
 }
 
 // ---------------------------------------------------------------------------

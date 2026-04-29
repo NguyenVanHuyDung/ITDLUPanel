@@ -363,7 +363,7 @@ export default function Settings() {
   };
 
   const sectionBox: React.CSSProperties = {
-    maxWidth: 640, borderRadius: 10,
+    maxWidth: 'none', borderRadius: 10,
     background: isDark ? p.rowAlt : p.headerBg,
     border: `1px solid ${p.cardBorder}`,
     padding: isMobile ? 16 : 28,

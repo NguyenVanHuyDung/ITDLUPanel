@@ -1781,8 +1781,8 @@ function DatabasesContent() {
                     <div style={{ display: 'flex', gap: 4, padding: '6px 8px' }}>
                       {([
                         { action: 'restart', icon: <SyncOutlined />, label: 'Restart', color: p.amber },
-                        { action: 'stop', icon: <PoweroffOutlined />, label: 'Stop', color: p.error },
-                        { action: 'start', icon: <PlayCircleOutlined />, label: 'Start', color: p.success },
+                        { action: 'stop', icon: <PoweroffOutlined />, label: 'Stop', color: p.red },
+                        { action: 'start', icon: <PlayCircleOutlined />, label: 'Start', color: p.green },
                       ] as const).map(btn => (
                         <Tooltip key={btn.action} title={btn.label}>
                           <button
@@ -1939,7 +1939,7 @@ function DatabasesContent() {
                                 >
                                   <button onClick={e => e.stopPropagation()} style={{
                                     background: 'transparent', border: 'none', cursor: 'pointer',
-                                    color: p.error, fontSize: 13, padding: '4px 6px', borderRadius: 4,
+                                    color: p.red, fontSize: 13, padding: '4px 6px', borderRadius: 4,
                                   }}>
                                     <DeleteOutlined />
                                   </button>
@@ -1965,8 +1965,8 @@ function DatabasesContent() {
                               }}
                             >
                               <button style={{
-                                padding: '3px 10px', borderRadius: 5, border: `1px solid ${p.error}40`,
-                                background: `${p.error}10`, color: p.error, fontSize: 11, cursor: 'pointer',
+                                padding: '3px 10px', borderRadius: 5, border: `1px solid ${p.red}40`,
+                                background: `${p.red}10`, color: p.red, fontSize: 11, cursor: 'pointer',
                               }}>
                                 <DeleteOutlined /> Drop Selected
                               </button>
@@ -2054,7 +2054,7 @@ function DatabasesContent() {
                                     >
                                       <button style={{
                                         background: 'transparent', border: 'none', cursor: 'pointer',
-                                        color: p.error, fontSize: 12,
+                                        color: p.red, fontSize: 12,
                                       }}>
                                         <DeleteOutlined />
                                       </button>
@@ -2117,7 +2117,7 @@ function DatabasesContent() {
                             >
                               <button style={{
                                 background: 'transparent', border: 'none', cursor: 'pointer',
-                                color: p.error, fontSize: 13,
+                                color: p.red, fontSize: 13,
                               }}>
                                 <DeleteOutlined />
                               </button>
