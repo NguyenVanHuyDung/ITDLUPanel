@@ -209,7 +209,7 @@ export default function ComposeList() {
         <pre style={{
           background: '#1e1e1e', color: '#d4d4d4', padding: 16, borderRadius: 8,
           maxHeight: '60vh', overflow: 'auto', fontSize: isMobile ? 11 : 12,
-          fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
+          fontFamily: 'monospace',
           whiteSpace: 'pre-wrap', wordBreak: 'break-all', lineHeight: 1.5,
         }}>
           {logsContent}

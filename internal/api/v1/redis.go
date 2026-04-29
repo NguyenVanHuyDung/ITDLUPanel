@@ -39,6 +39,16 @@ func (h *RedisHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFun
 		redis.GET("/memory", rbac("software.read"), h.GetMemoryStats)
 		redis.PUT("/password", rbac("software.manage"), h.SetPassword)
 		redis.GET("/persistence", rbac("software.read"), h.GetPersistence)
+		redis.POST("/bgsave", rbac("software.manage"), h.Bgsave)
+		redis.GET("/replication", rbac("software.read"), h.GetReplication)
+		redis.GET("/db-overview", rbac("software.read"), h.GetDBOverview)
+		// Key browser
+		redis.GET("/keys", rbac("software.read"), h.ScanKeys)
+		redis.GET("/key", rbac("software.read"), h.GetKeyDetails)
+		redis.DELETE("/key", rbac("software.manage"), h.DeleteKey)
+		redis.PUT("/key/ttl", rbac("software.manage"), h.SetKeyTTL)
+		// CLI
+		redis.POST("/cli", rbac("software.manage"), h.ExecCLI)
 	}
 }
 
@@ -266,3 +276,142 @@ func (h *RedisHandler) GetPersistence(c *gin.Context) {
 	}
 	response.Success(c, info)
 }
+
+// Bgsave triggers a Redis background RDB save.
+func (h *RedisHandler) Bgsave(c *gin.Context) {
+	if err := h.redisService.Bgsave(); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "background save started"})
+}
+
+// GetReplication returns Redis replication topology.
+func (h *RedisHandler) GetReplication(c *gin.Context) {
+	rep, err := h.redisService.GetReplication()
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, rep)
+}
+
+// GetDBOverview returns per-database key/expiry stats.
+func (h *RedisHandler) GetDBOverview(c *gin.Context) {
+	dbs, err := h.redisService.GetDBOverview()
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, dbs)
+}
+
+// ScanKeys returns a cursor-paginated batch of keys matching a pattern.
+func (h *RedisHandler) ScanKeys(c *gin.Context) {
+	dbStr := c.DefaultQuery("db", "0")
+	db, err := strconv.Atoi(dbStr)
+	if err != nil || db < 0 || db > 15 {
+		db = 0
+	}
+	pattern := c.DefaultQuery("pattern", "*")
+	cursorStr := c.DefaultQuery("cursor", "0")
+	cursor, _ := strconv.ParseUint(cursorStr, 10, 64)
+	countStr := c.DefaultQuery("count", "100")
+	count, _ := strconv.Atoi(countStr)
+
+	result, err := h.redisService.ScanKeys(db, pattern, cursor, count)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+// GetKeyDetails returns type, TTL, length, and bounded value for a key.
+func (h *RedisHandler) GetKeyDetails(c *gin.Context) {
+	dbStr := c.DefaultQuery("db", "0")
+	db, _ := strconv.Atoi(dbStr)
+	key := c.Query("key")
+	if key == "" {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "key is required"))
+		return
+	}
+	details, err := h.redisService.GetKeyDetails(db, key)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, details)
+}
+
+type deleteRedisKeyRequest struct {
+	DB  int    `json:"db"`
+	Key string `json:"key" validate:"required"`
+}
+
+// DeleteKey removes a key from a Redis database.
+func (h *RedisHandler) DeleteKey(c *gin.Context) {
+	var req deleteRedisKeyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "body", Message: "invalid request body"}})
+		return
+	}
+	if errs := validator.Validate(req); errs != nil {
+		response.ValidationError(c, errs)
+		return
+	}
+	if err := h.redisService.DeleteKey(req.DB, req.Key); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "key deleted"})
+}
+
+type setKeyTTLRequest struct {
+	DB  int    `json:"db"`
+	Key string `json:"key" validate:"required"`
+	TTL int    `json:"ttl"` // 0 or negative = PERSIST
+}
+
+// SetKeyTTL sets or removes the expiry for a Redis key.
+func (h *RedisHandler) SetKeyTTL(c *gin.Context) {
+	var req setKeyTTLRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "body", Message: "invalid request body"}})
+		return
+	}
+	if errs := validator.Validate(req); errs != nil {
+		response.ValidationError(c, errs)
+		return
+	}
+	if err := h.redisService.SetKeyTTL(req.DB, req.Key, req.TTL); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "ttl updated"})
+}
+
+type execCLIRequest struct {
+	DB      int    `json:"db"`
+	Command string `json:"command" validate:"required"`
+}
+
+// ExecCLI executes a Redis command via redis-cli.
+func (h *RedisHandler) ExecCLI(c *gin.Context) {
+	var req execCLIRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{{Field: "body", Message: "invalid request body"}})
+		return
+	}
+	if errs := validator.Validate(req); errs != nil {
+		response.ValidationError(c, errs)
+		return
+	}
+	out, err := h.redisService.ExecCLI(req.DB, req.Command)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"output": out})
+}
+

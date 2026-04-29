@@ -5,7 +5,8 @@ import {
   CodeOutlined, ThunderboltOutlined, FileTextOutlined,
   FieldTimeOutlined, DatabaseOutlined, SafetyCertificateOutlined,
   InfoCircleOutlined, TeamOutlined, DeleteOutlined, KeyOutlined,
-  SettingOutlined,
+  SettingOutlined, SearchOutlined, CaretRightOutlined, BranchesOutlined,
+  BarChartOutlined, SaveOutlined,
 } from '@ant-design/icons';
 import api from '@/services/api';
 import { formatDateTime } from '@/lib/datetime';
@@ -25,6 +26,10 @@ const SECTIONS = [
   { key: 'slowlog',     label: 'Slow Log',       icon: <FieldTimeOutlined /> },
   { key: 'errorlog',    label: 'Error Log',      icon: <FileTextOutlined /> },
   { key: 'security',    label: 'Security',       icon: <KeyOutlined /> },
+  { key: 'keys',        label: 'Key Browser',    icon: <SearchOutlined /> },
+  { key: 'cli',         label: 'CLI',            icon: <CaretRightOutlined /> },
+  { key: 'replication', label: 'Replication',    icon: <BranchesOutlined /> },
+  { key: 'databases',   label: 'Databases',      icon: <BarChartOutlined /> },
 ] as const;
 
 type SectionKey = (typeof SECTIONS)[number]['key'];
@@ -71,6 +76,10 @@ export default function RedisManageModal({ open, onClose }: Props) {
       case 'slowlog':     return <SlowLogTab />;
       case 'errorlog':    return <ErrorLogTab />;
       case 'security':    return <SecurityTab />;
+      case 'keys':        return <KeyBrowserTab />;
+      case 'cli':         return <CLITab />;
+      case 'replication': return <ReplicationTab />;
+      case 'databases':   return <DatabasesTab />;
       default:            return null;
     }
   };
@@ -637,7 +646,10 @@ function PersistenceTab() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <SectionTitle>Persistence & Keyspace</SectionTitle>
-        <Button icon={<ReloadOutlined />} size="small" onClick={fetchData} style={{ borderRadius: 6 }}>Refresh</Button>
+        <Space>
+          <BgsaveButton rdbInProgress={persistence?.rdb_current_save} onDone={fetchData} />
+          <Button icon={<ReloadOutlined />} size="small" onClick={fetchData} style={{ borderRadius: 6 }}>Refresh</Button>
+        </Space>
       </div>
 
       {loading ? <Spin /> : persistence ? (
@@ -883,6 +895,438 @@ function SecurityTab() {
             Password is set via <code>requirepass</code> directive. After changing, existing connections will need to re-authenticate with <code>AUTH</code> command.
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// BGSAVE button (used in PersistenceTab header)
+// ============================================================================
+function BgsaveButton({ rdbInProgress, onDone }: { rdbInProgress?: boolean; onDone?: () => void }) {
+  const [saving, setSaving] = useState(false);
+
+  const trigger = async () => {
+    setSaving(true);
+    try {
+      await api.post('/redis/bgsave');
+      message.success('Background save started');
+      setTimeout(() => onDone?.(), 2000);
+    } catch (e: any) {
+      message.error(e.response?.data?.message || 'Failed to start BGSAVE');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <Button
+      size="small"
+      icon={<SaveOutlined />}
+      loading={saving}
+      disabled={!!rdbInProgress}
+      onClick={trigger}
+      style={{ borderRadius: 6 }}
+    >
+      {rdbInProgress ? 'Saving…' : 'Save Now'}
+    </Button>
+  );
+}
+
+// ============================================================================
+// Key Browser Tab
+// ============================================================================
+function KeyBrowserTab() {
+  const [db, setDb] = useState(0);
+  const [pattern, setPattern] = useState('*');
+  const [keys, setKeys] = useState<any[]>([]);
+  const [scanCursor, setScanCursor] = useState(0);
+  const [nextCursor, setNextCursor] = useState<number>(0);
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState<any>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [ttlValue, setTtlValue] = useState<number>(-1);
+
+  const scan = async (reset = false) => {
+    setLoading(true);
+    try {
+      const c = reset ? 0 : scanCursor;
+      const { data: resp } = await api.get(`/redis/keys?db=${db}&pattern=${encodeURIComponent(pattern)}&cursor=${c}&count=100`);
+      const result = resp.data;
+      if (reset) setKeys(result.keys || []);
+      else setKeys(prev => [...prev, ...(result.keys || [])]);
+      const nc = result.next_cursor ?? 0;
+      setNextCursor(nc);
+      setScanCursor(nc);
+    } catch { message.error('Failed to scan keys'); }
+    finally { setLoading(false); }
+  };
+
+  const showDetail = async (key: string) => {
+    setDetailLoading(true);
+    setSelected(null);
+    try {
+      const { data: resp } = await api.get(`/redis/key?db=${db}&key=${encodeURIComponent(key)}`);
+      setSelected(resp.data);
+      setTtlValue(resp.data?.ttl ?? -1);
+    } catch { message.error('Failed to load key details'); }
+    finally { setDetailLoading(false); }
+  };
+
+  const deleteKey = async (key: string) => {
+    try {
+      await api.delete('/redis/key', { data: { db, key } });
+      message.success('Key deleted');
+      setSelected(null);
+      scan(true);
+    } catch { message.error('Failed to delete key'); }
+  };
+
+  const updateTTL = async (key: string) => {
+    try {
+      await api.put('/redis/key/ttl', { db, key, ttl: ttlValue });
+      message.success('TTL updated');
+      showDetail(key);
+    } catch { message.error('Failed to update TTL'); }
+  };
+
+  const columns = [
+    {
+      title: 'Key', dataIndex: 'key', key: 'key', ellipsis: true,
+      render: (v: string) => (
+        <a onClick={() => showDetail(v)} style={{ fontFamily: 'monospace', fontSize: 12 }}>{v}</a>
+      ),
+    },
+    {
+      title: 'Type', dataIndex: 'type', key: 'type', width: 80,
+      render: (v: string) => <Tag color={keyTypeColor(v)}>{v}</Tag>,
+    },
+    {
+      title: 'TTL (s)', dataIndex: 'ttl', key: 'ttl', width: 90,
+      render: (v: number) => v === -1 ? <Tag>no exp</Tag> : v === -2 ? <Tag color="red">gone</Tag> : <Tag color="blue">{v}</Tag>,
+    },
+  ];
+
+  return (
+    <div>
+      <SectionTitle>Key Browser</SectionTitle>
+      <Space wrap style={{ marginBottom: 16 }}>
+        <Select
+          value={db}
+          onChange={v => { setDb(v); setKeys([]); setScanCursor(0); setNextCursor(0); setSelected(null); }}
+          style={{ width: 100 }} size="small"
+          options={Array.from({ length: 16 }, (_, i) => ({ value: i, label: `DB ${i}` }))}
+        />
+        <Input
+          value={pattern}
+          onChange={e => setPattern(e.target.value)}
+          placeholder="Pattern e.g. user:*"
+          size="small" style={{ width: 180 }} allowClear
+          onPressEnter={() => { setKeys([]); setScanCursor(0); scan(true); }}
+        />
+        <Button type="primary" size="small" icon={<SearchOutlined />} loading={loading}
+          onClick={() => { setKeys([]); setScanCursor(0); scan(true); }}>
+          Scan
+        </Button>
+      </Space>
+
+      <Table
+        dataSource={keys}
+        columns={columns}
+        loading={loading}
+        rowKey="key"
+        size="small"
+        pagination={false}
+        scroll={{ y: 240 }}
+        style={{ borderRadius: 8, overflow: 'hidden', marginBottom: 8 }}
+      />
+
+      {nextCursor !== 0 && (
+        <Button size="small" onClick={() => scan(false)} loading={loading} style={{ marginBottom: 16 }}>
+          Load More
+        </Button>
+      )}
+
+      {(selected || detailLoading) && (
+        <div style={{ border: `1px solid ${BORDER}`, borderRadius: 10, padding: 16, marginTop: 8 }}>
+          {detailLoading ? <Spin /> : selected && (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <Space>
+                  <Tag color={keyTypeColor(selected.type)}>{selected.type}</Tag>
+                  <Text style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 600 }}>{selected.key}</Text>
+                  {selected.length != null && <Tag>{selected.length} items</Tag>}
+                </Space>
+                <Popconfirm title={`Delete "${selected.key}"?`} onConfirm={() => deleteKey(selected.key)}>
+                  <Button danger size="small" icon={<DeleteOutlined />}>Delete</Button>
+                </Popconfirm>
+              </div>
+              <pre style={{ maxHeight: 200, overflow: 'auto', background: '#F5F5F5', padding: 10, borderRadius: 6, fontSize: 12, margin: '0 0 12px' }}>
+                {typeof selected.value === 'string' ? selected.value : JSON.stringify(selected.value, null, 2)}
+              </pre>
+              <Space wrap>
+                <Input
+                  type="number"
+                  size="small"
+                  value={ttlValue}
+                  onChange={e => setTtlValue(Number(e.target.value))}
+                  style={{ width: 160 }}
+                  addonBefore="TTL (s)"
+                />
+                <Button size="small" onClick={() => updateTTL(selected.key)}>Set TTL</Button>
+                <Text style={{ fontSize: 12, color: TEXT_SECONDARY }}>≤0 removes expiry</Text>
+              </Space>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function keyTypeColor(t: string): string {
+  switch (t) {
+    case 'string': return 'blue';
+    case 'list':   return 'green';
+    case 'hash':   return 'orange';
+    case 'set':    return 'purple';
+    case 'zset':   return 'cyan';
+    default:       return 'default';
+  }
+}
+
+// ============================================================================
+// CLI Tab
+// ============================================================================
+function CLITab() {
+  const [db, setDb] = useState(0);
+  const [command, setCommand] = useState('');
+  const [output, setOutput] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [history, setHistory] = useState<string[]>([]);
+  const [histIdx, setHistIdx] = useState(-1);
+  const outputRef = useRef<HTMLDivElement>(null);
+
+  const exec = async () => {
+    if (!command.trim()) return;
+    const cmd = command;
+    setHistory(prev => [cmd, ...prev.slice(0, 49)]);
+    setHistIdx(-1);
+    setCommand('');
+    setLoading(true);
+    try {
+      const { data: resp } = await api.post('/redis/cli', { db, command: cmd });
+      setOutput(prev => [...prev, `> ${cmd}`, resp.data?.output ?? '(empty)', '']);
+    } catch (e: any) {
+      setOutput(prev => [...prev, `> ${cmd}`, `ERROR: ${e.response?.data?.message || 'Command failed'}`, '']);
+    } finally {
+      setLoading(false);
+      setTimeout(() => { if (outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight; }, 50);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); exec(); return; }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const idx = Math.min(histIdx + 1, history.length - 1);
+      setHistIdx(idx);
+      if (history[idx] != null) setCommand(history[idx]);
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const idx = Math.max(histIdx - 1, -1);
+      setHistIdx(idx);
+      setCommand(idx === -1 ? '' : history[idx] ?? '');
+    }
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+        <SectionTitle>Redis CLI</SectionTitle>
+        <Button size="small" onClick={() => setOutput([])} style={{ borderRadius: 6 }}>Clear</Button>
+      </div>
+      <div
+        ref={outputRef}
+        style={{
+          fontFamily: 'monospace', fontSize: 12,
+          background: '#1E1E1E', color: '#D4D4D4',
+          borderRadius: 8, padding: 12,
+          minHeight: 280, maxHeight: 380, overflow: 'auto',
+          marginBottom: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+        }}
+      >
+        {output.length === 0
+          ? <span style={{ color: '#888' }}># Enter commands below. Use ↑↓ for history.</span>
+          : output.map((line, i) => (
+            <div key={i} style={{
+              color: line.startsWith('>') ? '#9CDCFE'
+                : line.startsWith('ERROR') ? '#F44747'
+                  : '#D4D4D4',
+            }}>
+              {line || '\u00A0'}
+            </div>
+          ))
+        }
+        {loading && <div style={{ color: '#888' }}>Running…</div>}
+      </div>
+      <Space.Compact style={{ width: '100%' }}>
+        <Select
+          value={db} onChange={setDb}
+          style={{ width: 90 }} size="small"
+          options={Array.from({ length: 16 }, (_, i) => ({ value: i, label: `DB ${i}` }))}
+        />
+        <Input
+          value={command}
+          onChange={e => setCommand(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="e.g. GET mykey  (↑↓ history)"
+          size="small"
+          style={{ fontFamily: 'monospace', flex: 1 }}
+          disabled={loading}
+        />
+        <Button type="primary" size="small" loading={loading} onClick={exec} icon={<CaretRightOutlined />}>Run</Button>
+      </Space.Compact>
+      <div style={{ marginTop: 8, padding: '6px 10px', background: '#F5F5F5', borderRadius: 6, fontSize: 11, color: TEXT_SECONDARY }}>
+        Blocked: SHUTDOWN, CONFIG, ACL, DEBUG, SLAVEOF, REPLICAOF, MODULE, MIGRATE, RESTORE, OBJECT
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Replication Tab
+// ============================================================================
+function ReplicationTab() {
+  const [rep, setRep] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data: resp } = await api.get('/redis/replication');
+      setRep(resp.data);
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  if (loading) return <Spin style={{ padding: 40 }} />;
+  if (!rep) return <Text type="secondary">Failed to load replication info</Text>;
+
+  const roleColor = rep.role === 'master' ? 'green' : rep.role === 'slave' ? 'orange' : 'default';
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <SectionTitle>Replication</SectionTitle>
+        <Space>
+          <Tag color={roleColor} style={{ fontSize: 13, padding: '2px 10px' }}>{(rep.role || 'unknown').toUpperCase()}</Tag>
+          <Button icon={<ReloadOutlined />} size="small" onClick={fetchData} style={{ borderRadius: 6 }}>Refresh</Button>
+        </Space>
+      </div>
+
+      <InfoTable rows={[
+        { label: 'Role', value: rep.role },
+        { label: 'Connected Slaves', value: rep.connected_slaves ?? 0 },
+        { label: 'Master Replid', value: rep.master_replid || '—' },
+        { label: 'Master Repl Offset', value: rep.master_repl_offset ?? '—' },
+        { label: 'Backlog Active', value: rep.repl_backlog_active ? 'Yes' : 'No' },
+        { label: 'Backlog Size', value: rep.repl_backlog_size ? `${(rep.repl_backlog_size / 1024 / 1024).toFixed(2)} MB` : '—' },
+      ]} />
+
+      {rep.role === 'slave' && (
+        <InfoTable rows={[
+          { label: 'Master Host', value: rep.master_host || '—' },
+          { label: 'Master Port', value: rep.master_port || '—' },
+          { label: 'Master Link Status', value: rep.master_link_status || '—', color: rep.master_link_status === 'up' ? SUCCESS : ERROR_CLR },
+          { label: 'Slave Repl Offset', value: rep.slave_repl_offset ?? '—' },
+          { label: 'Slave Priority', value: rep.slave_priority ?? '—' },
+        ]} />
+      )}
+
+      {rep.slaves && rep.slaves.length > 0 && (
+        <>
+          <Text style={{ fontSize: 14, fontWeight: 600, color: TEXT_PRIMARY, display: 'block', marginBottom: 12 }}>
+            Connected Slaves ({rep.slaves.length})
+          </Text>
+          <Table
+            dataSource={rep.slaves}
+            rowKey="id"
+            size="small"
+            pagination={false}
+            style={{ borderRadius: 10, overflow: 'hidden' }}
+            columns={[
+              { title: 'ID', dataIndex: 'id', key: 'id', width: 50 },
+              { title: 'IP', dataIndex: 'ip', key: 'ip' },
+              { title: 'Port', dataIndex: 'port', key: 'port', width: 70 },
+              { title: 'State', dataIndex: 'state', key: 'state', render: (v: string) => <Tag color={v === 'online' ? 'green' : 'orange'}>{v}</Tag> },
+              { title: 'Offset', dataIndex: 'offset', key: 'offset' },
+              { title: 'Lag (s)', dataIndex: 'lag', key: 'lag' },
+            ]}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// Databases Tab
+// ============================================================================
+function DatabasesTab() {
+  const [dbs, setDbs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data: resp } = await api.get('/redis/db-overview');
+      setDbs(resp.data || []);
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const columns = [
+    { title: 'Database', dataIndex: 'db', key: 'db', render: (v: number) => <Text strong>DB {v}</Text> },
+    { title: 'Keys', dataIndex: 'keys', key: 'keys', render: (v: number) => v.toLocaleString() },
+    { title: 'Expires', dataIndex: 'expires', key: 'expires', render: (v: number) => v.toLocaleString() },
+    { title: 'Avg TTL (ms)', dataIndex: 'avg_ttl', key: 'avg_ttl', render: (v: number) => v > 0 ? v.toLocaleString() : '—' },
+    {
+      title: '', key: 'actions', width: 100,
+      render: (_: any, row: any) => (
+        <Popconfirm title={`Flush DB ${row.db}? This cannot be undone!`} onConfirm={async () => {
+          try {
+            await api.post('/redis/flush', { db: row.db });
+            message.success(`DB ${row.db} flushed`);
+            fetchData();
+          } catch { message.error('Failed to flush'); }
+        }}>
+          <Button danger size="small" icon={<DeleteOutlined />}>Flush</Button>
+        </Popconfirm>
+      ),
+    },
+  ];
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
+        <SectionTitle>Databases</SectionTitle>
+        <Button icon={<ReloadOutlined />} size="small" onClick={fetchData} style={{ borderRadius: 6 }}>Refresh</Button>
+      </div>
+      {loading ? <Spin /> : dbs.length === 0 ? (
+        <Text type="secondary">No active databases found</Text>
+      ) : (
+        <Table
+          dataSource={dbs}
+          columns={columns}
+          rowKey="db"
+          size="small"
+          pagination={false}
+          style={{ borderRadius: 10, overflow: 'hidden' }}
+        />
       )}
     </div>
   );

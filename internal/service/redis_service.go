@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"unicode"
 
 	apperrors "github.com/ITDLUPanel/panel/internal/pkg/errors"
 	"github.com/ITDLUPanel/panel/internal/pkg/logger"
@@ -449,4 +450,401 @@ func (s *RedisService) GetPersistenceInfo() (*RedisPersistence, error) {
 	}
 
 	return p, nil
+}
+
+// ---------------------------------------------------------------------------
+// Key Browser
+// ---------------------------------------------------------------------------
+
+// RedisKeyScanResult holds a page of SCAN results.
+type RedisKeyScanResult struct {
+	Keys       []string `json:"keys"`
+	NextCursor uint64   `json:"next_cursor"`
+}
+
+// RedisKeyDetails holds the type, bounded value preview, TTL, and length of a key.
+type RedisKeyDetails struct {
+	Key       string   `json:"key"`
+	Type      string   `json:"type"`
+	TTL       int64    `json:"ttl"` // -1 = no expiry, -2 = missing
+	Length    int64    `json:"length"`
+	Value     any      `json:"value"`
+	Truncated bool     `json:"truncated"`
+}
+
+const keyValuePreviewLimit = 100
+
+// ScanKeys runs SCAN on the given db with a pattern and cursor.
+func (s *RedisService) ScanKeys(db int, pattern string, cursor uint64, count int) (*RedisKeyScanResult, error) {
+	if pattern == "" {
+		pattern = "*"
+	}
+	if count <= 0 || count > 500 {
+		count = 100
+	}
+	ctx := context.Background()
+	result, err := system.Exec(ctx, "redis-cli", "--no-auth-warning", "-n", strconv.Itoa(db),
+		"--raw", "SCAN", strconv.FormatUint(cursor, 10), "MATCH", pattern, "COUNT", strconv.Itoa(count))
+	if err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to scan redis keys")
+	}
+	lines := strings.Split(strings.TrimSpace(result.Stdout), "\n")
+	if len(lines) < 1 {
+		return &RedisKeyScanResult{}, nil
+	}
+	nextCursor, _ := strconv.ParseUint(strings.TrimSpace(lines[0]), 10, 64)
+	var keys []string
+	for _, l := range lines[1:] {
+		l = strings.TrimSpace(l)
+		if l != "" {
+			keys = append(keys, l)
+		}
+	}
+	return &RedisKeyScanResult{Keys: keys, NextCursor: nextCursor}, nil
+}
+
+// GetKeyDetails returns type, TTL, length, and a bounded value preview for a key.
+func (s *RedisService) GetKeyDetails(db int, key string) (*RedisKeyDetails, error) {
+	ctx := context.Background()
+	base := []string{"--no-auth-warning", "-n", strconv.Itoa(db), "--raw"}
+
+	// Type
+	typeRes, err := system.Exec(ctx, "redis-cli", append(base, "TYPE", key)...)
+	if err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get key type")
+	}
+	keyType := strings.TrimSpace(typeRes.Stdout)
+	if keyType == "" || keyType == "none" {
+		return nil, apperrors.New(apperrors.ErrNotFound, "key does not exist")
+	}
+
+	// TTL
+	ttlRes, _ := system.Exec(ctx, "redis-cli", append(base, "TTL", key)...)
+	ttl, _ := strconv.ParseInt(strings.TrimSpace(ttlRes.Stdout), 10, 64)
+
+	details := &RedisKeyDetails{Key: key, Type: keyType, TTL: ttl}
+
+	switch keyType {
+	case "string":
+		// Length
+		lenRes, _ := system.Exec(ctx, "redis-cli", append(base, "STRLEN", key)...)
+		details.Length, _ = strconv.ParseInt(strings.TrimSpace(lenRes.Stdout), 10, 64)
+		// Value (bounded by GETRANGE)
+		limit := int64(keyValuePreviewLimit * 10) // 1000 bytes preview
+		valRes, _ := system.Exec(ctx, "redis-cli", append(base, "GETRANGE", key, "0", strconv.FormatInt(limit-1, 10))...)
+		details.Value = strings.TrimRight(valRes.Stdout, "\n")
+		details.Truncated = details.Length > limit
+
+	case "hash":
+		lenRes, _ := system.Exec(ctx, "redis-cli", append(base, "HLEN", key)...)
+		details.Length, _ = strconv.ParseInt(strings.TrimSpace(lenRes.Stdout), 10, 64)
+		valRes, _ := system.Exec(ctx, "redis-cli", append(base, "HSCAN", key, "0", "COUNT", "100")...)
+		details.Value = parseHScanOutput(valRes.Stdout)
+		details.Truncated = details.Length > keyValuePreviewLimit
+
+	case "list":
+		lenRes, _ := system.Exec(ctx, "redis-cli", append(base, "LLEN", key)...)
+		details.Length, _ = strconv.ParseInt(strings.TrimSpace(lenRes.Stdout), 10, 64)
+		valRes, _ := system.Exec(ctx, "redis-cli", append(base, "LRANGE", key, "0", strconv.Itoa(keyValuePreviewLimit-1))...)
+		details.Value = splitRawLines(valRes.Stdout)
+		details.Truncated = details.Length > keyValuePreviewLimit
+
+	case "set":
+		lenRes, _ := system.Exec(ctx, "redis-cli", append(base, "SCARD", key)...)
+		details.Length, _ = strconv.ParseInt(strings.TrimSpace(lenRes.Stdout), 10, 64)
+		valRes, _ := system.Exec(ctx, "redis-cli", append(base, "SSCAN", key, "0", "COUNT", "100")...)
+		lines := strings.Split(strings.TrimSpace(valRes.Stdout), "\n")
+		if len(lines) > 1 {
+			details.Value = splitRawLines(strings.Join(lines[1:], "\n"))
+		}
+		details.Truncated = details.Length > keyValuePreviewLimit
+
+	case "zset":
+		lenRes, _ := system.Exec(ctx, "redis-cli", append(base, "ZCARD", key)...)
+		details.Length, _ = strconv.ParseInt(strings.TrimSpace(lenRes.Stdout), 10, 64)
+		valRes, _ := system.Exec(ctx, "redis-cli", append(base, "ZRANGE", key, "0", strconv.Itoa(keyValuePreviewLimit-1), "WITHSCORES")...)
+		details.Value = parseZRangeWithScores(valRes.Stdout)
+		details.Truncated = details.Length > keyValuePreviewLimit
+
+	case "stream":
+		lenRes, _ := system.Exec(ctx, "redis-cli", append(base, "XLEN", key)...)
+		details.Length, _ = strconv.ParseInt(strings.TrimSpace(lenRes.Stdout), 10, 64)
+		details.Value = nil
+		details.Truncated = false
+	}
+
+	return details, nil
+}
+
+// DeleteKey removes a key from the given database.
+func (s *RedisService) DeleteKey(db int, key string) error {
+	ctx := context.Background()
+	if _, err := system.Exec(ctx, "redis-cli", "--no-auth-warning", "-n", strconv.Itoa(db), "DEL", key); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to delete redis key")
+	}
+	logger.Info().Int("db", db).Str("key", key).Msg("redis key deleted")
+	return nil
+}
+
+// SetKeyTTL sets the expiry for a key. ttl <= 0 calls PERSIST (removes expiry).
+func (s *RedisService) SetKeyTTL(db int, key string, ttl int) error {
+	ctx := context.Background()
+	base := []string{"--no-auth-warning", "-n", strconv.Itoa(db)}
+	var err error
+	if ttl <= 0 {
+		_, err = system.Exec(ctx, "redis-cli", append(base, "PERSIST", key)...)
+	} else {
+		_, err = system.Exec(ctx, "redis-cli", append(base, "EXPIRE", key, strconv.Itoa(ttl))...)
+	}
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to set key TTL")
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// CLI
+// ---------------------------------------------------------------------------
+
+// redisCLIDenylist is a set of commands that cannot be executed via the CLI endpoint.
+var redisCLIDenylist = map[string]bool{
+	"shutdown": true, "debug": true, "slaveof": true, "replicaof": true,
+	"config": true, "acl": true, "module": true, "migrate": true,
+	"restore": true, "object": true,
+}
+
+// ExecCLI parses a command string and executes it against the given database.
+func (s *RedisService) ExecCLI(db int, commandStr string) (string, error) {
+	args, err := shellSplitSimple(commandStr)
+	if err != nil || len(args) == 0 {
+		return "", apperrors.New(apperrors.ErrValidation, "empty or invalid command")
+	}
+	if redisCLIDenylist[strings.ToLower(args[0])] {
+		return "", apperrors.New(apperrors.ErrValidation, fmt.Sprintf("command '%s' is not allowed via CLI", args[0]))
+	}
+	ctx := context.Background()
+	cliArgs := append([]string{"--no-auth-warning", "-n", strconv.Itoa(db), "--no-raw"}, args...)
+	result, err := system.Exec(ctx, "redis-cli", cliArgs...)
+	if err != nil {
+		// Return stderr as output rather than an internal error, for UX.
+		if result != nil && result.Stderr != "" {
+			return result.Stderr, nil
+		}
+		return "", apperrors.Wrap(err, apperrors.ErrInternal, "redis-cli execution failed")
+	}
+	logger.Info().Int("db", db).Str("cmd", args[0]).Msg("redis CLI command executed")
+	return result.Stdout, nil
+}
+
+// ---------------------------------------------------------------------------
+// Backup / Replication
+// ---------------------------------------------------------------------------
+
+// Bgsave triggers a background RDB save. Returns error if save already in progress.
+func (s *RedisService) Bgsave() error {
+	ctx := context.Background()
+	// Check if save already running
+	info, err := s.GetPersistenceInfo()
+	if err == nil && info.RDBCurrentSave {
+		return apperrors.New(apperrors.ErrValidation, "background save already in progress")
+	}
+	result, err := system.Exec(ctx, "redis-cli", "BGSAVE")
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to trigger BGSAVE")
+	}
+	if strings.Contains(result.Stdout, "ERR") {
+		return apperrors.New(apperrors.ErrInternal, strings.TrimSpace(result.Stdout))
+	}
+	logger.Info().Msg("redis BGSAVE triggered")
+	return nil
+}
+
+// RedisReplication holds parsed INFO replication data.
+type RedisReplication struct {
+	Role             string              `json:"role"`
+	ConnectedSlaves  int                 `json:"connected_slaves"`
+	MasterReplOffset int64               `json:"master_repl_offset"`
+	MasterHost       string              `json:"master_host,omitempty"`
+	MasterPort       string              `json:"master_port,omitempty"`
+	MasterLinkStatus string              `json:"master_link_status,omitempty"`
+	MasterLastIO     int64               `json:"master_last_io_seconds_ago,omitempty"`
+	Slaves           []RedisSlaveInfo    `json:"slaves"`
+}
+
+// RedisSlaveInfo holds per-replica information.
+type RedisSlaveInfo struct {
+	ID     int    `json:"id"`
+	IP     string `json:"ip"`
+	Port   string `json:"port"`
+	State  string `json:"state"`
+	Offset int64  `json:"offset"`
+	Lag    int64  `json:"lag"`
+}
+
+// GetReplication parses INFO replication into a structured response.
+func (s *RedisService) GetReplication() (*RedisReplication, error) {
+	ctx := context.Background()
+	result, err := system.Exec(ctx, "redis-cli", "INFO", "replication")
+	if err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get redis replication info")
+	}
+	info := parseRedisInfo(result.Stdout)
+	rep := &RedisReplication{
+		Role:             info["role"],
+		MasterHost:       info["master_host"],
+		MasterPort:       info["master_port"],
+		MasterLinkStatus: info["master_link_status"],
+	}
+	rep.ConnectedSlaves, _ = strconv.Atoi(info["connected_slaves"])
+	rep.MasterReplOffset, _ = strconv.ParseInt(info["master_repl_offset"], 10, 64)
+	rep.MasterLastIO, _ = strconv.ParseInt(info["master_last_io_seconds_ago"], 10, 64)
+
+	// Parse slave entries: slave0:ip=x,port=y,state=online,offset=z,lag=n
+	for i := 0; i < rep.ConnectedSlaves; i++ {
+		key := fmt.Sprintf("slave%d", i)
+		val, ok := info[key]
+		if !ok {
+			continue
+		}
+		slave := RedisSlaveInfo{ID: i}
+		for _, part := range strings.Split(val, ",") {
+			kv := strings.SplitN(part, "=", 2)
+			if len(kv) != 2 {
+				continue
+			}
+			switch kv[0] {
+			case "ip":
+				slave.IP = kv[1]
+			case "port":
+				slave.Port = kv[1]
+			case "state":
+				slave.State = kv[1]
+			case "offset":
+				slave.Offset, _ = strconv.ParseInt(kv[1], 10, 64)
+			case "lag":
+				slave.Lag, _ = strconv.ParseInt(kv[1], 10, 64)
+			}
+		}
+		rep.Slaves = append(rep.Slaves, slave)
+	}
+	return rep, nil
+}
+
+// ---------------------------------------------------------------------------
+// Database overview
+// ---------------------------------------------------------------------------
+
+// RedisDBInfo holds per-database statistics.
+type RedisDBInfo struct {
+	DB      int   `json:"db"`
+	Keys    int64 `json:"keys"`
+	Expires int64 `json:"expires"`
+	AvgTTL  int64 `json:"avg_ttl"`
+}
+
+// GetDBOverview returns per-database key counts and expiry stats.
+func (s *RedisService) GetDBOverview() ([]RedisDBInfo, error) {
+	ctx := context.Background()
+	result, err := system.Exec(ctx, "redis-cli", "--raw", "INFO", "keyspace")
+	if err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get redis keyspace info")
+	}
+	var dbs []RedisDBInfo
+	for _, line := range strings.Split(result.Stdout, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "db") {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		dbNum, err := strconv.Atoi(strings.TrimPrefix(parts[0], "db"))
+		if err != nil {
+			continue
+		}
+		info := RedisDBInfo{DB: dbNum}
+		for _, kv := range strings.Split(parts[1], ",") {
+			p := strings.SplitN(kv, "=", 2)
+			if len(p) != 2 {
+				continue
+			}
+			switch p[0] {
+			case "keys":
+				info.Keys, _ = strconv.ParseInt(p[1], 10, 64)
+			case "expires":
+				info.Expires, _ = strconv.ParseInt(p[1], 10, 64)
+			case "avg_ttl":
+				info.AvgTTL, _ = strconv.ParseInt(p[1], 10, 64)
+			}
+		}
+		dbs = append(dbs, info)
+	}
+	return dbs, nil
+}
+
+// ---------------------------------------------------------------------------
+// Parsing helpers
+// ---------------------------------------------------------------------------
+
+func splitRawLines(s string) []string {
+	var out []string
+	for _, l := range strings.Split(strings.TrimRight(s, "\n"), "\n") {
+		if l != "" {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// parseHScanOutput parses HSCAN --raw output (cursor\nfield\nvalue\n...) into a map.
+func parseHScanOutput(s string) map[string]string {
+	out := make(map[string]string)
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	// First line is cursor, skip it.
+	if len(lines) < 2 {
+		return out
+	}
+	lines = lines[1:]
+	for i := 0; i+1 < len(lines); i += 2 {
+		out[lines[i]] = lines[i+1]
+	}
+	return out
+}
+
+// parseZRangeWithScores parses ZRANGE ... WITHSCORES --raw output into [{member,score}].
+func parseZRangeWithScores(s string) []map[string]string {
+	var out []map[string]string
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	for i := 0; i+1 < len(lines); i += 2 {
+		out = append(out, map[string]string{"member": lines[i], "score": lines[i+1]})
+	}
+	return out
+}
+
+// shellSplitSimple splits a command string into tokens respecting double-quoted strings.
+func shellSplitSimple(s string) ([]string, error) {
+	var args []string
+	var current strings.Builder
+	inQuote := false
+	for _, r := range s {
+		switch {
+		case r == '"':
+			inQuote = !inQuote
+		case unicode.IsSpace(r) && !inQuote:
+			if current.Len() > 0 {
+				args = append(args, current.String())
+				current.Reset()
+			}
+		default:
+			current.WriteRune(r)
+		}
+	}
+	if inQuote {
+		return nil, fmt.Errorf("unterminated quote")
+	}
+	if current.Len() > 0 {
+		args = append(args, current.String())
+	}
+	return args, nil
 }

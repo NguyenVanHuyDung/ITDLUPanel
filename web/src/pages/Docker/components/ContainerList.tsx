@@ -287,7 +287,7 @@ export default function ContainerList({ onRefresh }: { onRefresh?: () => void })
                     </div>
                     <div style={{ fontSize: 11, color: p.textMuted, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                       <span style={{
-                        fontFamily: "'SFMono-Regular', Consolas, monospace", fontSize: 11,
+                        fontFamily: 'monospace', fontSize: 11,
                         maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                       }}>{c.image}</span>
                       {ports && (
@@ -296,7 +296,7 @@ export default function ContainerList({ onRefresh }: { onRefresh?: () => void })
                             <span key={i} style={{
                               fontSize: 10, padding: '0 5px', borderRadius: 3,
                               background: `${p.accent}10`, color: p.accent, fontWeight: 500,
-                              fontFamily: "'SFMono-Regular', Consolas, monospace",
+                              fontFamily: 'monospace',
                             }}>{pt}</span>
                           ))}
                         </span>
@@ -416,7 +416,7 @@ export default function ContainerList({ onRefresh }: { onRefresh?: () => void })
           };
           const label: React.CSSProperties = { color: p.textMuted, fontWeight: 500, minWidth: 100, flexShrink: 0 };
           const val: React.CSSProperties = { color: p.text, textAlign: 'right' as const, wordBreak: 'break-all' as const, flex: 1 };
-          const mono: React.CSSProperties = { fontFamily: "'SFMono-Regular', Consolas, monospace", fontSize: 11 };
+          const mono: React.CSSProperties = { fontFamily: 'monospace', fontSize: 11 };
 
           return (
             <div>
@@ -519,7 +519,7 @@ export default function ContainerList({ onRefresh }: { onRefresh?: () => void })
         <pre style={{
           background: '#1e1e1e', color: '#d4d4d4', padding: 16, borderRadius: 8,
           maxHeight: '60vh', overflow: 'auto', fontSize: isMobile ? 11 : 12,
-          fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
+          fontFamily: 'monospace',
           whiteSpace: 'pre-wrap', wordBreak: 'break-all', lineHeight: 1.5,
         }}>
           {logsLoading ? 'Loading...' : logsContent}

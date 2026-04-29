@@ -111,7 +111,7 @@ export default function VolumeList({ onRefresh }: { onRefresh?: () => void }) {
       dataIndex: 'name',
       key: 'name',
       render: (val: string) => (
-        <span style={{ fontWeight: 600, color: p.text, fontSize: 12, fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace" }}>
+        <span style={{ fontWeight: 600, color: p.text, fontSize: 12, fontFamily: 'monospace' }}>
           {val.length > 30 ? val.slice(0, 30) + '...' : val}
         </span>
       ),
