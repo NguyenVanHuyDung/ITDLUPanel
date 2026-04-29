@@ -643,7 +643,7 @@ export default function Logs() {
     {
       title: 'Message', key: 'message', ellipsis: true,
       render: (_: unknown, r: ParsedLog) => (
-        <div>
+        <div style={{ whiteSpace: 'nowrap' }}>
           <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>{r.message}</span>
           {r.method && r.path && (
             <span style={{ marginLeft: 8 }}>
@@ -874,13 +874,13 @@ export default function Logs() {
       ) : null,
     },
     {
-      title: 'Method', dataIndex: 'method', key: 'method', width: 70,
+      title: 'Method', dataIndex: 'method', key: 'method', width: 90,
       render: (v: string) => {
         const color = v === 'GET' ? p.green : v === 'POST' ? p.accent : v === 'DELETE' ? p.red : p.amber;
         return v ? (
           <span style={{
             fontSize: 10, padding: '2px 8px', borderRadius: 4, fontWeight: 600,
-            background: `${color}15`, color,
+            background: `${color}15`, color, whiteSpace: 'nowrap', display: 'inline-block',
           }}>{v}</span>
         ) : null;
       },
