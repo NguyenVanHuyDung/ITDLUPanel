@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -633,4 +634,48 @@ func countLinesFallback(paths []string) int {
 	}
 	n, _ := strconv.Atoi(strings.TrimSpace(result.Stdout))
 	return n
+}
+
+// IP extraction regex for nginx log format
+var ipRegex = regexp.MustCompile(`^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})`)
+
+// geoService is the global geo service instance for IP lookups.
+var geoService *GeoService
+
+// SetGeoService sets the geo service reference for IP lookups.
+func SetGeoService(gs *GeoService) {
+	geoService = gs
+}
+
+// GetGeoForLines extracts unique IPs from log lines and returns their geolocation info.
+func (s *LogService) GetGeoForLines(lines []string) (map[string]*GeoInfo, error) {
+	if geoService == nil {
+		return nil, nil
+	}
+
+	// Extract unique IPs from log lines
+	ipSet := make(map[string]bool)
+	for _, line := range lines {
+		m := ipRegex.FindStringSubmatch(strings.TrimSpace(line))
+		if len(m) > 1 {
+			ip := m[1]
+			// Skip private/local IPs
+			if !isPrivateIP(ip) {
+				ipSet[ip] = true
+			}
+		}
+	}
+
+	if len(ipSet) == 0 {
+		return nil, nil
+	}
+
+	// Convert to slice
+	ips := make([]string, 0, len(ipSet))
+	for ip := range ipSet {
+		ips = append(ips, ip)
+	}
+
+	// Lookup geolocation in batch
+	return geoService.LookupBatch(ips)
 }

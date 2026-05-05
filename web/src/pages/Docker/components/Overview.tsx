@@ -157,7 +157,7 @@ export default function Overview() {
               ].map(([label, value]) => (
                 <div key={label} style={{ display: 'flex', gap: 8, padding: '4px 0', borderBottom: `1px solid ${p.cardBorder}22` }}>
                   <span style={{ fontSize: 12, color: p.textMuted, minWidth: 120, fontWeight: 500 }}>{label}</span>
-                  <span style={{ fontSize: 12, color: p.text, fontFamily: 'monospace' }}>{value}</span>
+                  <span style={{ fontSize: 12, color: p.text, fontFamily: 'inherit' }}>{value}</span>
                 </div>
               ))}
             </div>

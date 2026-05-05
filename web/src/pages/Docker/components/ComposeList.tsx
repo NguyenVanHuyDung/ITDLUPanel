@@ -192,7 +192,7 @@ export default function ComposeList() {
           </Form.Item>
           <Form.Item name="yaml" label="docker-compose.yml" rules={[{ required: true }]}
             extra="Paste your Docker Compose YAML configuration">
-            <Input.TextArea rows={14} style={{ fontFamily: 'monospace', fontSize: 12 }}
+            <Input.TextArea rows={14} style={{ fontFamily: 'inherit', fontSize: 12 }}
               placeholder={`version: '3.8'\nservices:\n  web:\n    image: nginx:latest\n    ports:\n      - "80:80"`} />
           </Form.Item>
         </Form>
@@ -209,7 +209,7 @@ export default function ComposeList() {
         <pre style={{
           background: '#1e1e1e', color: '#d4d4d4', padding: 16, borderRadius: 8,
           maxHeight: '60vh', overflow: 'auto', fontSize: isMobile ? 11 : 12,
-          fontFamily: 'monospace',
+          fontFamily: 'inherit',
           whiteSpace: 'pre-wrap', wordBreak: 'break-all', lineHeight: 1.5,
         }}>
           {logsContent}

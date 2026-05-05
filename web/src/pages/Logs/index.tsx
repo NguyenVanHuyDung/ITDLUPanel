@@ -52,6 +52,7 @@ interface ParsedAccessLog {
   size: number;
   referer: string;
   userAgent: string;
+  latency?: number;
 }
 
 interface SiteMinimal { id: number; domain: string; }
@@ -60,7 +61,9 @@ interface SiteMinimal { id: number; domain: string; }
 
 // Parse nginx combined log format:
 // 192.168.1.1 - - [24/Mar/2026:12:00:00 +0700] "GET /path HTTP/1.1" 200 1234 "referer" "user-agent"
+// Also supports: with latency (ms) at end, or without referer, or with custom fields
 function parseAccessLogLine(raw: string, idx: number): ParsedAccessLog {
+  // Try nginx combined log format (most common)
   const m = raw.match(
     /^(\S+)\s+\S+\s+\S+\s+\[([^\]]+)\]\s+"(\S+)\s+(\S+)\s+\S+"\s+(\d+)\s+(\d+)\s+"([^"]*)"\s+"([^"]*)"/
   );
@@ -70,7 +73,71 @@ function parseAccessLogLine(raw: string, idx: number): ParsedAccessLog {
       status: parseInt(m[5], 10), size: parseInt(m[6], 10), referer: m[7], userAgent: m[8],
     };
   }
-  return { key: idx, raw, ip: '', time: '', method: '', path: '', status: 0, size: 0, referer: '', userAgent: '' };
+
+  // Try format with latency: ... status size latency "referer" "ua"
+  const m2 = raw.match(
+    /^(\S+)\s+\S+\s+\S+\s+\[([^\]]+)\]\s+"(\S+)\s+(\S+)\s+\S+"\s+(\d+)\s+(\d+)\s+(\d+|-)\s+"([^"]*)"\s+"([^"]*)"/
+  );
+  if (m2) {
+    return {
+      key: idx, raw, ip: m2[1], time: m2[2], method: m2[3], path: m2[4],
+      status: parseInt(m2[5], 10), size: parseInt(m2[6], 10),
+      latency: m2[7] !== '-' ? parseInt(m2[7], 10) : undefined,
+      referer: m2[8], userAgent: m2[9],
+    };
+  }
+
+  // Try format without referer: ... status size "ua"
+  const m3 = raw.match(
+    /^(\S+)\s+\S+\s+\S+\s+\[([^\]]+)\]\s+"(\S+)\s+(\S+)\s+\S+"\s+(\d+)\s+(\d+)\s+"([^"]*)"/
+  );
+  if (m3) {
+    return {
+      key: idx, raw, ip: m3[1], time: m3[2], method: m3[3], path: m3[4],
+      status: parseInt(m3[5], 10), size: parseInt(m3[6], 10),
+      referer: '', userAgent: m3[7],
+    };
+  }
+
+  // Try simple format: IP - - [time] "method path version" status size
+  const m4 = raw.match(
+    /^(\S+)\s+-\s+-\s+\[([^\]]+)\]\s+"(\S+)\s+(\S+)\s+\S+"\s+(\d+)\s+(\d+)/
+  );
+  if (m4) {
+    return {
+      key: idx, raw, ip: m4[1], time: m4[2], method: m4[3], path: m4[4],
+      status: parseInt(m4[5], 10), size: parseInt(m4[6], 10),
+      referer: '', userAgent: '',
+    };
+  }
+
+  // Extract what we can from partial matches
+  const ipMatch = raw.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+  const timeMatch = raw.match(/\[([^\]]+)\]/);
+  const methodMatch = raw.match(/"(\S+)\s+(\/\S*)/);
+  const statusMatch = raw.match(/\s(\d{3})\s/);
+  const sizeMatch = raw.match(/\s(\d+)\s["\[]/);
+
+  // If we found at least IP or time, show partial data with raw fallback
+  if (ipMatch || timeMatch || methodMatch) {
+    return {
+      key: idx, raw,
+      ip: ipMatch ? ipMatch[1] : '',
+      time: timeMatch ? timeMatch[1] : '',
+      method: methodMatch ? methodMatch[1] : '',
+      path: methodMatch ? methodMatch[2] : '',
+      status: statusMatch ? parseInt(statusMatch[1], 10) : 0,
+      size: sizeMatch ? parseInt(sizeMatch[1], 10) : 0,
+      referer: '',
+      userAgent: '',
+    };
+  }
+
+  // Fallback: show raw line with empty parsed fields but display raw as message
+  return {
+    key: idx, raw, ip: '', time: '', method: '', path: '',
+    status: 0, size: 0, referer: '', userAgent: '',
+  };
 }
 
 const LEVEL_COLOR: Record<string, { color: string; icon: React.ReactNode }> = {
@@ -395,23 +462,42 @@ export default function Logs() {
   }
   const [wsBackendStats, setWsBackendStats] = useState<BackendStats | null>(null);
 
+  // GeoIP data for IPs
+  interface GeoInfo {
+    ip: string;
+    country: string;
+    country_code: string;
+    region: string;
+    city: string;
+    isp: string;
+  }
+  const [wsGeoData, setWsGeoData] = useState<Record<string, GeoInfo>>({});
+
+  // Country code to flag emoji
+  const countryToFlag = (code: string): string => {
+    if (!code || code.length !== 2) return '';
+    return code.toUpperCase().split('').map(c => String.fromCodePoint(127397 + c.charCodeAt(0))).join('');
+  };
+
   const fetchWebsiteLog = useCallback(async (siteId: number, logType: 'access' | 'error', numLines: number, dateRange: [dayjs.Dayjs, dayjs.Dayjs] | null) => {
     setLoading(true);
     try {
-      const params: Record<string, string | number> = { lines: numLines };
+      const params: Record<string, string | number> = { lines: numLines, geo: 'true' };
       if (dateRange) {
         params.start_date = dateRange[0].format('YYYY-MM-DD');
         params.end_date = dateRange[1].format('YYYY-MM-DD');
       }
-      const { data } = await api.get<ApiResponse<{ lines: string | string[], total_lines?: number, stats?: BackendStats }>>(`/logs/website/${siteId}/${logType}`, { params });
+      const { data } = await api.get<ApiResponse<{ lines: string | string[], total_lines?: number, stats?: BackendStats, geo?: Record<string, GeoInfo> }>>(`/logs/website/${siteId}/${logType}`, { params });
       const raw = data.data?.lines;
       if (Array.isArray(raw)) setWebsiteLines(raw);
       else if (typeof raw === 'string') setWebsiteLines(raw.split('\n').filter(Boolean));
       else setWebsiteLines([]);
       setWsBackendStats(data.data?.stats ?? null);
+      setWsGeoData(data.data?.geo ?? {});
     } catch {
       setWebsiteLines([]);
       setWsBackendStats(null);
+      setWsGeoData({});
     } finally {
       setLoading(false);
     }
@@ -843,55 +929,102 @@ export default function Logs() {
       title: 'Time', dataIndex: 'time', key: 'time', width: isMobile ? 100 : 180,
       sorter: (a: ParsedAccessLog, b: ParsedAccessLog) => a.key - b.key,
       defaultSortOrder: 'descend' as const,
-      render: (v: string) => <span style={{ fontSize: 11, color: p.textMuted, whiteSpace: 'nowrap' }}>{v}</span>,
+      render: (v: string, r: ParsedAccessLog) => {
+        if (!v) return <span style={{ fontSize: 10, color: p.textDim, fontStyle: 'italic' }}>—</span>;
+        return <span style={{ fontSize: 11, color: p.textMuted, whiteSpace: 'nowrap' }}>{v}</span>;
+      },
     },
     {
-      title: 'IP', dataIndex: 'ip', key: 'ip', width: isMobile ? 90 : 160,
-      render: (v: string) => v ? (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <span
-            onClick={(e) => { e.stopPropagation(); setWsIpFilter(v); }}
-            style={{ fontSize: 11, color: p.textMuted, cursor: 'pointer', borderBottom: `1px dashed ${p.textDim}` }}
-          >{v}</span>
-          {!isMobile && (
-            <Tooltip title={`Block ${v}`}>
-              <button
-                onClick={(e) => { e.stopPropagation(); setBlockIPValue(v); setBlockIPModalOpen(true); }}
-                style={{
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  color: p.red, padding: '1px 3px', display: 'flex', alignItems: 'center',
-                  borderRadius: 3, opacity: 0.6,
-                  transition: 'opacity 0.15s',
-                }}
-                onMouseEnter={(e) => { (e.target as HTMLElement).style.opacity = '1'; }}
-                onMouseLeave={(e) => { (e.target as HTMLElement).style.opacity = '0.6'; }}
-              >
-                <StopOutlined style={{ fontSize: 12 }} />
-              </button>
-            </Tooltip>
-          )}
-        </span>
-      ) : null,
+      title: 'IP', dataIndex: 'ip', key: 'ip', width: isMobile ? 120 : 200,
+      render: (v: string) => {
+        if (!v) return <span style={{ fontSize: 10, color: p.textDim, fontStyle: 'italic' }}>—</span>;
+        const geo = wsGeoData[v];
+        const flag = geo?.country_code ? countryToFlag(geo.country_code) : null;
+        return (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            {flag && (
+              <Tooltip title={geo.country || geo.country_code}>
+                <span style={{ fontSize: 14 }}>{flag}</span>
+              </Tooltip>
+            )}
+            <span
+              onClick={(e) => { e.stopPropagation(); setWsIpFilter(v); }}
+              style={{ fontSize: 11, color: p.textMuted, cursor: 'pointer', borderBottom: `1px dashed ${p.textDim}` }}
+            >{v}</span>
+            {!isMobile && (
+              <Tooltip title={`Block ${v}`}>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setBlockIPValue(v); setBlockIPModalOpen(true); }}
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: p.red, padding: '1px 3px', display: 'flex', alignItems: 'center',
+                    borderRadius: 3, opacity: 0.6,
+                    transition: 'opacity 0.15s',
+                  }}
+                  onMouseEnter={(e) => { (e.target as HTMLElement).style.opacity = '1'; }}
+                  onMouseLeave={(e) => { (e.target as HTMLElement).style.opacity = '0.6'; }}
+                >
+                  <StopOutlined style={{ fontSize: 12 }} />
+                </button>
+              </Tooltip>
+            )}
+          </span>
+        );
+      },
     },
     {
       title: 'Method', dataIndex: 'method', key: 'method', width: 90,
       render: (v: string) => {
-        const color = v === 'GET' ? p.green : v === 'POST' ? p.accent : v === 'DELETE' ? p.red : p.amber;
-        return v ? (
+        if (!v) return <span style={{ fontSize: 10, color: p.textDim, fontStyle: 'italic' }}>—</span>;
+        const color = v === 'GET' ? p.green : v === 'POST' ? p.accent : v === 'DELETE' ? p.red : v === 'PUT' ? p.amber : v === 'PATCH' ? p.purple : p.textMuted;
+        return (
           <span style={{
             fontSize: 10, padding: '2px 8px', borderRadius: 4, fontWeight: 600,
             background: `${color}15`, color, whiteSpace: 'nowrap', display: 'inline-block',
           }}>{v}</span>
-        ) : null;
+        );
       },
     },
     {
       title: 'Path', dataIndex: 'path', key: 'path', ellipsis: true,
-      render: (v: string) => <span style={{ fontSize: 12, color: p.text }}>{v}</span>,
+      render: (v: string, r: ParsedAccessLog) => {
+        if (!v) {
+          // Show raw as fallback for unparseable lines
+          return (
+            <Tooltip title={
+              <div>
+                <div style={{ marginBottom: 4, color: p.amber }}>Could not parse log line</div>
+                <code style={{ fontSize: 10, wordBreak: 'break-all' }}>{r.raw}</code>
+              </div>
+            }>
+              <span style={{ fontSize: 11, color: p.amber, fontStyle: 'italic' }}>
+                [raw] {r.raw.length > 50 ? r.raw.substring(0, 50) + '...' : r.raw}
+              </span>
+            </Tooltip>
+          );
+        }
+        return <span style={{ fontSize: 12, color: p.text }}>{v}</span>;
+      },
     },
     {
       title: 'Status', dataIndex: 'status', key: 'status', width: 70,
-      render: (v: number) => v ? <StatusBadge status={v} p={p} /> : null,
+      render: (v: number) => {
+        if (!v) return <span style={{ fontSize: 10, color: p.textDim, fontStyle: 'italic' }}>—</span>;
+        return <StatusBadge status={v} p={p} />;
+      },
+    },
+    {
+      title: 'Latency', dataIndex: 'latency', key: 'latency', width: 80,
+      render: (v?: number) => {
+        if (v == null) return <span style={{ fontSize: 10, color: p.textDim }}>—</span>;
+        return (
+          <span style={{
+            fontSize: 11, color: v > 1000 ? p.red : v > 500 ? p.amber : p.textMuted,
+          }}>
+            {v >= 1000 ? `${(v / 1000).toFixed(1)}s` : `${v}ms`}
+          </span>
+        );
+      },
     },
     {
       title: 'Size', dataIndex: 'size', key: 'size', width: 80,
@@ -902,9 +1035,12 @@ export default function Logs() {
     },
     ...(!isMobile ? [{
       title: 'User-Agent', dataIndex: 'userAgent', key: 'ua', ellipsis: true, width: 200,
-      render: (v: string) => <span style={{ fontSize: 11, color: p.textDim }}>{v === '-' ? '' : v}</span>,
+      render: (v: string) => {
+        if (!v || v === '-') return <span style={{ fontSize: 11, color: p.textDim }}>—</span>;
+        return <span style={{ fontSize: 11, color: p.textDim }}>{v.length > 80 ? v.substring(0, 80) + '...' : v}</span>;
+      },
     }] : []),
-  ], [isMobile, p]);
+  ], [isMobile, p, wsGeoData]);
 
   // Website error log columns
   const websiteErrorColumns = [

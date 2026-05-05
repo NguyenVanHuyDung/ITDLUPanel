@@ -45,7 +45,7 @@ export default function Repository() {
                 <div style={{ fontSize: 12, color: p.textMuted, marginTop: 2 }}>{reg.desc}</div>
               </div>
               <a href={reg.url} target="_blank" rel="noopener noreferrer" style={{
-                fontSize: 11, fontFamily: 'monospace',
+                fontSize: 11, fontFamily: 'inherit',
                 color: p.accent, textDecoration: 'none', flexShrink: 0,
               }}>{reg.url.replace('https://', '')}</a>
             </div>
@@ -68,7 +68,7 @@ export default function Repository() {
           </div>
           <pre style={{
             background: p.headerBg, padding: 12, borderRadius: 8, marginTop: 8,
-            fontFamily: 'monospace', fontSize: 12,
+            fontFamily: 'inherit', fontSize: 12,
             color: p.text, border: `1px solid ${p.cardBorder}`, overflow: 'auto',
           }}>
 {`# Docker Hub

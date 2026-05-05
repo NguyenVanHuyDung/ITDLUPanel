@@ -103,10 +103,8 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		firewallService := service.NewFirewallService(db)
 		securityService := service.NewSecurityService()
 		dockerService := service.NewDockerService()
-		logService := service.NewLogService(db, filepath.Join(logDir, "panel.log"))
 		// Ensure website log directory and logrotate config exist
-		_ = logService.EnsureLogDir()
-		_ = logService.SetupLogRotation()
+		// (initialized after geoService below)
 		ftpStorageService := service.NewFTPStorageService(db)
 		cloudStorageService := service.NewCloudStorageService(db)
 		backupService := service.NewBackupService(db, ftpStorageService, cloudStorageService)
@@ -221,9 +219,16 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		composeHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
 
 		// -------------------------------------------------------
+		// GeoIP service (shared across log and other handlers)
+		// -------------------------------------------------------
+		geoService := service.NewGeoService()
+
+		// -------------------------------------------------------
 		// Log management
 		// -------------------------------------------------------
-		logHandler := v1.NewLogHandler(logService)
+		logService := service.NewLogService(db, filepath.Join(logDir, "panel.log"))
+		service.SetGeoService(geoService) // Wire geo service into log service
+		logHandler := v1.NewLogHandler(logService, geoService)
 		logHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
 
 		// -------------------------------------------------------

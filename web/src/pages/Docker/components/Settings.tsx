@@ -191,7 +191,7 @@ export default function Settings() {
             <Descriptions.Item label={t('docker.cpus')}>{info?.ncpu ?? '-'}</Descriptions.Item>
             <Descriptions.Item label={t('docker.total_memory')}>{info ? formatMemory(info.mem_total) : '-'}</Descriptions.Item>
             <Descriptions.Item label={t('docker.docker_root_dir')} span={2}>
-              <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{info?.docker_root ?? '-'}</span>
+              <span style={{ fontFamily: 'inherit', fontSize: 12 }}>{info?.docker_root ?? '-'}</span>
             </Descriptions.Item>
           </Descriptions>
         </div>
@@ -216,7 +216,7 @@ export default function Settings() {
             value={mirrors}
             onChange={e => setMirrors(e.target.value)}
             placeholder={t('docker.registry_mirrors_placeholder')}
-            style={{ fontFamily: 'monospace', fontSize: 12, marginBottom: 8 }}
+            style={{ fontFamily: 'inherit', fontSize: 12, marginBottom: 8 }}
           />
           <button onClick={handleSaveMirrors} disabled={savingMirrors} style={{
             padding: '6px 14px', borderRadius: 6, border: 'none', cursor: savingMirrors ? 'not-allowed' : 'pointer',

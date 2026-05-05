@@ -151,7 +151,7 @@ export default function NetworkList({ onRefresh }: { onRefresh?: () => void }) {
       title: 'ID',
       dataIndex: 'id',
       key: 'id',
-      render: (val: string) => <span style={{ fontSize: 11, color: p.textMuted, fontFamily: 'monospace' }}>{val}</span>,
+      render: (val: string) => <span style={{ fontSize: 11, color: p.textMuted, fontFamily: 'inherit' }}>{val}</span>,
     },
     {
       title: 'Driver',
@@ -170,7 +170,7 @@ export default function NetworkList({ onRefresh }: { onRefresh?: () => void }) {
       key: 'subnet',
       render: (val: string, r: DockerNetwork) => val ? (
         <Tooltip title={`Gateway: ${r.gateway || 'auto'}`}>
-          <span style={{ fontSize: 11, color: p.text, fontFamily: 'monospace' }}>{val}</span>
+          <span style={{ fontSize: 11, color: p.text, fontFamily: 'inherit' }}>{val}</span>
         </Tooltip>
       ) : <span style={{ color: p.textMuted }}>—</span>,
     },
@@ -287,7 +287,7 @@ export default function NetworkList({ onRefresh }: { onRefresh?: () => void }) {
           <div>
             <Descriptions column={1} bordered size="small">
               <Descriptions.Item label="Name"><span style={{ fontWeight: 600 }}>{inspectData.name}</span></Descriptions.Item>
-              <Descriptions.Item label="ID"><span style={{ fontFamily: 'monospace', fontSize: 12 }}>{inspectData.id}</span></Descriptions.Item>
+              <Descriptions.Item label="ID"><span style={{ fontFamily: 'inherit', fontSize: 12 }}>{inspectData.id}</span></Descriptions.Item>
               <Descriptions.Item label="Driver"><Tag color={driverColors[inspectData.driver]}>{inspectData.driver}</Tag></Descriptions.Item>
               <Descriptions.Item label="Scope">{inspectData.scope}</Descriptions.Item>
               <Descriptions.Item label="Created">{fmtDate(inspectData.created)}</Descriptions.Item>
@@ -296,8 +296,8 @@ export default function NetworkList({ onRefresh }: { onRefresh?: () => void }) {
               <Descriptions.Item label="IPAM Driver">{inspectData.ipam_driver || 'default'}</Descriptions.Item>
               {(inspectData.ipam ?? []).map((cfg, i) => (
                 <Descriptions.Item key={i} label={`Subnet${(inspectData.ipam ?? []).length > 1 ? ` #${i+1}` : ''}`}>
-                  <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{cfg.subnet || '—'}</span>
-                  {cfg.gateway && <span style={{ marginLeft: 12, color: p.textMuted, fontSize: 12 }}>Gateway: <span style={{ fontFamily: 'monospace' }}>{cfg.gateway}</span></span>}
+                  <span style={{ fontFamily: 'inherit', fontSize: 12 }}>{cfg.subnet || '—'}</span>
+                  {cfg.gateway && <span style={{ marginLeft: 12, color: p.textMuted, fontSize: 12 }}>Gateway: <span style={{ fontFamily: 'inherit' }}>{cfg.gateway}</span></span>}
                 </Descriptions.Item>
               ))}
             </Descriptions>
@@ -316,9 +316,9 @@ export default function NetworkList({ onRefresh }: { onRefresh?: () => void }) {
                   dataSource={Object.entries(inspectData.containers).map(([id, ep]) => ({ id, ...ep }))}
                   columns={[
                     { title: 'Name', dataIndex: 'name', key: 'name', render: (v: string) => <span style={{ fontWeight: 500 }}>{v || '—'}</span> },
-                    { title: 'ID', dataIndex: 'id', key: 'id', render: (v: string) => <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{v}</span> },
-                    { title: 'IPv4', dataIndex: 'ipv4_address', key: 'ipv4', render: (v: string) => v ? <Tag color="cyan" style={{ fontFamily: 'monospace', fontSize: 11 }}>{v}</Tag> : '—' },
-                    { title: 'MAC', dataIndex: 'mac_address', key: 'mac', render: (v: string) => v ? <span style={{ fontFamily: 'monospace', fontSize: 11, color: p.textMuted }}>{v}</span> : '—' },
+                    { title: 'ID', dataIndex: 'id', key: 'id', render: (v: string) => <span style={{ fontFamily: 'inherit', fontSize: 11 }}>{v}</span> },
+                    { title: 'IPv4', dataIndex: 'ipv4_address', key: 'ipv4', render: (v: string) => v ? <Tag color="cyan" style={{ fontFamily: 'inherit', fontSize: 11 }}>{v}</Tag> : '—' },
+                    { title: 'MAC', dataIndex: 'mac_address', key: 'mac', render: (v: string) => v ? <span style={{ fontFamily: 'inherit', fontSize: 11, color: p.textMuted }}>{v}</span> : '—' },
                   ]}
                 />
               </div>

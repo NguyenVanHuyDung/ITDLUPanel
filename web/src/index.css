@@ -26,6 +26,16 @@ body {
   color: var(--color-text);
 }
 
+/* Override Ant Design fonts globally */
+* {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+/* Override Tailwind mono font for code, pre, kbd, samp */
+code, kbd, samp, pre {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
 /* Ant Design sider — theme-aware via data-theme on body */
 .ant-layout-sider {
   background: #FFFFFF !important;

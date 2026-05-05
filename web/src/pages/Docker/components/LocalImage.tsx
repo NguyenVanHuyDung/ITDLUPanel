@@ -128,7 +128,7 @@ export default function LocalImage({ onRefresh }: { onRefresh?: () => void }) {
       title: 'ID',
       dataIndex: 'id',
       key: 'id',
-      render: (val: string) => <span style={{ fontSize: 11, color: p.textMuted, fontFamily: 'monospace' }}>{val}</span>,
+      render: (val: string) => <span style={{ fontSize: 11, color: p.textMuted, fontFamily: 'inherit' }}>{val}</span>,
     },
     {
       title: t('common.size'),
@@ -211,7 +211,7 @@ export default function LocalImage({ onRefresh }: { onRefresh?: () => void }) {
               {inspectData.volumes?.map(v => <Tag key={v}>{v}</Tag>) || '-'}
             </Descriptions.Item>
             <Descriptions.Item label="Environment">
-              <div style={{ maxHeight: 150, overflow: 'auto', fontSize: 11, fontFamily: 'monospace' }}>
+              <div style={{ maxHeight: 150, overflow: 'auto', fontSize: 11, fontFamily: 'inherit' }}>
                 {inspectData.env?.map((e, i) => <div key={i}>{e}</div>) || '-'}
               </div>
             </Descriptions.Item>

@@ -111,7 +111,7 @@ export default function VolumeList({ onRefresh }: { onRefresh?: () => void }) {
       dataIndex: 'name',
       key: 'name',
       render: (val: string) => (
-        <span style={{ fontWeight: 600, color: p.text, fontSize: 12, fontFamily: 'monospace' }}>
+        <span style={{ fontWeight: 600, color: p.text, fontSize: 12, fontFamily: 'inherit' }}>
           {val.length > 30 ? val.slice(0, 30) + '...' : val}
         </span>
       ),
@@ -133,7 +133,7 @@ export default function VolumeList({ onRefresh }: { onRefresh?: () => void }) {
       dataIndex: 'mountpoint',
       key: 'mountpoint',
       ellipsis: true,
-      render: (val: string) => <span style={{ fontSize: 11, color: p.textMuted, fontFamily: 'monospace' }}>{val}</span>,
+      render: (val: string) => <span style={{ fontSize: 11, color: p.textMuted, fontFamily: 'inherit' }}>{val}</span>,
     },
     {
       title: 'Created',
@@ -223,7 +223,7 @@ export default function VolumeList({ onRefresh }: { onRefresh?: () => void }) {
             <Descriptions.Item label="Name">{inspectData.name}</Descriptions.Item>
             <Descriptions.Item label="Driver">{inspectData.driver}</Descriptions.Item>
             <Descriptions.Item label="Mountpoint">
-              <span style={{ fontSize: 12, fontFamily: 'monospace' }}>{inspectData.mountpoint}</span>
+              <span style={{ fontSize: 12, fontFamily: 'inherit' }}>{inspectData.mountpoint}</span>
             </Descriptions.Item>
             <Descriptions.Item label="Created">{inspectData.created_at}</Descriptions.Item>
             <Descriptions.Item label="Used By">

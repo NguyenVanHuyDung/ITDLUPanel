@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/ITDLUPanel/panel/internal/pkg/logger"
 	"github.com/ITDLUPanel/panel/internal/pkg/response"
 	"github.com/ITDLUPanel/panel/internal/service"
 )
@@ -12,11 +13,12 @@ import (
 // LogHandler handles log management API endpoints.
 type LogHandler struct {
 	logService *service.LogService
+	geoService *service.GeoService
 }
 
 // NewLogHandler creates a new LogHandler.
-func NewLogHandler(logService *service.LogService) *LogHandler {
-	return &LogHandler{logService: logService}
+func NewLogHandler(logService *service.LogService, geoService *service.GeoService) *LogHandler {
+	return &LogHandler{logService: logService, geoService: geoService}
 }
 
 // RegisterRoutes registers log management routes.
@@ -59,7 +61,7 @@ func (h *LogHandler) GetPanelLog(c *gin.Context) {
 	response.Success(c, gin.H{"lines": data})
 }
 
-// GetWebsiteAccessLog returns the last N lines of a website's access log.
+// GetWebsiteAccessLog returns the last N lines of a website's access log with optional geolocation.
 func (h *LogHandler) GetWebsiteAccessLog(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
@@ -68,12 +70,32 @@ func (h *LogHandler) GetWebsiteAccessLog(c *gin.Context) {
 	date := c.DefaultQuery("date", "")
 	startDate := c.DefaultQuery("start_date", "")
 	endDate := c.DefaultQuery("end_date", "")
+	includeGeo := c.DefaultQuery("geo", "false") == "true"
 	result, err := h.logService.GetWebsiteAccessLog(id, getLines(c), date, startDate, endDate)
 	if err != nil {
 		response.Error(c, err)
 		return
 	}
-	response.Success(c, gin.H{"lines": result.Lines, "total_lines": result.TotalLines, "stats": result.Stats})
+
+	resp := gin.H{
+		"lines":       result.Lines,
+		"total_lines": result.TotalLines,
+		"stats":       result.Stats,
+	}
+
+	// Optionally include geolocation data for unique IPs
+	if includeGeo && len(result.Lines) > 0 {
+		geoData, err := h.logService.GetGeoForLines(result.Lines)
+		if err != nil {
+			logger.Warn().Err(err).Msg("failed to get geo data")
+		}
+		if geoData != nil {
+			logger.Info().Int("count", len(geoData)).Msg("geo data fetched")
+		}
+		resp["geo"] = geoData
+	}
+
+	response.Success(c, resp)
 }
 
 // GetWebsiteErrorLog returns the last N lines of a website's error log.
