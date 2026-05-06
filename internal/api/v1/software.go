@@ -104,6 +104,20 @@ func (h *SoftwareHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gi
 		sw.GET("/php/:version/slow-log", h.getPHPSlowLog)
 		sw.PUT("/php/:version/slow-log-config", h.setPHPSlowLogConfig)
 		sw.GET("/php/:version/phpinfo", h.getPHPInfo)
+
+		// Envoy Proxy management
+		sw.GET("/envoy/config", h.getEnvoyConfig)
+		sw.PUT("/envoy/config", h.updateEnvoyConfig)
+		sw.POST("/envoy/validate", h.validateEnvoyConfig)
+		sw.GET("/envoy/server-info", h.getEnvoyServerInfo)
+		sw.GET("/envoy/clusters", h.getEnvoyClusters)
+		sw.POST("/envoy/clusters", h.addEnvoyCluster)
+		sw.DELETE("/envoy/clusters/:name", h.deleteEnvoyCluster)
+		sw.GET("/envoy/listeners", h.getEnvoyListeners)
+		sw.POST("/envoy/listeners", h.addEnvoyListener)
+		sw.DELETE("/envoy/listeners/:port", h.deleteEnvoyListener)
+		sw.GET("/envoy/stats", h.getEnvoyStats)
+		sw.GET("/envoy/error-log", h.getEnvoyErrorLog)
 	}
 }
 
@@ -1119,4 +1133,297 @@ func (h *SoftwareHandler) dropMongoDBUser(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": "user dropped"})
+}
+
+// ─── Envoy Proxy Management ───────────────────────────────────────────────────
+
+func (h *SoftwareHandler) getEnvoyConfig(c *gin.Context) {
+	content, err := h.softwareService.GetEnvoyConfig()
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read envoy config"))
+		return
+	}
+	response.Success(c, gin.H{
+		"content": content,
+		"path":    "/etc/envoy/envoy.yaml",
+	})
+}
+
+func (h *SoftwareHandler) updateEnvoyConfig(c *gin.Context) {
+	var req struct {
+		Content string `json:"content" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		body, readErr := io.ReadAll(c.Request.Body)
+		if readErr != nil || len(body) == 0 {
+			response.ValidationError(c, []response.FieldError{
+				{Field: "content", Message: "configuration content is required"},
+			})
+			return
+		}
+		req.Content = string(body)
+	}
+
+	if err := h.softwareService.UpdateEnvoyConfig(req.Content); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to update envoy config"))
+		return
+	}
+	response.Success(c, gin.H{"message": "envoy configuration updated and service reloaded"})
+}
+
+func (h *SoftwareHandler) validateEnvoyConfig(c *gin.Context) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil || len(body) == 0 {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "content", Message: "configuration content is required"},
+		})
+		return
+	}
+	if err := h.softwareService.ValidateEnvoyConfig(string(body)); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrValidation, err.Error()))
+		return
+	}
+	response.Success(c, gin.H{"valid": true, "message": "configuration is valid"})
+}
+
+func (h *SoftwareHandler) getEnvoyServerInfo(c *gin.Context) {
+	info, err := h.softwareService.GetEnvoyServerInfo()
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get envoy server info"))
+		return
+	}
+	response.Success(c, info)
+}
+
+func (h *SoftwareHandler) getEnvoyClusters(c *gin.Context) {
+	clusters, err := h.softwareService.GetEnvoyClusters()
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get envoy clusters"))
+		return
+	}
+	response.Success(c, gin.H{"clusters": clusters})
+}
+
+func (h *SoftwareHandler) getEnvoyListeners(c *gin.Context) {
+	listeners, err := h.softwareService.GetEnvoyListeners()
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get envoy listeners"))
+		return
+	}
+	response.Success(c, gin.H{"listeners": listeners})
+}
+
+func (h *SoftwareHandler) getEnvoyStats(c *gin.Context) {
+	onlyGauge := c.Query("usedonly") == "true"
+	stats, err := h.softwareService.GetEnvoyStats(onlyGauge)
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get envoy stats"))
+		return
+	}
+	response.Success(c, stats)
+}
+
+func (h *SoftwareHandler) getEnvoyErrorLog(c *gin.Context) {
+	lines := 100
+	if l := c.Query("lines"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 {
+			lines = n
+		}
+	}
+	content, path, err := h.softwareService.GetEnvoyErrorLog(lines)
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to read envoy error log"))
+		return
+	}
+	response.Success(c, gin.H{"content": content, "path": path, "lines": lines})
+}
+
+// addEnvoyClusterRequest represents the request body for adding an envoy cluster.
+type addEnvoyClusterRequest struct {
+	Name           string   `json:"name" binding:"required"`
+	Type           string   `json:"type" binding:"required"`
+	LbPolicy       string   `json:"lb_policy"`
+	ConnectTimeout string   `json:"connect_timeout"`
+	Hosts          []string `json:"hosts"` // e.g. ["127.0.0.1:8080", "127.0.0.1:8081"]
+}
+
+func (h *SoftwareHandler) addEnvoyCluster(c *gin.Context) {
+	var req addEnvoyClusterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid request: name, type and hosts are required"},
+		})
+		return
+	}
+
+	lbPolicy := req.LbPolicy
+	if lbPolicy == "" {
+		lbPolicy = "ROUND_ROBIN"
+	}
+	connectTimeout := req.ConnectTimeout
+	if connectTimeout == "" {
+		connectTimeout = "5s"
+	}
+
+	cluster := service.EnvoyCluster{
+		Name:           req.Name,
+		Type:           req.Type,
+		LbPolicy:       lbPolicy,
+		ConnectTimeout: connectTimeout,
+	}
+
+	// Build endpoints from hosts
+	if len(req.Hosts) > 0 {
+		endpoints := make([]service.EnvoyLbEndpoint, 0, len(req.Hosts))
+		for _, host := range req.Hosts {
+			parts := strings.Split(host, ":")
+			addr := "127.0.0.1"
+			port := 8080
+			if len(parts) >= 1 {
+				addr = parts[0]
+			}
+			if len(parts) >= 2 {
+				if p, err := strconv.Atoi(parts[1]); err == nil {
+					port = p
+				}
+			}
+			endpoints = append(endpoints, service.EnvoyLbEndpoint{
+				LbEndpoints: []service.EnvoyEndpoint{
+					{
+						Endpoint: &service.EnvoyEndpointAddress{
+							SocketAddress: &service.EnvoySocketAddress{
+								Address:   addr,
+								PortValue: port,
+							},
+						},
+					},
+				},
+			})
+		}
+
+		if cluster.Type == "STATIC" || cluster.Type == "STRICT_DNS" {
+			cluster.LoadAssignment = &service.EnvoyLoadAssignment{
+				ClusterName: req.Name,
+				Endpoints:   endpoints,
+			}
+		}
+	}
+
+	if err := h.softwareService.AddEnvoyCluster(cluster); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to add envoy cluster"))
+		return
+	}
+	response.Success(c, gin.H{"message": fmt.Sprintf("cluster %s added", req.Name)})
+}
+
+func (h *SoftwareHandler) deleteEnvoyCluster(c *gin.Context) {
+	name := c.Param("name")
+	if name == "" {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "cluster name is required"))
+		return
+	}
+	if err := h.softwareService.RemoveEnvoyCluster(name); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to remove envoy cluster"))
+		return
+	}
+	response.Success(c, gin.H{"message": fmt.Sprintf("cluster %s removed", name)})
+}
+
+// addEnvoyListenerRequest represents the request body for adding an envoy listener.
+type addEnvoyListenerRequest struct {
+	Name   string `json:"name" binding:"required"`
+	Port   int    `json:"port" binding:"required"`
+	Protocol string `json:"protocol"` // HTTP, HTTPS, TCP
+}
+
+func (h *SoftwareHandler) addEnvoyListener(c *gin.Context) {
+	var req addEnvoyListenerRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid request: name and port are required"},
+		})
+		return
+	}
+
+	if req.Port <= 0 || req.Port > 65535 {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid port number"))
+		return
+	}
+
+	protocol := req.Protocol
+	if protocol == "" {
+		protocol = "HTTP"
+	}
+
+	// Build a basic HTTP listener filter chain
+	filters := []service.EnvoyFilter{
+		{
+			Name: "envoy.filters.network.http_connection_manager",
+			TypedConfig: map[string]interface{}{
+				"@type": "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
+				"codec_type": "AUTO",
+				"stat_prefix": fmt.Sprintf("ingress_%s", req.Name),
+				"route_config": map[string]interface{}{
+					"name": fmt.Sprintf("route_%s", req.Name),
+					"virtual_hosts": []map[string]interface{}{
+						{
+							"name": fmt.Sprintf("service_%s", req.Name),
+							"domains": []string{"*"},
+							"routes": []map[string]interface{}{
+								{
+									"match": map[string]interface{}{
+										"prefix": "/",
+									},
+									"route": map[string]interface{}{
+										"cluster": "original_destination",
+									},
+								},
+							},
+						},
+					},
+				},
+				"http_filters": []map[string]interface{}{
+					{
+						"name": "envoy.filters.http.router",
+						"typed_config": map[string]interface{}{
+							"@type": "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	listener := service.EnvoyListener{
+		Name: req.Name,
+		Address: &service.EnvoyAddress{
+			SocketAddress: &service.EnvoySocketAddress{
+				Address:   "0.0.0.0",
+				PortValue: req.Port,
+			},
+		},
+		FilterChains: []service.EnvoyFilterChain{
+			{Filters: filters},
+		},
+	}
+
+	if err := h.softwareService.AddEnvoyListener(listener); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to add envoy listener"))
+		return
+	}
+	response.Success(c, gin.H{"message": fmt.Sprintf("listener on port %d added", req.Port)})
+}
+
+func (h *SoftwareHandler) deleteEnvoyListener(c *gin.Context) {
+	portStr := c.Param("port")
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port <= 0 {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "valid port number is required"))
+		return
+	}
+	if err := h.softwareService.RemoveEnvoyListener(port); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to remove envoy listener"))
+		return
+	}
+	response.Success(c, gin.H{"message": fmt.Sprintf("listener on port %d removed", port)})
 }

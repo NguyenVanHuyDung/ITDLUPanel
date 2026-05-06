@@ -357,5 +357,6 @@ func DefaultRegistry() *Registry {
 	r.Register(NewSupervisorInstaller())
 	r.Register(NewTomcatInstaller())
 	r.Register(NewElasticsearchInstaller())
+	r.Register(NewEnvoyInstaller())
 	return r
 }

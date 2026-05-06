@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/* Self-hosted JetBrains Mono Variable for terminal */
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/JetBrainsMono-Variable.woff2') format('woff2');
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   /* DLU University Theme */
   --color-primary: #1565C0;
@@ -26,14 +35,22 @@ body {
   color: var(--color-text);
 }
 
-/* Override Ant Design fonts globally */
-* {
+/* Ant Design and UI component fonts */
+body, button, input, select, textarea,
+.ant-btn, .ant-input, .ant-select, .ant-menu, .ant-table,
+.ant-card, .ant-modal, .ant-dropdown, .ant-tabs, .ant-form,
+.ant-pagination, .ant-tag, .ant-breadcrumb, .ant-steps,
+.ant-alert, .ant-statistic, .ant-descriptions, .ant-tree,
+.ant-select-dropdown, .ant-picker-dropdown, .ant-message,
+.ant-notification, .ant-tooltip, .ant-popover, .ant-drawer,
+.ant-collapse, .ant-list, .antDescriptions, .ant-descriptions-item-label,
+.ant-descriptions-item-content {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
 }
 
-/* Override Tailwind mono font for code, pre, kbd, samp */
+/* Monospace font for code, pre, kbd, samp */
 code, kbd, samp, pre {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  font-family: 'JetBrains Mono', 'Fira Code', Menlo, Monaco, Consolas, monospace !important;
 }
 
 /* Ant Design sider — theme-aware via data-theme on body */
@@ -44,6 +61,22 @@ code, kbd, samp, pre {
 [data-theme="dark"] .ant-layout-sider {
   background: #141821 !important;
   border-right: 1px solid rgba(255,255,255,0.06);
+}
+
+/* Sidebar menu items — comfortable spacing, no text overlap */
+.ant-layout-sider .ant-menu {
+  font-size: 14px;
+  line-height: 40px;
+}
+.ant-layout-sider .ant-menu-item {
+  height: 40px !important;
+  line-height: 40px !important;
+  margin: 2px 8px !important;
+  padding: 0 12px !important;
+  border-radius: 6px;
+}
+.ant-layout-sider .ant-menu-item .ant-menu-title-content {
+  line-height: 40px;
 }
 
 /* Light sidebar: menu item hover → blue bg + white text */
@@ -75,9 +108,40 @@ code, kbd, samp, pre {
 ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #a1a1a1; }
 
+/* Terminal tab bar */
+.terminal-tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.terminal-tab-item {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px !important;
+  line-height: normal !important;
+  white-space: nowrap !important;
+  height: auto !important;
+  min-height: 32px;
+}
+.terminal-tab-item .tab-label {
+  line-height: 1.3;
+}
+
 /* Terminal font */
 .terminal-font {
   font-family: inherit;
+}
+
+/* xterm.js font fix — use system monospace */
+.xterm {
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', Consolas, 'Courier New', monospace !important;
+}
+.xterm .xterm-screen {
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', Consolas, 'Courier New', monospace !important;
+}
+.xterm-helpers {
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', Consolas, 'Courier New', monospace !important;
 }
 
 /* Dashboard header select - white text */

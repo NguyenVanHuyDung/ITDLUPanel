@@ -137,7 +137,6 @@ const TerminalPopup: React.FC<TerminalPopupProps> = ({ open, currentPath, onClos
         term = new Terminal({
           cursorBlink: true,
           fontSize: 13,
-          fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
           lineHeight: 1.2,
           scrollback: 5000,
           convertEol: true,

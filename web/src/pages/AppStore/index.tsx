@@ -25,6 +25,7 @@ import FTPStorageManageModal from '@/components/FTPStorageManageModal';
 import S3StorageManageModal from '@/components/S3StorageManageModal';
 import GoogleDriveManageModal from '@/components/GoogleDriveManageModal';
 import OneDriveManageModal from '@/components/OneDriveManageModal';
+import EnvoyManageModal from '@/components/EnvoyManageModal';
 import { getSoftwareIcon } from './SoftwareIcons';
 
 const { Text } = Typography;
@@ -50,6 +51,7 @@ const SOFTWARE_COLORS: Record<string, string> = {
   mongodb: '#47A248', openlitespeed: '#3A7BD5', pureftpd: '#6C757D',
   ftp_storage: '#1890FF',
   s3_storage: '#FF9900', google_drive: '#4285F4', onedrive: '#0078D4',
+  envoy: '#E0156B',
 };
 
 export default function AppStore() {
@@ -85,6 +87,7 @@ export default function AppStore() {
   const [s3ModalOpen, setS3ModalOpen] = useState(false);
   const [googleDriveModalOpen, setGoogleDriveModalOpen] = useState(false);
   const [oneDriveModalOpen, setOneDriveModalOpen] = useState(false);
+  const [envoyModalOpen, setEnvoyModalOpen] = useState(false);
   const [swStatus, setSwStatus] = useState<Record<string, string> | null>(null);
   const [swConfig, setSwConfig] = useState('');
   const [configLoading, setConfigLoading] = useState(false);
@@ -363,6 +366,7 @@ export default function AppStore() {
     if (sw.name === 's3_storage') { setS3ModalOpen(true); return; }
     if (sw.name === 'google_drive') { setGoogleDriveModalOpen(true); return; }
     if (sw.name === 'onedrive') { setOneDriveModalOpen(true); return; }
+    if (sw.name === 'envoy') { setEnvoyModalOpen(true); return; }
     setManageSW(sw);
     setManageTab('status');
     setSwStatus(null);
@@ -1466,6 +1470,7 @@ export default function AppStore() {
       <S3StorageManageModal open={s3ModalOpen} onClose={() => setS3ModalOpen(false)} />
       <GoogleDriveManageModal open={googleDriveModalOpen} onClose={() => setGoogleDriveModalOpen(false)} />
       <OneDriveManageModal open={oneDriveModalOpen} onClose={() => setOneDriveModalOpen(false)} />
+      <EnvoyManageModal open={envoyModalOpen} onClose={() => setEnvoyModalOpen(false)} />
     </div>
   );
 }

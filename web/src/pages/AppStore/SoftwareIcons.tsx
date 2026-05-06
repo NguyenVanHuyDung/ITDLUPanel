@@ -134,6 +134,13 @@ const icons: Record<string, React.ReactNode> = {
       <path d="M18 6l-8 12h6l-2 8 8-12h-6l2-8z" fill="white" />
     </Icon>
   ),
+  envoy: (
+    <Icon bg="#E0156B">
+      <circle cx="16" cy="16" r="9" fill="none" stroke="white" strokeWidth="2" />
+      <circle cx="16" cy="16" r="4" fill="white" />
+      <path d="M16 7v2M16 23v2M7 16h2M23 16h2" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
+    </Icon>
+  ),
   pureftpd: (
     <Icon bg="#6C757D">
       <path d="M11 19V13H8l6-7 6 7h-3v6h-6z" fill="white" />

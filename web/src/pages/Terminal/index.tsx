@@ -3,14 +3,15 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
-import { useAuthStore } from '@/stores/auth';
-import { useIsMobile } from '@/hooks/useIsMobile';
-import { Tooltip, Dropdown } from 'antd';
 import {
   ExpandOutlined, CompressOutlined, PlusOutlined, CloseOutlined,
   CheckCircleOutlined, CloseCircleOutlined, LoadingOutlined,
   BgColorsOutlined,
 } from '@ant-design/icons';
+import { Tooltip, Dropdown } from 'antd';
+import type { MenuProps } from 'antd';
+import { useIsMobile } from '@/hooks/useIsMobile';
+import { useAuthStore } from '@/stores/auth';
 import type { ITheme } from '@xterm/xterm';
 
 // ── Terminal color themes ──────────────────────────────────────────────
@@ -230,8 +231,7 @@ export default function TerminalPage() {
     const term = new Terminal({
       cursorBlink: true,
       fontSize: 14,
-      fontFamily: '"JetBrains Mono", "Fira Code", Menlo, Monaco, "Courier New", monospace',
-      fontWeight: '400',
+      fontWeight: 400,
       letterSpacing: 0,
       lineHeight: 1.2,
       theme: currentThemeRef.current,
@@ -432,22 +432,20 @@ export default function TerminalPage() {
               <div
                 key={tab.id}
                 onClick={() => setActiveTabId(tab.id)}
+                className="terminal-tab-item"
                 style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 6,
-                  padding: isMobile ? '4px 8px' : '6px 12px', cursor: 'pointer',
+                  padding: isMobile ? '4px 8px' : '6px 12px',
                   background: isActive ? '#0d1117' : 'transparent',
                   borderBottom: isActive ? '2px solid #58a6ff' : '2px solid transparent',
                   borderRadius: '4px 4px 0 0',
                   fontSize: isMobile ? 11 : 12, fontWeight: isActive ? 500 : 400,
                   color: isActive ? '#c9d1d9' : '#8b949e',
-                  whiteSpace: 'nowrap', flexShrink: 0,
-                  transition: 'all 0.15s',
                 }}
                 onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLDivElement).style.color = '#c9d1d9'; }}
                 onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLDivElement).style.color = '#8b949e'; }}
               >
                 {statusDot(tab.status)}
-                <span>{tab.label}</span>
+                <span className="tab-label">{tab.label}</span>
                 {tabs.length > 1 && (
                   <span
                     onClick={(e) => closeTab(tab.id, e)}
@@ -515,7 +513,7 @@ export default function TerminalPage() {
                   </span>
                 ),
               })),
-              onClick: ({ key }) => applyTheme(key),
+              onClick: ({ key }: { key: string }) => applyTheme(key),
               style: { maxHeight: 340, overflowY: 'auto' },
             }}
           >

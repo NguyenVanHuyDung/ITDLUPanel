@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+	"gopkg.in/yaml.v3"
 
 	"github.com/ITDLUPanel/panel/internal/pkg/logger"
 	apperrors "github.com/ITDLUPanel/panel/internal/pkg/errors"
@@ -220,6 +221,14 @@ var knownSoftware = map[string]softwareMeta{
 		ConfigPath:     "/etc/elasticsearch/elasticsearch.yml",
 		InstallPath:    "/ITDLUPanel/server/elasticsearch",
 		DefaultVersion: "8",
+	},
+	"envoy": {
+		DisplayName:    "Envoy Proxy",
+		Type:           "proxy",
+		ServiceName:    "envoy",
+		ConfigPath:     "/etc/envoy/envoy.yaml",
+		InstallPath:    "/ITDLUPanel/server/envoy",
+		DefaultVersion: "stable",
 	},
 }
 
@@ -4269,4 +4278,416 @@ func (s *SoftwareService) GetMongoDBUsers() ([]map[string]interface{}, error) {
 		}
 	}
 	return users, nil
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Envoy Proxy Management
+// ═══════════════════════════════════════════════════════════════════════════
+
+const (
+	envoyConfigPath = "/etc/envoy/envoy.yaml"
+	envoyAdminURL   = "http://127.0.0.1:9901"
+)
+
+// EnvoyAdminResponse represents a response from the Envoy admin API.
+type EnvoyAdminResponse map[string]interface{}
+
+// EnvoyConfig represents Envoy's configuration YAML structure.
+type EnvoyConfig struct {
+	Admin          *EnvoyAdmin          `yaml:"admin"`
+	StaticResources *EnvoyStaticResources `yaml:"static_resources"`
+	DynamicResources *EnvoyDynamicResources `yaml:"dynamic_resources"`
+}
+
+// EnvoyAdmin represents the admin section of Envoy config.
+type EnvoyAdmin struct {
+	AccessLog []EnvoyAccessLog `yaml:"access_log"`
+	Address   *EnvoyAddress    `yaml:"address"`
+}
+
+// EnvoyAccessLog represents an admin access log path.
+type EnvoyAccessLog struct {
+	Path string `yaml:"path"`
+}
+
+// EnvoyAddress represents a network address in Envoy config.
+type EnvoyAddress struct {
+	SocketAddress *EnvoySocketAddress `yaml:"socket_address"`
+}
+
+// EnvoySocketAddress represents a TCP socket address.
+type EnvoySocketAddress struct {
+	Address   string `yaml:"address"`
+	PortValue int    `yaml:"port_value"`
+}
+
+// EnvoyStaticResources holds listeners and clusters.
+type EnvoyStaticResources struct {
+	Listeners []EnvoyListener `yaml:"listeners"`
+	Clusters  []EnvoyCluster  `yaml:"clusters"`
+}
+
+// EnvoyDynamicResources holds dynamic configuration.
+type EnvoyDynamicResources struct {
+	LdsConfig *EnvoyConfigSource `yaml:"lds_config"`
+	CdsConfig *EnvoyConfigSource `yaml:"cds_config"`
+}
+
+// EnvoyConfigSource represents an xDS config source.
+type EnvoyConfigSource struct {
+	Path string `yaml:"path"`
+}
+
+// EnvoyListener represents a listener in Envoy config.
+type EnvoyListener struct {
+	Name         string                `yaml:"name"`
+	Address      *EnvoyAddress         `yaml:"address"`
+	FilterChains []EnvoyFilterChain    `yaml:"filter_chains"`
+}
+
+// EnvoyFilterChain represents a filter chain in a listener.
+type EnvoyFilterChain struct {
+	Filters []EnvoyFilter `yaml:"filters"`
+}
+
+// EnvoyFilter represents a network filter.
+type EnvoyFilter struct {
+	Name        string                 `yaml:"name"`
+	TypedConfig map[string]interface{} `yaml:"typed_config"`
+}
+
+// EnvoyCluster represents a cluster in Envoy config.
+type EnvoyCluster struct {
+	Name           string              `yaml:"name"`
+	Type           string              `yaml:"type"`
+	LbPolicy       string              `yaml:"lb_policy"`
+	ConnectTimeout string              `yaml:"connect_timeout"`
+	Hosts          []EnvoyHost         `yaml:"hosts,omitempty"`
+	LoadAssignment *EnvoyLoadAssignment `yaml:"load_assignment,omitempty"`
+	HealthCheck    *EnvoyHealthCheck   `yaml:"health_check,omitempty"`
+}
+
+// EnvoyHost represents a single host in a cluster.
+type EnvoyHost struct {
+	SocketAddress *EnvoySocketAddress `yaml:"socket_address"`
+}
+
+// EnvoyLoadAssignment represents endpoint assignment for a cluster.
+type EnvoyLoadAssignment struct {
+	ClusterName string            `yaml:"cluster_name"`
+	Endpoints   []EnvoyLbEndpoint `yaml:"endpoints"`
+}
+
+// EnvoyLbEndpoint represents a load-balanced endpoint.
+type EnvoyLbEndpoint struct {
+	LbEndpoints []EnvoyEndpoint `yaml:"lb_endpoints"`
+}
+
+// EnvoyEndpoint represents a single endpoint.
+type EnvoyEndpoint struct {
+	Endpoint *EnvoyEndpointAddress `yaml:"endpoint"`
+}
+
+// EnvoyEndpointAddress represents the address of an endpoint.
+type EnvoyEndpointAddress struct {
+	SocketAddress *EnvoySocketAddress `yaml:"socket_address"`
+}
+
+// EnvoyHealthCheck represents health check configuration.
+type EnvoyHealthCheck struct {
+	Timeout            string `yaml:"timeout"`
+	Interval           string `yaml:"interval"`
+	UnhealthyThreshold int    `yaml:"unhealthy_threshold"`
+	HealthyThreshold   int    `yaml:"healthy_threshold"`
+	HTTPHealthCheck   *EnvoyHTTPHealthCheck `yaml:"http_health_check,omitempty"`
+}
+
+// EnvoyHTTPHealthCheck represents HTTP health check config.
+type EnvoyHTTPHealthCheck struct {
+	Path string `yaml:"path"`
+}
+
+// GetEnvoyConfig reads and parses the Envoy YAML configuration.
+func (s *SoftwareService) GetEnvoyConfig() (string, error) {
+	data, err := os.ReadFile(envoyConfigPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read envoy config: %w", err)
+	}
+	return string(data), nil
+}
+
+// UpdateEnvoyConfig writes Envoy configuration and validates it.
+func (s *SoftwareService) UpdateEnvoyConfig(content string) error {
+	if err := os.WriteFile(envoyConfigPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write envoy config: %w", err)
+	}
+	// Validate config using envoy --check-config if available
+	result, err := system.ExecWithTimeout(15*time.Second, "envoy", "--check-config", "-c", envoyConfigPath)
+	if err != nil {
+		// Config might have syntax errors but file was written
+		logger.Warn().Err(err).Str("stderr", result.Stderr).Msg("envoy config validation had warnings")
+	}
+	// Reload Envoy to pick up new config
+	if err := s.ReloadService("envoy"); err != nil {
+		logger.Warn().Err(err).Msg("failed to reload envoy after config update")
+	}
+	return nil
+}
+
+// ValidateEnvoyConfig validates Envoy config without saving.
+func (s *SoftwareService) ValidateEnvoyConfig(content string) error {
+	tmpPath := "/tmp/envoy-config-check.yaml"
+	if err := os.WriteFile(tmpPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write temp config: %w", err)
+	}
+	defer os.Remove(tmpPath)
+
+	result, err := system.ExecWithTimeout(15*time.Second, "envoy", "--check-config", "-c", tmpPath)
+	if err != nil {
+		return fmt.Errorf("config validation failed: %s", result.Stderr)
+	}
+	return nil
+}
+
+// GetEnvoyServerInfo returns server info from Envoy admin API.
+func (s *SoftwareService) GetEnvoyServerInfo() (EnvoyAdminResponse, error) {
+	return s.envoyAdminGet("/server_info")
+}
+
+// GetEnvoyClustersFromAdmin returns cluster info from Envoy admin API.
+func (s *SoftwareService) GetEnvoyClustersFromAdmin() (EnvoyAdminResponse, error) {
+	return s.envoyAdminGet("/clusters")
+}
+
+// GetEnvoyListenersFromAdmin returns listener info from Envoy admin API.
+func (s *SoftwareService) GetEnvoyListenersFromAdmin() (EnvoyAdminResponse, error) {
+	return s.envoyAdminGet("/listeners")
+}
+
+// GetEnvoyStats returns stats from Envoy admin API.
+func (s *SoftwareService) GetEnvoyStats(onlyGauge bool) (EnvoyAdminResponse, error) {
+	path := "/stats"
+	if onlyGauge {
+		path = "/stats?usedonly"
+	}
+	return s.envoyAdminGet(path)
+}
+
+// GetEnvoyConfig parsed returns parsed Envoy config structure.
+func (s *SoftwareService) GetEnvoyConfigParsed() (*EnvoyConfig, error) {
+	content, err := s.GetEnvoyConfig()
+	if err != nil {
+		return nil, err
+	}
+	cfg := &EnvoyConfig{}
+	if err := yaml.Unmarshal([]byte(content), cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse envoy config: %w", err)
+	}
+	return cfg, nil
+}
+
+// GetEnvoyListeners returns listeners from the YAML config.
+func (s *SoftwareService) GetEnvoyListeners() ([]EnvoyListener, error) {
+	cfg, err := s.GetEnvoyConfigParsed()
+	if err != nil {
+		return nil, err
+	}
+	if cfg.StaticResources == nil {
+		return nil, nil
+	}
+	return cfg.StaticResources.Listeners, nil
+}
+
+// GetEnvoyClusters returns clusters from the YAML config.
+func (s *SoftwareService) GetEnvoyClusters() ([]EnvoyCluster, error) {
+	cfg, err := s.GetEnvoyConfigParsed()
+	if err != nil {
+		return nil, err
+	}
+	if cfg.StaticResources == nil {
+		return nil, nil
+	}
+	return cfg.StaticResources.Clusters, nil
+}
+
+// envoyAdminGet makes a GET request to the Envoy admin API.
+func (s *SoftwareService) envoyAdminGet(path string) (EnvoyAdminResponse, error) {
+	url := envoyAdminURL + path
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to envoy admin at %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("envoy admin returned status %d", resp.StatusCode)
+	}
+
+	var result EnvoyAdminResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		// Some endpoints return plain text
+		body, _ := io.ReadAll(resp.Body)
+		return EnvoyAdminResponse{"raw": string(body)}, nil
+	}
+	return result, nil
+}
+
+// GetEnvoyErrorLog returns the Envoy error log content.
+func (s *SoftwareService) GetEnvoyErrorLog(lines int) (string, string, error) {
+	return s.GetErrorLog("envoy", lines)
+}
+
+// AddEnvoyCluster adds a new cluster to the Envoy config.
+func (s *SoftwareService) AddEnvoyCluster(cluster EnvoyCluster) error {
+	content, err := s.GetEnvoyConfig()
+	if err != nil {
+		return err
+	}
+
+	cfg := &EnvoyConfig{}
+	if err := yaml.Unmarshal([]byte(content), cfg); err != nil {
+		return fmt.Errorf("failed to parse envoy config: %w", err)
+	}
+
+	if cfg.StaticResources == nil {
+		cfg.StaticResources = &EnvoyStaticResources{}
+	}
+	if cfg.StaticResources.Clusters == nil {
+		cfg.StaticResources.Clusters = []EnvoyCluster{}
+	}
+
+	// Check for duplicate
+	for _, c := range cfg.StaticResources.Clusters {
+		if c.Name == cluster.Name {
+			return fmt.Errorf("cluster %s already exists", cluster.Name)
+		}
+	}
+
+	cfg.StaticResources.Clusters = append(cfg.StaticResources.Clusters, cluster)
+
+	newContent, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal envoy config: %w", err)
+	}
+
+	return s.UpdateEnvoyConfig(string(newContent))
+}
+
+// RemoveEnvoyCluster removes a cluster from the Envoy config.
+func (s *SoftwareService) RemoveEnvoyCluster(name string) error {
+	content, err := s.GetEnvoyConfig()
+	if err != nil {
+		return err
+	}
+
+	cfg := &EnvoyConfig{}
+	if err := yaml.Unmarshal([]byte(content), cfg); err != nil {
+		return fmt.Errorf("failed to parse envoy config: %w", err)
+	}
+
+	if cfg.StaticResources == nil || cfg.StaticResources.Clusters == nil {
+		return nil
+	}
+
+	found := false
+	newClusters := make([]EnvoyCluster, 0, len(cfg.StaticResources.Clusters))
+	for _, c := range cfg.StaticResources.Clusters {
+		if c.Name == name {
+			found = true
+			continue
+		}
+		newClusters = append(newClusters, c)
+	}
+
+	if !found {
+		return fmt.Errorf("cluster %s not found", name)
+	}
+
+	cfg.StaticResources.Clusters = newClusters
+
+	newContent, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal envoy config: %w", err)
+	}
+
+	return s.UpdateEnvoyConfig(string(newContent))
+}
+
+// AddEnvoyListener adds a new listener to the Envoy config.
+func (s *SoftwareService) AddEnvoyListener(listener EnvoyListener) error {
+	content, err := s.GetEnvoyConfig()
+	if err != nil {
+		return err
+	}
+
+	cfg := &EnvoyConfig{}
+	if err := yaml.Unmarshal([]byte(content), cfg); err != nil {
+		return fmt.Errorf("failed to parse envoy config: %w", err)
+	}
+
+	if cfg.StaticResources == nil {
+		cfg.StaticResources = &EnvoyStaticResources{}
+	}
+	if cfg.StaticResources.Listeners == nil {
+		cfg.StaticResources.Listeners = []EnvoyListener{}
+	}
+
+	// Check for duplicate port
+	if listener.Address != nil && listener.Address.SocketAddress != nil {
+		port := listener.Address.SocketAddress.PortValue
+		for _, l := range cfg.StaticResources.Listeners {
+			if l.Address != nil && l.Address.SocketAddress != nil && l.Address.SocketAddress.PortValue == port {
+				return fmt.Errorf("listener on port %d already exists", port)
+			}
+		}
+	}
+
+	cfg.StaticResources.Listeners = append(cfg.StaticResources.Listeners, listener)
+
+	newContent, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal envoy config: %w", err)
+	}
+
+	return s.UpdateEnvoyConfig(string(newContent))
+}
+
+// RemoveEnvoyListener removes a listener from the Envoy config by port.
+func (s *SoftwareService) RemoveEnvoyListener(port int) error {
+	content, err := s.GetEnvoyConfig()
+	if err != nil {
+		return err
+	}
+
+	cfg := &EnvoyConfig{}
+	if err := yaml.Unmarshal([]byte(content), cfg); err != nil {
+		return fmt.Errorf("failed to parse envoy config: %w", err)
+	}
+
+	if cfg.StaticResources == nil || cfg.StaticResources.Listeners == nil {
+		return nil
+	}
+
+	found := false
+	newListeners := make([]EnvoyListener, 0, len(cfg.StaticResources.Listeners))
+	for _, l := range cfg.StaticResources.Listeners {
+		if l.Address != nil && l.Address.SocketAddress != nil && l.Address.SocketAddress.PortValue == port {
+			found = true
+			continue
+		}
+		newListeners = append(newListeners, l)
+	}
+
+	if !found {
+		return fmt.Errorf("listener on port %d not found", port)
+	}
+
+	cfg.StaticResources.Listeners = newListeners
+
+	newContent, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal envoy config: %w", err)
+	}
+
+	return s.UpdateEnvoyConfig(string(newContent))
 }

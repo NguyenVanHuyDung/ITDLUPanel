@@ -263,7 +263,7 @@ function StackInstallCard({ task }: { task: TaskDetail }) {
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-all',
           borderRadius: 6,
-          fontFamily: "'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace",
+          fontFamily: "'JetBrains Mono', 'Fira Code', Menlo, Monaco, Consolas, monospace",
         }}
       >
         {log || 'Waiting to start…'}
