@@ -69,16 +69,43 @@ func (h *WAFHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc,
 		// IP Management
 		waf.GET("/ip", rbac("waf.read"), h.ListIPEntries)
 		waf.POST("/ip", rbac("waf.manage"), h.AddIPEntry)
+		waf.PUT("/ip/:id", rbac("waf.manage"), h.UpdateIPEntry)
 		waf.DELETE("/ip/:id", rbac("waf.manage"), h.RemoveIPEntry)
+		waf.POST("/ip/:id/clear-hits", rbac("waf.manage"), h.ClearIPHits)
 
 		// Statistics
-		waf.GET("/stats", rbac("waf.read"), h.GetStats)
+		waf.GET("/stats", rbac("waf.read"), h.GetWAFStats)
+
+		// Traffic Monitoring
+		waf.GET("/traffic", rbac("waf.read"), h.GetTrafficStats)
+		waf.GET("/slow-requests", rbac("waf.read"), h.GetSlowRequests)
+
+		// URI Management
+		waf.GET("/uri", rbac("waf.read"), h.ListURIEntries)
+		waf.POST("/uri", rbac("waf.manage"), h.AddURIEntry)
+		waf.DELETE("/uri/:id", rbac("waf.manage"), h.RemoveURIEntry)
+		waf.PUT("/uri/:id/toggle", rbac("waf.manage"), h.ToggleURIEntry)
+
+		// LUA Scripts
+		waf.GET("/lua", rbac("waf.read"), h.ListLuaScripts)
+		waf.POST("/lua", rbac("waf.manage"), h.CreateLuaScript)
+		waf.PUT("/lua/:id", rbac("waf.manage"), h.UpdateLuaScript)
+		waf.DELETE("/lua/:id", rbac("waf.manage"), h.DeleteLuaScript)
+		waf.PUT("/lua/:id/toggle", rbac("waf.manage"), h.ToggleLuaScript)
+
+		// User-Agent List
+		waf.GET("/ua", rbac("waf.read"), h.ListUAEntries)
+		waf.POST("/ua", rbac("waf.manage"), h.AddUAEntry)
+		waf.DELETE("/ua/:id", rbac("waf.manage"), h.RemoveUAEntry)
+		waf.PUT("/ua/:id/toggle", rbac("waf.manage"), h.ToggleUAEntry)
+
+		// Geo Statistics
+		waf.GET("/geo-stats", rbac("waf.read"), h.GetGeoStats)
+
+		// Attack Feed (real-time)
+		waf.GET("/attack-feed", rbac("waf.read"), h.GetAttackFeed)
 	}
 }
-
-// ---------------------------------------------------------------------------
-// Status & Service Management
-// ---------------------------------------------------------------------------
 
 // GetStatus returns the WAF service status.
 func (h *WAFHandler) GetStatus(c *gin.Context) {
@@ -139,10 +166,6 @@ func (h *WAFHandler) GetConfigContent(c *gin.Context) {
 	c.String(200, content)
 }
 
-// ---------------------------------------------------------------------------
-// Sites
-// ---------------------------------------------------------------------------
-
 // ListSites returns all WAF-protected sites.
 func (h *WAFHandler) ListSites(c *gin.Context) {
 	sites, err := h.wafService.ListSites()
@@ -160,7 +183,6 @@ func (h *WAFHandler) GetSite(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-
 	site, err := h.wafService.GetSite(id)
 	if err != nil {
 		response.Error(c, err)
@@ -176,7 +198,6 @@ func (h *WAFHandler) CreateSite(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-
 	site, err := h.wafService.CreateSite(req)
 	if err != nil {
 		response.Error(c, err)
@@ -192,13 +213,11 @@ func (h *WAFHandler) UpdateSite(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-
 	var req service.WAFSiteInput
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Error(c, err)
 		return
 	}
-
 	site, err := h.wafService.UpdateSite(id, req)
 	if err != nil {
 		response.Error(c, err)
@@ -214,7 +233,6 @@ func (h *WAFHandler) DeleteSite(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-
 	if err := h.wafService.DeleteSite(id); err != nil {
 		response.Error(c, err)
 		return
@@ -229,7 +247,6 @@ func (h *WAFHandler) ToggleSite(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-
 	var req struct {
 		Enabled bool `json:"enabled"`
 	}
@@ -237,17 +254,12 @@ func (h *WAFHandler) ToggleSite(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-
 	if err := h.wafService.ToggleSite(id, req.Enabled); err != nil {
 		response.Error(c, err)
 		return
 	}
 	response.Success(c, gin.H{"message": "Site toggled successfully"})
 }
-
-// ---------------------------------------------------------------------------
-// Rules
-// ---------------------------------------------------------------------------
 
 // ListRules returns all WAF rules.
 func (h *WAFHandler) ListRules(c *gin.Context) {
@@ -258,7 +270,6 @@ func (h *WAFHandler) ListRules(c *gin.Context) {
 		b := e == "true" || e == "1"
 		enabled = &b
 	}
-
 	rules, err := h.wafService.ListRules(ruleType, category, enabled)
 	if err != nil {
 		response.Error(c, err)
@@ -274,7 +285,6 @@ func (h *WAFHandler) GetRule(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-
 	rule, err := h.wafService.GetRule(id)
 	if err != nil {
 		response.Error(c, err)
@@ -290,7 +300,6 @@ func (h *WAFHandler) CreateRule(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-
 	rule, err := h.wafService.CreateRule(req)
 	if err != nil {
 		response.Error(c, err)
@@ -306,13 +315,11 @@ func (h *WAFHandler) UpdateRule(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-
 	var req service.WAFRuleInput
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Error(c, err)
 		return
 	}
-
 	rule, err := h.wafService.UpdateRule(id, req)
 	if err != nil {
 		response.Error(c, err)
@@ -328,7 +335,6 @@ func (h *WAFHandler) DeleteRule(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-
 	if err := h.wafService.DeleteRule(id); err != nil {
 		response.Error(c, err)
 		return
@@ -343,7 +349,6 @@ func (h *WAFHandler) ToggleRule(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-
 	var req struct {
 		Enabled bool `json:"enabled"`
 	}
@@ -351,7 +356,6 @@ func (h *WAFHandler) ToggleRule(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-
 	if err := h.wafService.ToggleRule(id, req.Enabled); err != nil {
 		response.Error(c, err)
 		return
@@ -376,7 +380,6 @@ func (h *WAFHandler) UpdateOWASPCategory(c *gin.Context) {
 		response.Error(c, errors.New("category parameter is required"))
 		return
 	}
-
 	var req struct {
 		Enabled bool `json:"enabled"`
 	}
@@ -384,17 +387,12 @@ func (h *WAFHandler) UpdateOWASPCategory(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-
 	if err := h.wafService.UpdateOWASPCategory(category, req.Enabled); err != nil {
 		response.Error(c, err)
 		return
 	}
 	response.Success(c, gin.H{"message": "Category updated successfully"})
 }
-
-// ---------------------------------------------------------------------------
-// Logs
-// ---------------------------------------------------------------------------
 
 // GetLogs returns WAF logs with filtering.
 func (h *WAFHandler) GetLogs(c *gin.Context) {
@@ -403,13 +401,11 @@ func (h *WAFHandler) GetLogs(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-
 	logs, total, err := h.wafService.GetLogs(query)
 	if err != nil {
 		response.Error(c, err)
 		return
 	}
-
 	response.Paginated(c, logs, response.Pagination{Page: query.Page, PerPage: query.PageSize, Total: int64(total)})
 }
 
@@ -419,10 +415,8 @@ func (h *WAFHandler) ClearLogs(c *gin.Context) {
 		BeforeDate string `json:"before_date"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		// Default to 30 days ago
 		req.BeforeDate = time.Now().AddDate(0, 0, -30).Format("2006-01-02")
 	}
-
 	if err := h.wafService.ClearLogs(req.BeforeDate); err != nil {
 		response.Error(c, err)
 		return
@@ -439,10 +433,6 @@ func (h *WAFHandler) GetOverviewStats(c *gin.Context) {
 	}
 	response.Success(c, stats)
 }
-
-// ---------------------------------------------------------------------------
-// Settings
-// ---------------------------------------------------------------------------
 
 // GetSettings returns global WAF settings.
 func (h *WAFHandler) GetSettings(c *gin.Context) {
@@ -461,7 +451,6 @@ func (h *WAFHandler) UpdateSettings(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-
 	if err := h.wafService.UpdateSettings(settings); err != nil {
 		response.Error(c, err)
 		return
@@ -469,14 +458,9 @@ func (h *WAFHandler) UpdateSettings(c *gin.Context) {
 	response.Success(c, gin.H{"message": "Settings updated successfully"})
 }
 
-// ---------------------------------------------------------------------------
-// IP Management
-// ---------------------------------------------------------------------------
-
 // ListIPEntries returns IP whitelist/blacklist entries.
 func (h *WAFHandler) ListIPEntries(c *gin.Context) {
 	listType := c.Query("type")
-
 	entries, err := h.wafService.ListIPEntries(listType)
 	if err != nil {
 		response.Error(c, err)
@@ -489,15 +473,14 @@ func (h *WAFHandler) ListIPEntries(c *gin.Context) {
 func (h *WAFHandler) AddIPEntry(c *gin.Context) {
 	var req struct {
 		IPAddress  string  `json:"ip_address" binding:"required"`
-		ListType   string  `json:"list_type" binding:"required"`
+		ListType  string  `json:"list_type" binding:"required"`
 		Description *string `json:"description"`
-		ExpiresAt  *string `json:"expires_at"`
+		ExpiresAt *string `json:"expires_at"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Error(c, err)
 		return
 	}
-
 	var expiresAt *time.Time
 	if req.ExpiresAt != nil {
 		t, err := time.Parse(time.RFC3339, *req.ExpiresAt)
@@ -505,13 +488,42 @@ func (h *WAFHandler) AddIPEntry(c *gin.Context) {
 			expiresAt = &t
 		}
 	}
-
 	entry, err := h.wafService.AddIPEntry(req.IPAddress, req.ListType, req.Description, expiresAt)
 	if err != nil {
 		response.Error(c, err)
 		return
 	}
 	response.Created(c, entry)
+}
+
+// UpdateIPEntry updates an IP entry.
+func (h *WAFHandler) UpdateIPEntry(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	var req struct {
+		Description *string `json:"description"`
+		ExpiresAt  *string `json:"expires_at"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	var expiresAt *time.Time
+	if req.ExpiresAt != nil {
+		t, err := time.Parse(time.RFC3339, *req.ExpiresAt)
+		if err == nil {
+			expiresAt = &t
+		}
+	}
+	entry, err := h.wafService.UpdateIPEntry(id, req.Description, expiresAt)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, entry)
 }
 
 // RemoveIPEntry removes an IP from the list.
@@ -521,7 +533,6 @@ func (h *WAFHandler) RemoveIPEntry(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-
 	if err := h.wafService.RemoveIPEntry(id); err != nil {
 		response.Error(c, err)
 		return
@@ -529,12 +540,22 @@ func (h *WAFHandler) RemoveIPEntry(c *gin.Context) {
 	response.Success(c, gin.H{"message": "IP entry removed successfully"})
 }
 
-// ---------------------------------------------------------------------------
-// Statistics
-// ---------------------------------------------------------------------------
+// ClearIPHits clears hit count for an IP entry.
+func (h *WAFHandler) ClearIPHits(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	if err := h.wafService.ClearIPHits(id); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "IP hits cleared successfully"})
+}
 
-// GetStats returns WAF statistics.
-func (h *WAFHandler) GetStats(c *gin.Context) {
+// GetWAFStats returns WAF statistics.
+func (h *WAFHandler) GetWAFStats(c *gin.Context) {
 	period := c.DefaultQuery("period", "daily")
 	periodKey := c.DefaultQuery("period_key", time.Now().Format("2006-01-02"))
 	var siteID *int
@@ -543,11 +564,294 @@ func (h *WAFHandler) GetStats(c *gin.Context) {
 			siteID = &id
 		}
 	}
-
 	stats, err := h.wafService.GetStats(siteID, period, periodKey)
 	if err != nil {
 		response.Error(c, err)
 		return
 	}
 	response.Success(c, stats)
+}
+
+// GetTrafficStats returns traffic statistics.
+func (h *WAFHandler) GetTrafficStats(c *gin.Context) {
+	period := c.DefaultQuery("period", "hourly")
+	var siteID *int
+	if s := c.Query("site_id"); s != "" {
+		if id, err := strconv.Atoi(s); err == nil {
+			siteID = &id
+		}
+	}
+	stats, err := h.wafService.GetTrafficStats(siteID, period)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, stats)
+}
+
+// GetSlowRequests returns slow requests.
+func (h *WAFHandler) GetSlowRequests(c *gin.Context) {
+	var siteID *int
+	if s := c.Query("site_id"); s != "" {
+		if id, err := strconv.Atoi(s); err == nil {
+			siteID = &id
+		}
+	}
+	limit := 50
+	if l := c.Query("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil {
+			limit = parsed
+		}
+	}
+	requests, err := h.wafService.GetSlowRequests(siteID, limit)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, requests)
+}
+
+// ListURIEntries returns URI whitelist/blacklist entries.
+func (h *WAFHandler) ListURIEntries(c *gin.Context) {
+	listType := c.Query("type")
+	entries, err := h.wafService.ListURIEntries(listType)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, entries)
+}
+
+// AddURIEntry adds a URI to whitelist/blacklist.
+func (h *WAFHandler) AddURIEntry(c *gin.Context) {
+	var req struct {
+		URIPattern  string  `json:"uri_pattern" binding:"required"`
+		ListType    string  `json:"list_type" binding:"required"`
+		Action      string  `json:"action"`
+		Description *string `json:"description"`
+		Priority    *int    `json:"priority"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	entry, err := h.wafService.AddURIEntry(req.URIPattern, req.ListType, req.Action, req.Description, req.Priority)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Created(c, entry)
+}
+
+// RemoveURIEntry removes a URI from the list.
+func (h *WAFHandler) RemoveURIEntry(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	if err := h.wafService.RemoveURIEntry(id); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "URI entry removed successfully"})
+}
+
+// ToggleURIEntry enables or disables a URI entry.
+func (h *WAFHandler) ToggleURIEntry(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	if err := h.wafService.ToggleURIEntry(id, req.Enabled); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "URI entry toggled successfully"})
+}
+
+// ListLuaScripts returns Lua scripts.
+func (h *WAFHandler) ListLuaScripts(c *gin.Context) {
+	scripts, err := h.wafService.ListLuaScripts()
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, scripts)
+}
+
+// CreateLuaScript creates a new Lua script.
+func (h *WAFHandler) CreateLuaScript(c *gin.Context) {
+	var req service.WAFLuaScriptInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	script, err := h.wafService.CreateLuaScript(req)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Created(c, script)
+}
+
+// UpdateLuaScript updates a Lua script.
+func (h *WAFHandler) UpdateLuaScript(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	var req service.WAFLuaScriptInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	script, err := h.wafService.UpdateLuaScript(id, req)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, script)
+}
+
+// DeleteLuaScript deletes a Lua script.
+func (h *WAFHandler) DeleteLuaScript(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	if err := h.wafService.DeleteLuaScript(id); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "Lua script deleted successfully"})
+}
+
+// ToggleLuaScript enables or disables a Lua script.
+func (h *WAFHandler) ToggleLuaScript(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	if err := h.wafService.ToggleLuaScript(id, req.Enabled); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "Lua script toggled successfully"})
+}
+
+// ListUAEntries returns User-Agent whitelist/blacklist entries.
+func (h *WAFHandler) ListUAEntries(c *gin.Context) {
+	listType := c.Query("type")
+	entries, err := h.wafService.ListUAEntries(listType)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, entries)
+}
+
+// AddUAEntry adds a User-Agent to whitelist/blacklist.
+func (h *WAFHandler) AddUAEntry(c *gin.Context) {
+	var req struct {
+		UAPattern   string  `json:"ua_pattern" binding:"required"`
+		ListType    string  `json:"list_type" binding:"required"`
+		Description *string `json:"description"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	entry, err := h.wafService.AddUAEntry(req.UAPattern, req.ListType, req.Description)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Created(c, entry)
+}
+
+// RemoveUAEntry removes a User-Agent entry.
+func (h *WAFHandler) RemoveUAEntry(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	if err := h.wafService.RemoveUAEntry(id); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "User-Agent entry removed successfully"})
+}
+
+// ToggleUAEntry enables or disables a User-Agent entry.
+func (h *WAFHandler) ToggleUAEntry(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	if err := h.wafService.ToggleUAEntry(id, req.Enabled); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "User-Agent entry toggled successfully"})
+}
+
+// GetGeoStats returns geographic attack statistics.
+func (h *WAFHandler) GetGeoStats(c *gin.Context) {
+	period := c.DefaultQuery("period", "daily")
+	var siteID *int
+	if s := c.Query("site_id"); s != "" {
+		if id, err := strconv.Atoi(s); err == nil {
+			siteID = &id
+		}
+	}
+	stats, err := h.wafService.GetGeoStats(siteID, period)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, stats)
+}
+
+// GetAttackFeed returns the latest attack events for real-time feed.
+func (h *WAFHandler) GetAttackFeed(c *gin.Context) {
+	limit := 50
+	if l := c.Query("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 200 {
+			limit = parsed
+		}
+	}
+	feed, err := h.wafService.GetAttackFeed(limit)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, feed)
 }

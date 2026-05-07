@@ -224,6 +224,138 @@ type WAFIPEntry struct {
 	Description *string    `json:"description"`
 	ExpiresAt   *time.Time `json:"expires_at"`
 	CreatedAt   time.Time  `json:"created_at"`
+	HitCount    int        `json:"hit_count"`
+	LastHit     *time.Time `json:"last_hit"`
+	IsCIDR      bool       `json:"is_cidr"`
+	Source      string     `json:"source"`
+}
+
+// WAFTrafficStats represents traffic statistics.
+type WAFTrafficStats struct {
+	Period            string            `json:"period"`
+	PeriodKey         string            `json:"period_key"`
+	TotalBytesIn      int64             `json:"total_bytes_in"`
+	TotalBytesOut     int64             `json:"total_bytes_out"`
+	TotalRequests     int64             `json:"total_requests"`
+	BlockedRequests   int64             `json:"blocked_requests"`
+	AvgResponseMs     float64           `json:"avg_response_ms"`
+	MaxResponseMs     int               `json:"max_response_ms"`
+	P95ResponseMs     int               `json:"p95_response_ms"`
+	TopCountries      []WAFGeoEntry     `json:"top_countries"`
+	TopClients        []IPStat          `json:"top_clients"`
+	TrafficByHour     []WAFTrafficHour  `json:"traffic_by_hour"`
+	BandwidthByHour   []WAFBandwidthHour `json:"bandwidth_by_hour"`
+}
+
+// WAFTrafficHour represents hourly traffic.
+type WAFTrafficHour struct {
+	Hour             string `json:"hour"`
+	TotalRequests    int64  `json:"total_requests"`
+	BlockedRequests  int64  `json:"blocked_requests"`
+	AvgResponseMs    float64 `json:"avg_response_ms"`
+}
+
+// WAFBandwidthHour represents hourly bandwidth.
+type WAFBandwidthHour struct {
+	Hour        string `json:"hour"`
+	BytesIn    int64  `json:"bytes_in"`
+	BytesOut   int64  `json:"bytes_out"`
+}
+
+// WAFSlowRequest represents a slow request entry.
+type WAFSlowRequest struct {
+	ID           int        `json:"id"`
+	SiteID       *int      `json:"site_id"`
+	SiteName     *string   `json:"site_name"`
+	ClientIP     string     `json:"client_ip"`
+	GeoCountry   *string   `json:"geo_country"`
+	Method       string     `json:"method"`
+	URI          string     `json:"uri"`
+	Host         string     `json:"host"`
+	ResponseMs   int        `json:"response_ms"`
+	ThresholdMs  int        `json:"threshold_ms"`
+	Timestamp    time.Time  `json:"timestamp"`
+}
+
+// WAFURIEntry represents a URI whitelist/blacklist entry.
+type WAFURIEntry struct {
+	ID          int        `json:"id"`
+	URIPattern  string     `json:"uri_pattern"`
+	ListType    string     `json:"list_type"`
+	Action      string     `json:"action"`
+	Description *string    `json:"description"`
+	Enabled     bool       `json:"enabled"`
+	Priority    int        `json:"priority"`
+	CreatedAt   time.Time  `json:"created_at"`
+}
+
+// WAFLuaScriptInput is used for creating/updating Lua scripts.
+type WAFLuaScriptInput struct {
+	Name          string  `json:"name" validate:"required,min=1,max=255"`
+	Description   *string `json:"description"`
+	ScriptContent string  `json:"script_content" validate:"required"`
+	Enabled       *bool   `json:"enabled"`
+	Priority      *int    `json:"priority"`
+}
+
+// WAFLuaScript represents a Lua script.
+type WAFLuaScript struct {
+	ID            int        `json:"id"`
+	Name          string     `json:"name"`
+	Description   *string    `json:"description"`
+	ScriptContent string     `json:"script_content"`
+	Enabled       bool       `json:"enabled"`
+	Priority      int        `json:"priority"`
+	CreatedAt     time.Time  `json:"created_at"`
+}
+
+// WAFUAEntry represents a User-Agent whitelist/blacklist entry.
+type WAFUAEntry struct {
+	ID          int        `json:"id"`
+	UAPattern   string     `json:"ua_pattern"`
+	ListType    string     `json:"list_type"`
+	Description *string    `json:"description"`
+	Enabled     bool       `json:"enabled"`
+	CreatedAt   time.Time  `json:"created_at"`
+}
+
+// WAFGeoEntry represents a geographic statistics entry.
+type WAFGeoEntry struct {
+	CountryCode       string `json:"country_code"`
+	CountryName       string `json:"country_name"`
+	TotalRequests     int64  `json:"total_requests"`
+	BlockedRequests   int64  `json:"blocked_requests"`
+	UniqueIPs         int64  `json:"unique_ips"`
+}
+
+// WAFGeoStats represents geographic statistics.
+type WAFGeoStats struct {
+	TopCountries    []WAFGeoEntry  `json:"top_countries"`
+	TotalCountries  int            `json:"total_countries"`
+	BlockedByCountry []WAFGeoEntry `json:"blocked_by_country"`
+}
+
+// WAFAttackFeedEntry represents a real-time attack feed entry.
+type WAFAttackFeedEntry struct {
+	ID            int        `json:"id"`
+	Timestamp     time.Time  `json:"timestamp"`
+	ClientIP      string     `json:"client_ip"`
+	GeoCountry    *string   `json:"geo_country"`
+	GeoCity       *string   `json:"geo_city"`
+	Method        string     `json:"method"`
+	URI           string     `json:"uri"`
+	Host          string     `json:"host"`
+	RuleID        *string   `json:"rule_id"`
+	RuleMessage   *string   `json:"rule_message"`
+	RuleCategory  *string   `json:"rule_category"`
+	RuleSeverity  *string   `json:"rule_severity"`
+	ActionTaken   string     `json:"action_taken"`
+	AnomalyScore  *float64  `json:"anomaly_score"`
+	UserAgent     *string   `json:"user_agent"`
+	ResponseCode  *int      `json:"response_code"`
+	SiteID        *int      `json:"site_id"`
+	SiteName      *string   `json:"site_name"`
+	LatencyMs     *int      `json:"latency_ms"`
 }
 
 // ---------------------------------------------------------------------------
@@ -1200,6 +1332,551 @@ func (s *WAFService) regenerateCorazaRules() error {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// countryNameFromCode maps ISO country codes to human-readable names.
+func countryNameFromCode(code string) string {
+	names := map[string]string{
+		"CN": "China", "RU": "Russia", "KR": "South Korea", "IR": "Iran",
+		"BY": "Belarus", "NG": "Nigeria", "IN": "India", "PK": "Pakistan",
+		"VN": "Vietnam", "US": "United States", "DE": "Germany", "GB": "United Kingdom",
+		"JP": "Japan", "SG": "Singapore", "BR": "Brazil", "ID": "Indonesia",
+		"TH": "Thailand", "MY": "Malaysia", "PH": "Philippines", "AU": "Australia",
+		"CA": "Canada", "FR": "France", "ES": "Spain", "IT": "Italy", "NL": "Netherlands",
+		"TR": "Turkey", "MX": "Mexico", "AR": "Argentina", "PL": "Poland",
+		"UA": "Ukraine", "RO": "Romania", "CZ": "Czech Republic", "HU": "Hungary",
+		"SE": "Sweden", "NO": "Norway", "DK": "Denmark", "FI": "Finland",
+		"AT": "Austria", "BE": "Belgium", "CH": "Switzerland", "PT": "Portugal",
+		"GR": "Greece", "IL": "Israel", "AE": "UAE", "SA": "Saudi Arabia",
+		"EG": "Egypt", "ZA": "South Africa", "CO": "Colombia", "CL": "Chile",
+		"PE": "Peru", "TW": "Taiwan", "HK": "Hong Kong",
+		"BD": "Bangladesh", "LK": "Sri Lanka", "NP": "Nepal",
+		"KH": "Cambodia", "NZ": "New Zealand",
+	}
+	if name, ok := names[code]; ok {
+		return name
+	}
+	return code
+}
+
+// ---------------------------------------------------------------------------
+// Traffic Monitoring
+// ---------------------------------------------------------------------------
+
+// GetTrafficStats returns traffic statistics for a period.
+func (s *WAFService) GetTrafficStats(siteID *int, period string) (*WAFTrafficStats, error) {
+	stats := &WAFTrafficStats{Period: period}
+	now := time.Now()
+	var since time.Time
+	switch period {
+	case "hourly":
+		since = now.Add(-24 * time.Hour)
+		stats.PeriodKey = since.Format("15:04")
+	case "daily":
+		since = now.AddDate(0, 0, -30)
+		stats.PeriodKey = since.Format("2006-01-02")
+	default:
+		since = now.Add(-24 * time.Hour)
+		stats.PeriodKey = since.Format("15:04")
+	}
+
+	args := []interface{}{since}
+	siteClause := ""
+	if siteID != nil {
+		siteClause = " AND site_id = ?"
+		args = append(args, *siteID)
+	}
+
+	// Total from traffic_stats table
+	row := s.db.QueryRow(`
+		SELECT COALESCE(SUM(total_bytes_in),0), COALESCE(SUM(total_bytes_out),0),
+		       COALESCE(SUM(total_requests),0), COALESCE(SUM(blocked_requests),0),
+		       COALESCE(AVG(avg_response_ms),0)
+		FROM waf_traffic_stats
+		WHERE created_at >= ?`+siteClause, args...)
+	row.Scan(&stats.TotalBytesIn, &stats.TotalBytesOut, &stats.TotalRequests,
+		&stats.BlockedRequests, &stats.AvgResponseMs)
+
+	// Fallback: derive from logs
+	if stats.TotalRequests == 0 {
+		row2 := s.db.QueryRow(`
+			SELECT COUNT(*) as total, COUNT(CASE WHEN action_taken='blocked' THEN 1 END) as blocked
+			FROM waf_logs WHERE timestamp >= ?`+siteClause, args...)
+		row2.Scan(&stats.TotalRequests, &stats.BlockedRequests)
+	}
+
+	// Traffic by hour
+	rows, err := s.db.Query(`
+		SELECT COALESCE(SUM(total_requests),0), COALESCE(SUM(blocked_requests),0),
+		       COALESCE(AVG(avg_response_ms),0), hour
+		FROM waf_traffic_stats
+		WHERE created_at >= ? AND hour IS NOT NULL`+siteClause+`
+		GROUP BY hour ORDER BY hour
+	`, args...)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var th WAFTrafficHour
+			var hour string
+			rows.Scan(&th.TotalRequests, &th.BlockedRequests, &th.AvgResponseMs, &hour)
+			th.Hour = hour + ":00"
+			stats.TrafficByHour = append(stats.TrafficByHour, th)
+		}
+	}
+
+	// Fallback: derive hourly from logs
+	if len(stats.TrafficByHour) == 0 && stats.TotalRequests > 0 {
+		rows2, err2 := s.db.Query(`
+			SELECT strftime('%H:00', timestamp) as hour,
+			       COUNT(*) as total,
+			       COUNT(CASE WHEN action_taken='blocked' THEN 1 END) as blocked
+			FROM waf_logs
+			WHERE timestamp >= ?`+siteClause+`
+			GROUP BY hour ORDER BY hour
+		`, args...)
+		if err2 == nil {
+			defer rows2.Close()
+			for rows2.Next() {
+				var th WAFTrafficHour
+				rows2.Scan(&th.Hour, &th.TotalRequests, &th.BlockedRequests)
+				stats.TrafficByHour = append(stats.TrafficByHour, th)
+			}
+		}
+	}
+
+	// Top countries
+	rows3, err := s.db.Query(`
+		SELECT geo_country,
+		       COUNT(*) as total,
+		       COUNT(CASE WHEN action_taken='blocked' THEN 1 END) as blocked,
+		       COUNT(DISTINCT client_ip) as unique_ips
+		FROM waf_logs
+		WHERE timestamp >= ? AND geo_country IS NOT NULL AND geo_country != ''`+siteClause+`
+		GROUP BY geo_country ORDER BY total DESC LIMIT 10
+	`, args...)
+	if err == nil {
+		defer rows3.Close()
+		for rows3.Next() {
+			var ge WAFGeoEntry
+			rows3.Scan(&ge.CountryCode, &ge.TotalRequests, &ge.BlockedRequests, &ge.UniqueIPs)
+			ge.CountryName = countryNameFromCode(ge.CountryCode)
+			stats.TopCountries = append(stats.TopCountries, ge)
+		}
+	}
+
+	// Top clients
+	rows4, err := s.db.Query(`
+		SELECT client_ip, COUNT(*) as cnt
+		FROM waf_logs
+		WHERE timestamp >= ?`+siteClause+`
+		GROUP BY client_ip ORDER BY cnt DESC LIMIT 10
+	`, args...)
+	if err == nil {
+		defer rows4.Close()
+		for rows4.Next() {
+			var ip IPStat
+			rows4.Scan(&ip.IP, &ip.Count)
+			stats.TopClients = append(stats.TopClients, ip)
+		}
+	}
+
+	return stats, nil
+}
+
+// GetSlowRequests returns slow requests.
+func (s *WAFService) GetSlowRequests(siteID *int, limit int) ([]WAFSlowRequest, error) {
+	args := []interface{}{}
+	where := ""
+	if siteID != nil {
+		where = " WHERE site_id = ?"
+		args = append(args, *siteID)
+	}
+	args = append(args, limit)
+
+	query := fmt.Sprintf(`
+		SELECT wsr.id, wsr.site_id, ws.name, wsr.client_ip, wl.geo_country,
+		       wsr.method, wsr.uri, wsr.host, wsr.response_ms, wsr.threshold_ms, wsr.timestamp
+		FROM waf_slow_requests wsr
+		LEFT JOIN waf_sites ws ON wsr.site_id = ws.id
+		LEFT JOIN waf_logs wl ON wsr.log_id = wl.id
+		%s
+		ORDER BY wsr.response_ms DESC LIMIT ?
+	`, where)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []WAFSlowRequest
+	for rows.Next() {
+		var sr WAFSlowRequest
+		err := rows.Scan(&sr.ID, &sr.SiteID, &sr.SiteName, &sr.ClientIP, &sr.GeoCountry,
+			&sr.Method, &sr.URI, &sr.Host, &sr.ResponseMs, &sr.ThresholdMs, &sr.Timestamp)
+		if err != nil {
+			continue
+		}
+		results = append(results, sr)
+	}
+	return results, nil
+}
+
+// ---------------------------------------------------------------------------
+// URI Management
+// ---------------------------------------------------------------------------
+
+// ListURIEntries returns URI whitelist/blacklist entries.
+func (s *WAFService) ListURIEntries(listType string) ([]WAFURIEntry, error) {
+	query := `SELECT id, uri_pattern, list_type, action, description, enabled, priority, created_at
+	          FROM waf_uri_list WHERE 1=1`
+	args := []interface{}{}
+	if listType != "" {
+		query += " AND list_type = ?"
+		args = append(args, listType)
+	}
+	query += " ORDER BY priority ASC, created_at DESC"
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []WAFURIEntry
+	for rows.Next() {
+		var e WAFURIEntry
+		err := rows.Scan(&e.ID, &e.URIPattern, &e.ListType, &e.Action,
+			&e.Description, &e.Enabled, &e.Priority, &e.CreatedAt)
+		if err == nil {
+			entries = append(entries, e)
+		}
+	}
+	return entries, nil
+}
+
+// AddURIEntry adds a URI to whitelist/blacklist.
+func (s *WAFService) AddURIEntry(uriPattern, listType, action string, description *string, priority *int) (*WAFURIEntry, error) {
+	if action == "" {
+		action = "block"
+	}
+	p := 100
+	if priority != nil {
+		p = *priority
+	}
+	result, err := s.db.Exec(`
+		INSERT INTO waf_uri_list (uri_pattern, list_type, action, description, priority)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(uri_pattern, list_type) DO UPDATE SET
+			description = excluded.description, priority = excluded.priority
+	`, uriPattern, listType, action, description, p)
+	if err != nil {
+		return nil, err
+	}
+	id, _ := result.LastInsertId()
+	var entry WAFURIEntry
+	s.db.QueryRow(`SELECT id, uri_pattern, list_type, action, description, enabled, priority, created_at
+		FROM waf_uri_list WHERE id = ?`, id).
+		Scan(&entry.ID, &entry.URIPattern, &entry.ListType, &entry.Action,
+			&entry.Description, &entry.Enabled, &entry.Priority, &entry.CreatedAt)
+	return &entry, nil
+}
+
+// RemoveURIEntry removes a URI entry.
+func (s *WAFService) RemoveURIEntry(id int) error {
+	_, err := s.db.Exec("DELETE FROM waf_uri_list WHERE id = ?", id)
+	return err
+}
+
+// ToggleURIEntry enables or disables a URI entry.
+func (s *WAFService) ToggleURIEntry(id int, enabled bool) error {
+	_, err := s.db.Exec("UPDATE waf_uri_list SET enabled = ? WHERE id = ?", enabled, id)
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// Lua Scripts
+// ---------------------------------------------------------------------------
+
+// ListLuaScripts returns all Lua scripts.
+func (s *WAFService) ListLuaScripts() ([]WAFLuaScript, error) {
+	rows, err := s.db.Query(`
+		SELECT id, name, description, script_content, enabled, priority, created_at
+		FROM waf_lua_scripts ORDER BY priority ASC, created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var scripts []WAFLuaScript
+	for rows.Next() {
+		var scr WAFLuaScript
+		err := rows.Scan(&scr.ID, &scr.Name, &scr.Description, &scr.ScriptContent,
+			&scr.Enabled, &scr.Priority, &scr.CreatedAt)
+		if err == nil {
+			scripts = append(scripts, scr)
+		}
+	}
+	return scripts, nil
+}
+
+// CreateLuaScript creates a new Lua script.
+func (s *WAFService) CreateLuaScript(input WAFLuaScriptInput) (*WAFLuaScript, error) {
+	enabled := true
+	if input.Enabled != nil {
+		enabled = *input.Enabled
+	}
+	p := 100
+	if input.Priority != nil {
+		p = *input.Priority
+	}
+	result, err := s.db.Exec(`
+		INSERT INTO waf_lua_scripts (name, description, script_content, enabled, priority)
+		VALUES (?, ?, ?, ?, ?)
+	`, input.Name, input.Description, input.ScriptContent, enabled, p)
+	if err != nil {
+		return nil, err
+	}
+	id, _ := result.LastInsertId()
+	var script WAFLuaScript
+	s.db.QueryRow(`SELECT id, name, description, script_content, enabled, priority, created_at
+		FROM waf_lua_scripts WHERE id = ?`, id).
+		Scan(&script.ID, &script.Name, &script.Description, &script.ScriptContent,
+			&script.Enabled, &script.Priority, &script.CreatedAt)
+	return &script, nil
+}
+
+// UpdateLuaScript updates a Lua script.
+func (s *WAFService) UpdateLuaScript(id int, input WAFLuaScriptInput) (*WAFLuaScript, error) {
+	updates := []string{}
+	args := []interface{}{}
+	if input.Name != "" {
+		updates = append(updates, "name = ?"); args = append(args, input.Name)
+	}
+	if input.Description != nil {
+		updates = append(updates, "description = ?"); args = append(args, *input.Description)
+	}
+	if input.ScriptContent != "" {
+		updates = append(updates, "script_content = ?"); args = append(args, input.ScriptContent)
+	}
+	if input.Enabled != nil {
+		updates = append(updates, "enabled = ?"); args = append(args, *input.Enabled)
+	}
+	if input.Priority != nil {
+		updates = append(updates, "priority = ?"); args = append(args, *input.Priority)
+	}
+	if len(updates) > 0 {
+		updates = append(updates, "updated_at = CURRENT_TIMESTAMP")
+		args = append(args, id)
+		query := fmt.Sprintf("UPDATE waf_lua_scripts SET %s WHERE id = ?", strings.Join(updates, ", "))
+		s.db.Exec(query, args...)
+	}
+	var script WAFLuaScript
+	s.db.QueryRow(`SELECT id, name, description, script_content, enabled, priority, created_at
+		FROM waf_lua_scripts WHERE id = ?`, id).
+		Scan(&script.ID, &script.Name, &script.Description, &script.ScriptContent,
+			&script.Enabled, &script.Priority, &script.CreatedAt)
+	return &script, nil
+}
+
+// DeleteLuaScript deletes a Lua script.
+func (s *WAFService) DeleteLuaScript(id int) error {
+	_, err := s.db.Exec("DELETE FROM waf_lua_scripts WHERE id = ?", id)
+	return err
+}
+
+// ToggleLuaScript enables or disables a Lua script.
+func (s *WAFService) ToggleLuaScript(id int, enabled bool) error {
+	_, err := s.db.Exec("UPDATE waf_lua_scripts SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", enabled, id)
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// User-Agent List
+// ---------------------------------------------------------------------------
+
+// ListUAEntries returns User-Agent whitelist/blacklist entries.
+func (s *WAFService) ListUAEntries(listType string) ([]WAFUAEntry, error) {
+	query := `SELECT id, ua_pattern, list_type, description, enabled, created_at FROM waf_ua_list WHERE 1=1`
+	args := []interface{}{}
+	if listType != "" {
+		query += " AND list_type = ?"; args = append(args, listType)
+	}
+	query += " ORDER BY created_at DESC"
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var entries []WAFUAEntry
+	for rows.Next() {
+		var e WAFUAEntry
+		err := rows.Scan(&e.ID, &e.UAPattern, &e.ListType, &e.Description, &e.Enabled, &e.CreatedAt)
+		if err == nil {
+			entries = append(entries, e)
+		}
+	}
+	return entries, nil
+}
+
+// AddUAEntry adds a User-Agent to whitelist/blacklist.
+func (s *WAFService) AddUAEntry(uaPattern, listType string, description *string) (*WAFUAEntry, error) {
+	result, err := s.db.Exec(`
+		INSERT INTO waf_ua_list (ua_pattern, list_type, description)
+		VALUES (?, ?, ?)
+		ON CONFLICT(ua_pattern, list_type) DO UPDATE SET description = excluded.description
+	`, uaPattern, listType, description)
+	if err != nil {
+		return nil, err
+	}
+	id, _ := result.LastInsertId()
+	var entry WAFUAEntry
+	s.db.QueryRow(`SELECT id, ua_pattern, list_type, description, enabled, created_at
+		FROM waf_ua_list WHERE id = ?`, id).
+		Scan(&entry.ID, &entry.UAPattern, &entry.ListType, &entry.Description,
+			&entry.Enabled, &entry.CreatedAt)
+	return &entry, nil
+}
+
+// RemoveUAEntry removes a User-Agent entry.
+func (s *WAFService) RemoveUAEntry(id int) error {
+	_, err := s.db.Exec("DELETE FROM waf_ua_list WHERE id = ?", id)
+	return err
+}
+
+// ToggleUAEntry enables or disables a User-Agent entry.
+func (s *WAFService) ToggleUAEntry(id int, enabled bool) error {
+	_, err := s.db.Exec("UPDATE waf_ua_list SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", enabled, id)
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// Geo Statistics
+// ---------------------------------------------------------------------------
+
+// GetGeoStats returns geographic attack statistics.
+func (s *WAFService) GetGeoStats(siteID *int, period string) (*WAFGeoStats, error) {
+	now := time.Now()
+	var since time.Time
+	switch period {
+	case "hourly":
+		since = now.Add(-24 * time.Hour)
+	case "daily":
+		since = now.AddDate(0, 0, -30)
+	default:
+		since = now.Add(-24 * time.Hour)
+	}
+	args := []interface{}{since}
+	siteClause := ""
+	if siteID != nil {
+		siteClause = " AND site_id = ?"; args = append(args, *siteID)
+	}
+
+	stats := &WAFGeoStats{}
+	rows, err := s.db.Query(`
+		SELECT geo_country, COUNT(*) as total,
+		       COUNT(CASE WHEN action_taken='blocked' THEN 1 END) as blocked,
+		       COUNT(DISTINCT client_ip) as unique_ips
+		FROM waf_logs
+		WHERE timestamp >= ? AND geo_country IS NOT NULL AND geo_country != ''`+siteClause+`
+		GROUP BY geo_country ORDER BY total DESC LIMIT 20
+	`, args...)
+	if err != nil {
+		return stats, nil
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ge WAFGeoEntry
+		rows.Scan(&ge.CountryCode, &ge.TotalRequests, &ge.BlockedRequests, &ge.UniqueIPs)
+		ge.CountryName = countryNameFromCode(ge.CountryCode)
+		stats.TopCountries = append(stats.TopCountries, ge)
+		stats.TotalCountries++
+	}
+
+	rows2, err := s.db.Query(`
+		SELECT geo_country, COUNT(*) as blocked
+		FROM waf_logs
+		WHERE timestamp >= ? AND action_taken='blocked'
+		      AND geo_country IS NOT NULL AND geo_country != ''`+siteClause+`
+		GROUP BY geo_country ORDER BY blocked DESC LIMIT 10
+	`, args...)
+	if err == nil {
+		defer rows2.Close()
+		for rows2.Next() {
+			var ge WAFGeoEntry
+			rows2.Scan(&ge.CountryCode, &ge.BlockedRequests)
+			ge.CountryName = countryNameFromCode(ge.CountryCode)
+			stats.BlockedByCountry = append(stats.BlockedByCountry, ge)
+		}
+	}
+	return stats, nil
+}
+
+// ---------------------------------------------------------------------------
+// Attack Feed (Real-time)
+// ---------------------------------------------------------------------------
+
+// GetAttackFeed returns the latest blocked events for real-time feed.
+func (s *WAFService) GetAttackFeed(limit int) ([]WAFAttackFeedEntry, error) {
+	rows, err := s.db.Query(`
+		SELECT wl.id, wl.timestamp, wl.client_ip, wl.geo_country,
+		       wl.method, wl.uri, wl.host, wl.rule_id, wl.rule_message,
+		       wl.rule_category, wl.rule_severity, wl.action_taken,
+		       wl.anomaly_score, wl.user_agent, wl.response_code,
+		       wl.site_id, ws.name
+		FROM waf_logs wl
+		LEFT JOIN waf_sites ws ON wl.site_id = ws.id
+		WHERE wl.action_taken = 'blocked'
+		ORDER BY wl.timestamp DESC LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var feed []WAFAttackFeedEntry
+	for rows.Next() {
+		var fe WAFAttackFeedEntry
+		err := rows.Scan(&fe.ID, &fe.Timestamp, &fe.ClientIP, &fe.GeoCountry,
+			&fe.Method, &fe.URI, &fe.Host, &fe.RuleID, &fe.RuleMessage,
+			&fe.RuleCategory, &fe.RuleSeverity, &fe.ActionTaken,
+			&fe.AnomalyScore, &fe.UserAgent, &fe.ResponseCode,
+			&fe.SiteID, &fe.SiteName)
+		if err == nil {
+			feed = append(feed, fe)
+		}
+	}
+	return feed, nil
+}
+
+// ---------------------------------------------------------------------------
+// IP Entry Updates
+// ---------------------------------------------------------------------------
+
+// UpdateIPEntry updates an IP entry description or expiry.
+func (s *WAFService) UpdateIPEntry(id int, description *string, expiresAt *time.Time) (*WAFIPEntry, error) {
+	_, err := s.db.Exec(`UPDATE waf_ip_list SET description = ?, expires_at = ? WHERE id = ?`,
+		description, expiresAt, id)
+	if err != nil {
+		return nil, err
+	}
+	var entry WAFIPEntry
+	err = s.db.QueryRow(`SELECT id, ip_address, list_type, description, expires_at, created_at,
+		COALESCE(hit_count,0), last_hit, COALESCE(is_cidr,0), COALESCE(source,'manual')
+		FROM waf_ip_list WHERE id = ?`, id).
+		Scan(&entry.ID, &entry.IPAddress, &entry.ListType, &entry.Description,
+			&entry.ExpiresAt, &entry.CreatedAt, &entry.HitCount, &entry.LastHit,
+			&entry.IsCIDR, &entry.Source)
+	if err != nil {
+		return nil, err
+	}
+	return &entry, nil
+}
+
+// ClearIPHits clears the hit count for an IP entry.
+func (s *WAFService) ClearIPHits(id int) error {
+	_, err := s.db.Exec("UPDATE waf_ip_list SET hit_count = 0, last_hit = NULL WHERE id = ?", id)
+	return err
+}
 
 func (s *WAFService) updateSetting(key, value string) {
 	s.db.Exec("UPDATE waf_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?", key, value)
