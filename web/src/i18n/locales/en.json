@@ -94,6 +94,7 @@
     "docker": "Docker",
     "monitor": "Monitor",
     "security": "Security",
+    "waf": "WAF",
     "logs": "Logs",
     "terminal": "Terminal",
     "cron": "Cron Jobs",

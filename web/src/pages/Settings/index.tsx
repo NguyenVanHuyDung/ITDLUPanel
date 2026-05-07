@@ -789,6 +789,7 @@ export default function Settings() {
     { key: '/monitor', icon: <MonitorOutlined />, label: t('sidebar.monitor') },
     { key: '/security', icon: <SafetyOutlined />, label: t('sidebar.security') },
     { key: '/firewall', icon: <FireOutlined />, label: 'Firewall' },
+    { key: '/waf', icon: <SafetyCertificateOutlined />, label: t('sidebar.waf') },
     { key: '/logs', icon: <FileTextOutlined />, label: t('sidebar.logs') },
     { key: '/terminal', icon: <CodeOutlined />, label: t('sidebar.terminal') },
     { key: '/cron', icon: <ClockCircleOutlined />, label: t('sidebar.cron') },

@@ -21,6 +21,7 @@ const Cron = lazy(() => import('@/pages/Cron'));
 const AppStore = lazy(() => import('@/pages/AppStore'));
 const Settings = lazy(() => import('@/pages/Settings'));
 const Users = lazy(() => import('@/pages/Users'));
+const WAF = lazy(() => import('@/pages/WAF'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -68,6 +69,7 @@ const router = createBrowserRouter([
       { path: 'appstore', element: <AppStore /> },
       { path: 'settings', element: <Settings /> },
       { path: 'users', element: <Users /> },
+      { path: 'waf', element: <WAF /> },
     ],
   },
   { path: '*', element: <Navigate to="/" replace /> },

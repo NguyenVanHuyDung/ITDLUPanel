@@ -206,6 +206,12 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		securityHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
 
 		// -------------------------------------------------------
+		// WAF management
+		// -------------------------------------------------------
+		wafHandler := v1.NewWAFHandler(db)
+		wafHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
+
+		// -------------------------------------------------------
 		// Docker management
 		// -------------------------------------------------------
 		dockerHandler := v1.NewDockerHandler(dockerService)
