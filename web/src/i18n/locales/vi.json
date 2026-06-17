@@ -57,7 +57,8 @@
     "completed": "Hoàn thành",
     "confirm_delete": "Bạn có chắc chắn muốn xóa?",
     "no_data": "Không có dữ liệu",
-    "coming_soon": "Sắp ra mắt..."
+    "coming_soon": "Sắp ra mắt...",
+    "settings": "Cài đặt"
   },
   "auth": {
     "login": "Đăng nhập",
@@ -183,7 +184,12 @@
     "port": "Cổng",
     "go_version": "Phiên bản Go",
     "os_arch": "Hệ điều hành / Kiến trúc",
-    "started_at": "Khởi động lúc"
+    "started_at": "Khởi động lúc",
+    "appearance": "Giao diện",
+    "accent_palette": "Màu nhấn",
+    "accent_palette_hint": "Chọn một mẫu màu để tô lại nút, liên kết, gradient header, và mục sidebar đang chọn. Thay đổi áp dụng ngay lập tức và lưu vào máy chủ.",
+    "accent_palette_applied": "Đã áp dụng bảng màu \"{{name}}\"",
+    "accent_preview": "Xem trước"
   },
   "task": {
     "messages_box": "Hộp thông báo",
@@ -239,6 +245,7 @@
     "not_running": "Không chạy",
     "not_installed": "Docker Chưa Cài đặt",
     "not_installed_desc": "Docker Engine chưa được cài đặt hoặc daemon không chạy. Cài đặt Docker để quản lý container.",
+    "container_tabs": "Container",
     "registry_mirrors": "Registry Mirrors",
     "registry_mirrors_desc": "Thêm registry mirrors để tăng tốc kéo image. Mỗi URL một dòng.",
     "registry_mirrors_placeholder": "https://mirror.example.com\nhttps://registry.example.io",
