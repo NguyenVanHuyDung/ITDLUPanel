@@ -28,7 +28,12 @@ export default defineConfig({
     sourcemap: false,
     rollupOptions: {
       output: {
-        manualChunks: undefined,
+        manualChunks(id) {
+          // Force-include storage-related modals into their parent chunk
+          if (id.includes('GoogleDriveManageModal')) return 'GoogleDriveManageModal';
+          if (id.includes('S3StorageManageModal')) return 'S3StorageManageModal';
+          if (id.includes('FTPStorageManageModal')) return 'FTPStorageManageModal';
+        },
       },
     },
   },
