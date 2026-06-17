@@ -16,7 +16,12 @@
   --color-primary-dark: #0D47A1;
   --color-secondary: #2E7D32;
   --color-secondary-light: #43A047;
-  --color-accent: #0288D1;
+  --color-accent: #1565C0;
+  --color-accent-light: #1E88E5;
+  --color-accent-dark: #0D47A1;
+  --color-accent-soft: rgba(21, 101, 192, 0.1);
+  --color-accent-strong: rgba(21, 101, 192, 0.15);
+  --header-gradient: linear-gradient(135deg, #0D47A1 0%, #1565C0 50%, #1E88E5 100%);
   --color-sidebar: #1B2A4A;
   --color-sidebar-hover: #243656;
   --color-bg: #F5F7FA;
@@ -79,19 +84,19 @@ code, kbd, samp, pre {
   line-height: 40px;
 }
 
-/* Light sidebar: menu item hover → blue bg + white text */
+/* Light sidebar: menu item hover → accent bg + white text */
 .ant-menu-light .ant-menu-item:hover,
 .ant-menu-light .ant-menu-item-active {
-  background: #1565C0 !important;
+  background: var(--color-accent) !important;
   color: #fff !important;
 }
 .ant-menu-light .ant-menu-item:hover .ant-menu-item-icon,
 .ant-menu-light .ant-menu-item-active .ant-menu-item-icon {
   color: #fff !important;
 }
-/* Light sidebar: selected item → blue bg + white text */
+/* Light sidebar: selected item → accent bg + white text */
 .ant-menu-light .ant-menu-item-selected {
-  background: #1565C0 !important;
+  background: var(--color-accent) !important;
   color: #fff !important;
 }
 .ant-menu-light .ant-menu-item-selected .ant-menu-item-icon {

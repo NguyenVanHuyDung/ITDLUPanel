@@ -1,10 +1,16 @@
 package v1
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 
+	"github.com/ITDLUPanel/panel/internal/pkg/logger"
 	"github.com/ITDLUPanel/panel/internal/pkg/response"
 	"github.com/ITDLUPanel/panel/internal/service"
+
+	apperrors "github.com/ITDLUPanel/panel/internal/pkg/errors"
 )
 
 // SettingsHandler handles panel settings API endpoints.
@@ -15,6 +21,61 @@ type SettingsHandler struct {
 // NewSettingsHandler creates a new SettingsHandler.
 func NewSettingsHandler(settingsService *service.SettingsService) *SettingsHandler {
 	return &SettingsHandler{settingsService: settingsService}
+}
+
+// AccentPalette represents a single accent color palette preset.
+type AccentPalette struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Light string `json:"light"`
+	Dark  string `json:"dark"`
+}
+
+// accentPalettes is the canonical list of built-in accent palettes.
+var accentPalettes = []AccentPalette{
+	{ID: "default", Name: "DLU Blue", Light: "#1565C0", Dark: "#1E88E5"},
+	{ID: "ocean", Name: "Ocean Teal", Light: "#0F766E", Dark: "#2DD4BF"},
+	{ID: "emerald", Name: "Emerald Forest", Light: "#15803D", Dark: "#22C55E"},
+	{ID: "sunset", Name: "Sunset Orange", Light: "#EA580C", Dark: "#FB923C"},
+	{ID: "crimson", Name: "Crimson Red", Light: "#DC2626", Dark: "#F87171"},
+	{ID: "purple", Name: "Royal Purple", Light: "#7C3AED", Dark: "#A78BFA"},
+	{ID: "rose", Name: "Rose Pink", Light: "#E11D48", Dark: "#FB7185"},
+	{ID: "slate", Name: "Slate Gray", Light: "#475569", Dark: "#94A3B8"},
+}
+
+// validAccentPaletteID returns true when the given id matches a built-in palette.
+func validAccentPaletteID(id string) bool {
+	for _, p := range accentPalettes {
+		if p.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// GetAccentPalettes returns the list of built-in accent palettes.
+func (h *SettingsHandler) GetAccentPalettes() []AccentPalette {
+	out := make([]AccentPalette, len(accentPalettes))
+	copy(out, accentPalettes)
+	return out
+}
+
+// SaveAccentPalette validates and saves the chosen accent palette id.
+func (h *SettingsHandler) SaveAccentPalette(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		id = "default"
+	}
+	if !validAccentPaletteID(id) {
+		return apperrors.New(apperrors.ErrValidation, fmt.Sprintf("unknown accent palette: %s", id))
+	}
+
+	if err := h.settingsService.Set("accent_palette", id); err != nil {
+		return err
+	}
+
+	logger.Info().Str("palette", id).Msg("accent palette updated")
+	return nil
 }
 
 // RegisterRoutes registers settings management routes (admin only).
@@ -34,6 +95,8 @@ func (h *SettingsHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gi
 		settings.PUT("/timezone", h.SetTimezone)
 		settings.PUT("/session-timeout", h.SetSessionTimeout)
 		settings.GET("/timezones", h.GetTimezones)
+		settings.GET("/accent-palettes", h.GetAccentPalettesHTTP)
+		settings.PUT("/accent-palette", h.SetAccentPaletteHTTP)
 	}
 }
 
@@ -258,3 +321,30 @@ func (h *SettingsHandler) GetTimezones(c *gin.Context) {
 	response.Success(c, zones)
 }
 
+// GetAccentPalettes returns the list of built-in accent palettes.
+func (h *SettingsHandler) GetAccentPalettesHTTP(c *gin.Context) {
+	palettes := h.GetAccentPalettes()
+	response.Success(c, palettes)
+}
+
+type setAccentPaletteRequest struct {
+	PaletteID string `json:"palette_id" binding:"required"`
+}
+
+// SetAccentPalette updates the panel's accent palette.
+func (h *SettingsHandler) SetAccentPaletteHTTP(c *gin.Context) {
+	var req setAccentPaletteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "palette_id", Message: "palette_id is required"},
+		})
+		return
+	}
+
+	if err := h.SaveAccentPalette(req.PaletteID); err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"message": "accent palette updated", "palette_id": req.PaletteID})
+}

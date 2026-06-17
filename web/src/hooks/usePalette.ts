@@ -1,4 +1,6 @@
 import { useThemeStore } from '@/stores/theme';
+import { useAccentStore } from '@/stores/accent';
+import { findAccentPalette } from '@/lib/palettes';
 
 export interface Palette {
   card: string;
@@ -77,8 +79,9 @@ const lightPalette: Palette = {
 
 export function usePalette(): { p: Palette; isDark: boolean } {
   const { mode } = useThemeStore();
+  const { paletteId } = useAccentStore();
   const isDark = mode === 'dark';
-  return { p: isDark ? darkPalette : lightPalette, isDark };
+  const base = isDark ? darkPalette : lightPalette;
+  const palette = findAccentPalette(paletteId);
+  return { p: { ...base, accent: isDark ? palette.dark : palette.light }, isDark };
 }
-
-

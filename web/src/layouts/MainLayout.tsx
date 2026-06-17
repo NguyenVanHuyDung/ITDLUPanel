@@ -36,6 +36,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useThemeStore } from '@/stores/theme';
 import { useTaskStore } from '@/stores/task';
 import { useSettingsStore } from '@/stores/settings';
+import { useAccentStore } from '@/stores/accent';
 import { useTaskWebSocket } from '@/hooks/useTaskWebSocket';
 import MessagesBox from '@/components/MessagesBox';
 import api from '@/services/api';
@@ -85,6 +86,10 @@ export default function MainLayout() {
   // Load global settings (timezone, panel name, etc.)
   const { fetchSettings: fetchAppSettings, panelName, hiddenMenuKeys } = useSettingsStore();
   useEffect(() => { fetchAppSettings(); }, [fetchAppSettings]);
+
+  // Sync accent palette from server on mount
+  const { fetchFromServer: fetchAccentPalette } = useAccentStore();
+  useEffect(() => { fetchAccentPalette(); }, [fetchAccentPalette]);
 
   const fetchSysInfo = useCallback(async () => {
     try {
@@ -269,7 +274,7 @@ export default function MainLayout() {
       }}>
         {/* ── Unified Header Bar ── */}
         <div style={{
-          background: 'linear-gradient(135deg, #0D47A1 0%, #1565C0 50%, #1E88E5 100%)',
+          background: 'var(--header-gradient)',
           padding: isMobile ? '0 10px' : '0 20px',
           height: 48,
           display: 'flex',
@@ -369,7 +374,7 @@ export default function MainLayout() {
           background: isDark ? '#161b22' : '#FAFBFC',
         }}>
           <span>© {new Date().getFullYear()} </span>
-          <a href="https://dlu.edu.vn" target="_blank" rel="noreferrer" style={{ color: '#1565C0', fontWeight: 500 }}>
+          <a href="https://dlu.edu.vn" target="_blank" rel="noreferrer" style={{ color: 'var(--color-accent)', fontWeight: 500 }}>
             Đại học Đà Lạt
           </a>
           <span> — {panelName} v{sysInfo?.panel_version || '1.0.0'}</span>

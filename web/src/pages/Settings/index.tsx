@@ -10,7 +10,7 @@ import {
   CloudServerOutlined, FolderOutlined, ContainerOutlined,
   MonitorOutlined, SafetyOutlined, FireOutlined,
   FileTextOutlined, CodeOutlined, ClockCircleOutlined,
-  AppstoreOutlined, UserOutlined,
+  AppstoreOutlined, UserOutlined, BgColorsOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -20,6 +20,7 @@ import api from '@/services/api';
 import type { ApiResponse } from '@/types';
 import { formatDateTime } from '@/lib/datetime';
 import NotificationsTab from './NotificationsTab';
+import AccentPalettePicker from '@/components/AccentPalettePicker';
 
 // ---------------------------------------------------------------------------
 // SVG Icons (consistent with Firewall, etc.)
@@ -153,7 +154,7 @@ export default function Settings() {
   const [securityForm] = Form.useForm();
   const [securityLoading, setSecurityLoading] = useState(false);
   const [timezones, setTimezones] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<'general' | 'server' | 'ssl' | 'security' | 'notifications' | 'menu' | 'danger'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'server' | 'ssl' | 'security' | 'notifications' | 'menu' | 'danger'>('general');
 
   const fetchSettings = useCallback(async () => {
     setLoading(true);
@@ -335,6 +336,7 @@ export default function Settings() {
 
   const tabs = [
     { key: 'general' as const, icon: <SettingOutlined />, label: t('settings.general') },
+    { key: 'appearance' as const, icon: <BgColorsOutlined />, label: t('settings.appearance') },
     { key: 'server' as const, icon: <SetIcon.Server size={14} color="currentColor" />, label: 'Server' },
     { key: 'ssl' as const, icon: <SafetyCertificateOutlined />, label: 'SSL' },
     { key: 'security' as const, icon: <LockOutlined />, label: t('settings.security', 'Security') },
@@ -475,6 +477,14 @@ export default function Settings() {
         </Form>
       </div>
     </Spin>
+  );
+
+  /* ─── Appearance Tab ─── */
+  const renderAppearanceTab = () => (
+    <div style={sectionBox}>
+      {sectionTitle(<BgColorsOutlined style={{ fontSize: 20, color: p.accent }} />, t('settings.appearance'))}
+      <AccentPalettePicker />
+    </div>
   );
 
   /* ─── Server Info Tab ─── */
@@ -939,6 +949,7 @@ export default function Settings() {
         {/* Content */}
         <div style={{ padding: 20 }}>
           {activeTab === 'general' && renderGeneralTab()}
+          {activeTab === 'appearance' && renderAppearanceTab()}
           {activeTab === 'server' && renderServerTab()}
           {activeTab === 'ssl' && renderSSLTab()}
           {activeTab === 'security' && renderSecurityTab()}
