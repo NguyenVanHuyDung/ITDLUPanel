@@ -89,7 +89,7 @@ function GoogleDriveConnectionsTab({ open }: ConnectionsTabProps) {
     try {
       const values = await form.validateFields();
       setSaving(true);
-      const config = JSON.stringify({ client_id: values.client_id, client_secret: values.client_secret, folder_id: values.folder_id || '' });
+      const config = { client_id: values.client_id, client_secret: values.client_secret, folder_id: values.folder_id || '' };
       const payload = { name: values.name, type: 'google_drive', config, is_default: !!values.is_default };
       if (editingId) {
         await api.put(`/cloud-storages/${editingId}`, payload);
@@ -134,19 +134,55 @@ function GoogleDriveConnectionsTab({ open }: ConnectionsTabProps) {
 
   const handleAuthorize = async (id: number) => {
     setAuthorizingId(id);
+    let popup: Window | null = null;
     try {
-      const redirectUrl = window.location.origin + '/api/v1/cloud-storages/oauth/callback';
-      const { data } = await api.get(`/cloud-storages/${id}/auth-url`, { params: { redirect_url: redirectUrl } });
-      const url = (data.data as { url?: string })?.url || (data.data as string);
-      if (url) {
-        window.open(url, '_blank', 'width=600,height=700');
-        message.info('Complete authorization in the popup window, then refresh');
-      } else {
+      const { data } = await api.get(`/cloud-storages/${id}/auth-url`);
+      const authUrl = (data.data as { auth_url?: string })?.auth_url || (data.data as string);
+      if (!authUrl) {
         message.error('Failed to get authorization URL');
+        return;
       }
+      popup = window.open(authUrl, '_blank', 'width=600,height=700,scrollbars=yes');
+      if (!popup) {
+        message.error('Popup was blocked — please allow popups for this site and try again');
+        return;
+      }
+      message.info('Complete authorization in the popup window');
+
+      // Listen for postMessage from popup callback
+      await new Promise<void>((resolve) => {
+        const handler = (event: MessageEvent) => {
+          if (event.data?.type === 'oauth_callback_done') {
+            window.removeEventListener('message', handler);
+            resolve();
+          }
+        };
+        window.addEventListener('message', handler);
+        // Timeout after 5 minutes
+        const timeout = setTimeout(() => {
+          window.removeEventListener('message', handler);
+          resolve();
+        }, 5 * 60 * 1000);
+        // Also resolve if popup is closed without postMessage
+        const checkClosed = setInterval(() => {
+          if (popup?.closed) {
+            clearInterval(checkClosed);
+            clearTimeout(timeout);
+            window.removeEventListener('message', handler);
+            resolve();
+          }
+        }, 500);
+      });
+
+      if (popup && !popup.closed) {
+        popup.close();
+      }
+      message.success('Authorization complete');
+      fetchStorages();
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       message.error(detail || 'Failed to get authorization URL');
+      if (popup && !popup.closed) popup.close();
     } finally {
       setAuthorizingId(null);
     }

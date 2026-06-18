@@ -261,8 +261,29 @@ func (h *CloudStorageHandler) OAuthCallback(c *gin.Context) {
 		return
 	}
 
-	// Redirect back to panel storage page
-	c.Redirect(http.StatusFound, "/storage?oauth=success")
+	// Token saved — return HTML that closes the popup and signals the parent.
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.Header("X-Panel-Origin", oauthCallbackURL(c))
+	c.String(http.StatusOK, `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Authorization</title></head>
+<body>
+<script>
+(function() {
+  try {
+    var origin = window.location.protocol + '//' + window.location.host;
+    if (window.opener && window.opener.postMessage) {
+      window.opener.postMessage({ type: 'oauth_callback_done' }, origin);
+    }
+    document.body.innerHTML = '<h2 style="font-family:sans-serif;text-align:center;margin-top:40px;color:#2e7d32">Authorization successful!</h2><p style="font-family:sans-serif;text-align:center">This window will close automatically.</p>';
+    setTimeout(function() { window.close(); }, 1500);
+  } catch(e) {
+    document.body.innerHTML = '<h2 style="font-family:sans-serif;text-align:center;margin-top:40px">Done. You may close this window.</h2>';
+  }
+})();
+</script>
+</body>
+</html>`)
 }
 
 // oauthCallbackURL constructs the OAuth callback URL from the request.

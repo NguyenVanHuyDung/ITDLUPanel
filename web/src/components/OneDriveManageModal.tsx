@@ -217,21 +217,50 @@ export default function OneDriveManageModal({ open, onClose }: Props) {
 
     const handleAuthorize = async (id: number) => {
       setAuthorizingId(id);
+      let popup: Window | null = null;
       try {
-        const redirectUrl = window.location.origin + '/api/v1/cloud-storages/oauth/callback';
-        const { data } = await api.get(`/cloud-storages/${id}/auth-url`, {
-          params: { redirect_url: redirectUrl },
-        });
+        const { data } = await api.get(`/cloud-storages/${id}/auth-url`);
         const url = data.data?.url || data.data;
-        if (url) {
-          window.open(url, '_blank', 'width=600,height=700');
-          message.info('Complete authorization in the popup window, then refresh');
-        } else {
+        if (!url) {
           message.error('Failed to get authorization URL');
+          return;
         }
+        popup = window.open(url, '_blank', 'width=600,height=700,scrollbars=yes');
+        if (!popup) {
+          message.error('Popup was blocked — please allow popups for this site and try again');
+          return;
+        }
+        message.info('Complete authorization in the popup window');
+
+        await new Promise<void>((resolve) => {
+          const handler = (event: MessageEvent) => {
+            if (event.data?.type === 'oauth_callback_done') {
+              window.removeEventListener('message', handler);
+              resolve();
+            }
+          };
+          window.addEventListener('message', handler);
+          const timeout = setTimeout(() => {
+            window.removeEventListener('message', handler);
+            resolve();
+          }, 5 * 60 * 1000);
+          const checkClosed = setInterval(() => {
+            if (popup?.closed) {
+              clearInterval(checkClosed);
+              clearTimeout(timeout);
+              window.removeEventListener('message', handler);
+              resolve();
+            }
+          }, 500);
+        });
+
+        if (popup && !popup.closed) popup.close();
+        message.success('Authorization complete');
+        fetchStorages();
       } catch (err: unknown) {
         const detail = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
         message.error(detail || 'Failed to get authorization URL');
+        if (popup && !popup.closed) popup.close();
       } finally {
         setAuthorizingId(null);
       }

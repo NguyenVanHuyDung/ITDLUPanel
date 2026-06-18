@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Authorizing...</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0a0a0f;
+    color: #fff;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .card {
+    text-align: center;
+    padding: 40px;
+    border-radius: 12px;
+    background: #16161f;
+    border: 1px solid #2a2a3a;
+    max-width: 400px;
+    width: 90%;
+  }
+  .spinner {
+    width: 48px; height: 48px;
+    border: 3px solid #2a2a3a;
+    border-top-color: #4285F4;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 20px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  h2 { font-size: 18px; margin-bottom: 8px; }
+  p { color: #888; font-size: 13px; }
+  .error { border-top-color: #EA4335; }
+  .error p { color: #EA4335; }
+  .success { border-top-color: #34A853; }
+  .success p { color: #34A853; }
+  .actions { margin-top: 20px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  button {
+    padding: 8px 18px;
+    border-radius: 6px;
+    border: none;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 500;
+  }
+  .btn-primary { background: #4285F4; color: #fff; }
+  .btn-secondary { background: #2a2a3a; color: #aaa; }
+</style>
+</head>
+<body>
+<div class="card" id="card">
+  <div class="spinner" id="spinner"></div>
+  <h2 id="title">Authorizing...</h2>
+  <p id="message">Please wait while we complete the authorization.</p>
+  <div class="actions" id="actions" style="display:none"></div>
+</div>
+
+<script>
+(function() {
+  // Parse OAuth callback params from URL
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const state = params.get('state');
+  const error = params.get('error');
+
+  const card = document.getElementById('card');
+  const spinner = document.getElementById('spinner');
+  const title = document.getElementById('title');
+  const message = document.getElementById('message');
+  const actions = document.getElementById('actions');
+
+  // Fallback: detect origin (used as redirect_url in OAuth)
+  const origin = window.location.origin; // e.g. https://panel.itdlu.net
+
+  if (error) {
+    showResult('error', 'Authorization Failed', decodeURIComponent(error.replace(/_/g, ' ')));
+    return;
+  }
+
+  if (!code || !state) {
+    showResult('error', 'Missing Information', 'No authorization code received. Please try again.');
+    return;
+  }
+
+  // Extract panel origin from the current page path
+  // URL: https://panel.itdlu.net/api/v1/cloud-storages/oauth/callback
+  // We need to go back to the panel root
+  const panelOrigin = window.location.protocol + '//' + window.location.host; // e.g. https://panel.itdlu.net
+
+  // Send code to backend via fetch, then signal parent + close
+  fetch('/api/v1/cloud-storages/oauth/callback' + window.location.search, {
+    method: 'GET',
+    credentials: 'include'
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    showResult('success', 'Authorization Successful', 'You can close this window. The panel will refresh automatically.');
+    // Signal the opening window
+    if (window.opener) {
+      window.opener.postMessage({ type: 'oauth-success', storageId: state }, panelOrigin);
+    }
+    // Auto-close after 2 seconds
+    setTimeout(function() { window.close(); }, 2000);
+  })
+  .catch(function(err) {
+    showResult('error', 'Connection Error', 'Could not reach the panel. Please check your connection.');
+  });
+
+  function showResult(type, t, m) {
+    spinner.style.display = 'none';
+    card.className = 'card ' + type;
+    title.textContent = t;
+    message.textContent = m;
+    var btn = document.createElement('button');
+    btn.className = 'btn-primary';
+    btn.textContent = 'Close Window';
+    btn.onclick = function() { window.close(); };
+    var btn2 = document.createElement('button');
+    btn2.className = 'btn-secondary';
+    btn2.textContent = 'Go to Panel';
+    btn2.onclick = function() { window.location.href = panelOrigin + '/storage'; };
+    actions.style.display = 'flex';
+    actions.appendChild(btn);
+    actions.appendChild(btn2);
+  }
+})();
+</script>
+</body>
+</html>
