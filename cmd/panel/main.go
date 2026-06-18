@@ -127,16 +127,23 @@ func main() {
 }
 
 // installDir returns the panel installation directory derived from the
-// running executable's location (binary lives at <install>/bin/itdlupanel).
-// Falls back to the parent of the config file's directory.
+// running executable's location (binary may be at <root>/bin/itdlupanel
+// or directly at <root>/itdlupanel). Falls back to the parent of the
+// config file's directory.
 func installDir(configPath string) string {
 	if exe, err := os.Executable(); err == nil {
 		if real, err2 := filepath.EvalSymlinks(exe); err2 == nil {
 			exe = real
 		}
+		// Binary at <root>/bin/itdlupanel → root is parent of parent
 		dir := filepath.Dir(filepath.Dir(exe))
-		if _, err := os.Stat(dir); err == nil {
+		if _, err := os.Stat(filepath.Join(dir, "data", "panel.db")); err == nil {
 			return dir
+		}
+		// Binary at <root>/itdlupanel (no bin subdir) → root is parent
+		dir2 := filepath.Dir(exe)
+		if _, err := os.Stat(filepath.Join(dir2, "data", "panel.db")); err == nil {
+			return dir2
 		}
 	}
 	return filepath.Dir(filepath.Dir(configPath))
