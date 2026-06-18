@@ -4,8 +4,7 @@ import {
   ReloadOutlined, SearchOutlined, ClearOutlined, InfoCircleOutlined,
   WarningOutlined, BugOutlined, CloseCircleOutlined, GlobalOutlined,
   RightOutlined, LeftOutlined, BarChartOutlined,
-  FileTextOutlined, ExclamationCircleOutlined, CalendarOutlined,
-  StopOutlined, PlusOutlined,
+  FileTextOutlined, ExclamationCircleOutlined, StopOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -19,10 +18,14 @@ import dayjs from 'dayjs';
 
 interface AuditEntry {
   id: number;
-  user: string;
+  user_id: number;
+  username: string;
   action: string;
   resource: string;
+  resource_id: string;
+  detail: string;
   ip: string;
+  user_agent: string;
   created_at: string;
 }
 
@@ -116,7 +119,7 @@ function parseAccessLogLine(raw: string, idx: number): ParsedAccessLog {
   const timeMatch = raw.match(/\[([^\]]+)\]/);
   const methodMatch = raw.match(/"(\S+)\s+(\/\S*)/);
   const statusMatch = raw.match(/\s(\d{3})\s/);
-  const sizeMatch = raw.match(/\s(\d+)\s["\[]/);
+  const sizeMatch = raw.match(/\s(\d+)\s["[]/);
 
   // If we found at least IP or time, show partial data with raw fallback
   if (ipMatch || timeMatch || methodMatch) {
@@ -238,8 +241,8 @@ function MetricCard({ value, label, color, p, isDark }: {
   );
 }
 
-function ToggleBtn({ active, color, label, onClick, p }: {
-  active: boolean; color: string; label: string; onClick: () => void; p: Palette;
+function ToggleBtn({ active, color, label, onClick }: {
+  active: boolean; color: string; label: string; onClick: () => void;
 }) {
   return (
     <button onClick={onClick} style={{
@@ -345,11 +348,23 @@ export default function Logs() {
   const [panelLines, setPanelLines] = useState<string[]>([]);
   const [sshLines, setSshLines] = useState<string[]>([]);
   const [auditData, setAuditData] = useState<AuditEntry[]>([]);
+  const [auditTotal, setAuditTotal] = useState(0);
+  const [auditPage, setAuditPage] = useState(1);
+  const [auditPageSize, setAuditPageSize] = useState(20);
   const [loading, setLoading] = useState(false);
   const [lines, setLines] = useState(200);
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState('panel');
   const [levelFilter, setLevelFilter] = useState<string>('all');
+
+  // Audit filters
+  const [auditUserFilter, setAuditUserFilter] = useState<string>('');
+  const [auditActionFilter, setAuditActionFilter] = useState<string>('');
+  const [auditResourceFilter, setAuditResourceFilter] = useState<string>('');
+  const [auditIpFilter, setAuditIpFilter] = useState<string>('');
+  const [auditStatusFilter, setAuditStatusFilter] = useState<'all' | 'success' | 'failed'>('all');
+  const [auditDateRange, setAuditDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
+  const [auditExpandedRows, setAuditExpandedRows] = useState<Set<number>>(new Set());
 
   // Panel log filters
   const [durationFilter, setDurationFilter] = useState<number>(0);
@@ -426,11 +441,16 @@ export default function Logs() {
     }
   }, [t]);
 
-  const fetchAuditLog = useCallback(async () => {
+  const fetchAuditLog = useCallback(async (page: number, pageSize: number) => {
     setLoading(true);
     try {
-      const { data } = await api.get<ApiResponse<AuditEntry[]>>('/logs/audit');
+      const { data } = await api.get<ApiResponse<AuditEntry[]>>('/logs/audit', {
+        params: { page, page_size: pageSize },
+      });
       setAuditData(data.data ?? []);
+      // Backend returns paginated payload via response.Paginated → pagination.total
+      const resp = data as unknown as { pagination?: { total: number } };
+      setAuditTotal(resp.pagination?.total ?? 0);
     } catch {
       message.error(t('common.error'));
     } finally {
@@ -509,14 +529,19 @@ export default function Logs() {
     else if (activeTab === 'website') {
       if (selectedSiteId) fetchWebsiteLog(selectedSiteId, websiteLogType, lines, logDateRange);
     }
-    else fetchAuditLog();
-  }, [activeTab, lines, fetchPanelLog, fetchSshLog, fetchAuditLog, fetchWebsiteLog, selectedSiteId, websiteLogType, logDateRange]);
+    else fetchAuditLog(auditPage, auditPageSize);
+  }, [activeTab, lines, fetchPanelLog, fetchSshLog, fetchAuditLog, fetchWebsiteLog, selectedSiteId, websiteLogType, logDateRange, auditPage, auditPageSize]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
   useEffect(() => {
     if (activeTab === 'website' && sites.length === 0) fetchSites();
   }, [activeTab, sites.length, fetchSites]);
+
+  // Refetch audit when page/size changes
+  useEffect(() => {
+    if (activeTab === 'audit') fetchAuditLog(auditPage, auditPageSize);
+  }, [auditPage, auditPageSize, activeTab, fetchAuditLog]);
 
   const handleClearLog = async () => {
     try {
@@ -687,16 +712,106 @@ export default function Logs() {
   // Audit stats
   const auditStats = useMemo(() => {
     const actionCounts = new Map<string, number>();
+    const userCounts = new Map<string, number>();
+    const resourceCounts = new Map<string, number>();
+    const hourCounts = new Map<number, number>();
+    let todayCount = 0;
+    let failedCount = 0;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
     for (const entry of auditData) {
       const a = entry.action || 'unknown';
       actionCounts.set(a, (actionCounts.get(a) || 0) + 1);
+
+      const u = entry.username || 'unknown';
+      userCounts.set(u, (userCounts.get(u) || 0) + 1);
+
+      const r = entry.resource || 'unknown';
+      resourceCounts.set(r, (resourceCounts.get(r) || 0) + 1);
+
+      if (entry.created_at) {
+        const d = new Date(entry.created_at);
+        if (d >= today) todayCount++;
+        // Track per-hour activity for timeline
+        const hour = d.getHours();
+        hourCounts.set(hour, (hourCounts.get(hour) || 0) + 1);
+      }
+
+      const lowerAction = (entry.action || '').toLowerCase();
+      const lowerDetail = (entry.detail || '').toLowerCase();
+      if (
+        lowerAction.includes('fail') ||
+        lowerAction.includes('error') ||
+        lowerDetail.includes('"success":false') ||
+        lowerDetail.includes('"status":"failed"') ||
+        lowerDetail.includes('"error":')
+      ) {
+        failedCount++;
+      }
     }
+
+    // Timeline: 24-hour activity distribution (current page only)
+    const hourly = Array.from({ length: 24 }, (_, h) => ({ hour: h, count: hourCounts.get(h) || 0 }));
+    const hourlyMax = Math.max(1, ...hourly.map(h => h.count));
+
     return {
-      total: auditData.length,
+      total: auditTotal,
+      pageTotal: auditData.length,
+      todayCount,
+      uniqueUsers: userCounts.size,
+      failedCount,
       actions: [...actionCounts.entries()]
         .sort((a, b) => b[1] - a[1])
         .map(([action, count]) => ({ action, count })),
+      users: [...userCounts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([user, count]) => ({ user, count })),
+      resources: [...resourceCounts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([resource, count]) => ({ resource, count })),
+      hourly,
+      hourlyMax,
     };
+  }, [auditData, auditTotal]);
+
+  // Compute status for an entry (best-effort: scan detail for success/fail markers)
+  const auditStatus = (entry: AuditEntry): 'success' | 'failed' | 'unknown' => {
+    const lowerAction = (entry.action || '').toLowerCase();
+    const lowerDetail = (entry.detail || '').toLowerCase();
+    if (
+      lowerAction.includes('fail') ||
+      lowerAction.includes('error') ||
+      lowerDetail.includes('"success":false') ||
+      lowerDetail.includes('"status":"failed"') ||
+      lowerDetail.includes('"error":')
+    ) return 'failed';
+    if (
+      lowerAction.includes('login') ||
+      lowerAction.includes('auth') ||
+      lowerDetail.includes('"success":true') ||
+      lowerDetail.includes('"status":"success"')
+    ) return 'success';
+    return 'unknown';
+  };
+
+  // Audit filter options
+  const auditUserOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of auditData) if (e.username) set.add(e.username);
+    return [...set].sort();
+  }, [auditData]);
+
+  const auditActionOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of auditData) if (e.action) set.add(e.action);
+    return [...set].sort();
+  }, [auditData]);
+
+  const auditResourceOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of auditData) if (e.resource) set.add(e.resource);
+    return [...set].sort();
   }, [auditData]);
 
   const isJsonLog = currentLines.length > 0 && currentLines[0]?.startsWith('{');
@@ -778,7 +893,7 @@ export default function Logs() {
     {
       title: 'Source', key: 'source', width: isMobile ? 80 : 120,
       render: (_: unknown, record: ParsedLog) => {
-        const m = record.raw.match(/^\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\S+\s+(\S+?)[\[:]/);
+        const m = record.raw.match(/^\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\S+\s+(\S+?)\[/);
         const src = m ? m[1] : '';
         return src ? (
           <span style={{
@@ -861,65 +976,98 @@ export default function Logs() {
 
   const auditColumns = [
     {
-      title: 'Time', dataIndex: 'created_at', key: 'created_at', width: isMobile ? 100 : 160,
+      title: t('logs.audit.col_time'), dataIndex: 'created_at', key: 'created_at', width: isMobile ? 90 : 150,
       sorter: (a: AuditEntry, b: AuditEntry) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
       defaultSortOrder: 'descend' as const,
       render: (val: string) => {
         if (!val) return <span style={{ color: p.textDim }}>—</span>;
         const d = new Date(val);
         return (
-          <div style={{ fontSize: 12, lineHeight: 1.5 }}>
-            <div style={{ color: p.text, fontWeight: 500 }}>{d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
-            <div style={{ color: p.textMuted, fontSize: 11 }}>{d.toLocaleTimeString('en-GB', { hour12: false })}</div>
+          <div style={{ fontSize: 11, lineHeight: 1.5 }}>
+            <div style={{ color: p.text, fontWeight: 500, fontFamily: 'monospace' }}>
+              {d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })}
+            </div>
+            <div style={{ color: p.textMuted, fontFamily: 'monospace' }}>
+              {d.toLocaleTimeString('en-GB', { hour12: false })}
+            </div>
           </div>
         );
       },
     },
     {
-      title: 'User', dataIndex: 'user', key: 'user', width: isMobile ? 80 : 120,
+      title: t('logs.audit.col_user'), dataIndex: 'username', key: 'username', width: isMobile ? 80 : 130,
       render: (val: string) => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
           <div style={{
-            width: 26, height: 26, borderRadius: 6,
-            background: `${p.accent}15`, color: p.accent,
+            width: 28, height: 28, borderRadius: 7,
+            background: `${p.accent}18`, color: p.accent,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 11, fontWeight: 700, flexShrink: 0,
+            fontSize: 11, fontWeight: 700, flexShrink: 0, fontFamily: 'monospace',
           }}>{(val || '?')[0].toUpperCase()}</div>
-          <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>{val}</span>
+          <span style={{ fontSize: 12, fontWeight: 500, color: p.text }}>{val || '—'}</span>
         </div>
       ),
     },
     {
-      title: 'Action', dataIndex: 'action', key: 'action', width: isMobile ? 80 : 140,
+      title: t('logs.audit.col_action'), dataIndex: 'action', key: 'action', width: isMobile ? 80 : 130,
       render: (val: string) => {
         const lower = (val || '').toLowerCase();
         let color = p.accent;
         if (lower.includes('create') || lower.includes('add') || lower.includes('install')) color = p.green;
         else if (lower.includes('delete') || lower.includes('remove') || lower.includes('uninstall')) color = p.red;
-        else if (lower.includes('update') || lower.includes('edit') || lower.includes('change') || lower.includes('reset')) color = p.amber;
-        else if (lower.includes('login') || lower.includes('logout') || lower.includes('auth')) color = p.purple;
-        else if (lower.includes('start') || lower.includes('stop') || lower.includes('restart')) color = p.cyan;
+        else if (lower.includes('update') || lower.includes('edit') || lower.includes('change') || lower.includes('reset') || lower.includes('save')) color = p.amber;
+        else if (lower.includes('login') || lower.includes('logout') || lower.includes('auth') || lower.includes('sign')) color = p.purple;
+        else if (lower.includes('start') || lower.includes('stop') || lower.includes('restart') || lower.includes('enable') || lower.includes('disable')) color = p.cyan;
+        else if (lower.includes('read') || lower.includes('view') || lower.includes('get') || lower.includes('list')) color = '#8b949e';
         return (
           <span style={{
-            fontSize: 11, padding: '3px 10px', borderRadius: 5, fontWeight: 600,
-            background: `${color}15`, color, display: 'inline-block',
+            fontSize: 11, padding: '3px 9px', borderRadius: 5, fontWeight: 600,
+            background: `${color}15`, color, display: 'inline-block', whiteSpace: 'nowrap',
           }}>{val}</span>
         );
       },
     },
     {
-      title: 'Resource', dataIndex: 'resource', key: 'resource', ellipsis: true,
-      render: (val: string) => <span style={{ fontSize: 12, color: p.text }}>{val || '—'}</span>,
+      title: t('logs.audit.col_resource'), dataIndex: 'resource', key: 'resource', ellipsis: true,
+      render: (val: string, row: AuditEntry) => (
+        <div>
+          <span style={{ fontSize: 12, color: p.text }}>{val || '—'}</span>
+          {row.resource_id && (
+            <div style={{ fontSize: 10, color: p.textMuted, fontFamily: 'monospace', marginTop: 2 }}>
+              #{row.resource_id.length > 20 ? row.resource_id.substring(0, 20) + '…' : row.resource_id}
+            </div>
+          )}
+        </div>
+      ),
     },
     {
-      title: 'IP', dataIndex: 'ip', key: 'ip', width: isMobile ? 90 : 130,
+      title: t('logs.audit.col_ip'), dataIndex: 'ip', key: 'ip', width: isMobile ? 90 : 120,
       render: (v: string) => v ? (
         <span style={{
-          fontSize: 11, padding: '2px 8px', borderRadius: 4,
+          fontSize: 11, padding: '2px 7px', borderRadius: 4,
           background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-          color: p.textMuted,
+          color: p.textMuted, fontFamily: 'monospace',
         }}>{v}</span>
       ) : <span style={{ color: p.textDim }}>—</span>,
+    },
+    {
+      title: t('logs.audit.col_status'), key: 'status', width: 80,
+      render: (_: unknown, row: AuditEntry) => {
+        const s = auditStatus(row);
+        if (s === 'failed') return (
+          <span style={{
+            fontSize: 10, padding: '2px 8px', borderRadius: 4, fontWeight: 600,
+            background: `${p.red}15`, color: p.red,
+          }}>{t('logs.audit.status_failed')}</span>
+        );
+        if (s === 'success') return (
+          <span style={{
+            fontSize: 10, padding: '2px 8px', borderRadius: 4, fontWeight: 600,
+            background: `${p.green}15`, color: p.green,
+          }}>{t('logs.audit.status_success')}</span>
+        );
+        return <span style={{ color: p.textDim }}>—</span>;
+      },
     },
   ];
 
@@ -929,7 +1077,7 @@ export default function Logs() {
       title: 'Time', dataIndex: 'time', key: 'time', width: isMobile ? 100 : 180,
       sorter: (a: ParsedAccessLog, b: ParsedAccessLog) => a.key - b.key,
       defaultSortOrder: 'descend' as const,
-      render: (v: string, r: ParsedAccessLog) => {
+      render: (v: string) => {
         if (!v) return <span style={{ fontSize: 10, color: p.textDim, fontStyle: 'italic' }}>—</span>;
         return <span style={{ fontSize: 11, color: p.textMuted, whiteSpace: 'nowrap' }}>{v}</span>;
       },
@@ -1084,7 +1232,7 @@ export default function Logs() {
     panel: panelLines.length,
     ssh: sshLines.length,
     website: websiteLines.length,
-    audit: auditData.length,
+    audit: auditTotal,
   };
 
   const tabs = [
@@ -1521,53 +1669,450 @@ export default function Logs() {
     );
   };
 
-  // Audit filtered data (must be at top level, not inside render function)
+  // Audit filtered data
   const filteredAudit = useMemo(() =>
-    auditData.filter((row) =>
-      !search.trim() || Object.values(row).some((v) => String(v).toLowerCase().includes(search.toLowerCase()))
-    ), [auditData, search]);
+    auditData.filter((row) => {
+      if (!auditUserFilter && !auditActionFilter && !auditResourceFilter && !auditIpFilter && auditStatusFilter === 'all' && !auditDateRange) {
+        return !search.trim() || Object.values(row).some((v) => String(v).toLowerCase().includes(search.toLowerCase()));
+      }
+      if (auditUserFilter && row.username !== auditUserFilter) return false;
+      if (auditActionFilter && row.action !== auditActionFilter) return false;
+      if (auditResourceFilter && row.resource !== auditResourceFilter) return false;
+      if (auditIpFilter && !row.ip.toLowerCase().includes(auditIpFilter.toLowerCase())) return false;
+      if (auditStatusFilter !== 'all') {
+        const status = auditStatus(row);
+        if (auditStatusFilter === 'failed' && status !== 'failed') return false;
+        if (auditStatusFilter === 'success' && status !== 'success') return false;
+      }
+      if (auditDateRange) {
+        const d = new Date(row.created_at);
+        if (d < auditDateRange[0].startOf('day').toDate() || d > auditDateRange[1].endOf('day').toDate()) return false;
+      }
+      if (search.trim()) {
+        return Object.values(row).some((v) => String(v).toLowerCase().includes(search.toLowerCase()));
+      }
+      return true;
+    }), [auditData, search, auditUserFilter, auditActionFilter, auditResourceFilter, auditIpFilter, auditStatusFilter, auditDateRange]);
+
+  // Timeline mini-chart component (24h bar chart)
+  const AuditTimelineChart = ({ hourly, max }: { hourly: { hour: number; count: number }[]; max: number }) => (
+    <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end', height: 40 }}>
+      {hourly.map((h) => (
+        <Tooltip key={h.hour} title={`${h.hour}:00 — ${h.count}`}>
+          <div style={{
+            flex: 1,
+            height: max > 0 ? `${(h.count / max) * 100}%` : '2px',
+            minHeight: h.count > 0 ? 2 : 1,
+            background: h.count > 0 ? `${p.accent}80` : p.barTrack,
+            borderRadius: '2px 2px 0 0',
+            transition: 'height 0.3s',
+          }} />
+        </Tooltip>
+      ))}
+    </div>
+  );
+
+  // Status badge for audit table
+  const AuditStatusBadge = ({ status, t }: { status: 'success' | 'failed' | 'unknown'; t: (key: string) => string }) => {
+    if (status === 'failed') return (
+      <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, fontWeight: 600, background: `${p.red}15`, color: p.red }}>
+        {t('logs.audit.status_failed')}
+      </span>
+    );
+    if (status === 'success') return (
+      <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, fontWeight: 600, background: `${p.green}15`, color: p.green }}>
+        {t('logs.audit.status_success')}
+      </span>
+    );
+    return <span style={{ color: p.textDim }}>—</span>;
+  };
 
   const renderAuditTab = () => {
-    const { total, actions } = auditStats;
-    const actionTotal = actions.reduce((s, a) => s + a.count, 0) || 1;
-    const segments = actions.slice(0, 6).map((a) => ({
-      color: auditActionColor(a.action),
-      pct: (a.count / actionTotal) * 100,
-      label: `${a.action} (${a.count})`,
-    }));
-    const remaining = actions.slice(6).reduce((s, a) => s + a.count, 0);
-    if (remaining > 0) {
-      segments.push({ color: p.textDim, pct: (remaining / actionTotal) * 100, label: `Other (${remaining})` });
-    }
+    const {
+      total, pageTotal, todayCount, uniqueUsers, failedCount,
+      actions, users, resources, hourly, hourlyMax,
+    } = auditStats;
+
+    const totalFiltered = filteredAudit.length;
+    const showingFiltered = totalFiltered !== pageTotal;
+
+    const activeFilterCount = [
+      auditUserFilter, auditActionFilter, auditResourceFilter,
+      auditIpFilter, auditStatusFilter !== 'all', auditDateRange,
+    ].filter(Boolean).length;
+
+    const hasFilters = activeFilterCount > 0 || search.trim();
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: sectionGap }}>
-        {/* Stats */}
+        {/* ─── KPI Cards Row ─── */}
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <MetricCard value={total} label="Total Actions" p={p} isDark={isDark} />
-          {actions.slice(0, 3).map(a => (
-            <MetricCard key={a.action} value={a.count} label={a.action} color={auditActionColor(a.action)} p={p} isDark={isDark} />
-          ))}
+          <MetricCard value={total.toLocaleString()} label={t('logs.audit.stats_total')} p={p} isDark={isDark} />
+          <MetricCard value={todayCount.toLocaleString()} label={t('logs.audit.stats_today')} p={p} isDark={isDark} />
+          <MetricCard value={uniqueUsers.toLocaleString()} label={t('logs.audit.stats_unique_users')} p={p} isDark={isDark} />
+          <MetricCard value={failedCount.toLocaleString()} label={t('logs.audit.stats_failed_attempts')} color={failedCount > 0 ? p.red : undefined} p={p} isDark={isDark} />
+          {actions[0] && (
+            <MetricCard value={actions[0].action} label={t('logs.audit.stats_top_action')} color={auditActionColor(actions[0].action)} p={p} isDark={isDark} />
+          )}
+          {users[0] && (
+            <MetricCard value={users[0].user} label={t('logs.audit.stats_top_user')} color={p.accent} p={p} isDark={isDark} />
+          )}
         </div>
 
-        {/* Action distribution */}
-        {total > 0 && (
-          <div style={{ padding: '0 4px' }}>
-            <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4 }}>Action Distribution</div>
-            <DistributionBar segments={segments} p={p} />
+        {/* ─── Analytics + Users 2-column layout ─── */}
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          {/* Left: Action Distribution */}
+          <div style={{
+            flex: '1 1 300px', padding: '14px 16px', borderRadius: 8,
+            background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)',
+            border: `1px solid ${p.cardBorder}`,
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: p.text, marginBottom: 10 }}>
+              {t('logs.audit.action_distribution')}
+            </div>
+            {actions.length > 0 ? (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 12 }}>
+                  {actions.slice(0, 8).map((a) => (
+                    <div key={a.action} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+                      <span style={{ width: 80, color: p.text, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        {a.action}
+                      </span>
+                      <div style={{ flex: 1, height: 5, borderRadius: 3, background: p.barTrack, overflow: 'hidden' }}>
+                        <div style={{
+                          height: '100%', borderRadius: 3,
+                          background: auditActionColor(a.action),
+                          width: `${total > 0 ? (a.count / total) * 100 : 0}%`,
+                          transition: 'width 0.3s',
+                        }} />
+                      </div>
+                      <span style={{ color: p.textMuted, width: 30, textAlign: 'right', flexShrink: 0 }}>
+                        {a.count}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {/* Timeline chart */}
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ fontSize: 10, color: p.textDim, marginBottom: 4 }}>24h Activity</div>
+                  <AuditTimelineChart hourly={hourly} max={hourlyMax} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
+                    <span style={{ fontSize: 9, color: p.textDim }}>00:00</span>
+                    <span style={{ fontSize: 9, color: p.textDim }}>12:00</span>
+                    <span style={{ fontSize: 9, color: p.textDim }}>23:00</span>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '20px 0', color: p.textDim, fontSize: 12 }}>
+                {t('logs.audit.no_data')}
+              </div>
+            )}
           </div>
-        )}
 
-        {/* Table */}
-        <Table
-          columns={auditColumns}
-          dataSource={filteredAudit}
-          rowKey="id"
-          loading={loading}
-          size="small"
-          pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: [20, 50, 100, 200], showTotal: (t) => `${t} entries` }}
-          scroll={{ x: 600, y: 'calc(100vh - 480px)' }}
-        />
+          {/* Right: Top Users + Top Resources */}
+          <div style={{
+            flex: '1 1 300px', padding: '14px 16px', borderRadius: 8,
+            background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)',
+            border: `1px solid ${p.cardBorder}`,
+            display: 'flex', flexDirection: 'column', gap: 16,
+          }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: p.text, marginBottom: 8 }}>
+                {t('logs.audit.user_activity')}
+              </div>
+              {users.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {users.slice(0, 6).map((u) => (
+                    <div key={u.user} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+                      <div style={{
+                        width: 22, height: 22, borderRadius: 5,
+                        background: `${p.accent}15`, color: p.accent,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 10, fontWeight: 700, flexShrink: 0,
+                      }}>{u.user[0]?.toUpperCase() || '?'}</div>
+                      <span style={{ flex: 1, color: p.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {u.user}
+                      </span>
+                      <span style={{ color: p.textMuted }}>{u.count}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '12px 0', color: p.textDim, fontSize: 11 }}>
+                  {t('logs.audit.no_data')}
+                </div>
+              )}
+            </div>
+
+            {/* Top Resources */}
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: p.text, marginBottom: 8 }}>
+                Top Resources
+              </div>
+              {resources.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {resources.slice(0, 5).map((r) => (
+                    <div key={r.resource} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+                      <span style={{
+                        fontSize: 9, padding: '1px 5px', borderRadius: 3,
+                        background: `${p.amber}15`, color: p.amber, fontWeight: 600,
+                      }}>{r.resource}</span>
+                      <span style={{ flex: 1 }} />
+                      <span style={{ color: p.textMuted }}>{r.count}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '12px 0', color: p.textDim, fontSize: 11 }}>
+                  —
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ─── Filter Bar ─── */}
+        <div style={{
+          display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center',
+          padding: '10px 14px', borderRadius: 8,
+          background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)',
+          border: `1px solid ${p.cardBorder}`,
+        }}>
+          {/* User filter */}
+          <div>
+            <Select
+              value={auditUserFilter || undefined}
+              onChange={(v) => setAuditUserFilter(v || '')}
+              allowClear
+              placeholder={t('logs.audit.filter_user')}
+              style={{ width: 130 }}
+              size="small"
+              options={auditUserOptions.map(u => ({ label: u, value: u }))}
+            />
+          </div>
+
+          {/* Action filter */}
+          <div>
+            <Select
+              value={auditActionFilter || undefined}
+              onChange={(v) => setAuditActionFilter(v || '')}
+              allowClear
+              placeholder={t('logs.audit.filter_action')}
+              style={{ width: 140 }}
+              size="small"
+              options={auditActionOptions.map(a => ({ label: a, value: a }))}
+            />
+          </div>
+
+          {/* Resource filter */}
+          <div>
+            <Select
+              value={auditResourceFilter || undefined}
+              onChange={(v) => setAuditResourceFilter(v || '')}
+              allowClear
+              placeholder={t('logs.audit.filter_resource')}
+              style={{ width: 130 }}
+              size="small"
+              options={auditResourceOptions.map(r => ({ label: r, value: r }))}
+            />
+          </div>
+
+          {/* IP filter */}
+          <Input
+            placeholder={t('logs.audit.filter_ip')}
+            value={auditIpFilter}
+            onChange={(e) => setAuditIpFilter(e.target.value)}
+            allowClear
+            size="small"
+            style={{ width: 130 }}
+            prefix={<SearchOutlined style={{ color: p.textDim, fontSize: 10 }} />}
+          />
+
+          {/* Status filter */}
+          <div style={{ display: 'flex', gap: 4 }}>
+            {(['all', 'success', 'failed'] as const).map(s => (
+              <ToggleBtn
+                key={s}
+                active={auditStatusFilter === s}
+                color={s === 'failed' ? p.red : s === 'success' ? p.green : p.accent}
+                label={s === 'all' ? t('logs.audit.filter_all') : s === 'success' ? t('logs.audit.filter_success') : t('logs.audit.filter_failed')}
+                onClick={() => setAuditStatusFilter(s)}
+                p={p}
+              />
+            ))}
+          </div>
+
+          {/* Date range */}
+          <DatePicker.RangePicker
+            value={auditDateRange}
+            onChange={(dates) => setAuditDateRange(dates as [dayjs.Dayjs, dayjs.Dayjs] | null)}
+            allowClear
+            placeholder={[t('logs.audit.filter_date_from'), t('logs.audit.filter_date_to')]}
+            size="small"
+            style={{ width: 220 }}
+            presets={[
+              { label: t('logs.audit.preset_today'), value: [dayjs(), dayjs()] },
+              { label: t('logs.audit.preset_yesterday'), value: [dayjs().subtract(1, 'day'), dayjs().subtract(1, 'day')] },
+              { label: t('logs.audit.preset_7d'), value: [dayjs().subtract(6, 'day'), dayjs()] },
+              { label: t('logs.audit.preset_30d'), value: [dayjs().subtract(29, 'day'), dayjs()] },
+            ]}
+          />
+
+          {/* Clear filters */}
+          {hasFilters && (
+            <button
+              onClick={() => {
+                setAuditUserFilter('');
+                setAuditActionFilter('');
+                setAuditResourceFilter('');
+                setAuditIpFilter('');
+                setAuditStatusFilter('all');
+                setAuditDateRange(null);
+                setSearch('');
+              }}
+              style={{
+                padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 500,
+                border: `1px solid ${p.red}50`, background: `${p.red}10`,
+                color: p.red, cursor: 'pointer',
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+              }}
+            >
+              <ClearOutlined style={{ fontSize: 10 }} />
+              {t('logs.audit.filter_clear')}
+            </button>
+          )}
+
+          {/* Active filter count */}
+          {activeFilterCount > 0 && (
+            <Tag color="blue" style={{ fontSize: 10, margin: 0 }}>
+              {totalFiltered} / {total} {t('logs.audit.showing').split(' of ')[1]?.replace(' entries', '')}
+            </Tag>
+          )}
+        </div>
+
+        {/* ─── Table ─── */}
+        {filteredAudit.length === 0 ? (
+          <div style={{
+            textAlign: 'center', padding: '40px 0',
+            color: p.textMuted, fontSize: 13,
+          }}>
+            {hasFilters ? t('logs.audit.no_match') : t('logs.audit.no_data')}
+          </div>
+        ) : (
+          <Table
+            columns={auditColumns}
+            dataSource={filteredAudit}
+            rowKey="id"
+            loading={loading}
+            size="small"
+            pagination={{
+              current: auditPage,
+              pageSize: auditPageSize,
+              total: showingFiltered ? totalFiltered : auditTotal,
+              showSizeChanger: true,
+              pageSizeOptions: [10, 20, 50, 100],
+              showTotal: (t: number) => `${t} entries`,
+              onChange: (page, size) => {
+                setAuditPage(page);
+                setAuditPageSize(size);
+              },
+            }}
+            scroll={{ x: 600, y: 'calc(100vh - 620px)' }}
+            expandable={{
+              expandedRowKeys: [...auditExpandedRows],
+              onExpand: (expanded, record) => {
+                setAuditExpandedRows(prev => {
+                  const next = new Set(prev);
+                  if (expanded) next.add(record.id); else next.delete(record.id);
+                  return next;
+                });
+              },
+              expandedRowRender: (record: AuditEntry) => {
+                // Parse detail as JSON if possible
+                let parsedDetail: Record<string, unknown> | null = null;
+                let detailText = record.detail;
+                try {
+                  if (record.detail) {
+                    parsedDetail = JSON.parse(record.detail);
+                    detailText = JSON.stringify(parsedDetail, null, 2);
+                  }
+                } catch {
+                  // keep raw text
+                }
+
+                return (
+                  <div style={{
+                    padding: '10px 14px', background: p.expandBg, borderRadius: 6,
+                    fontSize: 12, display: 'flex', flexDirection: 'column', gap: 8,
+                  }}>
+                    {/* Status + raw detail */}
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                        <span style={{ color: p.textDim, fontSize: 11, fontWeight: 600 }}>{t('logs.audit.col_status')}:</span>
+                        <AuditStatusBadge status={auditStatus(record)} t={(k) => t(k)} />
+                      </div>
+                      {record.detail && (
+                        <div>
+                          <div style={{ color: p.textDim, fontSize: 11, fontWeight: 600, marginBottom: 4 }}>
+                            {t('logs.audit.raw_detail')}
+                          </div>
+                          <pre style={{
+                            margin: 0, padding: '8px 10px', borderRadius: 6,
+                            background: p.codeBg, color: p.text,
+                            fontSize: 11, lineHeight: 1.6,
+                            overflow: 'auto', maxHeight: 200,
+                            border: `1px solid ${p.cardBorder}`,
+                          }}>
+                            {parsedDetail ? (
+                              <code>{detailText}</code>
+                            ) : (
+                              <code>{record.detail.length > 500 ? record.detail.substring(0, 500) + '…' : record.detail}</code>
+                            )}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* User Agent */}
+                    {record.user_agent && (
+                      <div>
+                        <span style={{ color: p.textDim, fontSize: 11, fontWeight: 600 }}>
+                          {t('logs.audit.col_user_agent')}:
+                        </span>
+                        <div style={{
+                          marginTop: 4, padding: '6px 10px', borderRadius: 6,
+                          background: p.codeBg, fontSize: 11, color: p.textMuted,
+                          border: `1px solid ${p.cardBorder}`,
+                          wordBreak: 'break-all',
+                        }}>
+                          {record.user_agent}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Resource ID */}
+                    {record.resource_id && (
+                      <div>
+                        <span style={{ color: p.textDim, fontSize: 11 }}>{t('logs.audit.col_resource_id')}:</span>{' '}
+                        <code style={{ fontSize: 11, color: p.text, background: p.codeBg, padding: '1px 5px', borderRadius: 3 }}>
+                          {record.resource_id}
+                        </code>
+                      </div>
+                    )}
+
+                    {/* Raw JSON line */}
+                    <div style={{ marginTop: 2 }}>
+                      <code style={{ fontSize: 10, color: p.textDim, wordBreak: 'break-all' }}>
+                        {JSON.stringify(record)}
+                      </code>
+                    </div>
+                  </div>
+                );
+              },
+            }}
+          />
+        )}
       </div>
     );
   };
