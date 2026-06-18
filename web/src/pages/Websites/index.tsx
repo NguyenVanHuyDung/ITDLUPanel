@@ -1699,6 +1699,7 @@ function ResponseLogPanel({ site }: { site: Site }) {
   const [numLines, setNumLines] = useState(100);
   const [logDate, setLogDate] = useState<string>('');
   const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [searchText, setSearchText] = useState('');
 
   // Fetch available dates
   useEffect(() => {
@@ -1717,31 +1718,79 @@ function ResponseLogPanel({ site }: { site: Site }) {
       if (Array.isArray(raw)) setLines(raw);
       else if (typeof raw === 'string') setLines(raw.split('\n').filter(Boolean));
       else setLines([]);
-    } catch {
-      setLines([]);
-    } finally {
-      setLoading(false);
-    }
+    } catch { setLines([]); }
+    finally { setLoading(false); }
   }, [site.id, logType, numLines, logDate]);
 
   useEffect(() => { fetchLog(); }, [fetchLog]);
 
+  // ── Access log stats ──────────────────────────────────────────────────
+  const accessStats = useMemo(() => {
+    const byStatus: Record<string, number> = {};
+    const byMethod: Record<string, number> = {};
+    let totalSize = 0;
+    lines.forEach(l => {
+      const sm = l.match(/"(\S+)\s+(\S+)\s+\S+"\s+(\d+)\s+(\d+)/);
+      if (sm) {
+        byMethod[sm[1]] = (byMethod[sm[1]] || 0) + 1;
+        byStatus[sm[3]] = (byStatus[sm[3]] || 0) + 1;
+        totalSize += parseInt(sm[4]) || 0;
+      }
+    });
+    return { byStatus, byMethod, totalSize };
+  }, [lines]);
+
+  const errorSeverity = (line: string) => {
+    if (line.includes('[crit]') || line.includes('[alert]') || line.includes('[emerg]'))
+      return { color: '#EF4444', bg: 'rgba(239,68,68,0.08)', label: 'CRIT' };
+    if (line.includes('[error]')) return { color: '#F97316', bg: 'rgba(249,115,22,0.08)', label: 'ERR' };
+    if (line.includes('[warn]') || line.includes('[warning]'))
+      return { color: '#EAB308', bg: 'rgba(234,179,8,0.08)', label: 'WARN' };
+    if (line.includes('[notice]') || line.includes('[info]'))
+      return { color: '#6B7280', bg: 'rgba(107,114,128,0.06)', label: 'INFO' };
+    return { color: p.text, bg: 'transparent', label: '' };
+  };
+
   const statusColor = (status: string) => {
     const n = parseInt(status, 10);
-    if (n >= 500) return p.red;
-    if (n >= 400) return p.amber;
-    if (n >= 300) return p.accent;
-    return p.green;
+    if (n >= 500) return '#EF4444';
+    if (n >= 400) return '#F97316';
+    if (n >= 300) return '#3B82F6';
+    return '#22C55E';
   };
+
+  const methodColor = (method: string) => {
+    const map: Record<string, string> = {
+      GET: '#3B82F6', POST: '#22C55E', PUT: '#F59E0B',
+      PATCH: '#8B5CF6', DELETE: '#EF4444', HEAD: '#6B7280', OPTIONS: '#6B7280',
+    };
+    return map[method] || '#6B7280';
+  };
+
+  const filteredLines = useMemo(() => {
+    if (!searchText) return lines;
+    const q = searchText.toLowerCase();
+    return lines.filter(l => l.toLowerCase().includes(q));
+  }, [lines, searchText]);
+
+  const fmtSize = (bytes: number) => {
+    if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${bytes} B`;
+  };
+
+  const monoFont = isDark
+    ? '"JetBrains Mono","Fira Code","Cascadia Code",monospace'
+    : '"JetBrains Mono","Fira Code",monospace';
 
   return (
     <div style={{ padding: '12px 0' }}>
       {/* Controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
         <Select
           value={logType}
-          onChange={(v: 'access' | 'error') => { setLogType(v); setLines([]); }}
-          style={{ width: 140 }}
+          onChange={(v: 'access' | 'error') => { setLogType(v); setLines([]); setSearchText(''); }}
+          style={{ width: 150 }}
           options={[
             { label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><FileTextOutlined style={{ fontSize: 12 }} /> Access Log</span>, value: 'access' },
             { label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ExclamationCircleOutlined style={{ fontSize: 12 }} /> Error Log</span>, value: 'error' },
@@ -1750,7 +1799,7 @@ function ResponseLogPanel({ site }: { site: Site }) {
         <Select
           value={logDate}
           onChange={(v: string) => { setLogDate(v); setLines([]); }}
-          style={{ width: 140 }}
+          style={{ width: 150 }}
           options={[
             { label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><CalendarOutlined style={{ fontSize: 12 }} /> Today</span>, value: '' },
             ...availableDates.map(d => ({ label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><CalendarOutlined style={{ fontSize: 12 }} /> {d}</span>, value: d })),
@@ -1759,18 +1808,28 @@ function ResponseLogPanel({ site }: { site: Site }) {
         <Select
           value={numLines}
           onChange={(v: number) => setNumLines(v)}
-          style={{ width: 110 }}
+          style={{ width: 120 }}
           options={[
             { label: '50 lines', value: 50 },
             { label: '100 lines', value: 100 },
             { label: '200 lines', value: 200 },
             { label: '500 lines', value: 500 },
+            { label: '1000 lines', value: 1000 },
           ]}
+        />
+        <Input
+          prefix={<SearchOutlined style={{ color: p.textDim, fontSize: 11 }} />}
+          placeholder="Filter..."
+          value={searchText}
+          onChange={e => setSearchText(e.target.value)}
+          allowClear
+          style={{ width: 150, fontSize: 12 }}
+          size="small"
         />
         <button
           onClick={fetchLog}
           style={{
-            padding: '4px 12px', borderRadius: 5, border: `1px solid ${p.cardBorder}`,
+            padding: '3px 10px', borderRadius: 5, border: `1px solid ${p.cardBorder}`,
             background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
             display: 'inline-flex', alignItems: 'center', gap: 4,
           }}
@@ -1778,7 +1837,7 @@ function ResponseLogPanel({ site }: { site: Site }) {
           <ReloadOutlined style={{ fontSize: 11 }} /> Refresh
         </button>
         <a
-          href={`/logs`}
+          href="/logs"
           style={{ fontSize: 12, color: p.accent, marginLeft: 'auto' }}
           onClick={(e) => { e.preventDefault(); window.location.href = '/logs'; }}
         >
@@ -1786,75 +1845,163 @@ function ResponseLogPanel({ site }: { site: Site }) {
         </a>
       </div>
 
+      {/* Stats bar */}
+      {!loading && filteredLines.length > 0 && (
+        <div style={{ display: 'flex', gap: 5, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: 10, color: p.textDim, fontWeight: 600, letterSpacing: '0.5px' }}>STATS</span>
+          <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 4, background: `${p.accent}12`, color: p.accent, fontWeight: 600 }}>
+            {filteredLines.length}{filteredLines.length !== lines.length ? ` / ${lines.length}` : ''}
+          </span>
+          {logType === 'access' && Object.entries(accessStats.byMethod).map(([m, c]) => (
+            <span key={m} style={{ fontSize: 10, padding: '1px 7px', borderRadius: 4, fontWeight: 600, background: `${methodColor(m)}12`, color: methodColor(m) }}>
+              {m} {c}
+            </span>
+          ))}
+          {logType === 'access' && Object.entries(accessStats.byStatus).sort((a, b) => parseInt(b[0]) - parseInt(a[0])).map(([s, c]) => (
+            <span key={s} style={{ fontSize: 10, padding: '1px 7px', borderRadius: 4, fontWeight: 600, background: `${statusColor(s)}12`, color: statusColor(s) }}>
+              {s} {c}
+            </span>
+          ))}
+          {logType === 'access' && accessStats.totalSize > 0 && (
+            <span style={{ fontSize: 10, color: p.textDim }}>{fmtSize(accessStats.totalSize)}</span>
+          )}
+          {logType === 'error' && (() => {
+            const critCount = filteredLines.filter(l => /\[(crit|alert|emerg)\]/.test(l)).length;
+            const errCount = filteredLines.filter(l => l.includes('[error]') && !/(crit|alert|emerg)/.test(l)).length;
+            const warnCount = filteredLines.filter(l => /\[(warn|warning)\]/.test(l)).length;
+            return <>
+              {critCount > 0 && <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 4, fontWeight: 600, background: 'rgba(239,68,68,0.12)', color: '#EF4444' }}>CRIT {critCount}</span>}
+              {errCount > 0 && <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 4, fontWeight: 600, background: 'rgba(249,115,22,0.12)', color: '#F97316' }}>ERR {errCount}</span>}
+              {warnCount > 0 && <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 4, fontWeight: 600, background: 'rgba(234,179,8,0.12)', color: '#EAB308' }}>WARN {warnCount}</span>}
+            </>;
+          })()}
+        </div>
+      )}
+
       {/* Log content */}
       <div style={{
-        background: isDark ? 'rgba(0,0,0,0.3)' : '#f8f9fa',
+        background: isDark ? 'rgba(0,0,0,0.35)' : '#fafbfc',
         border: `1px solid ${p.cardBorder}`,
         borderRadius: 8,
-        maxHeight: 360,
+        maxHeight: 420,
         overflow: 'auto',
-
-        fontSize: 11,
-        lineHeight: 1.7,
+        fontFamily: monoFont,
+        fontSize: 11.5,
+        lineHeight: 1.65,
       }}>
         {loading ? (
-          <div style={{ padding: 40, textAlign: 'center', color: p.textMuted }}>Loading...</div>
-        ) : lines.length === 0 ? (
-          <div style={{ padding: 40, textAlign: 'center', color: p.textMuted }}>No log entries</div>
-        ) : (
-          <div style={{ padding: '8px 12px' }}>
-            {lines.map((line, i) => {
-              if (logType === 'access') {
-                // Parse nginx combined: IP - - [time] "METHOD path" status size ...
-                const m = line.match(
-                  /^(\S+)\s+\S+\s+\S+\s+\[([^\]]+)\]\s+"(\S+)\s+(\S+)\s+\S+"\s+(\d+)\s+(\d+)/
+          <div style={{ padding: 40, textAlign: 'center', color: p.textMuted, fontFamily: monoFont }}>Loading...</div>
+        ) : filteredLines.length === 0 ? (
+          <div style={{ padding: 40, textAlign: 'center', color: p.textMuted, fontFamily: monoFont }}>
+            {searchText ? `No entries match "${searchText}"` : 'No log entries'}
+          </div>
+        ) : logType === 'access' ? (
+          <>
+            {/* Sticky header */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '108px 100px 50px 1fr 46px 58px',
+              gap: '0 8px',
+              padding: '5px 12px',
+              borderBottom: `1px solid ${p.cardBorder}40`,
+              background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.04)',
+              position: 'sticky', top: 0,
+              color: p.textDim, fontWeight: 600, fontSize: 10.5,
+              zIndex: 1,
+            }}>
+              <span>Time</span>
+              <span>IP Address</span>
+              <span>Method</span>
+              <span>Path / Request</span>
+              <span style={{ textAlign: 'center' }}>Status</span>
+              <span style={{ textAlign: 'right' }}>Size</span>
+            </div>
+            {filteredLines.map((line, i) => {
+              const m = line.match(/^(\S+)\s+\S+\s+\S+\s+\[([^\]]+)\]\s+"(\S+)\s+(\S+)\s+\S+"\s+(\d+)\s+(\d+)/);
+              if (m) {
+                const [, ip, time, method, path, status, size] = m;
+                const sc = statusColor(status);
+                const mc = methodColor(method);
+                const hourPart = time.split(' ')[1]?.split(':').slice(0, 2).join(':') || time;
+                return (
+                  <div key={i} style={{
+                    display: 'grid',
+                    gridTemplateColumns: '108px 100px 50px 1fr 46px 58px',
+                    gap: '0 8px',
+                    padding: '3px 12px',
+                    borderBottom: `1px solid ${p.cardBorder}15`,
+                    alignItems: 'center',
+                    background: i % 2 === 0 ? 'transparent' : isDark ? 'rgba(255,255,255,0.015)' : 'rgba(0,0,0,0.015)',
+                  }}>
+                    <span style={{ color: p.textDim, fontSize: 11 }}>{hourPart}</span>
+                    <span style={{ color: '#94A3B8', fontSize: 11 }}>{ip}</span>
+                    <span style={{
+                      padding: '1px 5px', borderRadius: 3, fontSize: 10, fontWeight: 700,
+                      background: `${mc}18`, color: mc, textAlign: 'center',
+                    }}>{method}</span>
+                    <span style={{ color: p.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={path}>{path}</span>
+                    <span style={{
+                      padding: '1px 6px', borderRadius: 3, fontSize: 10, fontWeight: 700,
+                      background: `${sc}15`, color: sc, textAlign: 'center',
+                    }}>{status}</span>
+                    <span style={{ color: p.textDim, textAlign: 'right', fontSize: 11 }}>
+                      {parseInt(size) >= 1024 * 1024
+                        ? `${(parseInt(size) / 1024 / 1024).toFixed(1)}M`
+                        : parseInt(size) >= 1024
+                        ? `${(parseInt(size) / 1024).toFixed(0)}K`
+                        : `${size}B`}
+                    </span>
+                  </div>
                 );
-                if (m) {
-                  const [, ip, time, method, path, status, size] = m;
-                  const sc = statusColor(status);
-                  return (
-                    <div key={i} style={{
-                      padding: '2px 0', borderBottom: `1px solid ${p.cardBorder}20`,
-                      display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap',
-                    }}>
-                      <span style={{ color: p.textDim, minWidth: 110, flexShrink: 0 }}>{time.split(' ')[0]?.replace(/.*:/, (x) => x) || time}</span>
-                      <span style={{ color: p.textMuted, minWidth: 90 }}>{ip}</span>
-                      <span style={{
-                        padding: '0 5px', borderRadius: 3, fontSize: 10, fontWeight: 600,
-                        background: `${p.accent}15`, color: p.accent,
-                      }}>{method}</span>
-                      <span style={{ color: p.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{path}</span>
-                      <span style={{
-                        padding: '0 5px', borderRadius: 3, fontSize: 10, fontWeight: 600,
-                        background: `${sc}15`, color: sc,
-                      }}>{status}</span>
-                      <span style={{ color: p.textDim, minWidth: 50, textAlign: 'right' }}>
-                        {parseInt(size) >= 1024 ? `${(parseInt(size) / 1024).toFixed(1)}K` : `${size}B`}
-                      </span>
-                    </div>
-                  );
-                }
               }
-              // Fallback: plain line (error log or unparseable)
-              const isErr = line.includes('[error]') || line.includes('[crit]') || line.includes('[alert]');
               return (
                 <div key={i} style={{
-                  padding: '2px 0', borderBottom: `1px solid ${p.cardBorder}20`,
-                  color: isErr ? p.red : p.text,
+                  padding: '2px 12px', borderBottom: `1px solid ${p.cardBorder}10`,
+                  color: p.textDim, fontStyle: 'italic',
                 }}>{line}</div>
               );
             })}
-          </div>
+          </>
+        ) : (
+          filteredLines.map((line, i) => {
+            const sev = errorSeverity(line);
+            return (
+              <div key={i} style={{
+                padding: '4px 12px',
+                borderBottom: `1px solid ${p.cardBorder}10`,
+                background: sev.bg,
+                display: 'flex', gap: 8, alignItems: 'flex-start',
+              }}>
+                {sev.label && (
+                  <span style={{
+                    fontSize: 9, padding: '1px 5px', borderRadius: 3, fontWeight: 700,
+                    color: sev.color, background: `${sev.color}15`, flexShrink: 0, marginTop: 1,
+                  }}>{sev.label}</span>
+                )}
+                <span style={{ color: sev.color, wordBreak: 'break-word' }}>{line}</span>
+              </div>
+            );
+          })
         )}
       </div>
 
-      {/* Stats summary */}
-      {lines.length > 0 && logType === 'access' && (
-        <div style={{ display: 'flex', gap: 16, marginTop: 10, fontSize: 11, color: p.textMuted }}>
-          <span>Total: <b style={{ color: p.text }}>{lines.length}</b> entries</span>
-          <span>Errors: <b style={{ color: p.red }}>
-            {lines.filter(l => { const m = l.match(/"\s+([45]\d{2})\s/); return !!m; }).length}
-          </b></span>
+      {/* Footer */}
+      {filteredLines.length > 0 && (
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          marginTop: 6, fontSize: 10.5, color: p.textDim,
+        }}>
+          <span>
+            {filteredLines.length} of {lines.length} entries{searchText ? ` matching "${searchText}"` : ''}
+          </span>
+          {logType === 'access' && (
+            <span>
+              4xx/5xx:{' '}
+              <b style={{ color: '#F97316' }}>
+                {lines.filter(l => { const m = l.match(/"[\s\S]+"\s+([45]\d{2})\s/); return !!m; }).length}
+              </b>
+            </span>
+          )}
         </div>
       )}
     </div>
