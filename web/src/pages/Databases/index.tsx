@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Table, Modal, Form, Input, Select, message, Popconfirm, Tooltip, Spin, Popover, InputNumber } from 'antd';
+import { Table, Modal, Form, Input, Select, message, Popconfirm, Tooltip, Spin, Popover, InputNumber, Progress, Tag } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, KeyOutlined, CloudDownloadOutlined,
   ReloadOutlined, DatabaseOutlined, CopyOutlined, LinkOutlined,
@@ -8,7 +8,12 @@ import {
   UndoOutlined, DownloadOutlined, CloudOutlined, LaptopOutlined,
   TeamOutlined, AimOutlined, CheckOutlined, LoadingOutlined,
   PlayCircleOutlined, PauseCircleOutlined, SyncOutlined,
-  PoweroffOutlined,
+  PoweroffOutlined, ThunderboltOutlined, ApiOutlined, HddOutlined,
+  ClusterOutlined, FundOutlined, SaveOutlined,
+  ClockCircleOutlined, RiseOutlined, FallOutlined,
+  LineChartOutlined, AppstoreOutlined,
+  BranchesOutlined, DashboardOutlined, CodeOutlined, FieldTimeOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
@@ -17,6 +22,7 @@ import { formatDateTime } from '@/lib/datetime';
 import RequireSoftware from '@/components/RequireSoftware';
 import PostgresqlManageModal from '@/components/PostgresqlManageModal';
 import PgAdminManageModal from '@/components/PgAdminManageModal';
+import RedisManageModal from '@/components/RedisManageModal';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { usePalette } from '@/hooks/usePalette';
 
@@ -92,6 +98,12 @@ function DatabasesContent() {
   const [pgLoading, setPgLoading] = useState(false);
   const [redisInfo, setRedisInfo] = useState<any>(null);
   const [redisLoading, setRedisLoading] = useState(false);
+  const [redisPersistence, setRedisPersistence] = useState<any>(null);
+  const [redisReplication, setRedisReplication] = useState<any>(null);
+  const [redisDbOverview, setRedisDbOverview] = useState<any[]>([]);
+  const [redisAutoRefresh, setRedisAutoRefresh] = useState(true);
+  const [redisFlushLoading, setRedisFlushLoading] = useState<string | null>(null);
+  const [redisManageOpen, setRedisManageOpen] = useState(false);
   const [quotaInput, setQuotaInput] = useState(0);
   const [quotaUnit, setQuotaUnit] = useState<'MB' | 'GB'>('MB');
   const [quotaSaving, setQuotaSaving] = useState(false);
@@ -272,11 +284,14 @@ function DatabasesContent() {
   const fetchRedisInfo = useCallback(async () => {
     setRedisLoading(true);
     try {
-      const [infoResp, sizeResp, memResp, clientsResp] = await Promise.all([
+      const [infoResp, sizeResp, memResp, clientsResp, persistResp, repResp, dbOverviewResp] = await Promise.all([
         api.get('/redis/info').catch(() => null),
         api.get('/redis/dbsize').catch(() => null),
         api.get('/redis/memory').catch(() => null),
         api.get('/redis/clients').catch(() => null),
+        api.get('/redis/persistence').catch(() => null),
+        api.get('/redis/replication').catch(() => null),
+        api.get('/redis/db-overview').catch(() => null),
       ]);
       setRedisInfo({
         info: infoResp?.data?.data || {},
@@ -284,6 +299,9 @@ function DatabasesContent() {
         memory: memResp?.data?.data || {},
         clients: clientsResp?.data?.data || [],
       });
+      setRedisPersistence(persistResp?.data?.data || null);
+      setRedisReplication(repResp?.data?.data || null);
+      setRedisDbOverview(dbOverviewResp?.data?.data || []);
     } catch { /* ignore */ }
     finally { setRedisLoading(false); }
   }, []);
@@ -332,6 +350,74 @@ function DatabasesContent() {
     if (activeDbTab === 'mysql') fetchDbVersion();
     if (activeDbTab === 'postgresql') fetchDbVersion();
   }, [activeDbTab, installedEngines, fetchPgDatabases, fetchRedisInfo, fetchMongoDatabases, fetchDbVersion]);
+
+  // Redis auto-refresh every 5s while on the Redis tab
+  useEffect(() => {
+    if (activeDbTab !== 'redis' || !redisAutoRefresh) return;
+    const id = setInterval(() => { fetchRedisInfo(); }, 5000);
+    return () => clearInterval(id);
+  }, [activeDbTab, redisAutoRefresh, fetchRedisInfo]);
+
+  const handleRedisFlush = async (db: number) => {
+    setRedisFlushLoading(`db-${db}`);
+    try {
+      await api.post('/redis/flush', { db });
+      message.success(`DB ${db} flushed`);
+      fetchRedisInfo();
+    } catch (e: any) {
+      message.error(e?.response?.data?.message || 'Failed to flush DB');
+    } finally { setRedisFlushLoading(null); }
+  };
+
+  const handleRedisFlushAll = async () => {
+    setRedisFlushLoading('all');
+    try {
+      await api.post('/redis/flush', { all: true });
+      message.success('All databases flushed');
+      fetchRedisInfo();
+    } catch (e: any) {
+      message.error(e?.response?.data?.message || 'Failed to flush all');
+    } finally { setRedisFlushLoading(null); }
+  };
+
+  const handleRedisKillClient = async (id: string) => {
+    try {
+      await api.delete(`/redis/clients/${id}`);
+      message.success('Client killed');
+      fetchRedisInfo();
+    } catch (e: any) {
+      message.error(e?.response?.data?.message || 'Failed to kill client');
+    }
+  };
+
+  const handleRedisBgsave = async () => {
+    try {
+      await api.post('/redis/bgsave');
+      message.success('Background save started');
+      setTimeout(fetchRedisInfo, 1500);
+    } catch (e: any) {
+      message.error(e?.response?.data?.message || 'Failed to start BGSAVE');
+    }
+  };
+
+  const formatUptime = (seconds: number): string => {
+    if (!seconds || seconds < 0) return '—';
+    const d = Math.floor(seconds / 86400);
+    const h = Math.floor((seconds % 86400) / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    if (d > 0) return `${d}d ${h}h ${m}m`;
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
+  };
+
+  const formatBytes = (n: number): string => {
+    if (!n || n <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let i = 0;
+    let v = n;
+    while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+    return `${v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2)} ${units[i]}`;
+  };
 
   const handleCreate = async () => {
     try {
@@ -1693,57 +1779,655 @@ function DatabasesContent() {
 
         {/* Redis content */}
         {activeDbTab === 'redis' && (
-          <div style={{ padding: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>Redis Info</span>
-              <button onClick={fetchRedisInfo} style={{
-                padding: '4px 12px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
-                background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
-                display: 'inline-flex', alignItems: 'center', gap: 5,
-              }}>
-                <ReloadOutlined /> Refresh
+          <div style={{ padding: 0 }}>
+            {/* Toolbar */}
+            <div style={{
+              display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8,
+              padding: '10px 20px',
+              borderBottom: `1px solid ${p.cardBorder}`,
+            }}>
+              <button
+                onClick={() => setRedisManageOpen(true)}
+                style={{
+                  padding: '5px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                  background: '#DC382D', color: '#fff', fontSize: 12, fontWeight: 500,
+                  display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+                }}
+              >
+                <AppstoreOutlined /> {t('redis.open_manager')}
+              </button>
+              <button
+                onClick={handleRedisBgsave}
+                style={{
+                  padding: '5px 14px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+                  background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
+                  display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+                }}
+              >
+                <SaveOutlined /> {redisPersistence?.rdb_current_save ? t('redis.saving_now') : t('redis.save_now')}
+              </button>
+              <Popconfirm
+                title={t('redis.flush_all_confirm')}
+                onConfirm={handleRedisFlushAll}
+                okText={t('common.delete')}
+                okButtonProps={{ danger: true }}
+              >
+                <button
+                  disabled={redisFlushLoading === 'all'}
+                  style={{
+                    padding: '5px 14px', borderRadius: 6, border: `1px solid ${p.red}40`,
+                    background: 'transparent', color: p.red, fontSize: 12, cursor: 'pointer',
+                    display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+                  }}
+                >
+                  <DeleteOutlined /> {t('redis.flush_all')}
+                </button>
+              </Popconfirm>
+              <div style={{ flex: 1 }} />
+              <Tooltip title={t('redis.auto_refresh')}>
+                <button
+                  onClick={() => setRedisAutoRefresh(v => !v)}
+                  style={{
+                    padding: '4px 10px', borderRadius: 6,
+                    border: `1px solid ${redisAutoRefresh ? '#DC382D40' : p.cardBorder}`,
+                    background: redisAutoRefresh ? '#DC382D15' : 'transparent',
+                    color: redisAutoRefresh ? '#DC382D' : p.textMuted,
+                    fontSize: 11, fontWeight: 500, cursor: 'pointer',
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <FieldTimeOutlined /> {redisAutoRefresh ? '5s' : 'off'}
+                </button>
+              </Tooltip>
+              <button
+                onClick={fetchRedisInfo}
+                style={{
+                  padding: '5px 14px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+                  background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
+                  display: 'inline-flex', alignItems: 'center', gap: 5, transition: 'all 0.15s',
+                }}
+              >
+                <ReloadOutlined /> {t('redis.refresh')}
               </button>
             </div>
-            {redisLoading ? <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div> : redisInfo ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
-                {[
-                  { label: 'Keys', value: redisInfo.dbsize?.toLocaleString?.() ?? '0', color: '#336791' },
-                  { label: 'Used Memory', value: redisInfo.memory?.used_memory_human || redisInfo.info?.used_memory_human || '—', color: '#DC382D' },
-                  { label: 'Peak Memory', value: redisInfo.memory?.used_memory_peak_human || redisInfo.info?.used_memory_peak_human || '—', color: '#FF9800' },
-                  { label: 'Connected Clients', value: redisInfo.info?.connected_clients || redisInfo.clients?.length || '—', color: '#4CAF50' },
-                  { label: 'Uptime (seconds)', value: redisInfo.info?.uptime_in_seconds || '—', color: '#9C27B0' },
-                  { label: 'Version', value: redisInfo.info?.redis_version || '—', color: '#607D8B' },
-                ].map(item => (
-                  <div key={item.label} style={{
-                    padding: '14px 16px', borderRadius: 8,
-                    border: `1px solid ${p.cardBorder}`, background: isDark ? p.card : '#fafafa',
-                  }}>
-                    <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 4 }}>{item.label}</div>
-                    <div style={{ fontSize: 18, fontWeight: 600, color: item.color }}>{item.value}</div>
-                  </div>
-                ))}
-              </div>
+
+            {redisLoading && !redisInfo ? (
+              <div style={{ textAlign: 'center', padding: 60 }}><Spin /></div>
+            ) : !redisInfo ? (
+              <div style={{ textAlign: 'center', padding: 60, color: p.textMuted }}>{t('redis.no_data_available')}</div>
             ) : (
-              <div style={{ textAlign: 'center', padding: 40, color: p.textMuted }}>No Redis data available</div>
-            )}
-            {redisInfo?.clients?.length > 0 && (
-              <div style={{ marginTop: 16 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: p.text, marginBottom: 8 }}>Connected Clients</div>
-                <Table
-                  dataSource={redisInfo.clients}
-                  rowKey={(_: any, i: number | undefined) => String(i)}
-                  size="small"
-                  pagination={false}
-                  style={{ fontSize: 12 }}
-                  columns={[
-                    { title: 'Address', dataIndex: 'addr', key: 'addr' },
-                    { title: 'Name', dataIndex: 'name', key: 'name', render: (v: string) => v || '—' },
-                    { title: 'Age (s)', dataIndex: 'age', key: 'age' },
-                    { title: 'DB', dataIndex: 'db', key: 'db' },
-                    { title: 'Cmd', dataIndex: 'cmd', key: 'cmd' },
-                  ]}
-                />
-              </div>
+              <>
+                {/* Service status banner */}
+                <div style={{
+                  padding: '14px 20px',
+                  background: `linear-gradient(135deg, #DC382D12 0%, #DC382D06 100%)`,
+                  borderBottom: `1px solid ${p.cardBorder}`,
+                  display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+                }}>
+                  <div style={{
+                    width: 42, height: 42, borderRadius: 10,
+                    background: '#DC382D20', display: 'flex',
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <HddOutlined style={{ color: '#DC382D', fontSize: 20 }} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 180 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <span style={{
+                        display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+                        background: '#4CAF50', boxShadow: '0 0 6px #4CAF5080',
+                      }} />
+                      <span style={{ fontSize: 14, fontWeight: 600, color: p.text }}>
+                        {t('redis.service_status')}: <span style={{ color: '#4CAF50' }}>{t('redis.running')}</span>
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: p.textMuted, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                      <span><span style={{ color: p.textMuted }}>v</span>{redisInfo.info?.redis_version || '—'}</span>
+                      <span>·</span>
+                      <span>{t('redis.uptime')}: {formatUptime(Number(redisInfo.info?.uptime_in_seconds || 0))}</span>
+                      <span>·</span>
+                      <span>{t('redis.tcp_port')}: {redisInfo.info?.tcp_port || '6379'}</span>
+                      <span>·</span>
+                      <span>{t('redis.role')}: <Tag color={redisReplication?.role === 'master' ? 'red' : 'orange'} style={{ fontSize: 10, padding: '0 6px', margin: 0 }}>
+                        {(redisReplication?.role || 'master').toUpperCase()}
+                      </Tag></span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* KPI cards row */}
+                <div style={{
+                  display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))',
+                  gap: 12, padding: '16px 20px',
+                  borderBottom: `1px solid ${p.cardBorder}`,
+                }}>
+                  {(() => {
+                    const memUsed = Number(redisInfo.memory?.used_memory || 0);
+                    const memMax = Number(redisInfo.memory?.max_memory || 0);
+                    const memUsedHuman = redisInfo.memory?.used_memory_human || formatBytes(memUsed);
+                    const memPct = memMax > 0 ? Math.min(100, (memUsed / memMax) * 100) : 0;
+                    const hits = Number(redisInfo.info?.keyspace_hits || 0);
+                    const misses = Number(redisInfo.info?.keyspace_misses || 0);
+                    const hitRate = (hits + misses) > 0 ? (hits / (hits + misses)) * 100 : 0;
+                    const totalKeys = Number(redisInfo.dbsize || 0);
+                    const totalConns = Number(redisInfo.info?.total_connections_received || 0);
+                    const totalCmds = Number(redisInfo.info?.total_commands_processed || 0);
+                    const ops = Number(redisInfo.info?.instantaneous_ops_per_sec || 0);
+
+                    const cards: { label: string; value: string; sub?: string; color: string; icon: React.ReactNode; progress?: number; progressColor?: string }[] = [
+                      {
+                        label: t('redis.total_keys'),
+                        value: totalKeys.toLocaleString(),
+                        sub: `${redisDbOverview.length} ${t('redis.databases').toLowerCase()}`,
+                        color: '#DC382D',
+                        icon: <KeyOutlined />,
+                      },
+                      {
+                        label: t('redis.used_memory'),
+                        value: memUsedHuman,
+                        sub: memMax > 0 ? `${memPct.toFixed(1)}% / ${redisInfo.memory?.max_memory_human || formatBytes(memMax)}` : t('redis.unlimited'),
+                        color: '#FF9800',
+                        icon: <ApiOutlined />,
+                        progress: memPct,
+                        progressColor: memPct > 90 ? p.red : memPct > 70 ? p.amber : p.green,
+                      },
+                      {
+                        label: t('redis.peak_memory'),
+                        value: redisInfo.memory?.used_memory_peak_human || '—',
+                        sub: redisInfo.memory?.max_memory_policy ? `policy: ${redisInfo.memory?.max_memory_policy}` : '—',
+                        color: '#9C27B0',
+                        icon: <LineChartOutlined />,
+                      },
+                      {
+                        label: t('redis.connected_clients'),
+                        value: redisInfo.info?.connected_clients ?? redisInfo.clients?.length ?? '0',
+                        sub: `${redisInfo.info?.blocked_clients || 0} blocked`,
+                        color: '#4CAF50',
+                        icon: <TeamOutlined />,
+                      },
+                      {
+                        label: t('redis.ops_per_sec'),
+                        value: ops.toLocaleString(),
+                        sub: `${totalCmds.toLocaleString()} ${t('redis.total_commands').toLowerCase()}`,
+                        color: '#2196F3',
+                        icon: <ThunderboltOutlined />,
+                      },
+                      {
+                        label: t('redis.hit_rate'),
+                        value: `${hitRate.toFixed(2)}%`,
+                        sub: `${hits.toLocaleString()} / ${(hits + misses).toLocaleString()}`,
+                        color: hitRate >= 90 ? '#4CAF50' : hitRate >= 70 ? '#FF9800' : '#F44336',
+                        icon: <FundOutlined />,
+                      },
+                      {
+                        label: t('redis.total_connections'),
+                        value: totalConns.toLocaleString(),
+                        sub: `expired: ${Number(redisInfo.info?.expired_keys || 0).toLocaleString()}`,
+                        color: '#607D8B',
+                        icon: <ClusterOutlined />,
+                      },
+                      {
+                        label: t('redis.connected_slaves'),
+                        value: String(redisReplication?.connected_slaves ?? 0),
+                        sub: redisReplication?.role === 'slave'
+                          ? `link: ${redisReplication?.master_link_status === 'up' ? '✓ UP' : '✗ DOWN'}`
+                          : `offset: ${Number(redisReplication?.master_repl_offset || 0).toLocaleString()}`,
+                        color: '#E91E63',
+                        icon: <BranchesOutlined />,
+                      },
+                    ];
+                    return cards.map((c, i) => (
+                      <div key={i} style={{
+                        padding: '12px 14px', borderRadius: 10,
+                        background: `${c.color}08`,
+                        border: `1px solid ${c.color}25`,
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <span style={{ fontSize: 10, color: p.textMuted, textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 500 }}>{c.label}</span>
+                          <span style={{ color: c.color, fontSize: 14, opacity: 0.85 }}>{c.icon}</span>
+                        </div>
+                        <div style={{ fontSize: 19, fontWeight: 700, color: c.color, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>{c.value}</div>
+                        {c.sub && <div style={{ fontSize: 10.5, color: p.textMuted, marginTop: 2 }}>{c.sub}</div>}
+                        {typeof c.progress === 'number' && (
+                          <div style={{ marginTop: 8 }}>
+                            <div style={{
+                              height: 4, borderRadius: 2, background: p.barTrack || '#E2E8F0', overflow: 'hidden',
+                            }}>
+                              <div style={{
+                                width: `${Math.min(100, c.progress)}%`, height: '100%',
+                                background: c.progressColor || c.color,
+                                transition: 'width 0.3s',
+                              }} />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ));
+                  })()}
+                </div>
+
+                {/* Two-column layout: memory gauge + server info | clients + databases + persistence */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+                  gap: 16, padding: 20,
+                }}>
+                  {/* Memory usage card with gauge */}
+                  <div style={{
+                    background: p.card, border: `1px solid ${p.cardBorder}`,
+                    borderRadius: 12, overflow: 'hidden',
+                  }}>
+                    <div style={{
+                      padding: '12px 16px', borderBottom: `1px solid ${p.cardBorder}`,
+                      background: p.headerBg, display: 'flex', alignItems: 'center', gap: 8,
+                    }}>
+                      <ApiOutlined style={{ color: '#FF9800' }} />
+                      <span style={{ fontSize: 13, fontWeight: 600, color: p.text }}>{t('redis.memory')}</span>
+                    </div>
+                    <div style={{ padding: 16, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                      {(() => {
+                        const memUsed = Number(redisInfo.memory?.used_memory || 0);
+                        const memMax = Number(redisInfo.memory?.max_memory || 0);
+                        const memPct = memMax > 0 ? Math.min(100, (memUsed / memMax) * 100) : 0;
+                        const strokeColor = memPct > 90 ? p.red : memPct > 70 ? p.amber : p.green;
+                        return (
+                          <div style={{ flexShrink: 0 }}>
+                            <Progress
+                              type="dashboard"
+                              percent={memPct}
+                              size={110}
+                              strokeColor={strokeColor}
+                              format={(p) => memMax > 0 ? `${p?.toFixed(0)}%` : '∞'}
+                            />
+                            <div style={{ fontSize: 11, color: p.textMuted, textAlign: 'center', marginTop: 4 }}>
+                              {memMax > 0 ? `${redisInfo.memory?.used_memory_human || '—'} / ${redisInfo.memory?.max_memory_human || '—'}` : t('redis.unlimited')}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                      <div style={{ flex: 1, minWidth: 160 }}>
+                        {[
+                          { label: t('redis.used_memory'), value: redisInfo.memory?.used_memory_human || '—' },
+                          { label: t('redis.peak_memory'), value: redisInfo.memory?.used_memory_peak_human || '—' },
+                          { label: t('redis.max_memory'), value: redisInfo.memory?.max_memory_human || t('redis.unlimited') },
+                          { label: t('redis.fragmentation_ratio'), value: redisInfo.memory?.mem_frag_ratio || '—' },
+                          { label: t('redis.eviction_policy'), value: <Tag color="red" style={{ fontSize: 10, padding: '0 6px', margin: 0 }}>{redisInfo.memory?.max_memory_policy || 'noeviction'}</Tag> },
+                        ].map((r, i) => (
+                          <div key={i} style={{
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                            padding: '6px 0',
+                            borderBottom: i < 4 ? `1px dashed ${p.cardBorder}` : 'none',
+                          }}>
+                            <span style={{ fontSize: 11, color: p.textMuted }}>{r.label}</span>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: p.text, fontVariantNumeric: 'tabular-nums' }}>{r.value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Server info card */}
+                  <div style={{
+                    background: p.card, border: `1px solid ${p.cardBorder}`,
+                    borderRadius: 12, overflow: 'hidden',
+                  }}>
+                    <div style={{
+                      padding: '12px 16px', borderBottom: `1px solid ${p.cardBorder}`,
+                      background: p.headerBg, display: 'flex', alignItems: 'center', gap: 8,
+                    }}>
+                      <DashboardOutlined style={{ color: p.accent }} />
+                      <span style={{ fontSize: 13, fontWeight: 600, color: p.text }}>{t('redis.server')}</span>
+                    </div>
+                    <div style={{ padding: 16 }}>
+                      {[
+                        { label: t('redis.version'), value: redisInfo.info?.redis_version || '—' },
+                        { label: t('redis.mode'), value: redisInfo.info?.redis_mode || 'standalone' },
+                        { label: t('redis.role'), value: <Tag color={redisReplication?.role === 'master' ? 'red' : 'orange'} style={{ margin: 0 }}>{(redisReplication?.role || 'master').toUpperCase()}</Tag> },
+                        { label: t('redis.os'), value: redisInfo.info?.os || '—' },
+                        { label: t('redis.process_id'), value: redisInfo.info?.process_id || '—' },
+                        { label: t('redis.tcp_port'), value: redisInfo.info?.tcp_port || '6379' },
+                        { label: t('redis.uptime'), value: formatUptime(Number(redisInfo.info?.uptime_in_seconds || 0)) },
+                        { label: t('redis.uptime_days'), value: redisInfo.info?.uptime_in_days || '0' },
+                        { label: t('redis.config_file'), value: <code style={{ fontSize: 10, color: p.textMuted, background: p.codeBg, padding: '1px 6px', borderRadius: 3 }}>{redisInfo.info?.config_file || '—'}</code> },
+                      ].map((r, i) => (
+                        <div key={i} style={{
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                          padding: '6px 0',
+                          borderBottom: i < 8 ? `1px dashed ${p.cardBorder}` : 'none',
+                        }}>
+                          <span style={{ fontSize: 11, color: p.textMuted }}>{r.label}</span>
+                          <span style={{ fontSize: 12, fontWeight: 500, color: p.text, textAlign: 'right' }}>{r.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Performance stats card */}
+                <div style={{ padding: '0 20px 20px' }}>
+                  <div style={{
+                    background: p.card, border: `1px solid ${p.cardBorder}`,
+                    borderRadius: 12, overflow: 'hidden',
+                  }}>
+                    <div style={{
+                      padding: '12px 16px', borderBottom: `1px solid ${p.cardBorder}`,
+                      background: p.headerBg, display: 'flex', alignItems: 'center', gap: 8,
+                    }}>
+                      <ThunderboltOutlined style={{ color: p.amber }} />
+                      <span style={{ fontSize: 13, fontWeight: 600, color: p.text }}>{t('redis.performance')}</span>
+                    </div>
+                    <div style={{
+                      display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)',
+                      gap: 0,
+                    }}>
+                      {(() => {
+                        const hits = Number(redisInfo.info?.keyspace_hits || 0);
+                        const misses = Number(redisInfo.info?.keyspace_misses || 0);
+                        const total = hits + misses;
+                        const hitPct = total > 0 ? (hits / total) * 100 : 0;
+                        const missPct = total > 0 ? (misses / total) * 100 : 0;
+                        const perfItems = [
+                          { label: t('redis.total_connections'), value: Number(redisInfo.info?.total_connections_received || 0).toLocaleString(), color: p.accent, icon: <ClusterOutlined /> },
+                          { label: t('redis.total_commands'), value: Number(redisInfo.info?.total_commands_processed || 0).toLocaleString(), color: p.purple, icon: <CodeOutlined /> },
+                          { label: t('redis.ops_per_sec'), value: Number(redisInfo.info?.instantaneous_ops_per_sec || 0).toLocaleString(), color: p.amber, icon: <ThunderboltOutlined /> },
+                          { label: t('redis.keyspace_hits'), value: hits.toLocaleString(), color: p.green, icon: <RiseOutlined /> },
+                          { label: t('redis.keyspace_misses'), value: misses.toLocaleString(), color: p.red, icon: <FallOutlined /> },
+                          { label: t('redis.hit_rate'), value: `${hitPct.toFixed(2)}%`, color: hitPct >= 90 ? p.green : hitPct >= 70 ? p.amber : p.red, icon: <FundOutlined />, progress: hitPct },
+                          { label: t('redis.expired_keys'), value: Number(redisInfo.info?.expired_keys || 0).toLocaleString(), color: p.textMuted, icon: <ClockCircleOutlined /> },
+                          { label: t('redis.evicted_keys'), value: Number(redisInfo.info?.evicted_keys || 0).toLocaleString(), color: p.redDim, icon: <DeleteOutlined /> },
+                        ];
+                        return perfItems.map((it, i) => (
+                          <div key={i} style={{
+                            padding: '14px 16px',
+                            borderRight: !isMobile && (i % 4 < 3) ? `1px solid ${p.cardBorder}` : 'none',
+                            borderBottom: isMobile && (i % 2 === 0) ? `1px solid ${p.cardBorder}` : (!isMobile && i < perfItems.length - 4 ? `1px solid ${p.cardBorder}` : 'none'),
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                              <span style={{ fontSize: 10, color: p.textMuted, textTransform: 'uppercase', letterSpacing: 0.3 }}>{it.label}</span>
+                              <span style={{ color: it.color, fontSize: 12, opacity: 0.7 }}>{it.icon}</span>
+                            </div>
+                            <div style={{ fontSize: 16, fontWeight: 700, color: it.color, fontVariantNumeric: 'tabular-nums' }}>{it.value}</div>
+                            {typeof it.progress === 'number' && (
+                              <div style={{ marginTop: 6, height: 3, borderRadius: 2, background: p.barTrack, overflow: 'hidden' }}>
+                                <div style={{ width: `${Math.min(100, it.progress)}%`, height: '100%', background: it.color, transition: 'width 0.3s' }} />
+                              </div>
+                            )}
+                            {/* Hit rate bar visualization */}
+                            {it.label === t('redis.keyspace_hits') && total > 0 && (
+                              <div style={{ marginTop: 6 }}>
+                                <div style={{ height: 3, borderRadius: 2, background: p.barTrack, overflow: 'hidden', display: 'flex' }}>
+                                  <div style={{ width: `${hitPct}%`, background: p.green }} />
+                                  <div style={{ width: `${missPct}%`, background: p.red }} />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Persistence + Replication row */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+                  gap: 16, padding: '0 20px 20px',
+                }}>
+                  {/* Persistence card */}
+                  <div style={{
+                    background: p.card, border: `1px solid ${p.cardBorder}`,
+                    borderRadius: 12, overflow: 'hidden',
+                  }}>
+                    <div style={{
+                      padding: '12px 16px', borderBottom: `1px solid ${p.cardBorder}`,
+                      background: p.headerBg, display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <SaveOutlined style={{ color: p.accent }} />
+                        <span style={{ fontSize: 13, fontWeight: 600, color: p.text }}>{t('redis.persistence')}</span>
+                      </div>
+                      <button
+                        onClick={handleRedisBgsave}
+                        disabled={redisPersistence?.rdb_current_save}
+                        style={{
+                          padding: '3px 10px', borderRadius: 5, border: `1px solid ${p.cardBorder}`,
+                          background: 'transparent', color: p.textMuted, fontSize: 10, cursor: 'pointer',
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                        }}
+                      >
+                        <SaveOutlined /> {redisPersistence?.rdb_current_save ? t('redis.saving_now') : t('redis.save_now')}
+                      </button>
+                    </div>
+                    <div style={{ padding: 12 }}>
+                      {/* RDB / AOF badges */}
+                      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+                        <Tag color={redisPersistence?.rdb_enabled ? 'green' : 'default'} style={{ fontSize: 10, padding: '2px 8px', margin: 0 }}>
+                          <HddOutlined /> RDB {redisPersistence?.rdb_enabled ? 'ON' : 'OFF'}
+                        </Tag>
+                        <Tag color={redisPersistence?.aof_enabled ? 'green' : 'default'} style={{ fontSize: 10, padding: '2px 8px', margin: 0 }}>
+                          <FileTextOutlined /> AOF {redisPersistence?.aof_enabled ? 'ON' : 'OFF'}
+                        </Tag>
+                        {redisPersistence?.rdb_current_save && (
+                          <Tag color="orange" style={{ fontSize: 10, padding: '2px 8px', margin: 0 }}>
+                            <LoadingOutlined /> {t('redis.saving_now')}
+                          </Tag>
+                        )}
+                      </div>
+                      {[
+                        { label: t('redis.last_save_time'), value: redisPersistence?.rdb_last_save_time ? formatDateTime(redisPersistence.rdb_last_save_time * 1000) : '—' },
+                        { label: t('redis.last_status'), value: <Tag color={redisPersistence?.rdb_last_status === 'ok' ? 'green' : 'red'} style={{ fontSize: 10, padding: '0 6px', margin: 0 }}>{redisPersistence?.rdb_last_status || '—'}</Tag> },
+                        { label: 'AOF size', value: redisPersistence?.aof_current_size ? formatBytes(redisPersistence.aof_current_size) : '—' },
+                        { label: 'AOF base size', value: redisPersistence?.aof_base_size ? formatBytes(redisPersistence.aof_base_size) : '—' },
+                      ].map((r, i) => (
+                        <div key={i} style={{
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                          padding: '5px 0',
+                          borderBottom: i < 3 ? `1px dashed ${p.cardBorder}` : 'none',
+                        }}>
+                          <span style={{ fontSize: 11, color: p.textMuted }}>{r.label}</span>
+                          <span style={{ fontSize: 11, fontWeight: 500, color: p.text, textAlign: 'right' }}>{r.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Replication card */}
+                  <div style={{
+                    background: p.card, border: `1px solid ${p.cardBorder}`,
+                    borderRadius: 12, overflow: 'hidden',
+                  }}>
+                    <div style={{
+                      padding: '12px 16px', borderBottom: `1px solid ${p.cardBorder}`,
+                      background: p.headerBg, display: 'flex', alignItems: 'center', gap: 8,
+                    }}>
+                      <BranchesOutlined style={{ color: '#E91E63' }} />
+                      <span style={{ fontSize: 13, fontWeight: 600, color: p.text }}>{t('redis.replication')}</span>
+                      {redisReplication?.role && (
+                        <Tag color={redisReplication.role === 'master' ? 'red' : 'orange'} style={{ marginLeft: 'auto', fontSize: 10, padding: '0 6px' }}>
+                          {redisReplication.role.toUpperCase()}
+                        </Tag>
+                      )}
+                    </div>
+                    <div style={{ padding: 12 }}>
+                      {!redisReplication || redisReplication.role === 'master' ? (
+                        <>
+                          {[
+                            { label: t('redis.role'), value: <Tag color="red" style={{ margin: 0 }}>MASTER</Tag> },
+                            { label: t('redis.connected_slaves'), value: String(redisReplication?.connected_slaves ?? 0), color: '#E91E63' },
+                            { label: t('redis.master_repl_offset'), value: Number(redisReplication?.master_repl_offset || 0).toLocaleString() },
+                          ].map((r, i) => (
+                            <div key={i} style={{
+                              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                              padding: '5px 0',
+                              borderBottom: i < 2 ? `1px dashed ${p.cardBorder}` : 'none',
+                            }}>
+                              <span style={{ fontSize: 11, color: p.textMuted }}>{r.label}</span>
+                              <span style={{ fontSize: 11, fontWeight: 600, color: r.color || p.text, textAlign: 'right' }}>{r.value}</span>
+                            </div>
+                          ))}
+                          {(!redisReplication?.connected_slaves || redisReplication.connected_slaves === 0) && (
+                            <div style={{ fontSize: 11, color: p.textMuted, marginTop: 8, textAlign: 'center', fontStyle: 'italic' }}>
+                              {t('redis.no_replication')}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          {[
+                            { label: t('redis.role'), value: <Tag color="orange" style={{ margin: 0 }}>SLAVE</Tag> },
+                            { label: t('redis.master_host'), value: redisReplication?.master_host || '—' },
+                            { label: t('redis.master_port'), value: redisReplication?.master_port || '—' },
+                            { label: t('redis.master_link_status'), value: <Tag color={redisReplication?.master_link_status === 'up' ? 'green' : 'red'} style={{ margin: 0 }}>{(redisReplication?.master_link_status || '—').toUpperCase()}</Tag> },
+                            { label: t('redis.master_repl_offset'), value: Number(redisReplication?.master_repl_offset || 0).toLocaleString() },
+                          ].map((r, i) => (
+                            <div key={i} style={{
+                              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                              padding: '5px 0',
+                              borderBottom: i < 4 ? `1px dashed ${p.cardBorder}` : 'none',
+                            }}>
+                              <span style={{ fontSize: 11, color: p.textMuted }}>{r.label}</span>
+                              <span style={{ fontSize: 11, fontWeight: 500, color: p.text, textAlign: 'right' }}>{r.value}</span>
+                            </div>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Databases table + Clients table */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+                  gap: 16, padding: '0 20px 20px',
+                }}>
+                  {/* Keyspace / Databases */}
+                  <div style={{
+                    background: p.card, border: `1px solid ${p.cardBorder}`,
+                    borderRadius: 12, overflow: 'hidden',
+                  }}>
+                    <div style={{
+                      padding: '12px 16px', borderBottom: `1px solid ${p.cardBorder}`,
+                      background: p.headerBg, display: 'flex', alignItems: 'center', gap: 8,
+                    }}>
+                      <DatabaseOutlined style={{ color: '#DC382D' }} />
+                      <span style={{ fontSize: 13, fontWeight: 600, color: p.text }}>{t('redis.keyspace')}</span>
+                      <span style={{ marginLeft: 'auto', fontSize: 10, color: p.textMuted }}>{redisDbOverview.length} {t('redis.databases').toLowerCase()}</span>
+                    </div>
+                    <div style={{ padding: 0 }}>
+                      {redisDbOverview.length === 0 ? (
+                        <div style={{ padding: 30, textAlign: 'center', color: p.textMuted, fontSize: 12 }}>{t('redis.no_active_dbs')}</div>
+                      ) : (
+                        <Table
+                          dataSource={redisDbOverview}
+                          rowKey="db"
+                          size="small"
+                          pagination={false}
+                          style={{ fontSize: 12 }}
+                          columns={[
+                            {
+                              title: t('redis.db'), dataIndex: 'db', key: 'db', width: 70,
+                              render: (v: number) => <span style={{ fontWeight: 600, color: '#DC382D' }}>DB {v}</span>,
+                            },
+                            {
+                              title: t('redis.keys'), dataIndex: 'keys', key: 'keys',
+                              render: (v: number) => <span style={{ fontVariantNumeric: 'tabular-nums' }}>{Number(v || 0).toLocaleString()}</span>,
+                            },
+                            {
+                              title: t('redis.expires'), dataIndex: 'expires', key: 'expires',
+                              render: (v: number) => <span style={{ fontVariantNumeric: 'tabular-nums' }}>{Number(v || 0).toLocaleString()}</span>,
+                            },
+                            {
+                              title: t('redis.avg_ttl'), dataIndex: 'avg_ttl', key: 'avg_ttl', width: 100,
+                              render: (v: number) => v > 0 ? <span style={{ fontVariantNumeric: 'tabular-nums' }}>{(v / 1000).toFixed(1)}s</span> : <span style={{ color: p.textMuted }}>—</span>,
+                            },
+                            {
+                              title: '', key: 'actions', width: 60,
+                              render: (_: any, row: any) => (
+                                <Popconfirm
+                                  title={t('redis.flush_db_confirm', { db: row.db })}
+                                  onConfirm={() => handleRedisFlush(row.db)}
+                                  okText={t('common.delete')}
+                                  okButtonProps={{ danger: true }}
+                                >
+                                  <button
+                                    disabled={redisFlushLoading === `db-${row.db}`}
+                                    style={{
+                                      padding: '2px 8px', borderRadius: 4, border: `1px solid ${p.red}40`,
+                                      background: 'transparent', color: p.red, fontSize: 10, cursor: 'pointer',
+                                      display: 'inline-flex', alignItems: 'center', gap: 3,
+                                    }}
+                                  >
+                                    {redisFlushLoading === `db-${row.db}` ? <LoadingOutlined /> : <DeleteOutlined />} {t('redis.flush')}
+                                  </button>
+                                </Popconfirm>
+                              ),
+                            },
+                          ]}
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Connected clients */}
+                  <div style={{
+                    background: p.card, border: `1px solid ${p.cardBorder}`,
+                    borderRadius: 12, overflow: 'hidden',
+                  }}>
+                    <div style={{
+                      padding: '12px 16px', borderBottom: `1px solid ${p.cardBorder}`,
+                      background: p.headerBg, display: 'flex', alignItems: 'center', gap: 8,
+                    }}>
+                      <TeamOutlined style={{ color: '#4CAF50' }} />
+                      <span style={{ fontSize: 13, fontWeight: 600, color: p.text }}>{t('redis.connected_clients')}</span>
+                      <span style={{ marginLeft: 'auto', fontSize: 10, color: p.textMuted }}>{redisInfo.clients?.length || 0}</span>
+                    </div>
+                    <div style={{ padding: 0 }}>
+                      {!redisInfo.clients || redisInfo.clients.length === 0 ? (
+                        <div style={{ padding: 30, textAlign: 'center', color: p.textMuted, fontSize: 12 }}>{t('redis.no_clients')}</div>
+                      ) : (
+                        <Table
+                          dataSource={redisInfo.clients}
+                          rowKey={(r: any) => r.id || `${r.addr}-${r.db}`}
+                          size="small"
+                          pagination={{ pageSize: 5, size: 'small', showSizeChanger: false }}
+                          style={{ fontSize: 12 }}
+                          columns={[
+                            { title: t('redis.address'), dataIndex: 'addr', key: 'addr', ellipsis: true },
+                            { title: t('redis.name'), dataIndex: 'name', key: 'name', width: 90, render: (v: string) => v ? <Tag style={{ fontSize: 10, margin: 0 }}>{v}</Tag> : <span style={{ color: p.textMuted }}>—</span> },
+                            { title: 'DB', dataIndex: 'db', key: 'db', width: 50 },
+                            { title: t('redis.command'), dataIndex: 'cmd', key: 'cmd', width: 90, render: (v: string) => <code style={{ fontSize: 10, background: p.codeBg, padding: '1px 4px', borderRadius: 3 }}>{v || '—'}</code> },
+                            { title: t('redis.idle'), dataIndex: 'idle', key: 'idle', width: 60, render: (v: number) => <span style={{ fontVariantNumeric: 'tabular-nums' }}>{Number(v || 0)}s</span> },
+                            {
+                              title: '', key: 'actions', width: 50,
+                              render: (_: any, row: any) => (
+                                <Popconfirm
+                                  title={t('redis.kill_client_confirm')}
+                                  onConfirm={() => handleRedisKillClient(row.id)}
+                                  okText={t('common.delete')}
+                                  okButtonProps={{ danger: true }}
+                                >
+                                  <button
+                                    style={{
+                                      padding: '2px 6px', borderRadius: 4, border: `1px solid ${p.red}40`,
+                                      background: 'transparent', color: p.red, fontSize: 10, cursor: 'pointer',
+                                    }}
+                                    title={t('redis.kill_client')}
+                                  >
+                                    <DeleteOutlined />
+                                  </button>
+                                </Popconfirm>
+                              ),
+                            },
+                          ]}
+                        />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </>
             )}
           </div>
         )}
@@ -2634,6 +3318,7 @@ function DatabasesContent() {
 
       <PostgresqlManageModal open={pgManageOpen} onClose={() => setPgManageOpen(false)} />
       <PgAdminManageModal open={pgaManageOpen} onClose={() => setPgaManageOpen(false)} />
+      <RedisManageModal open={redisManageOpen} onClose={() => setRedisManageOpen(false)} />
 
       {/* MongoDB Create Database Modal */}
       <Modal
