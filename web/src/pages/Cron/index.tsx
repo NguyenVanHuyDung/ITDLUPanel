@@ -1190,7 +1190,7 @@ export default function Cron() {
             }
           </Form.Item>
 
-          {(currentTemplate?.cliBackupType || (editingJob && detectBackupTemplate(editingJob.command))) && (
+          {(currentTemplate?.cliBackupType || (editingJob !== null && detectBackupTemplate(editingJob.command))) && (
             <div style={{
               padding: '12px 16px', borderRadius: 8, marginBottom: 16,
               border: `1px solid ${p.cardBorder}`,
@@ -1201,7 +1201,7 @@ export default function Cron() {
               </div>
 
               {/* Site picker */}
-              {(currentTemplate?.needsSitePicker || (editingJob && detectBackupTemplate(editingJob.command)?.type === 'site')) && (
+              {(currentTemplate?.needsSitePicker || (editingJob !== null && detectBackupTemplate(editingJob.command)?.type === 'site')) && (
                 <div style={{ marginBottom: 12 }}>
                   <div style={{ fontSize: 12, color: p.text, marginBottom: 6 }}>Select website:</div>
                   <Select
@@ -1215,10 +1215,10 @@ export default function Cron() {
                     notFoundContent={sitesList.length === 0 ? 'No sites found' : undefined}
                   />
                 </div>
-              ))}
+              )}
 
               {/* Database picker */}
-              {(currentTemplate?.needsDbPicker || (editingJob && detectBackupTemplate(editingJob.command)?.type === 'database')) && (
+              {(currentTemplate?.needsDbPicker || (editingJob !== null && detectBackupTemplate(editingJob.command)?.type === 'database')) && (
                 <div style={{ marginBottom: 12 }}>
                   <div style={{ fontSize: 12, color: p.text, marginBottom: 6 }}>Select database:</div>
                   <Select
@@ -1232,7 +1232,7 @@ export default function Cron() {
                     notFoundContent={dbsList.length === 0 ? 'No databases found' : undefined}
                   />
                 </div>
-              ))}
+              )}
 
               <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 10 }}>
                 Automatically delete old backups when exceeding this limit. Set 0 to keep all.
@@ -1288,10 +1288,9 @@ export default function Cron() {
                 <InfoCircleOutlined style={{ fontSize: 12, color: p.accent, flexShrink: 0 }} /> Backups are created via panel CLI and registered in the panel database — they will appear on the Websites/Databases page backup counts.
               </div>
             </div>
-          ))}
-
+          )}
           {/* Storage destination — shown for all shell crons (manual or template) */}
-          {(!currentTemplate?.cliBackupType && !editingJob || (editingJob && !detectBackupTemplate(editingJob.command))) && (
+          {(!currentTemplate?.cliBackupType || (editingJob !== null && !detectBackupTemplate(editingJob.command))) && (
             <Form.Item
               noStyle
               shouldUpdate={(prev: Record<string, string>, cur: Record<string, string>) => prev.type !== cur.type}
