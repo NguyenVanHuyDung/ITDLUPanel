@@ -205,7 +205,7 @@ const CRON_TEMPLATES: CronTemplate[] = [
     name: 'Clean Docker Resources',
     description: 'Remove unused Docker images, containers, volumes and networks',
     schedule: '0 4 * * 0',
-    command: 'docker system prune -af --volumes 2>/dev/null; echo "Docker cleanup done"',
+    command: 'docker system prune -af 2>/dev/null; echo "Docker cleanup done"',
     type: 'shell', icon: <ClearOutlined />, color: '#0db7ed',
   },
   {
@@ -255,7 +255,7 @@ const CRON_TEMPLATES: CronTemplate[] = [
     name: 'Restart PHP-FPM',
     description: 'Restart all PHP-FPM versions',
     schedule: '0 5 * * 0',
-    command: 'for v in 7.4 8.0 8.1 8.2 8.3 8.4; do systemctl restart php${v}-fpm 2>/dev/null; done; echo "PHP-FPM restarted"',
+    command: 'for v in 8.1 8.3 8.4; do systemctl restart php${v}-fpm 2>/dev/null; done; echo "PHP-FPM restarted"',
     type: 'shell', icon: <SyncOutlined />, color: '#8993BE',
   },
   {
@@ -306,7 +306,7 @@ const CRON_TEMPLATES: CronTemplate[] = [
     name: 'MySQL Slow Query Report',
     description: 'Show recent slow queries from MySQL slow log',
     schedule: '0 8 * * *',
-    command: 'echo "=== MySQL Slow Queries ===" && mysqldumpslow -s t /var/log/mysql/mysql-slow.log 2>/dev/null | head -30 || echo "Slow query log not found"',
+    command: 'echo "=== MySQL Slow Queries ===" && mysqldumpslow -s t /var/lib/mysql/*-slow.log 2>/dev/null | head -30 || echo "Slow query log not found (ensure slow_query_log=ON in MySQL)"',
     type: 'shell', icon: <DatabaseOutlined />, color: '#F9A825',
   },
   {
@@ -321,7 +321,7 @@ const CRON_TEMPLATES: CronTemplate[] = [
     name: 'Service Health Check',
     description: 'Check if Nginx, MySQL, and PHP-FPM are running',
     schedule: '*/5 * * * *',
-    command: 'for svc in nginx mysql php8.2-fpm; do systemctl is-active --quiet $svc && echo "$svc: OK" || echo "$svc: DOWN!"; done',
+    command: 'for svc in nginx mariadb php8.4-fpm; do systemctl is-active --quiet $svc && echo "$svc: OK" || echo "$svc: DOWN!"; done',
     type: 'shell', icon: <MonitorOutlined />, color: '#1B5E20',
   },
   {
@@ -365,7 +365,7 @@ const CRON_TEMPLATES: CronTemplate[] = [
     name: 'Custom URL Request',
     description: 'Send an HTTP GET request to a URL (webhook/health)',
     schedule: '*/15 * * * *',
-    command: 'curl -fsS --max-time 30 "https://example.com/cron-ping" -o /dev/null && echo "Ping OK" || echo "Ping FAILED"',
+    command: 'curl -fsS --max-time 30 --fail "https://example.com/cron-ping" -o /dev/null && echo "Ping OK" || echo "Ping FAILED"',
     type: 'url', icon: <CloudServerOutlined />, color: '#00838F',
   },
 ];
