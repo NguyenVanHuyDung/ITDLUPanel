@@ -17,6 +17,7 @@ import Editor from '@monaco-editor/react';
 import '@/lib/monaco-setup';
 import api from '@/services/api';
 import type { Site, ApiResponse } from '@/types';
+import { UploadProgressModal } from '@/components/Backup/UploadProgressModal';
 import RequireSoftware from '@/components/RequireSoftware';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { usePalette } from '@/hooks/usePalette';
@@ -3658,6 +3659,7 @@ function WebsitesContent() {
   const [cloudStorages, setCloudStorages] = useState<{ id: number; name: string; type: string; is_default: boolean }[]>([]);
   const [backupStorage, setBackupStorage] = useState<string>('local');
   const [backupStorageId, setBackupStorageId] = useState<number | null>(null);
+  const [uploadModalBackup, setUploadModalBackup] = useState<BackupRecord | null>(null);
   const [detectedWebServer, setDetectedWebServer] = useState<string>('');
   const [ftpOption, setFtpOption] = useState<'none' | 'create'>('none');
   const [activeTab, setActiveTab] = useState<'php' | 'proxy'>('php');
@@ -4921,6 +4923,19 @@ function WebsitesContent() {
                                   <DownloadOutlined />
                                 </button>
                               </Tooltip>
+                              <Tooltip title="Upload to cloud">
+                                <button
+                                  onClick={() => setUploadModalBackup(b)}
+                                  style={{
+                                    padding: '4px 8px', border: 'none', borderRadius: 4,
+                                    background: 'transparent', cursor: 'pointer',
+                                    color: p.cyan, fontSize: 13,
+                                    display: 'inline-flex', alignItems: 'center',
+                                  }}
+                                >
+                                  <CloudUploadOutlined />
+                                </button>
+                              </Tooltip>
                               <Tooltip title="Delete">
                                 <Popconfirm
                                   title="Delete this backup?"
@@ -4951,6 +4966,18 @@ function WebsitesContent() {
           </div>
         )}
       </Modal>
+
+      {/* ======================== Upload Progress Modal ======================== */}
+      {uploadModalBackup && (
+        <UploadProgressModal
+          open={!!uploadModalBackup}
+          backupId={uploadModalBackup.id}
+          backupName={uploadModalBackup.name}
+          storages={cloudStorages.map(s => ({ ...s, is_active: true, config: '' }))}
+          onClose={() => setUploadModalBackup(null)}
+          onCompleted={() => fetchSiteBackups(backupSite!.id)}
+        />
+      )}
     </div>
   );
 }

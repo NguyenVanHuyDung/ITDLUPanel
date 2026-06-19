@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Table, Modal, Form, Input, Select, message, Popconfirm, Tooltip, InputNumber, Spin } from 'antd';
+import { Table, Modal, Form, Input, Select, message, Popconfirm, Tooltip, InputNumber, Spin, Tag } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, ReloadOutlined,
   ThunderboltOutlined, DatabaseOutlined, SearchOutlined,
@@ -9,6 +9,7 @@ import {
   MailOutlined, HddOutlined, DesktopOutlined, ToolOutlined,
   SyncOutlined, FileTextOutlined, SecurityScanOutlined, AlertOutlined,
   ClearOutlined, MonitorOutlined, CodeOutlined, SwapOutlined,
+  CloudUploadOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import type { ApiResponse } from '@/types';
@@ -26,6 +27,9 @@ interface CronJob {
   status: number;
   last_run?: string;
   created_at: string;
+  storage_type?: string;
+  storage_id?: number | null;
+  keep_local?: boolean;
 }
 
 interface CronTemplate {
@@ -510,7 +514,14 @@ export default function Cron() {
         const sType = storageType.split(':')[0];
         command += ` -storage=${sType} -storage-id=${storageId}`;
       }
-      const payload = { ...values, schedule, command };
+      const payload = {
+        ...values,
+        schedule,
+        command,
+        storage_type: storageType === 'local' ? '' : (storageType.split(':')[0] || ''),
+        storage_id: storageType === 'local' ? null : (storageId ?? null),
+        keep_local: true, // default; user can flip in advanced settings later
+      };
       if (editingJob) await api.put(`/crons/${editingJob.id}`, payload);
       else await api.post('/crons', payload);
       message.success(t('common.success'));
@@ -739,6 +750,12 @@ export default function Cron() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <ClockCircleOutlined style={{ color: p.accent, fontSize: 13 }} />
             <span style={{ fontWeight: 500, color: p.text, fontSize: 13 }}>{r.name}</span>
+            {r.type?.startsWith('backup_') && r.storage_type && (
+              <Tag color="blue" style={{ marginLeft: 4, fontSize: 10, lineHeight: '14px', padding: '0 4px' }}>
+                <CloudUploadOutlined /> {r.storage_type}#{r.storage_id}
+                {r.keep_local === false && <span style={{ marginLeft: 3, opacity: 0.7 }}>(no-local)</span>}
+              </Tag>
+            )}
           </div>
           <div style={{ fontSize: 11, color: p.textMuted, marginLeft: 19 }}>
             {cronToHuman(r.schedule)}

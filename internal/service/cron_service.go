@@ -512,6 +512,9 @@ func (s *CronService) buildCrontabCommand(id int64) string {
 		if parts.MaxKeep > 0 {
 			args = append(args, fmt.Sprintf("-max-keep=%d", parts.MaxKeep))
 		}
+		if parts.Strategy == "incremental" {
+			args = append(args, "-strategy=incremental")
+		}
 		if job.StorageType != "" && job.StorageID != nil {
 			args = append(args, fmt.Sprintf("-storage=%s", job.StorageType))
 			args = append(args, fmt.Sprintf("-storage-id=%d", *job.StorageID))
@@ -538,9 +541,10 @@ func backupTypeFor(cronType string) string {
 // crons.command for backup_* jobs. Keeping it a tiny struct (rather
 // than free-form text) lets us validate it once at cron-create time.
 type backupCommandSpec struct {
-	Target  string `json:"target"`
-	All     bool   `json:"all"`
-	MaxKeep int    `json:"max_keep"`
+	Target   string `json:"target"`
+	All      bool   `json:"all"`
+	MaxKeep  int    `json:"max_keep"`
+	Strategy string `json:"strategy"` // "full" or "incremental"
 }
 
 // parseBackupCommand parses the JSON-ish spec stored in crons.command

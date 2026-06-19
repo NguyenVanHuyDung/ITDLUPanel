@@ -230,6 +230,7 @@ func runBackupCommand() {
 	storage := cmd.String("storage", "", "Remote storage type: ftp, s3, google_drive, onedrive")
 	storageID := cmd.Int64("storage-id", 0, "Storage configuration ID for remote upload")
 	noKeepLocal := cmd.Bool("no-keep-local", false, "Delete the local backup file after successful remote upload")
+	strategy := cmd.String("strategy", "full", "Backup strategy: 'full' (default) or 'incremental' (rsync+hardlinks)")
 	cmd.Parse(os.Args[2:])
 
 	if *backupType == "" {
@@ -314,7 +315,8 @@ func runBackupCommand() {
 				output(result{Status: "error", Type: "site", Error: err.Error()})
 				os.Exit(1)
 			}
-			b, err := backupSvc.CreateSiteBackup(siteID, systemUserID)
+			opts := service.BackupOptions{Strategy: *strategy}
+			b, err := backupSvc.CreateSiteBackupWithOpts(opts, siteID, systemUserID)
 			if err != nil {
 				output(result{Status: "error", Type: "site", Error: err.Error()})
 				os.Exit(1)
@@ -359,7 +361,8 @@ func runBackupCommand() {
 				output(result{Status: "error", Type: "database", Error: err.Error()})
 				os.Exit(1)
 			}
-			b, err := backupSvc.CreateDatabaseBackup(dbID, systemUserID)
+			opts := service.BackupOptions{Strategy: *strategy}
+			b, err := backupSvc.CreateDatabaseBackupWithOpts(opts, dbID, systemUserID)
 			if err != nil {
 				output(result{Status: "error", Type: "database", Error: err.Error()})
 				os.Exit(1)
@@ -378,7 +381,8 @@ func runBackupCommand() {
 		}
 
 	case "panel":
-		b, err := backupSvc.CreatePanelBackup(systemUserID)
+		opts := service.BackupOptions{Strategy: *strategy}
+		b, err := backupSvc.CreatePanelBackupWithOpts(opts, systemUserID)
 		if err != nil {
 			output(result{Status: "error", Type: "panel", Error: err.Error()})
 			os.Exit(1)

@@ -30,5 +30,6 @@ func All() []Migration {
 		&Migration017WAFEnhance{},
 		&Migration018BackupUploads{},
 		&Migration019CronStorage{},
+		&Migration020IncrementalBackups{},
 	}
 }

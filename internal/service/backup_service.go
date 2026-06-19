@@ -22,19 +22,22 @@ import (
 
 // Backup represents a backup record from the backups table.
 type Backup struct {
-	ID         int64   `json:"id"`
-	Type       string  `json:"type"`
-	Name       string  `json:"name"`
-	TargetID   *int64  `json:"target_id"`
-	TargetName *string `json:"target_name"`
-	FilePath   string  `json:"file_path"`
-	FileSize   int64   `json:"file_size"`
-	Storage    string  `json:"storage"`
-	StorageID  *int64  `json:"storage_id"`
-	Checksum   *string `json:"checksum"`
-	Status     string  `json:"status"`
-	CreatedBy  *int64  `json:"created_by"`
-	CreatedAt  string  `json:"created_at"`
+	ID           int64   `json:"id"`
+	Type         string  `json:"type"`
+	Name         string  `json:"name"`
+	TargetID     *int64  `json:"target_id"`
+	TargetName   *string `json:"target_name"`
+	FilePath     string  `json:"file_path"`
+	FileSize     int64   `json:"file_size"`
+	Storage      string  `json:"storage"`
+	StorageID    *int64  `json:"storage_id"`
+	Checksum     *string `json:"checksum"`
+	Status       string  `json:"status"`
+	CreatedBy    *int64  `json:"created_by"`
+	CreatedAt    string  `json:"created_at"`
+	Strategy     string  `json:"strategy"`
+	ParentID     *int64  `json:"parent_id"`
+	SnapshotPath *string `json:"snapshot_path"`
 }
 
 // ---------------------------------------------------------------------------
@@ -143,11 +146,19 @@ func (s *BackupService) CreateSiteBackup(siteID int64, createdBy int64) (*Backup
 type BackupOptions struct {
 	Compression string // "" or "gzip" → gzip; "bzip2" → bzip2; "zstd" → zstd; "none" → no compression
 	EncryptPass string // "" → no encryption; otherwise AES-256-GCM passphrase
+	Strategy    string // "full" (default) or "incremental" — incremental uses rsync+hardlinks
 }
 
 // CreateSiteBackupWithOpts is the same as CreateSiteBackup but takes a
 // BackupOptions struct (currently Compression + optional encryption).
+//
+// When opts.Strategy == "incremental" we route to the rsync+hardlink
+// path which stores a directory snapshot, not a single tarball.
 func (s *BackupService) CreateSiteBackupWithOpts(opts BackupOptions, siteID int64, createdBy int64) (*Backup, error) {
+	if opts.Strategy == "incremental" {
+		return s.createIncrementalSiteBackup(opts, siteID, createdBy)
+	}
+
 	site, err := s.getSite(siteID)
 	if err != nil {
 		return nil, err
@@ -209,7 +220,14 @@ func (s *BackupService) CreateDatabaseBackup(dbID int64, createdBy int64) (*Back
 
 // CreateDatabaseBackupWithOpts is the same as CreateDatabaseBackup but
 // takes a BackupOptions struct.
+//
+// When opts.Strategy == "incremental" we route to the rsync+hardlink
+// path which stores a directory snapshot.
 func (s *BackupService) CreateDatabaseBackupWithOpts(opts BackupOptions, dbID int64, createdBy int64) (*Backup, error) {
+	if opts.Strategy == "incremental" {
+		return s.createIncrementalDatabaseBackup(opts, dbID, createdBy)
+	}
+
 	dbInfo, err := s.getDatabase(dbID)
 	if err != nil {
 		return nil, err
@@ -384,7 +402,8 @@ func (s *BackupService) List(page, pageSize int, backupType string, targetID int
 
 	offset := (page - 1) * pageSize
 	query := `SELECT id, type, name, target_id, target_name, file_path, file_size,
-	                 storage, storage_id, checksum, status, created_by, created_at
+	                 storage, storage_id, checksum, status, created_by, created_at,
+	                 strategy, parent_id, snapshot_path
 	          FROM backups` + where + ` ORDER BY id DESC LIMIT ? OFFSET ?`
 	args = append(args, pageSize, offset)
 
@@ -397,10 +416,36 @@ func (s *BackupService) List(page, pageSize int, backupType string, targetID int
 	var backups []*Backup
 	for rows.Next() {
 		b := &Backup{}
-		if err := rows.Scan(&b.ID, &b.Type, &b.Name, &b.TargetID, &b.TargetName,
-			&b.FilePath, &b.FileSize, &b.Storage, &b.StorageID, &b.Checksum, &b.Status,
-			&b.CreatedBy, &b.CreatedAt); err != nil {
+		var parentID, storageID, createdBy sql.NullInt64
+		var targetName, checksum, snapshotPath sql.NullString
+		if err := rows.Scan(&b.ID, &b.Type, &b.Name, &b.TargetID, &targetName,
+			&b.FilePath, &b.FileSize, &b.Storage, &storageID, &checksum, &b.Status,
+			&createdBy, &b.CreatedAt, &b.Strategy, &parentID, &snapshotPath); err != nil {
 			return nil, 0, apperrors.Wrap(err, apperrors.ErrInternal, "failed to scan backup row")
+		}
+		if targetName.Valid {
+			tn := targetName.String
+			b.TargetName = &tn
+		}
+		if storageID.Valid {
+			sid := storageID.Int64
+			b.StorageID = &sid
+		}
+		if checksum.Valid {
+			c := checksum.String
+			b.Checksum = &c
+		}
+		if createdBy.Valid {
+			uid := createdBy.Int64
+			b.CreatedBy = &uid
+		}
+		if parentID.Valid {
+			pid := parentID.Int64
+			b.ParentID = &pid
+		}
+		if snapshotPath.Valid {
+			sp := snapshotPath.String
+			b.SnapshotPath = &sp
 		}
 		backups = append(backups, b)
 	}
@@ -453,18 +498,45 @@ func (s *BackupService) DatabaseBackupCounts() (map[int64]int, error) {
 }
 func (s *BackupService) GetByID(id int64) (*Backup, error) {
 	b := &Backup{}
+	var parentID, storageID, createdBy sql.NullInt64
+	var targetName, checksum, snapshotPath sql.NullString
 	err := s.db.QueryRow(
 		`SELECT id, type, name, target_id, target_name, file_path, file_size,
-		        storage, storage_id, checksum, status, created_by, created_at
+		        storage, storage_id, checksum, status, created_by, created_at,
+		        strategy, parent_id, snapshot_path
 		 FROM backups WHERE id = ?`, id,
-	).Scan(&b.ID, &b.Type, &b.Name, &b.TargetID, &b.TargetName,
-		&b.FilePath, &b.FileSize, &b.Storage, &b.StorageID, &b.Checksum, &b.Status,
-		&b.CreatedBy, &b.CreatedAt)
+	).Scan(&b.ID, &b.Type, &b.Name, &b.TargetID, &targetName,
+		&b.FilePath, &b.FileSize, &b.Storage, &storageID, &checksum, &b.Status,
+		&createdBy, &b.CreatedAt, &b.Strategy, &parentID, &snapshotPath)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, apperrors.New(apperrors.ErrNotFound, "backup not found")
 		}
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get backup")
+	}
+	if targetName.Valid {
+		tn := targetName.String
+		b.TargetName = &tn
+	}
+	if storageID.Valid {
+		sid := storageID.Int64
+		b.StorageID = &sid
+	}
+	if checksum.Valid {
+		c := checksum.String
+		b.Checksum = &c
+	}
+	if createdBy.Valid {
+		uid := createdBy.Int64
+		b.CreatedBy = &uid
+	}
+	if parentID.Valid {
+		pid := parentID.Int64
+		b.ParentID = &pid
+	}
+	if snapshotPath.Valid {
+		sp := snapshotPath.String
+		b.SnapshotPath = &sp
 	}
 	return b, nil
 }
@@ -483,6 +555,16 @@ func (s *BackupService) Delete(id int64) error {
 	// Delete local file if exists
 	if b.FilePath != "" {
 		os.Remove(b.FilePath)
+	}
+
+	// Delete the snapshot directory for incremental backups. We
+	// unlink the directory itself (rm -rf) — hardlinks living inside
+	// that directory keep the on-disk data alive as long as some
+	// other snapshot references them, so the cascade is safe.
+	if b.SnapshotPath != nil && *b.SnapshotPath != "" && *b.SnapshotPath != b.FilePath {
+		if err := os.RemoveAll(*b.SnapshotPath); err != nil {
+			logger.Warn().Err(err).Str("path", *b.SnapshotPath).Msg("failed to remove snapshot directory")
+		}
 	}
 
 	// Delete from FTP storage if applicable
@@ -575,6 +657,22 @@ func (s *BackupService) RestoreWithPass(id int64, passphrase string) error {
 		b.FilePath = decPath
 	}
 
+	// Incremental snapshots: instead of restoring from a tarball,
+	// stream the on-disk directory through tar so the destination
+	// doc root ends up with the same content as a fresh rsync. The
+	// hardlink chain is invisible to the destination.
+	if b.Strategy == "incremental" && b.SnapshotPath != nil {
+		return s.restoreSiteFromSnapshot(b)
+	}
+
+	// Incremental database snapshots: pick the SQL file out of the
+	// snapshot dir (post-mysqldump, possibly compressed) and pipe it
+	// into the mysql client. The compressExtFor() helper normalises
+	// to .gz/.bz2/.zst; an uncompressed snapshot is just .sql.
+	if b.Strategy == "incremental" && b.SnapshotPath != nil {
+		return s.restoreDatabaseFromSnapshot(b)
+	}
+
 	switch b.Type {
 	case "site":
 		return s.restoreSite(b)
@@ -585,6 +683,120 @@ func (s *BackupService) RestoreWithPass(id int64, passphrase string) error {
 	default:
 		return apperrors.New(apperrors.ErrValidation, "unsupported backup type: "+b.Type)
 	}
+}
+
+// restoreDatabaseFromSnapshot restores a database from a snapshot
+// directory by finding the SQL dump inside (post-compression) and
+// piping it into the mysql client. The "snapshot" directory holds
+// exactly one <name>.sql[.gz|.bz2|.zst] file written by
+// createIncrementalDatabaseBackup.
+func (s *BackupService) restoreDatabaseFromSnapshot(b *Backup) error {
+	if b.TargetName == nil || *b.TargetName == "" {
+		return apperrors.New(apperrors.ErrInternal, "missing target name for database snapshot restore")
+	}
+	if b.SnapshotPath == nil {
+		return apperrors.New(apperrors.ErrInternal, "incremental backup missing snapshot_path")
+	}
+
+	// Find the dump file: try the common compressions in order.
+	var dumpFile string
+	dbName := ""
+	if b.TargetName != nil {
+		dbName = *b.TargetName
+	}
+	for _, ext := range []string{"", ".gz", ".bz2", ".zst"} {
+		cand := filepath.Join(*b.SnapshotPath, dbName+".sql"+ext)
+		if _, err := os.Stat(cand); err == nil {
+			dumpFile = cand
+			break
+		}
+	}
+	if dumpFile == "" {
+		// Fallback: take whatever .sql* file exists.
+		matches, _ := filepath.Glob(filepath.Join(*b.SnapshotPath, "*.sql*"))
+		if len(matches) == 0 {
+			return apperrors.New(apperrors.ErrNotFound, "no SQL dump found in snapshot directory")
+		}
+		dumpFile = matches[0]
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), backupCmdTimeout)
+	defer cancel()
+
+	// If the file is compressed, decompress into a temp SQL first.
+	plain := dumpFile
+	if filepath.Ext(dumpFile) != "" && filepath.Ext(dumpFile) != ".sql" {
+		var decompBin string
+		switch filepath.Ext(dumpFile) {
+		case ".bz2":
+			decompBin = "bzip2"
+		case ".zst":
+			decompBin = "zstd"
+		default:
+			decompBin = "gunzip"
+		}
+		tmpDir, _ := os.MkdirTemp("", "db-restore-*")
+		plain = filepath.Join(tmpDir, dbName+".sql")
+		defer os.RemoveAll(tmpDir)
+		// Use ExecShell so the > redirect works. We split the
+		// command into 3 tokens for the parser.
+		cmd := fmt.Sprintf("%s -c %q > %s", decompBin, dumpFile, plain)
+		if _, err := system.ExecShell(ctx, cmd); err != nil {
+			return apperrors.Wrap(err, apperrors.ErrInternal, "decompress failed")
+		}
+	}
+
+	// Pipe SQL to mysql. Use shell with < redirect since
+	// system.Exec uses os/exec which doesn't honour shell redirects.
+	cmd := fmt.Sprintf("mysql -u root %s < %s", *b.TargetName, plain)
+	if _, err := system.ExecShell(ctx, cmd); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "mysql import failed")
+	}
+
+	logger.Info().Int64("id", b.ID).Str("db", *b.TargetName).Str("dump", dumpFile).
+		Msg("database restored from incremental snapshot")
+	return nil
+}
+
+// restoreSiteFromSnapshot extracts an incremental site backup's
+// snapshot directory into the document root, then deletes any files
+// in the doc root that aren't in the snapshot (so a restore of a
+// 3-day-old snapshot doesn't leave stale files behind — the
+// "rsync --delete" behaviour).
+//
+// We use rsync again for the restore path because it's the same
+// code path as a remote rsync, which means:
+//   - permissions, symlinks, hardlinks are preserved
+//   - large files don't get loaded into memory
+//   - we get the same on-disk content as if we'd copied the dir
+func (s *BackupService) restoreSiteFromSnapshot(b *Backup) error {
+	if b.TargetName == nil || *b.TargetName == "" {
+		return apperrors.New(apperrors.ErrInternal, "missing target name for snapshot restore")
+	}
+	if b.SnapshotPath == nil {
+		return apperrors.New(apperrors.ErrInternal, "incremental backup missing snapshot_path")
+	}
+	if _, err := os.Stat(*b.SnapshotPath); os.IsNotExist(err) {
+		return apperrors.New(apperrors.ErrNotFound, "snapshot directory no longer on disk")
+	}
+
+	cfg := config.Get()
+	docRoot := filepath.Join(cfg.Paths.WWWRoot, *b.TargetName)
+	if err := os.MkdirAll(docRoot, 0755); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to create document root")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), backupCmdTimeout)
+	defer cancel()
+	rsyncArgs := []string{"-aHx", "--numeric-ids", "--delete",
+		filepath.Join(*b.SnapshotPath) + "/", docRoot + "/"}
+	if _, err := system.Exec(ctx, "rsync", rsyncArgs...); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "snapshot restore failed")
+	}
+
+	logger.Info().Int64("id", b.ID).Str("domain", *b.TargetName).Str("path", *b.SnapshotPath).
+		Msg("site restored from incremental snapshot")
+	return nil
 }
 
 func (s *BackupService) restoreSite(b *Backup) error {
@@ -603,6 +815,14 @@ func (s *BackupService) restoreSite(b *Backup) error {
 
 	if _, err := system.Exec(ctx, "tar", "xzf", b.FilePath, "-C", docRoot); err != nil {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to restore site backup")
+	}
+
+	// After a full tar extract, files added since the backup aren't
+	// removed (tar only overwrites matching paths). Clean the doc
+	// root of any file not present in the tar to make "restore" mean
+	// "exact previous state", which is what users expect.
+	if b.Strategy != "incremental" {
+		cleanDocRootExtras(docRoot, b.FilePath)
 	}
 
 	logger.Info().Int64("id", b.ID).Str("domain", *b.TargetName).Msg("site restored from backup")
@@ -651,6 +871,52 @@ func (s *BackupService) restorePanel(b *Backup) error {
 
 	logger.Info().Int64("id", b.ID).Msg("panel restored from backup — software symlinks may need re-creation on next install")
 	return nil
+}
+
+// cleanDocRootExtras removes files in docRoot that aren't part of the
+// tar at tarPath. Implemented by listing the tar's entries first
+// (offline, no extraction) then walking the doc root and unlinking
+// anything not in that list. Errors are logged but never fail the
+// restore — partial cleanup is better than a failed restore.
+func cleanDocRootExtras(docRoot, tarPath string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// tar -tf lists all entries (one per line). Cheap for typical
+	// site sizes (a few thousand entries).
+	out, err := system.Exec(ctx, "tar", "-tf", tarPath)
+	if err != nil || out == nil {
+		logger.Warn().Err(err).Str("tar", tarPath).Msg("cleanDocRootExtras: tar list failed, skipping")
+		return
+	}
+	expected := make(map[string]bool)
+	for _, line := range strings.Split(out.Stdout, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			expected[line] = true
+		}
+	}
+
+	// Walk the doc root. Any file/dir not in `expected` is removed.
+	// We use os.RemoveAll for directories so we get a single syscall
+	// per top-level extra. Symlinks are followed-on-remove to clean
+	// whatever they pointed to.
+	filepath.Walk(docRoot, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if path == docRoot {
+			return nil
+		}
+		rel, _ := filepath.Rel(docRoot, path)
+		if expected[rel] || expected[rel+"/"] {
+			return nil
+		}
+		if err := os.RemoveAll(path); err != nil {
+			logger.Warn().Err(err).Str("path", path).Msg("cleanDocRootExtras: failed to remove")
+		}
+		return nil
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -915,8 +1181,8 @@ func (s *BackupService) insertRecord(
 	createdBy int64,
 ) (*Backup, error) {
 	result, err := s.db.Exec(
-		`INSERT INTO backups (type, name, target_id, target_name, file_path, file_size, storage, status, created_by)
-		 VALUES (?, ?, ?, ?, ?, ?, 'local', 'completed', ?)`,
+		`INSERT INTO backups (type, name, target_id, target_name, file_path, file_size, storage, status, created_by, strategy)
+		 VALUES (?, ?, ?, ?, ?, ?, 'local', 'completed', ?, 'full')`,
 		backupType, name, targetID, targetName, filePath, size, createdBy,
 	)
 	if err != nil {
@@ -926,6 +1192,40 @@ func (s *BackupService) insertRecord(
 	id, _ := result.LastInsertId()
 	logger.Info().Int64("id", id).Str("type", backupType).Str("name", name).Msg("backup created")
 
+	return s.GetByID(id)
+}
+
+// insertSnapshotRecord is the incremental-backup equivalent of
+// insertRecord: it writes a row whose strategy='incremental' and
+// snapshot_path is set, with file_path left empty (the snapshot is a
+// directory, not a single file). parent_id chains back to the
+// previous snapshot for cascade-safe deletion.
+//
+// The (file_path) column is NOT NULL in older schema; we satisfy it
+// with the same value as snapshot_path so the column isn't
+// misleadingly empty. Downloads of an incremental backup produce a
+// tarball on the fly; see StreamSnapshotAsTar.
+func (s *BackupService) insertSnapshotRecord(
+	backupType, name string,
+	targetID *int64, targetName *string,
+	snapPath string, size int64,
+	strategy string, parentID *int64,
+	snapshotPath *string,
+	createdBy int64,
+) (*Backup, error) {
+	result, err := s.db.Exec(
+		`INSERT INTO backups (type, name, target_id, target_name, file_path, file_size, storage, status, created_by, strategy, parent_id, snapshot_path)
+		 VALUES (?, ?, ?, ?, ?, ?, 'local', 'completed', ?, ?, ?, ?)`,
+		backupType, name, targetID, targetName, snapPath, size, createdBy,
+		strategy, parentID, snapshotPath,
+	)
+	if err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to store snapshot record")
+	}
+
+	id, _ := result.LastInsertId()
+	logger.Info().Int64("id", id).Str("type", backupType).Str("name", name).
+		Str("strategy", strategy).Msg("snapshot backup created")
 	return s.GetByID(id)
 }
 

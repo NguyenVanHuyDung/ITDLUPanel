@@ -91,6 +91,7 @@ type createBackupRequest struct {
 	StorageID   *int64 `json:"storage_id"`
 	Compression string `json:"compression"`
 	EncryptPass string `json:"encrypt_pass"`
+	Strategy    string `json:"strategy"` // "" or "full" → full tarball; "incremental" → rsync + hardlinks
 }
 
 // Create creates a new backup.
@@ -122,6 +123,7 @@ func (h *BackupHandler) Create(c *gin.Context) {
 	opts := service.BackupOptions{
 		Compression: req.Compression,
 		EncryptPass: req.EncryptPass,
+		Strategy:    req.Strategy,
 	}
 
 	switch req.Type {
