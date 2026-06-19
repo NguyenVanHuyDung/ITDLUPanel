@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -30,34 +31,43 @@ var cronExprRegex = regexp.MustCompile(`^\S+\s+\S+\s+\S+\s+\S+\s+\S+$`)
 
 // CreateCronRequest holds data for creating a new cron job.
 type CreateCronRequest struct {
-	Name     string `json:"name" validate:"required,min=1,max=255"`
-	Type     string `json:"type" validate:"required,oneof=shell url backup_site backup_db"`
-	Schedule string `json:"schedule" validate:"required,cron_expr"`
-	Command  string `json:"command" validate:"required"`
+	Name        string  `json:"name" validate:"required,min=1,max=255"`
+	Type        string  `json:"type" validate:"required,oneof=shell url backup_site backup_db"`
+	Schedule    string  `json:"schedule" validate:"required,cron_expr"`
+	Command     string  `json:"command" validate:"required"`
+	StorageType string  `json:"storage_type"`
+	StorageID   *int64  `json:"storage_id"`
+	KeepLocal   *bool   `json:"keep_local"`
 }
 
 // UpdateCronRequest holds data for updating an existing cron job.
 type UpdateCronRequest struct {
-	Name     string `json:"name" validate:"omitempty,min=1,max=255"`
-	Type     string `json:"type" validate:"omitempty,oneof=shell url backup_site backup_db"`
-	Schedule string `json:"schedule" validate:"omitempty,cron_expr"`
-	Command  string `json:"command" validate:"omitempty"`
+	Name        string  `json:"name" validate:"omitempty,min=1,max=255"`
+	Type        string  `json:"type" validate:"omitempty,oneof=shell url backup_site backup_db"`
+	Schedule    string  `json:"schedule" validate:"omitempty,cron_expr"`
+	Command     string  `json:"command" validate:"omitempty"`
+	StorageType *string `json:"storage_type"`
+	StorageID   *int64  `json:"storage_id"`
+	KeepLocal   *bool   `json:"keep_local"`
 }
 
 // CronJob represents a scheduled cron job.
 type CronJob struct {
-	ID         int64      `json:"id"`
-	Name       string     `json:"name"`
-	Type       string     `json:"type"`
-	Schedule   string     `json:"schedule"`
-	Command    string     `json:"command"`
-	Status     int        `json:"status"`
-	LastRun    *time.Time `json:"last_run"`
-	LastStatus *string    `json:"last_status"`
-	LastOutput *string    `json:"last_output"`
-	CreatedBy  *int64     `json:"created_by"`
-	CreatedAt  string     `json:"created_at"`
-	UpdatedAt  string     `json:"updated_at"`
+	ID          int64      `json:"id"`
+	Name        string     `json:"name"`
+	Type        string     `json:"type"`
+	Schedule    string     `json:"schedule"`
+	Command     string     `json:"command"`
+	Status      int        `json:"status"`
+	StorageType string     `json:"storage_type"`
+	StorageID   *int64     `json:"storage_id"`
+	KeepLocal   bool       `json:"keep_local"`
+	LastRun     *time.Time `json:"last_run"`
+	LastStatus  *string    `json:"last_status"`
+	LastOutput  *string    `json:"last_output"`
+	CreatedBy   *int64     `json:"created_by"`
+	CreatedAt   string     `json:"created_at"`
+	UpdatedAt   string     `json:"updated_at"`
 }
 
 // ---------------------------------------------------------------------------
@@ -111,9 +121,18 @@ func (s *CronService) Create(req CreateCronRequest) (*CronJob, error) {
 		return nil, apperrors.New(apperrors.ErrValidation, "invalid cron expression, must be 5 fields")
 	}
 
+	keepLocal := 1
+	if req.KeepLocal != nil {
+		if !*req.KeepLocal {
+			keepLocal = 0
+		}
+	}
+
 	result, err := s.db.Exec(
-		`INSERT INTO crons (name, type, schedule, command, status) VALUES (?, ?, ?, ?, 1)`,
+		`INSERT INTO crons (name, type, schedule, command, status, storage_type, storage_id, keep_local)
+		 VALUES (?, ?, ?, ?, 1, ?, ?, ?)`,
 		req.Name, req.Type, req.Schedule, req.Command,
+		req.StorageType, nullInt(req.StorageID), keepLocal,
 	)
 	if err != nil {
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create cron job")
@@ -140,7 +159,9 @@ func (s *CronService) List(page, pageSize int) ([]*CronJob, int, error) {
 
 	offset := (page - 1) * pageSize
 	rows, err := s.db.Query(
-		`SELECT id, name, type, schedule, command, status, last_run, last_status, last_output, created_by, created_at, updated_at
+		`SELECT id, name, type, schedule, command, status,
+		        storage_type, storage_id, keep_local,
+		        last_run, last_status, last_output, created_by, created_at, updated_at
 		 FROM crons ORDER BY id DESC LIMIT ? OFFSET ?`,
 		pageSize, offset,
 	)
@@ -153,12 +174,19 @@ func (s *CronService) List(page, pageSize int) ([]*CronJob, int, error) {
 	for rows.Next() {
 		c := &CronJob{}
 		var lastRun sql.NullTime
-		var lastStatus, lastOutput sql.NullString
-		var createdBy sql.NullInt64
+		var lastStatus, lastOutput, storageType sql.NullString
+		var storageID, createdBy sql.NullInt64
+		var keepLocal int
 		if err := rows.Scan(&c.ID, &c.Name, &c.Type, &c.Schedule, &c.Command, &c.Status,
+			&storageType, &storageID, &keepLocal,
 			&lastRun, &lastStatus, &lastOutput, &createdBy, &c.CreatedAt, &c.UpdatedAt); err != nil {
 			return nil, 0, apperrors.Wrap(err, apperrors.ErrInternal, "failed to scan cron job row")
 		}
+		c.StorageType = storageType.String
+		if storageID.Valid {
+			c.StorageID = &storageID.Int64
+		}
+		c.KeepLocal = keepLocal == 1
 		if lastRun.Valid {
 			c.LastRun = &lastRun.Time
 		}
@@ -181,12 +209,16 @@ func (s *CronService) List(page, pageSize int) ([]*CronJob, int, error) {
 func (s *CronService) GetByID(id int64) (*CronJob, error) {
 	c := &CronJob{}
 	var lastRun sql.NullTime
-	var lastStatus, lastOutput sql.NullString
-	var createdBy sql.NullInt64
+	var lastStatus, lastOutput, storageType sql.NullString
+	var storageID, createdBy sql.NullInt64
+	var keepLocal int
 	err := s.db.QueryRow(
-		`SELECT id, name, type, schedule, command, status, last_run, last_status, last_output, created_by, created_at, updated_at
+		`SELECT id, name, type, schedule, command, status,
+		        storage_type, storage_id, keep_local,
+		        last_run, last_status, last_output, created_by, created_at, updated_at
 		 FROM crons WHERE id = ?`, id,
 	).Scan(&c.ID, &c.Name, &c.Type, &c.Schedule, &c.Command, &c.Status,
+		&storageType, &storageID, &keepLocal,
 		&lastRun, &lastStatus, &lastOutput, &createdBy, &c.CreatedAt, &c.UpdatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -194,6 +226,11 @@ func (s *CronService) GetByID(id int64) (*CronJob, error) {
 		}
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get cron job")
 	}
+	c.StorageType = storageType.String
+	if storageID.Valid {
+		c.StorageID = &storageID.Int64
+	}
+	c.KeepLocal = keepLocal == 1
 	if lastRun.Valid {
 		c.LastRun = &lastRun.Time
 	}
@@ -231,10 +268,29 @@ func (s *CronService) Update(id int64, req UpdateCronRequest) error {
 	if req.Command != "" {
 		cron.Command = req.Command
 	}
+	if req.StorageType != nil {
+		cron.StorageType = *req.StorageType
+	}
+	if req.StorageID != nil {
+		cron.StorageID = req.StorageID
+	}
+	if req.KeepLocal != nil {
+		cron.KeepLocal = *req.KeepLocal
+	}
 
+	keepLocal := 0
+	if cron.KeepLocal {
+		keepLocal = 1
+	}
 	_, err = s.db.Exec(
-		`UPDATE crons SET name = ?, type = ?, schedule = ?, command = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-		cron.Name, cron.Type, cron.Schedule, cron.Command, id,
+		`UPDATE crons
+		 SET name = ?, type = ?, schedule = ?, command = ?,
+		     storage_type = ?, storage_id = ?, keep_local = ?,
+		     updated_at = CURRENT_TIMESTAMP
+		 WHERE id = ?`,
+		cron.Name, cron.Type, cron.Schedule, cron.Command,
+		cron.StorageType, nullInt(cron.StorageID), keepLocal,
+		id,
 	)
 	if err != nil {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to update cron job")
@@ -420,14 +476,84 @@ func (s *CronService) rawCommand(cronType, command string) string {
 // buildCrontabCommand constructs the crontab command line that delegates to
 // the panel binary's "cron-run" subcommand. This approach avoids crontab %
 // escaping issues and properly updates last_run/last_status in the database.
+//
+// For backup_* crons the command is `panel backup …` (not `cron-run`),
+// which triggers a real backup, optionally uploads to the configured
+// storage, enforces retention, then exits. For shell/url crons the
+// command is `panel cron-run -id=N` so RunNow() can stream output to
+// the log and dispatch notifications.
 func (s *CronService) buildCrontabCommand(id int64) string {
-	// Resolve the panel binary path
 	exe, err := os.Executable()
 	if err != nil {
 		exe = "/root/ITDLUPanel/bin/itdlupanel"
 	}
-	return fmt.Sprintf("%s cron-run -id=%d -config=%s",
-		exe, id, resolveConfigPath())
+
+	job, err := s.GetByID(id)
+	if err != nil {
+		// Fall back to the generic cron-run path so we never delete
+		// a crontab entry by accident.
+		return fmt.Sprintf("%s cron-run -id=%d -config=%s",
+			exe, id, resolveConfigPath())
+	}
+
+	switch job.Type {
+	case "backup_site", "backup_db":
+		// `command` is a JSON-ish mini-spec the frontend writes
+		// (e.g. `{"target":"example.com","all":false,"max_keep":5}`).
+		// We translate it into real `panel backup` flags here so the
+		// cron entry is self-contained and survives CLI refactors.
+		parts := parseBackupCommand(job.Command)
+		args := []string{"backup", "-config=" + resolveConfigPath(), "-type=" + backupTypeFor(job.Type)}
+		if parts.All {
+			args = append(args, "-all")
+		} else if parts.Target != "" {
+			args = append(args, "-target="+parts.Target)
+		}
+		if parts.MaxKeep > 0 {
+			args = append(args, fmt.Sprintf("-max-keep=%d", parts.MaxKeep))
+		}
+		if job.StorageType != "" && job.StorageID != nil {
+			args = append(args, fmt.Sprintf("-storage=%s", job.StorageType))
+			args = append(args, fmt.Sprintf("-storage-id=%d", *job.StorageID))
+		}
+		if !job.KeepLocal {
+			args = append(args, "-no-keep-local")
+		}
+		return fmt.Sprintf("%s %s", exe, strings.Join(args, " "))
+	default:
+		return fmt.Sprintf("%s cron-run -id=%d -config=%s",
+			exe, id, resolveConfigPath())
+	}
+}
+
+// backupTypeFor converts a cron type into the CLI's -type flag value.
+func backupTypeFor(cronType string) string {
+	if cronType == "backup_db" {
+		return "database"
+	}
+	return "site"
+}
+
+// backupCommandSpec is the mini-spec the frontend writes into
+// crons.command for backup_* jobs. Keeping it a tiny struct (rather
+// than free-form text) lets us validate it once at cron-create time.
+type backupCommandSpec struct {
+	Target  string `json:"target"`
+	All     bool   `json:"all"`
+	MaxKeep int    `json:"max_keep"`
+}
+
+// parseBackupCommand parses the JSON-ish spec stored in crons.command
+// for backup jobs. Empty / invalid input yields an empty struct, which
+// the CLI interprets as "no target, no all" — i.e. the cron will exit
+// with a usage error, which is the right behaviour.
+func parseBackupCommand(raw string) backupCommandSpec {
+	if raw == "" {
+		return backupCommandSpec{}
+	}
+	var s backupCommandSpec
+	_ = json.Unmarshal([]byte(raw), &s)
+	return s
 }
 
 // resolveConfigPath returns an absolute config file path for crontab use.
@@ -549,4 +675,23 @@ func (s *CronService) removeCrontabEntry(id int64) error {
 // cronShellQuote wraps a string in single quotes for safe shell usage.
 func cronShellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
+// nullString returns sql.NullString for empty values so the column is
+// stored as NULL rather than the empty string.
+func nullString(s string) sql.NullString {
+	if s == "" {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: s, Valid: true}
+}
+
+// nullInt returns sql.NullInt64 only when v is non-nil. We keep 0 in the
+// DB when the caller explicitly set it because column-not-set semantics
+// differ from "set to 0" in cron storage contexts.
+func nullInt(v *int64) sql.NullInt64 {
+	if v == nil {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: *v, Valid: true}
 }

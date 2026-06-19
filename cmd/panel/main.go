@@ -186,6 +186,30 @@ func uploadToRemote(backupSvc *service.BackupService, backupID int64, storageTyp
 	}
 }
 
+// maybeDeleteLocal implements the -no-keep-local flag: if a remote
+// upload succeeded, remove the local backup file. Best-effort: errors
+// are logged but never fail the cron run.
+func maybeDeleteLocal(backupSvc *service.BackupService, backupID int64, noKeepLocal bool) {
+	if !noKeepLocal {
+		return
+	}
+	b, err := backupSvc.GetByID(backupID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "no-keep-local: failed to load backup %d: %v\n", backupID, err)
+		return
+	}
+	if b.Storage == "local" || b.FilePath == "" {
+		// Upload didn't happen or hasn't been observed yet; keep
+		// the local copy so we don't lose data.
+		return
+	}
+	if err := os.Remove(b.FilePath); err != nil && !os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "no-keep-local: failed to delete %s: %v\n", b.FilePath, err)
+		return
+	}
+	fmt.Fprintf(os.Stdout, "local backup deleted (no-keep-local): %s\n", b.FilePath)
+}
+
 // runBackupCommand handles the "backup" sub-command.
 // Usage:
 //
@@ -205,6 +229,7 @@ func runBackupCommand() {
 	maxKeep := cmd.Int("max-keep", 0, "Max backups to keep (0=unlimited)")
 	storage := cmd.String("storage", "", "Remote storage type: ftp, s3, google_drive, onedrive")
 	storageID := cmd.Int64("storage-id", 0, "Storage configuration ID for remote upload")
+	noKeepLocal := cmd.Bool("no-keep-local", false, "Delete the local backup file after successful remote upload")
 	cmd.Parse(os.Args[2:])
 
 	if *backupType == "" {
@@ -272,6 +297,7 @@ func runBackupCommand() {
 			if *storage != "" && *storageID > 0 {
 				for _, bk := range backups {
 					uploadToRemote(backupSvc, bk.ID, *storage, *storageID)
+					maybeDeleteLocal(backupSvc, bk.ID, *noKeepLocal)
 				}
 			}
 			if *maxKeep > 0 {
@@ -293,12 +319,13 @@ func runBackupCommand() {
 				output(result{Status: "error", Type: "site", Error: err.Error()})
 				os.Exit(1)
 			}
-			if *storage != "" && *storageID > 0 {
-				uploadToRemote(backupSvc, b.ID, *storage, *storageID)
-			}
-			if *maxKeep > 0 {
-				backupSvc.EnforceRetention("site", &siteID, *maxKeep)
-			}
+		if *storage != "" && *storageID > 0 {
+			uploadToRemote(backupSvc, b.ID, *storage, *storageID)
+		}
+		maybeDeleteLocal(backupSvc, b.ID, *noKeepLocal)
+		if *maxKeep > 0 {
+			backupSvc.EnforceRetention("site", &siteID, *maxKeep)
+		}
 			output(result{Status: "ok", Type: "site", Count: 1, File: b.FilePath, Size: b.FileSize})
 		} else {
 			fmt.Fprintln(os.Stderr, "Error: specify -target=<domain> or -all for site backup")
@@ -315,6 +342,7 @@ func runBackupCommand() {
 			if *storage != "" && *storageID > 0 {
 				for _, bk := range backups {
 					uploadToRemote(backupSvc, bk.ID, *storage, *storageID)
+					maybeDeleteLocal(backupSvc, bk.ID, *noKeepLocal)
 				}
 			}
 			if *maxKeep > 0 {
@@ -339,6 +367,7 @@ func runBackupCommand() {
 			if *storage != "" && *storageID > 0 {
 				uploadToRemote(backupSvc, b.ID, *storage, *storageID)
 			}
+			maybeDeleteLocal(backupSvc, b.ID, *noKeepLocal)
 			if *maxKeep > 0 {
 				backupSvc.EnforceRetention("database", &dbID, *maxKeep)
 			}
@@ -357,6 +386,7 @@ func runBackupCommand() {
 		if *storage != "" && *storageID > 0 {
 			uploadToRemote(backupSvc, b.ID, *storage, *storageID)
 		}
+		maybeDeleteLocal(backupSvc, b.ID, *noKeepLocal)
 		if *maxKeep > 0 {
 			backupSvc.EnforceRetention("panel", nil, *maxKeep)
 		}

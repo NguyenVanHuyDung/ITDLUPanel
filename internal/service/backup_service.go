@@ -135,6 +135,19 @@ func formatBytes(b int64) string {
 
 // CreateSiteBackup archives a website's document root into a tarball.
 func (s *BackupService) CreateSiteBackup(siteID int64, createdBy int64) (*Backup, error) {
+	return s.CreateSiteBackupWithOpts(BackupOptions{}, siteID, createdBy)
+}
+
+// BackupOptions tweaks backup creation behaviour. The zero value gives
+// the same behaviour as before the option struct existed.
+type BackupOptions struct {
+	Compression string // "" or "gzip" → gzip; "bzip2" → bzip2; "zstd" → zstd; "none" → no compression
+	EncryptPass string // "" → no encryption; otherwise AES-256-GCM passphrase
+}
+
+// CreateSiteBackupWithOpts is the same as CreateSiteBackup but takes a
+// BackupOptions struct (currently Compression + optional encryption).
+func (s *BackupService) CreateSiteBackupWithOpts(opts BackupOptions, siteID int64, createdBy int64) (*Backup, error) {
 	site, err := s.getSite(siteID)
 	if err != nil {
 		return nil, err
@@ -146,8 +159,10 @@ func (s *BackupService) CreateSiteBackup(siteID int64, createdBy int64) (*Backup
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create backup directory")
 	}
 
+	compression := NormaliseCompression(opts.Compression)
+	ext := compressionExt(compression)
 	timestamp := time.Now().Format("20060102_150405")
-	fileName := fmt.Sprintf("%s_%s.tar.gz", site.Domain, timestamp)
+	fileName := fmt.Sprintf("%s_%s.tar%s", site.Domain, timestamp, ext)
 	backupPath := filepath.Join(backupDir, fileName)
 
 	docRoot := filepath.Join(cfg.Paths.WWWRoot, site.Domain)
@@ -158,15 +173,28 @@ func (s *BackupService) CreateSiteBackup(siteID int64, createdBy int64) (*Backup
 	ctx, cancel := context.WithTimeout(context.Background(), backupCmdTimeout)
 	defer cancel()
 
-	if _, err := system.Exec(ctx, "tar", "czf", backupPath, "-C", cfg.Paths.WWWRoot, site.Domain); err != nil {
+	tarArgs := compressArgs(compression)
+	tarArgs = append(tarArgs, backupPath, "-C", cfg.Paths.WWWRoot, site.Domain)
+	if _, err := system.Exec(ctx, "tar", tarArgs...); err != nil {
 		s.notifyBackup(false, fmt.Sprintf("Site backup - %s", site.Domain), 0, err)
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create site backup")
 	}
 
-	fileSize := fileSize(backupPath)
+	finalPath := backupPath
+	if opts.EncryptPass != "" {
+		encPath := backupPath + ".enc"
+		if _, err := encryptFile(backupPath, encPath, opts.EncryptPass); err != nil {
+			os.Remove(backupPath)
+			return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to encrypt site backup")
+		}
+		os.Remove(backupPath)
+		finalPath = encPath
+	}
+
+	fileSize := fileSize(finalPath)
 	backupName := fmt.Sprintf("Site backup - %s", site.Domain)
 
-	rec, err := s.insertRecord("site", backupName, &siteID, &site.Domain, backupPath, fileSize, createdBy)
+	rec, err := s.insertRecord("site", backupName, &siteID, &site.Domain, finalPath, fileSize, createdBy)
 	if err != nil {
 		return nil, err
 	}
@@ -176,6 +204,12 @@ func (s *BackupService) CreateSiteBackup(siteID int64, createdBy int64) (*Backup
 
 // CreateDatabaseBackup creates a mysqldump of the specified database.
 func (s *BackupService) CreateDatabaseBackup(dbID int64, createdBy int64) (*Backup, error) {
+	return s.CreateDatabaseBackupWithOpts(BackupOptions{}, dbID, createdBy)
+}
+
+// CreateDatabaseBackupWithOpts is the same as CreateDatabaseBackup but
+// takes a BackupOptions struct.
+func (s *BackupService) CreateDatabaseBackupWithOpts(opts BackupOptions, dbID int64, createdBy int64) (*Backup, error) {
 	dbInfo, err := s.getDatabase(dbID)
 	if err != nil {
 		return nil, err
@@ -187,9 +221,9 @@ func (s *BackupService) CreateDatabaseBackup(dbID int64, createdBy int64) (*Back
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create backup directory")
 	}
 
+	compression := NormaliseCompression(opts.Compression)
 	timestamp := time.Now().Format("20060102_150405")
 	sqlFile := filepath.Join(backupDir, fmt.Sprintf("%s_%s.sql", dbInfo.name, timestamp))
-	gzFile := sqlFile + ".gz"
 
 	ctx, cancel := context.WithTimeout(context.Background(), backupCmdTimeout)
 	defer cancel()
@@ -199,16 +233,66 @@ func (s *BackupService) CreateDatabaseBackup(dbID int64, createdBy int64) (*Back
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to dump database")
 	}
 
-	// Compress the dump.
-	if _, err := system.Exec(ctx, "gzip", "-f", sqlFile); err != nil {
-		os.Remove(sqlFile)
-		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to compress database backup")
+	// Compress (or skip if compression=none).
+	var finalFile string
+	if compression == CompressionNone {
+		finalFile = sqlFile
+	} else {
+		var compBin string
+		switch compression {
+		case CompressionBzip2:
+			compBin = "bzip2"
+		case CompressionZstd:
+			compBin = "zstd"
+		default:
+			compBin = "gzip"
+		}
+		// All three compressors accept the source file path and write
+		// `<source>.<ext>` next to it (bzip2, zstd) or replace it
+		// (gzip -f). We move/replace to the canonical extension
+		// expected by the rest of the pipeline.
+		if _, err := system.Exec(ctx, compBin, "-f", sqlFile); err != nil {
+			os.Remove(sqlFile)
+			return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to compress database backup")
+		}
+		// After gzip -f, the .sql file is gone and replaced with .sql.gz.
+		// After bzip2/zstd, the .sql file stays and a .sql.bz2/.sql.zst
+		// is created next to it. Normalise to one extension so the
+		// filename we record matches what's actually on disk.
+		switch compression {
+		case CompressionBzip2:
+			os.Rename(sqlFile+".bz2", sqlFile+".bz2")
+		case CompressionZstd:
+			os.Rename(sqlFile+".zst", sqlFile+".zst")
+		}
+		// Pick whichever file actually exists.
+		for _, ext := range []string{".gz", ".bz2", ".zst"} {
+			cand := sqlFile + ext
+			if _, err := os.Stat(cand); err == nil {
+				finalFile = cand
+				break
+			}
+		}
+		if finalFile == "" {
+			return nil, apperrors.New(apperrors.ErrInternal, "compressor did not produce expected output")
+		}
 	}
 
-	size := fileSize(gzFile)
+	finalPath := finalFile
+	if opts.EncryptPass != "" {
+		encPath := finalFile + ".enc"
+		if _, err := encryptFile(finalFile, encPath, opts.EncryptPass); err != nil {
+			os.Remove(finalFile)
+			return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to encrypt database backup")
+		}
+		os.Remove(finalFile)
+		finalPath = encPath
+	}
+
+	size := fileSize(finalPath)
 	backupName := fmt.Sprintf("Database backup - %s", dbInfo.name)
 
-	rec, err := s.insertRecord("database", backupName, &dbID, &dbInfo.name, gzFile, size, createdBy)
+	rec, err := s.insertRecord("database", backupName, &dbID, &dbInfo.name, finalPath, size, createdBy)
 	if err != nil {
 		return nil, err
 	}
@@ -218,14 +302,22 @@ func (s *BackupService) CreateDatabaseBackup(dbID int64, createdBy int64) (*Back
 
 // CreatePanelBackup archives the panel config directory and SQLite database.
 func (s *BackupService) CreatePanelBackup(createdBy int64) (*Backup, error) {
+	return s.CreatePanelBackupWithOpts(BackupOptions{}, createdBy)
+}
+
+// CreatePanelBackupWithOpts is the same as CreatePanelBackup but takes a
+// BackupOptions struct (currently Compression).
+func (s *BackupService) CreatePanelBackupWithOpts(opts BackupOptions, createdBy int64) (*Backup, error) {
 	cfg := config.Get()
 	backupDir := filepath.Join(cfg.Paths.Backup, "panel")
 	if err := os.MkdirAll(backupDir, 0755); err != nil {
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create backup directory")
 	}
 
+	compression := NormaliseCompression(opts.Compression)
 	timestamp := time.Now().Format("20060102_150405")
-	fileName := fmt.Sprintf("panel_%s.tar.gz", timestamp)
+	ext := compressionExt(compression)
+	fileName := fmt.Sprintf("panel_%s.tar%s", timestamp, ext)
 	backupPath := filepath.Join(backupDir, fileName)
 
 	ctx, cancel := context.WithTimeout(context.Background(), backupCmdTimeout)
@@ -233,13 +325,14 @@ func (s *BackupService) CreatePanelBackup(createdBy int64) (*Backup, error) {
 
 	// Archive panel config, data, and server directory (software configs/data).
 	// -h follows symlinks so actual config files are archived.
-	args := []string{"czf", backupPath, "-h", "-C", cfg.Paths.Base, "config", "data"}
+	tarArgs := compressArgs(compression)
+	tarArgs = append(tarArgs, backupPath, "-h", "-C", cfg.Paths.Base, "config", "data")
 	// Include server dir if it exists (contains software configs via symlinks)
 	serverDir := filepath.Join(cfg.Paths.Base, "server")
 	if _, err := os.Stat(serverDir); err == nil {
-		args = append(args, "server")
+		tarArgs = append(tarArgs, "server")
 	}
-	if _, err := system.Exec(ctx, "tar", args...); err != nil {
+	if _, err := system.Exec(ctx, "tar", tarArgs...); err != nil {
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create panel backup")
 	}
 
@@ -420,8 +513,17 @@ func (s *BackupService) Delete(id int64) error {
 // Restore
 // ---------------------------------------------------------------------------
 
-// Restore applies a backup based on its type.
+// Restore applies a backup based on its type. If the backup is
+// encrypted, use RestoreWithPass instead so the passphrase is provided.
 func (s *BackupService) Restore(id int64) error {
+	return s.RestoreWithPass(id, "")
+}
+
+// RestoreWithPass applies a backup, transparently decrypting the file
+// if it's an encrypted backup. Empty passphrase means "don't decrypt";
+// if the file is encrypted and no passphrase is provided, the
+// underlying decompressor will fail with a clear error.
+func (s *BackupService) RestoreWithPass(id int64, passphrase string) error {
 	b, err := s.GetByID(id)
 	if err != nil {
 		return err
@@ -454,6 +556,23 @@ func (s *BackupService) Restore(id int64) error {
 		} else {
 			return apperrors.New(apperrors.ErrNotFound, "backup file not found on disk")
 		}
+	}
+
+	// If the file is encrypted, decrypt to a tmp path first.
+	if isEncryptedBackup(b.FilePath) {
+		if passphrase == "" {
+			return apperrors.New(apperrors.ErrValidation,
+				"backup is encrypted — provide the decryption passphrase")
+		}
+		cfg := config.Get()
+		tmpDir := filepath.Join(cfg.Paths.Backup, "tmp")
+		_ = os.MkdirAll(tmpDir, 0755)
+		decPath := filepath.Join(tmpDir, "dec_"+filepath.Base(b.FilePath[:len(b.FilePath)-4]))
+		if _, err := decryptFile(b.FilePath, decPath, passphrase); err != nil {
+			return apperrors.Wrap(err, apperrors.ErrValidation, "decrypt failed")
+		}
+		defer os.Remove(decPath)
+		b.FilePath = decPath
 	}
 
 	switch b.Type {
@@ -673,8 +792,89 @@ func (s *BackupService) CleanOldBackups(keepDays int) error {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Compression
 // ---------------------------------------------------------------------------
+
+// BackupCompression controls the compression algorithm used when
+// archiving a site or compressing a database dump. The default
+// preserves the existing behaviour so older backups keep working.
+//
+//   - "gzip" (default): smallest toolchain, compatible with every
+//     decompressor on Earth. ~3x compression on typical PHP sites.
+//   - "bzip2": better ratio than gzip, slower. Useful for archival.
+//   - "zstd": best speed/ratio tradeoff in 2026. Requires `zstd`
+//     binary on PATH (installed by default on most distros).
+//   - "none": no compression. Use when the source is already compressed
+//     (e.g. already-gzipped logs, JPEG/TAR media).
+const (
+	CompressionGzip = "gzip"
+	CompressionBzip2 = "bzip2"
+	CompressionZstd  = "zstd"
+	CompressionNone  = "none"
+)
+
+var supportedCompressions = map[string]bool{
+	CompressionGzip: true, CompressionBzip2: true, CompressionZstd: true, CompressionNone: true,
+}
+
+// NormaliseCompression returns a canonical compression name, defaulting
+// to gzip for empty / unknown values. Exported so the API layer can
+// validate user input once and pass the canonical name down.
+func NormaliseCompression(c string) string {
+	if supportedCompressions[c] {
+		return c
+	}
+	return CompressionGzip
+}
+
+// compressArgs returns the args to pass to `tar` so the resulting
+// archive uses the requested algorithm. For "none" we leave the file
+// uncompressed.
+func compressArgs(c string) []string {
+	switch c {
+	case CompressionBzip2:
+		return []string{"cjf"}
+	case CompressionZstd:
+		return []string{"--zstd", "-cf"}
+	case CompressionNone:
+		return []string{"cf"}
+	default:
+		return []string{"czf"}
+	}
+}
+
+// compressSingleFileArgs returns the args to pass to the standalone
+// compressor for a single file (used by database dumps).
+func compressSingleFileArgs(c string) []string {
+	switch c {
+	case CompressionBzip2:
+		return []string{"-kfj"}
+	case CompressionZstd:
+		return []string{"-kf", "--rm", "-zstd", "-q"}
+	case CompressionNone:
+		// No-op: caller should skip the compress step entirely.
+		return nil
+	default:
+		return []string{"-kf"}
+	}
+}
+
+// decompressArgs mirrors compressSingleFileArgs for restore. It is the
+// inverse mapping: gzip -> gunzip, bzip2 -> bunzip2, zstd -> unzstd.
+func decompressArgs(c string) []string {
+	switch c {
+	case CompressionBzip2:
+		return []string{"-kfj"}
+	case CompressionZstd:
+		return []string{"-kf", "--rm", "-zstd", "-q", "-d"}
+	case CompressionNone:
+		return nil
+	default:
+		return []string{"-kf"}
+	}
+}
+
+
 
 type siteInfo struct {
 	Domain string
@@ -914,4 +1114,33 @@ func fileSize(path string) int64 {
 		return 0
 	}
 	return info.Size()
+}
+
+// compressionExt returns the file extension for a given compression
+// algorithm. The leading dot is included (e.g. ".gz").
+func compressionExt(c string) string {
+	switch c {
+	case CompressionBzip2:
+		return ".tar.bz2"
+	case CompressionZstd:
+		return ".tar.zst"
+	case CompressionNone:
+		return ".tar"
+	default:
+		return ".tar.gz"
+	}
+}
+
+// compressExtFor returns the single-file extension (.gz / .bz2 / .zst).
+func compressExtFor(c string) string {
+	switch c {
+	case CompressionBzip2:
+		return ".bz2"
+	case CompressionZstd:
+		return ".zst"
+	case CompressionNone:
+		return ""
+	default:
+		return ".gz"
+	}
 }

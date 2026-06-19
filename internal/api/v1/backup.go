@@ -85,10 +85,12 @@ func (h *BackupHandler) List(c *gin.Context) {
 }
 
 type createBackupRequest struct {
-	Type      string `json:"type" validate:"required,oneof=site database panel"`
-	TargetID  int64  `json:"target_id"`
-	Storage   string `json:"storage"`
-	StorageID *int64 `json:"storage_id"`
+	Type        string `json:"type" validate:"required,oneof=site database panel"`
+	TargetID    int64  `json:"target_id"`
+	Storage     string `json:"storage"`
+	StorageID   *int64 `json:"storage_id"`
+	Compression string `json:"compression"`
+	EncryptPass string `json:"encrypt_pass"`
 }
 
 // Create creates a new backup.
@@ -117,13 +119,18 @@ func (h *BackupHandler) Create(c *gin.Context) {
 		err    error
 	)
 
+	opts := service.BackupOptions{
+		Compression: req.Compression,
+		EncryptPass: req.EncryptPass,
+	}
+
 	switch req.Type {
 	case "site":
-		backup, err = h.backupService.CreateSiteBackup(req.TargetID, userID)
+		backup, err = h.backupService.CreateSiteBackupWithOpts(opts, req.TargetID, userID)
 	case "database":
-		backup, err = h.backupService.CreateDatabaseBackup(req.TargetID, userID)
+		backup, err = h.backupService.CreateDatabaseBackupWithOpts(opts, req.TargetID, userID)
 	case "panel":
-		backup, err = h.backupService.CreatePanelBackup(userID)
+		backup, err = h.backupService.CreatePanelBackupWithOpts(opts, userID)
 	}
 
 	if err != nil {
@@ -192,7 +199,13 @@ func (h *BackupHandler) Restore(c *gin.Context) {
 		return
 	}
 
-	if err := h.backupService.Restore(id); err != nil {
+	var req struct {
+		Passphrase string `json:"passphrase"`
+	}
+	// Body is optional. If absent, no passphrase is used.
+	_ = c.ShouldBindJSON(&req)
+
+	if err := h.backupService.RestoreWithPass(id, req.Passphrase); err != nil {
 		response.Error(c, err)
 		return
 	}
