@@ -2,8 +2,10 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/ITDLUPanel/panel/internal/pkg/crypto"
@@ -21,11 +23,29 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Host    string `json:"host"`
-	Port    int    `json:"port"`
-	SSL     bool   `json:"ssl"`
-	SSLCert string `json:"ssl_cert"`
-	SSLKey  string `json:"ssl_key"`
+	Host      string `json:"host"`
+	Port      int    `json:"port"`
+	SSL       bool   `json:"ssl"`
+	SSLCert   string `json:"ssl_cert"`
+	SSLKey    string `json:"ssl_key"`
+	PublicURL string `json:"public_url"`
+}
+
+// PublicAddress returns the URL the panel is reachable at from the
+// browser. Returns PublicURL if set; otherwise infers from Host/Port/SSL.
+func (c ServerConfig) PublicAddress() string {
+	if c.PublicURL != "" {
+		return strings.TrimRight(c.PublicURL, "/")
+	}
+	scheme := "http"
+	if c.SSL {
+		scheme = "https"
+	}
+	host := c.Host
+	if host == "0.0.0.0" || host == "" {
+		host = "localhost"
+	}
+	return fmt.Sprintf("%s://%s:%d", scheme, host, c.Port)
 }
 
 type DatabaseConfig struct {

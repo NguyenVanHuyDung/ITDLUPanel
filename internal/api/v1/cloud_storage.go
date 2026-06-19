@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/ITDLUPanel/panel/internal/config"
 	"github.com/ITDLUPanel/panel/internal/pkg/response"
 	"github.com/ITDLUPanel/panel/internal/service"
 )
@@ -287,16 +288,15 @@ func (h *CloudStorageHandler) OAuthCallback(c *gin.Context) {
 }
 
 // oauthCallbackURL constructs the OAuth callback URL from the request.
+// It uses the panel's configured PublicURL (or inferred bind address)
+// so the redirect_uri matches what was registered with the OAuth provider.
+// Using the request Host header directly would produce localhost in
+// browser-side requests when the server is behind a reverse proxy,
+// causing a redirect_uri_mismatch error from Google.
 func oauthCallbackURL(c *gin.Context) string {
-	scheme := "https"
-	if c.Request.TLS == nil {
-		if fwd := c.GetHeader("X-Forwarded-Proto"); fwd != "" {
-			scheme = fwd
-		} else {
-			scheme = "http"
-		}
-	}
-	return fmt.Sprintf("%s://%s/api/v1/cloud-storages/oauth/callback", scheme, c.Request.Host)
+	cfg := config.Get()
+	base := cfg.Server.PublicAddress()
+	return base + "/api/v1/cloud-storages/oauth/callback"
 }
 
 // maskConfigForResponse masks sensitive fields in config JSON for API responses.
