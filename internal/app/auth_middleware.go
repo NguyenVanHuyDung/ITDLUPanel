@@ -2,7 +2,6 @@ package app
 
 import (
 	"database/sql"
-	"encoding/json"
 	"net/http"
 	"strings"
 	"sync"
@@ -61,113 +60,29 @@ func AuthMiddleware() gin.HandlerFunc {
 
 // --- RBAC ---
 
-// permissionCache caches role permissions loaded from the database.
-var permissionCache struct {
-	sync.RWMutex
-	roles     map[string][]string
-	loadedAt  time.Time
-	cacheTTL  time.Duration
-	db        *sql.DB
-	initOnce  sync.Once
-}
-
 // InitPermissionCache sets up the permission cache with a database connection.
+// Thin wrapper around service.InitPermissionCache kept for backward
+// compatibility with router.go and existing callers.
 func InitPermissionCache(db *sql.DB) {
-	permissionCache.Lock()
-	defer permissionCache.Unlock()
-	permissionCache.db = db
-	permissionCache.cacheTTL = 5 * time.Minute
-	permissionCache.roles = make(map[string][]string)
-	loadPermissions()
+	service.InitPermissionCache(db)
 }
 
-func loadPermissions() {
-	if permissionCache.db == nil {
-		return
-	}
-
-	rows, err := permissionCache.db.Query("SELECT name, permissions FROM roles")
-	if err != nil {
-		logger.Error().Err(err).Msg("Failed to load role permissions")
-		return
-	}
-	defer rows.Close()
-
-	newRoles := make(map[string][]string)
-	for rows.Next() {
-		var name, permsJSON string
-		if err := rows.Scan(&name, &permsJSON); err != nil {
-			logger.Error().Err(err).Msg("Failed to scan role row")
-			continue
-		}
-
-		var perms []string
-		if err := json.Unmarshal([]byte(permsJSON), &perms); err != nil {
-			logger.Error().Err(err).Str("role", name).Msg("Failed to parse permissions JSON")
-			continue
-		}
-		newRoles[name] = perms
-	}
-
-	permissionCache.roles = newRoles
-	permissionCache.loadedAt = time.Now()
-}
-
-func getPermissions(role string) []string {
-	permissionCache.RLock()
-	if time.Since(permissionCache.loadedAt) < permissionCache.cacheTTL {
-		perms := permissionCache.roles[role]
-		permissionCache.RUnlock()
-		return perms
-	}
-	permissionCache.RUnlock()
-
-	permissionCache.Lock()
-	defer permissionCache.Unlock()
-
-	// Double-check after acquiring write lock
-	if time.Since(permissionCache.loadedAt) < permissionCache.cacheTTL {
-		return permissionCache.roles[role]
-	}
-
-	loadPermissions()
-	return permissionCache.roles[role]
+// ReloadPermissionCache forces a reload of the permission cache.
+// Wrapper around service.ReloadPermissionCache so role-mutating handlers
+// under internal/api/v1 can invalidate the cache without importing app.
+func ReloadPermissionCache() {
+	service.ReloadPermissionCache()
 }
 
 // CheckPermission checks if a role has a specific permission.
-// admin has "*" (all permissions).
-// Supports wildcard: role with "sites.*" matches route check "sites.read".
+// admin has "*" (all permissions). Supports wildcard "<group>.*".
 func CheckPermission(role string, permission string) bool {
-	perms := getPermissions(role)
-
-	for _, p := range perms {
-		if p == "*" {
-			return true
-		}
-		if p == permission {
-			return true
-		}
-		// Wildcard match: "sites.*" matches "sites.read"
-		if strings.HasSuffix(p, ".*") {
-			prefix := strings.TrimSuffix(p, ".*")
-			if strings.HasPrefix(permission, prefix+".") {
-				return true
-			}
-		}
-	}
-	return false
+	return service.CheckPermission(role, permission)
 }
 
 // GetUserPermissions returns the permissions list for a role.
 func GetUserPermissions(role string) []string {
-	return getPermissions(role)
-}
-
-// ReloadPermissionCache forces a reload of the permission cache.
-func ReloadPermissionCache() {
-	permissionCache.Lock()
-	defer permissionCache.Unlock()
-	loadPermissions()
+	return service.GetUserPermissions(role)
 }
 
 // IsAdmin checks if a role has full admin access.

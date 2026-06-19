@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Col, Row, DatePicker, Switch, Tooltip, Spin, InputNumber, message, Collapse, Popconfirm, Modal } from 'antd';
 import {
   HistoryOutlined,
@@ -402,6 +402,11 @@ export default function HistoricalMonitor() {
   const [editSettings, setEditSettings] = useState<MonitorSettings | null>(null);
   const [fullscreenChart, setFullscreenChart] = useState<HistChartKey | null>(null);
 
+  // Auto-refresh: off by default; user can opt in to 30s/60s/300s
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [autoRefreshSec, setAutoRefreshSec] = useState(60);
+  const autoTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   useEffect(() => {
     api.get('/monitor/settings').then((res) => {
       setSettings(res.data.data);
@@ -430,6 +435,22 @@ export default function HistoricalMonitor() {
   }, [range_, customDates]);
 
   useEffect(() => { fetchHistory(); }, [fetchHistory]);
+
+  // Auto-refresh interval (opt-in, off by default to avoid extra DB load)
+  useEffect(() => {
+    if (autoTimerRef.current) {
+      clearInterval(autoTimerRef.current);
+      autoTimerRef.current = null;
+    }
+    if (autoRefresh && autoRefreshSec > 0) {
+      autoTimerRef.current = setInterval(() => {
+        fetchHistory();
+      }, autoRefreshSec * 1000);
+    }
+    return () => {
+      if (autoTimerRef.current) clearInterval(autoTimerRef.current);
+    };
+  }, [autoRefresh, autoRefreshSec, fetchHistory]);
 
   const chartData: ChartDataPoint[] = useMemo(() => {
     if (!data.length) return [];
@@ -584,6 +605,39 @@ export default function HistoricalMonitor() {
             onClick={fetchHistory}
           />
         </Tooltip>
+
+        {/* Auto-refresh */}
+        <Tooltip title="Auto-refresh historical data">
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            fontSize: 11, color: '#795548', fontWeight: 500,
+          }}>
+            <ClockCircleOutlined style={{ color: autoRefresh ? '#E65100' : '#A1887F' }} />
+            <Switch
+              size="small"
+              checked={autoRefresh}
+              onChange={setAutoRefresh}
+            />
+            {autoRefresh && (
+              <select
+                value={autoRefreshSec}
+                onChange={(e) => setAutoRefreshSec(Number(e.target.value))}
+                style={{
+                  fontSize: 11, padding: '1px 4px', borderRadius: 3,
+                  border: '1px solid #FFE082', background: 'rgba(255,255,255,0.7)',
+                  color: '#5D4037', fontWeight: 600, cursor: 'pointer',
+                  marginLeft: 2,
+                }}
+              >
+                <option value={30}>30s</option>
+                <option value={60}>1m</option>
+                <option value={300}>5m</option>
+                <option value={900}>15m</option>
+              </select>
+            )}
+          </span>
+        </Tooltip>
+
         <Popconfirm
           title="Clean all monitor logs?"
           description="This will delete all historical data."

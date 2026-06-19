@@ -14,6 +14,7 @@ import (
 	"github.com/ITDLUPanel/panel/internal/database"
 	"github.com/ITDLUPanel/panel/internal/pkg/crypto"
 	"github.com/ITDLUPanel/panel/internal/service"
+	v1 "github.com/ITDLUPanel/panel/internal/api/v1"
 )
 
 // Build-time variables injected via -ldflags.
@@ -102,6 +103,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Failed to initialise: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Register the panel-restart state so the /system/panel-restart
+	// endpoint knows how to re-exec the panel with the same arguments.
+	v1.SetPanelRestartState(os.Args[0], []string{cp})
 
 	// Always use the build-time version as the source of truth
 	cfg := config.Get()

@@ -1,17 +1,21 @@
 package app
 
 import (
+	"bytes"
 	"database/sql"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	panel "github.com/ITDLUPanel/panel"
+	"github.com/ITDLUPanel/panel/internal/config"
 	v1 "github.com/ITDLUPanel/panel/internal/api/v1"
 	"github.com/ITDLUPanel/panel/internal/api/ws"
 	"github.com/ITDLUPanel/panel/internal/service"
@@ -140,8 +144,8 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		dashboardHandler := v1.NewDashboardHandler(monitorService)
 		dashboardHandler.RegisterRoutes(authGroup)
 
-		monitorHandler := v1.NewMonitorHandler(monitorService, metricsCollector)
-		monitorHandler.RegisterRoutes(authGroup)
+	monitorHandler := v1.NewMonitorHandler(monitorService, metricsCollector)
+	monitorHandler.RegisterRoutes(authGroup, RBACMiddleware)
 
 		// -------------------------------------------------------
 		// Task management (all authenticated users)
@@ -271,6 +275,12 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		settingsHandler.RegisterRoutes(apiV1, authMW, adminMW)
 
 		// -------------------------------------------------------
+		// System lifecycle (admin): panel restart, server reboot/shutdown
+		// -------------------------------------------------------
+		systemHandler := v1.NewSystemHandler()
+		systemHandler.RegisterRoutes(apiV1, authMW, adminMW)
+
+		// -------------------------------------------------------
 		// Notification management (admin)
 		// -------------------------------------------------------
 		notificationService := service.NewNotificationService(db, wsHub)
@@ -305,9 +315,51 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 	// ---------------------------------------------------------------
 	// SPA static files & fallback
 	// ---------------------------------------------------------------
+	settingsService = service.NewSettingsService(db)
 	setupSPAHandler(engine)
 
 	return engine
+}
+
+// settingsService is set in SetupRouter before setupSPAHandler is
+// called. The SPA fallback handler uses it to inject the configured
+// panel name into the served index.html so the browser tab title
+// matches the user's setting on the very first paint (no FOUT).
+var settingsService *service.SettingsService
+
+// panelNameCache avoids hitting the settings store on every page load.
+// The cache is invalidated automatically after 5 s.
+var (
+	panelNameCacheMu    sync.Mutex
+	panelNameCacheValue string
+	panelNameCacheAt    time.Time
+)
+
+// resolvePanelName returns the currently configured panel name, falling
+// back to the value baked into the config file if no DB override exists.
+func resolvePanelName() string {
+	panelNameCacheMu.Lock()
+	defer panelNameCacheMu.Unlock()
+
+	if time.Since(panelNameCacheAt) < 1*time.Second && panelNameCacheValue != "" {
+		return panelNameCacheValue
+	}
+
+	name := ""
+	if settingsService != nil {
+		if v, err := settingsService.Get("panel_name"); err == nil {
+			name = v
+		}
+	}
+	if name == "" && config.Get() != nil {
+		name = config.Get().Panel.Name
+	}
+	if name == "" {
+		name = "ITDLUPanel"
+	}
+	panelNameCacheValue = name
+	panelNameCacheAt = time.Now()
+	return name
 }
 
 // healthHandler returns a simple health check response.
@@ -329,6 +381,63 @@ func setupSPAHandler(engine *gin.Engine) {
 	}
 
 	fileServer := http.FileServer(http.FS(distFS))
+
+	// Cache the raw index.html bytes in memory. The file is small (~1 KB)
+	// and immutable per build, but we still re-read it on every request so
+	// re-deploys pick up the new bundle without a process restart.
+	var indexHTML []byte
+
+	// loadIndexHTML returns the bytes of dist/index.html, memoised for
+	// fast serving.
+	loadIndexHTML := func() []byte {
+		if len(indexHTML) > 0 {
+			return indexHTML
+		}
+		f, err := distFS.Open("index.html")
+		if err != nil {
+			return nil
+		}
+		defer f.Close()
+		stat, err := f.Stat()
+		if err != nil {
+			return nil
+		}
+		buf := make([]byte, stat.Size())
+		if _, err := io.ReadFull(f, buf); err != nil {
+			return nil
+		}
+		indexHTML = buf
+		return buf
+	}
+
+	// serveIndexWithPanelName serves dist/index.html with the configured
+	// panel name injected into <title> and <meta name="application-name">.
+	// This prevents the flash-of-wrong-title that would otherwise occur
+	// when a user has renamed the panel.
+	serveIndexWithPanelName := func(c *gin.Context) {
+		html := loadIndexHTML()
+		if html == nil {
+			// Fallback to the default file server if we can't read the
+			// file (shouldn't happen in normal operation).
+			c.Request.URL.Path = "/"
+			fileServer.ServeHTTP(c.Writer, c.Request)
+			return
+		}
+		name := resolvePanelName()
+		// Sanitise: strip any HTML/JS-injection characters from the
+		// configured name before splicing it into the document.
+		cleanName := panelNameSafe(name)
+		// Replace the default <title> placeholder with the configured name.
+		body := injectPanelNameIntoIndex(html, cleanName)
+		c.Header("Content-Type", "text/html; charset=utf-8")
+		c.Header("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0")
+		c.Header("Pragma", "no-cache")
+		c.Header("Expires", "0")
+		c.Header("X-Build-Time", time.Now().Format(time.RFC3339))
+		c.Header("X-Panel-Name", cleanName)
+		c.Status(http.StatusOK)
+		_, _ = c.Writer.Write(body)
+	}
 
 	engine.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
@@ -353,13 +462,99 @@ func setupSPAHandler(engine *gin.Engine) {
 			}
 		}
 
-		// SPA fallback: serve index.html for all other routes.
-		// Prevent caching so browser always gets the latest build.
-		c.Header("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0")
-		c.Header("Pragma", "no-cache")
-		c.Header("Expires", "0")
-		c.Header("X-Build-Time", time.Now().Format(time.RFC3339))
-		c.Request.URL.Path = "/"
-		fileServer.ServeHTTP(c.Writer, c.Request)
+		// SPA fallback: serve index.html (with the configured panel
+		// name injected) for all other routes.
+		serveIndexWithPanelName(c)
 	})
+}
+
+// injectPanelNameIntoIndex replaces the default <title>ITDLUPanel</title>
+// and adds a <meta name="application-name"> tag with the configured
+// panel name.
+func injectPanelNameIntoIndex(html []byte, name string) []byte {
+	// Replace <title>ITDLUPanel</title> (the default baked into
+	// web/index.html). If the build doesn't contain that exact string
+	// (e.g. a customised index.html), fall back to replacing any
+	// <title>…</title> with the configured name.
+	titlePlaceholder := []byte("<title>ITDLUPanel</title>")
+	titleReplacement := []byte("<title>" + name + "</title>")
+	if bytes.Contains(html, titlePlaceholder) {
+		html = bytes.Replace(html, titlePlaceholder, titleReplacement, 1)
+	} else {
+		const openTag = "<title>"
+		const closeTag = "</title>"
+		start := bytes.Index(html, []byte(openTag))
+		if start >= 0 {
+			rest := html[start+len(openTag):]
+			end := bytes.Index(rest, []byte(closeTag))
+			if end >= 0 {
+				absEnd := start + len(openTag) + end
+				html = append(html[:start],
+					append([]byte(openTag+name+closeTag), html[absEnd+len(closeTag):]...)...)
+			}
+		}
+	}
+
+	// Inject a <meta name="application-name"> right after the viewport
+	// meta so mobile browsers also pick up the configured name. Skip
+	// if the meta is already present.
+	if bytes.Contains(html, []byte(`name="application-name"`)) {
+		return html
+	}
+	appMeta := []byte(`<meta name="application-name" content="` + name + `">`)
+	viewport := []byte(`<meta name="viewport"`)
+	idx := bytes.Index(html, viewport)
+	if idx < 0 {
+		return html
+	}
+	// Insert right after the viewport meta's closing '>'.
+	rest := html[idx:]
+	closeIdx := bytes.Index(rest, []byte(">"))
+	if closeIdx < 0 {
+		return html
+	}
+	insertAt := idx + closeIdx + 1
+	html = append(html[:insertAt],
+		append([]byte("\n    "+string(appMeta)), html[insertAt:]...)...)
+	return html
+}
+
+// panelNameSafe strips characters that could break out of a <title>
+// or <meta> attribute. The panel name is rendered as plain text, so
+// we keep visible characters and collapse runs of whitespace.
+func panelNameSafe(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "ITDLUPanel"
+	}
+	// Strip control characters and angle brackets. Allow spaces, but
+	// collapse any sequence of whitespace into a single space.
+	var b strings.Builder
+	b.Grow(len(s))
+	prevSpace := false
+	for _, r := range s {
+		switch {
+		case r == '<' || r == '>' || r == '"' || r == '\'':
+			continue
+		case r < 0x20 || r == 0x7f:
+			continue
+		case r == ' ' || r == '\t' || r == '\n' || r == '\r':
+			if !prevSpace {
+				b.WriteByte(' ')
+				prevSpace = true
+			}
+		default:
+			b.WriteRune(r)
+			prevSpace = false
+		}
+	}
+	out := strings.TrimSpace(b.String())
+	if out == "" {
+		return "ITDLUPanel"
+	}
+	// Hard cap so a malicious rename doesn't bloat the document.
+	if len(out) > 64 {
+		out = out[:64]
+	}
+	return out
 }

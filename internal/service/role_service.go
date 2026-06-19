@@ -64,6 +64,10 @@ func (s *RoleService) CreateRole(name, description string, permissions []string)
 }
 
 // UpdateRole updates a role's permissions.
+// System roles (admin, operator, viewer) have their permissions frozen to
+// prevent an admin from accidentally removing their own super-admin grants
+// or otherwise weakening the built-in role definitions. Only non-system
+// roles can be updated.
 func (s *RoleService) UpdateRole(id int64, name, description string, permissions []string) (*models.Role, error) {
 	role, err := s.roleRepo.GetByID(id)
 	if err != nil {
@@ -73,36 +77,34 @@ func (s *RoleService) UpdateRole(id int64, name, description string, permissions
 		return nil, apperrors.New(apperrors.ErrNotFound, "role not found")
 	}
 
-	// System roles: can update permissions but not name
+	// System roles are immutable to prevent privilege loss (e.g. an admin
+	// stripping their own "*" permission and locking themselves out).
 	if role.IsSystem {
-		role.Permissions = permissions
-		if description != "" {
-			role.Description = description
-		}
-	} else {
-		if name != "" {
-			// Check name uniqueness if changing
-			if name != role.Name {
-				existing, err := s.roleRepo.GetByName(name)
-				if err != nil {
-					return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to check role name")
-				}
-				if existing != nil {
-					return nil, apperrors.New(apperrors.ErrConflict, "role name already exists")
-				}
-				// Update users that reference this role name
-				_, err = s.db.Exec("UPDATE users SET role = ? WHERE role = ?", name, role.Name)
-				if err != nil {
-					return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to update user roles")
-				}
-			}
-			role.Name = name
-		}
-		if description != "" {
-			role.Description = description
-		}
-		role.Permissions = permissions
+		return nil, apperrors.New(apperrors.ErrForbidden, "cannot modify permissions of system roles; create a custom role instead")
 	}
+
+	if name != "" {
+		// Check name uniqueness if changing
+		if name != role.Name {
+			existing, err := s.roleRepo.GetByName(name)
+			if err != nil {
+				return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to check role name")
+			}
+			if existing != nil {
+				return nil, apperrors.New(apperrors.ErrConflict, "role name already exists")
+			}
+			// Update users that reference this role name
+			_, err = s.db.Exec("UPDATE users SET role = ? WHERE role = ?", name, role.Name)
+			if err != nil {
+				return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to update user roles")
+			}
+		}
+		role.Name = name
+	}
+	if description != "" {
+		role.Description = description
+	}
+	role.Permissions = permissions
 
 	if err := s.roleRepo.Update(role); err != nil {
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to update role")

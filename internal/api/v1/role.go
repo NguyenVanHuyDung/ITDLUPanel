@@ -75,6 +75,10 @@ func (h *RoleHandler) CreateRole(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
+
+	// New role may be assigned to users immediately; refresh the cache so
+	// subsequent /auth/me lookups return the right permissions.
+	service.ReloadPermissionCache()
 	response.Created(c, role)
 }
 
@@ -107,6 +111,10 @@ func (h *RoleHandler) UpdateRole(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
+
+	// Permissions changed; drop the cache so the new grants are honoured
+	// by the very next request.
+	service.ReloadPermissionCache()
 	response.Success(c, role)
 }
 
@@ -124,5 +132,9 @@ func (h *RoleHandler) DeleteRole(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
+
+	// A role deletion can free previously-granted permissions from users
+	// (via the cascade in role_service). Reload to reflect this.
+	service.ReloadPermissionCache()
 	response.Success(c, gin.H{"message": "role deleted successfully"})
 }

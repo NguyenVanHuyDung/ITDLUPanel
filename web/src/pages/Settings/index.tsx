@@ -20,6 +20,7 @@ import api from '@/services/api';
 import type { ApiResponse } from '@/types';
 import { formatDateTime } from '@/lib/datetime';
 import NotificationsTab from './NotificationsTab';
+import ServerTab from './ServerTab';
 import AccentPalettePicker from '@/components/AccentPalettePicker';
 
 // ---------------------------------------------------------------------------
@@ -112,27 +113,6 @@ interface DomainCert {
   dns_names?: string[];
 }
 
-interface PanelInfo {
-  version: string;
-  uptime: string;
-  go_version: string;
-  os: string;
-  started_at: string;
-  port: number;
-  ssl_enabled: boolean;
-  admin_path: string;
-  panel_name: string;
-}
-
-interface ServerInfo {
-  hostname: string;
-  local_ips: string[];
-  public_ip: string;
-  os: string;
-  arch: string;
-  go_version: string;
-}
-
 export default function Settings() {
   const { t, i18n } = useTranslation();
   const isMobile = useIsMobile();
@@ -145,10 +125,6 @@ export default function Settings() {
   const [sslLoading, setSSLLoading] = useState(false);
   const [domainCerts, setDomainCerts] = useState<DomainCert[]>([]);
   const [domainCertsLoading, setDomainCertsLoading] = useState(false);
-  const [panelInfo, setPanelInfo] = useState<PanelInfo | null>(null);
-  const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
-  const [infoLoading, setInfoLoading] = useState(false);
-  const [serverInfoLoading, setServerInfoLoading] = useState(false);
   const [portForm] = Form.useForm();
   const [portLoading, setPortLoading] = useState(false);
   const [securityForm] = Form.useForm();
@@ -225,30 +201,6 @@ export default function Settings() {
     }
   };
 
-  const fetchPanelInfo = useCallback(async () => {
-    setInfoLoading(true);
-    try {
-      const { data } = await api.get<ApiResponse<PanelInfo>>('/settings/panel-info');
-      setPanelInfo(data.data);
-    } catch {
-      message.error('Failed to load panel info');
-    } finally {
-      setInfoLoading(false);
-    }
-  }, []);
-
-  const fetchServerInfo = useCallback(async () => {
-    setServerInfoLoading(true);
-    try {
-      const { data } = await api.get<ApiResponse<ServerInfo>>('/settings/server-info');
-      setServerInfo(data.data);
-    } catch {
-      message.error('Failed to load server info');
-    } finally {
-      setServerInfoLoading(false);
-    }
-  }, []);
-
   const fetchTimezones = useCallback(async () => {
     try {
       const { data } = await api.get<ApiResponse<string[]>>('/settings/timezones');
@@ -262,8 +214,6 @@ export default function Settings() {
     fetchSettings();
     fetchSSLInfo();
     fetchDomainCerts();
-    fetchPanelInfo();
-    fetchServerInfo();
     fetchTimezones();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -281,7 +231,6 @@ export default function Settings() {
       store.setTimezone(values.timezone);
       store.setPanelName(nameResp.data.name || values.panel_name);
       message.success(t('common.success'));
-      fetchPanelInfo();
     } catch {
       message.error(t('common.error'));
     } finally {
@@ -487,109 +436,7 @@ export default function Settings() {
     </div>
   );
 
-  /* ─── Server Info Tab ─── */
-  const renderServerTab = () => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {/* Network Info - Grid Cards */}
-      <Spin spinning={serverInfoLoading}>
-        <div style={{ ...sectionBox, maxWidth: 'none' }}>
-          {sectionTitle(<SetIcon.Globe size={20} color={p.accent} />, t('settings.server_network'), (
-            <button onClick={() => { fetchServerInfo(); fetchPanelInfo(); }} style={btnOutline}>
-              <ReloadOutlined /> {t('common.refresh')}
-            </button>
-          ))}
-          {serverInfo ? (
-            <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(260px, 1fr))`, gap: 10 }}>
-              {gridCard(
-                <SetIcon.Server size={18} color={p.accent} />, p.accent,
-                t('settings.hostname'), serverInfo.hostname || '—',
-              )}
-              {serverInfo.public_ip && gridCard(
-                <SetIcon.Globe size={18} color={p.green} />, p.green,
-                t('settings.public_ip'),
-                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {serverInfo.public_ip}
-                  <button onClick={() => copyToClipboard(serverInfo.public_ip || '')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: p.textMuted, display: 'flex' }}>
-                    <CopyOutlined style={{ fontSize: 11 }} />
-                  </button>
-                </span>,
-              )}
-              {serverInfo.local_ips?.map((ip, i) => gridCard(
-                <SetIcon.Wifi size={18} color={p.accent} />, p.accent,
-                `${t('settings.local_ip')}${serverInfo.local_ips && serverInfo.local_ips.length > 1 ? ` #${i + 1}` : ''}`,
-                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {ip}
-                  <button onClick={() => copyToClipboard(ip)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: p.textMuted, display: 'flex' }}>
-                    <CopyOutlined style={{ fontSize: 11 }} />
-                  </button>
-                </span>,
-              ))}
-            </div>
-          ) : (
-            <span style={{ fontSize: 13, color: p.textMuted }}>{t('common.no_data')}</span>
-          )}
-        </div>
-      </Spin>
-
-      {/* Panel Runtime Info - Grid Cards */}
-      <Spin spinning={infoLoading}>
-        <div style={{ ...sectionBox, maxWidth: 'none' }}>
-          {sectionTitle(<SetIcon.Info size={20} color={p.accent} />, t('settings.panel_info'))}
-          {panelInfo ? (
-            <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(260px, 1fr))`, gap: 10 }}>
-              {gridCard(
-                <SetIcon.Gear size={18} color={p.accent} />, p.accent,
-                t('settings.panel_name'),
-                <span style={{ color: p.accent }}>{panelInfo.panel_name || 'ITDLUPanel'}</span>,
-              )}
-              {gridCard(
-                <SetIcon.Info size={18} color={p.accent} />, p.accent,
-                t('settings.version'),
-                <span style={{
-                  fontSize: 12, fontWeight: 500, padding: '1px 8px', borderRadius: 99,
-                  background: `${p.accent}15`, color: p.accent,
-                }}>{panelInfo.version || '0.1.0'}</span>,
-              )}
-              {gridCard(
-                <SetIcon.Clock size={18} color={p.green} />, p.green,
-                t('settings.uptime'),
-                <span style={{ color: p.green }}>{panelInfo.uptime}</span>,
-              )}
-              {gridCard(
-                <SetIcon.Shield size={18} color={panelInfo.ssl_enabled ? p.green : p.amber} />,
-                panelInfo.ssl_enabled ? p.green : p.amber,
-                t('settings.port'),
-                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <code style={{ fontFamily: 'monospace', fontWeight: 600 }}>{panelInfo.port}</code>
-                  <span style={{
-                    fontSize: 11, fontWeight: 500, padding: '1px 8px', borderRadius: 99,
-                    background: panelInfo.ssl_enabled ? `${p.green}15` : `${p.amber}15`,
-                    color: panelInfo.ssl_enabled ? p.green : p.amber,
-                  }}>
-                    {panelInfo.ssl_enabled ? 'HTTPS' : 'HTTP'}
-                  </span>
-                </span>,
-              )}
-              {gridCard(
-                <SetIcon.Server size={18} color={p.textMuted} />, p.textMuted,
-                t('settings.go_version'), panelInfo.go_version || '—',
-              )}
-              {gridCard(
-                <SetIcon.Globe size={18} color={p.textMuted} />, p.textMuted,
-                t('settings.os_arch'), panelInfo.os || '—',
-              )}
-              {panelInfo.started_at && gridCard(
-                <SetIcon.Clock size={18} color={p.textMuted} />, p.textMuted,
-                t('settings.started_at'), formatDateTime(panelInfo.started_at),
-              )}
-            </div>
-          ) : (
-            <span style={{ fontSize: 13, color: p.textMuted }}>{t('common.no_data')}</span>
-          )}
-        </div>
-      </Spin>
-    </div>
-  );
+  /* ─── Server Tab — see ServerTab.tsx (bento grid layout) ─── */
 
   /* ─── SSL Tab ─── */
   const renderSSLTab = () => (
@@ -950,7 +797,7 @@ export default function Settings() {
         <div style={{ padding: 20 }}>
           {activeTab === 'general' && renderGeneralTab()}
           {activeTab === 'appearance' && renderAppearanceTab()}
-          {activeTab === 'server' && renderServerTab()}
+          {activeTab === 'server' && <ServerTab />}
           {activeTab === 'ssl' && renderSSLTab()}
           {activeTab === 'security' && renderSecurityTab()}
           {activeTab === 'notifications' && <NotificationsTab />}

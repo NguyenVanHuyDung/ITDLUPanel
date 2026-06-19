@@ -2,6 +2,7 @@ package service
 
 import (
 	"database/sql"
+	"strings"
 
 	"github.com/ITDLUPanel/panel/internal/config"
 	"github.com/ITDLUPanel/panel/internal/database/models"
@@ -123,11 +124,60 @@ func (s *UserService) DeleteUser(id int64, currentUserID int64) error {
 		}
 	}
 
-	if err := s.userRepo.Delete(id); err != nil {
+	// Wrap the user delete + dependent-row cleanup in a transaction. Several
+	// tables reference users(id) without ON DELETE CASCADE (audit_logs,
+	// sites.created_by, etc.), so we must purge them explicitly before
+	// removing the user. Wrapping in a tx guarantees we don't leave
+	// half-deleted state on failure.
+	tx, err := s.db.Begin()
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to start delete transaction")
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	// Drop audit log rows owned by this user. The username column still
+	// records who performed the action, so we keep the trail intact.
+	if _, err := tx.Exec("DELETE FROM audit_logs WHERE user_id = ?", id); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to delete user audit logs")
+	}
+
+	// Null out created_by on resources the user provisioned so we don't
+	// violate FKs. (CASCADE tables like user_resources are handled by the
+	// schema itself.)
+	for _, table := range []string{
+		"sites", "databases", "ftps", "crons", "tasks", "backups",
+		"docker_cleanup_rules", "waf_ip_list", "waf_uri_list",
+		"waf_lua_scripts", "waf_ua_list",
+	} {
+		if _, err := tx.Exec("UPDATE "+table+" SET created_by = NULL WHERE created_by = ?", id); err != nil {
+			// Table might not exist on every deployment; ignore those.
+			if !isMissingTableError(err) {
+				return apperrors.Wrap(err, apperrors.ErrInternal, "failed to clear created_by on "+table)
+			}
+		}
+	}
+
+	if _, err := tx.Exec("DELETE FROM users WHERE id = ?", id); err != nil {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to delete user")
 	}
 
+	if err := tx.Commit(); err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to commit user delete")
+	}
+
 	return nil
+}
+
+// isMissingTableError returns true when err is a SQLite "no such table" error.
+// We use it to tolerate deployments that haven't created every optional table.
+func isMissingTableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "no such table") || strings.Contains(msg, "doesn't exist")
 }
 
 // ResetPassword resets a user's password (admin operation).

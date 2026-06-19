@@ -39,6 +39,7 @@ import { useSettingsStore } from '@/stores/settings';
 import { useAccentStore } from '@/stores/accent';
 import { useTaskWebSocket } from '@/hooks/useTaskWebSocket';
 import MessagesBox from '@/components/MessagesBox';
+import QuickActions from '@/components/QuickActions';
 import api from '@/services/api';
 import type { MenuProps } from 'antd';
 
@@ -322,7 +323,7 @@ export default function MainLayout() {
             )}
           </div>
 
-          {/* Right: tasks + language + user */}
+          {/* Right: tasks + quick actions + language + user */}
           <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 8, flexShrink: 0 }}>
             <Tooltip title={t('task.messages_box')}>
               <Badge count={taskCount} size="small" offset={[-2, 2]}
@@ -337,6 +338,7 @@ export default function MainLayout() {
                 />
               </Badge>
             </Tooltip>
+            <QuickActions />
             <Tooltip title={isDark ? 'Light mode' : 'Dark mode'}>
               <Button
                 type="text"

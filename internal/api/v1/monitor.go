@@ -10,6 +10,7 @@ import (
 	"github.com/shirou/gopsutil/v3/net"
 
 	"github.com/ITDLUPanel/panel/internal/database"
+	"github.com/ITDLUPanel/panel/internal/pkg/logger"
 	"github.com/ITDLUPanel/panel/internal/pkg/response"
 	"github.com/ITDLUPanel/panel/internal/service"
 )
@@ -29,19 +30,44 @@ func NewMonitorHandler(monitorService *service.MonitorService, metricsCollector 
 }
 
 // RegisterRoutes registers monitor routes on the given router group.
-func (h *MonitorHandler) RegisterRoutes(rg *gin.RouterGroup) {
+//
+// The rbac factory is used to apply permission checks. Without it the
+// fallback is auth-only, but callers (router.go) should always pass it.
+//
+// Permission map:
+//   - monitor.read:        view-only endpoints (system, processes list,
+//                          services, network, disk, history, settings GET)
+//   - monitor.processes:   process management (kill)
+//   - logs.manage:         destructive ops (clean history)
+func (h *MonitorHandler) RegisterRoutes(rg *gin.RouterGroup, rbacFactory ...func(string) gin.HandlerFunc) {
 	monitor := rg.Group("/monitor")
+
+	var factory func(string) gin.HandlerFunc
+	if len(rbacFactory) > 0 {
+		factory = rbacFactory[0]
+	}
+
+	apply := func(perm string) gin.HandlerFunc {
+		if factory != nil {
+			return factory(perm)
+		}
+		// Fallback: no permission check. This is only reached if the
+		// router was misconfigured; log so it doesn't go unnoticed.
+		logger.Warn().Str("perm", perm).Msg("monitor route registered without RBAC factory")
+		return func(c *gin.Context) { c.Next() }
+	}
+
 	{
-		monitor.GET("/system", h.systemMetrics)
-		monitor.GET("/processes", h.processList)
-		monitor.POST("/processes/kill", h.killProcess)
-		monitor.GET("/services", h.services)
-		monitor.GET("/network", h.network)
-		monitor.GET("/disk", h.diskStats)
-		monitor.GET("/history", h.history)
-		monitor.DELETE("/history", h.cleanHistory)
-		monitor.GET("/settings", h.monitorSettings)
-		monitor.PUT("/settings", h.updateMonitorSettings)
+		monitor.GET("/system", apply("monitor.read"), h.systemMetrics)
+		monitor.GET("/processes", apply("monitor.read"), h.processList)
+		monitor.POST("/processes/kill", apply("monitor.processes"), h.killProcess)
+		monitor.GET("/services", apply("monitor.read"), h.services)
+		monitor.GET("/network", apply("monitor.read"), h.network)
+		monitor.GET("/disk", apply("monitor.read"), h.diskStats)
+		monitor.GET("/history", apply("monitor.read"), h.history)
+		monitor.DELETE("/history", apply("logs.manage"), h.cleanHistory)
+		monitor.GET("/settings", apply("monitor.read"), h.monitorSettings)
+		monitor.PUT("/settings", apply("settings.manage"), h.updateMonitorSettings)
 	}
 }
 

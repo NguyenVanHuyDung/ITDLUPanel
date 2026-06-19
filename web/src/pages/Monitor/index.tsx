@@ -3,6 +3,7 @@ import { Typography, Spin } from 'antd';
 import api from '@/services/api';
 import ProcessTable from './ProcessTable';
 import HistoricalMonitor from './HistoricalMonitor';
+import RealtimeMonitor from './RealtimeMonitor';
 
 const { Text } = Typography;
 
@@ -59,6 +60,7 @@ export default function Monitor() {
 
   return (
     <div>
+      <RealtimeMonitor />
       <HistoricalMonitor />
       <ProcessTable processes={processes} onRefresh={() => fetchProcesses()} />
     </div>
