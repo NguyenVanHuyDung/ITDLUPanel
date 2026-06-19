@@ -3,16 +3,20 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -467,6 +471,72 @@ func (s *CloudStorageService) googleOAuthConfig(cfg GoogleDriveConfig, redirectU
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Google "device_id" / "device_name" support
+// ---------------------------------------------------------------------------
+//
+// Google added a verification framework in 2025 that rejects OAuth
+// requests whose redirect_uri points at a loopback / private IP unless
+// the request carries:
+//
+//   device_id    — stable, opaque, panel-wide identifier
+//                  (≥10 chars, ASCII, no PII). We persist it in
+//                  /var/lib/itdlupanel/device_id so a panel upgrade or
+//                  process restart doesn't change the device identity.
+//   device_name  — human-readable label shown in the user's
+//                  "Third-party apps with account access" page. We use
+//                  "<hostname> — ITDLUPanel".
+//
+// Both values are panel-scoped (not per-user) because the OAuth client
+// belongs to the panel, not the user.
+//
+// See: https://developers.google.com/identity/protocols/oauth2/resources/devices-behavior
+//      "device_id and device_name are required for private IP"
+
+const deviceIDPath = "/var/lib/itdlupanel/device_id"
+
+var (
+	deviceIDOnce  sync.Once
+	cachedDeviceID string
+)
+
+// panelDeviceID returns a stable random identifier for this panel
+// install. Generated once and cached in memory + on disk.
+func panelDeviceID() (string, error) {
+	deviceIDOnce.Do(func() {
+		// Try disk first so we keep the same identity across restarts.
+		if data, err := os.ReadFile(deviceIDPath); err == nil {
+			cachedDeviceID = strings.TrimSpace(string(data))
+			if len(cachedDeviceID) >= 10 {
+				return
+			}
+		}
+		// Generate a 32-char hex string. crypto/rand is fine here —
+		// this is a *device* identifier, not a security boundary.
+		buf := make([]byte, 16)
+		if _, err := rand.Read(buf); err != nil {
+			cachedDeviceID = "itdlupanel-device-fallback"
+			return
+		}
+		cachedDeviceID = "itdlupanel-" + hex.EncodeToString(buf)
+		// Best-effort persist. If we can't write, we still work
+		// for this process lifetime.
+		_ = os.MkdirAll("/var/lib/itdlupanel", 0755)
+		_ = os.WriteFile(deviceIDPath, []byte(cachedDeviceID), 0644)
+	})
+	return cachedDeviceID, nil
+}
+
+// panelDeviceName returns a friendly label for Google's app list.
+// Falls back to "ITDLUPanel" if hostname lookup fails.
+func panelDeviceName() string {
+	host, err := os.Hostname()
+	if err != nil || host == "" {
+		host = "panel"
+	}
+	return host + " — ITDLUPanel"
+}
+
 // GetGoogleAuthURL returns an OAuth authorization URL for Google Drive.
 func (s *CloudStorageService) GetGoogleAuthURL(storageID int64, redirectURL string) (string, error) {
 	cs, err := s.GetByID(storageID)
@@ -480,8 +550,22 @@ func (s *CloudStorageService) GetGoogleAuthURL(storageID int64, redirectURL stri
 
 	oauthCfg := s.googleOAuthConfig(cfg, redirectURL)
 	state := fmt.Sprintf("%d", storageID)
-	url := oauthCfg.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.ApprovalForce)
-	return url, nil
+	authURL := oauthCfg.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.ApprovalForce)
+
+	// Append device_id + device_name. Google's 2025 verification
+	// framework requires these for any OAuth client whose
+	// redirect_uri is a loopback / private IP. Without them the
+	// consent screen returns:
+	//   "device_id and device_name are required for private IP"
+	// See panelDeviceID() above for why we make device_id stable.
+	deviceID, _ := panelDeviceID()
+	sep := "&"
+	if !strings.Contains(authURL, "?") {
+		sep = "?"
+	}
+	authURL = authURL + sep + "device_id=" + url.QueryEscape(deviceID) +
+		"&device_name=" + url.QueryEscape(panelDeviceName())
+	return authURL, nil
 }
 
 // HandleGoogleCallback exchanges an OAuth code for tokens and saves them.
