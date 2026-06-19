@@ -112,6 +112,13 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		ftpStorageService := service.NewFTPStorageService(db)
 		cloudStorageService := service.NewCloudStorageService(db)
 		backupService := service.NewBackupService(db, ftpStorageService, cloudStorageService)
+		// Async + resumable cloud upload pipeline. The service starts a
+		// worker pool and a reaper goroutine that picks up uploads left
+		// pending by a previous run.
+		backupUploadService := service.NewBackupUploadService(db, cloudStorageService, backupService)
+		backupUploadService.Start(2)
+		backupService.SetUploadService(backupUploadService)
+		registerBackupUploadShutdown(backupUploadService)
 		terminalService := service.NewTerminalService()
 		userResourceService := service.NewUserResourceService(db)
 		installerRegistry := installer.DefaultRegistry()
@@ -290,6 +297,7 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		// Wire notification hooks into event-producing services
 		cronService.SetNotifier(notificationService)
 		backupService.SetNotifier(notificationService)
+		backupUploadService.SetNotifier(notificationService)
 		sslService.SetNotifier(notificationService)
 		softwareService.SetNotifier(notificationService)
 		siteService.SetNotifier(notificationService)

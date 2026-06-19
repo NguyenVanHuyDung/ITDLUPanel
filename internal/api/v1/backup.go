@@ -29,10 +29,14 @@ func (h *BackupHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFu
 		backups.POST("", rbac("backup.create"), h.Create)
 		backups.GET("/site-counts", rbac("backup.read"), h.SiteBackupCounts)
 		backups.GET("/database-counts", rbac("backup.read"), h.DatabaseBackupCounts)
+		backups.GET("/uploads/:upload_id", rbac("backup.read"), h.GetUpload)
+		backups.DELETE("/uploads/:upload_id", rbac("backup.delete"), h.CancelUpload)
 		backups.GET("/:id", rbac("backup.read"), h.Get)
 		backups.DELETE("/:id", rbac("backup.delete"), h.Delete)
 		backups.POST("/:id/restore", rbac("backup.restore"), h.Restore)
 		backups.GET("/:id/download", rbac("backup.read"), h.Download)
+		backups.POST("/:id/upload", rbac("backup.create"), h.StartUpload)
+		backups.GET("/:id/uploads", rbac("backup.read"), h.ListUploads)
 	}
 }
 
@@ -127,15 +131,21 @@ func (h *BackupHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// After backup created, upload to remote storage if requested
+	// After backup created, enqueue an async upload to remote storage.
+	// We intentionally do NOT block the HTTP response on the upload:
+	// a multi-GB Google Drive transfer can take several minutes, and
+	// the caller can poll /backups/{id}/uploads for progress.
 	if req.Storage != "" && req.StorageID != nil && backup != nil {
-		if req.Storage == "ftp" {
+		switch req.Storage {
+		case "ftp":
+			// FTP transfers are usually quick on the LAN; keep them
+			// synchronous so errors surface immediately.
 			if err := h.backupService.UploadBackupToFTP(backup.ID, *req.StorageID); err != nil {
 				logger.Warn().Err(err).Msg("failed to upload backup to FTP storage")
 			}
-		} else {
+		case "google_drive", "s3", "onedrive":
 			if err := h.backupService.UploadBackupToCloud(backup.ID, *req.StorageID, req.Storage); err != nil {
-				logger.Warn().Err(err).Msg("failed to upload backup to cloud storage")
+				logger.Warn().Err(err).Str("storage", req.Storage).Msg("failed to enqueue cloud upload")
 			}
 		}
 		backup, _ = h.backupService.GetByID(backup.ID)
@@ -224,4 +234,82 @@ func (h *BackupHandler) DatabaseBackupCounts(c *gin.Context) {
 		return
 	}
 	response.Success(c, counts)
+}
+
+type startUploadRequest struct {
+	StorageID int64 `json:"storage_id" validate:"required"`
+}
+
+// StartUpload enqueues an async upload of an existing backup to the
+// specified cloud storage. The function returns the backup_uploads row
+// immediately so the caller can poll progress via ListUploads/GetUpload.
+func (h *BackupHandler) StartUpload(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	var req startUploadRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid request body"},
+		})
+		return
+	}
+	if req.StorageID <= 0 {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "storage_id", Message: "storage_id is required"},
+		})
+		return
+	}
+
+	upload, err := h.backupService.StartCloudUpload(id, req.StorageID)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Created(c, upload)
+}
+
+// ListUploads returns all upload attempts for a backup.
+func (h *BackupHandler) ListUploads(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+	uploads, err := h.backupService.ListUploads(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	if uploads == nil {
+		uploads = []*service.BackupUpload{}
+	}
+	response.Success(c, uploads)
+}
+
+// GetUpload returns the status of a single upload (for polling).
+func (h *BackupHandler) GetUpload(c *gin.Context) {
+	id, err := parseID(c, "upload_id")
+	if err != nil {
+		return
+	}
+	upload, err := h.backupService.GetUpload(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, upload)
+}
+
+// CancelUpload cancels a pending or in-flight upload.
+func (h *BackupHandler) CancelUpload(c *gin.Context) {
+	id, err := parseID(c, "upload_id")
+	if err != nil {
+		return
+	}
+	if err := h.backupService.CancelUpload(id); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "upload cancelled"})
 }

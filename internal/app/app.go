@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/soheilhy/cmux"
@@ -18,6 +20,29 @@ import (
 	"github.com/ITDLUPanel/panel/internal/service"
 	"github.com/ITDLUPanel/panel/internal/system"
 )
+
+// backupUploadShutdown wires BackupUploadService into the app shutdown
+// path. The variable is set in SetupRouter and read by App.Shutdown.
+var (
+	backupUploadShutdownMu sync.Mutex
+	backupUploadShutdown   *service.BackupUploadService
+)
+
+func registerBackupUploadShutdown(s *service.BackupUploadService) {
+	backupUploadShutdownMu.Lock()
+	backupUploadShutdown = s
+	backupUploadShutdownMu.Unlock()
+}
+
+func shutdownBackupUpload(grace time.Duration) {
+	backupUploadShutdownMu.Lock()
+	s := backupUploadShutdown
+	backupUploadShutdown = nil
+	backupUploadShutdownMu.Unlock()
+	if s != nil {
+		s.Stop(grace)
+	}
+}
 
 // App holds all top-level dependencies for the application.
 type App struct {
@@ -229,6 +254,10 @@ func (a *App) Run() error {
 
 // Shutdown performs a graceful shutdown of all resources.
 func (a *App) Shutdown() {
+	// Drain in-flight cloud uploads first so we don't leave Drive
+	// session URIs stranded. We give workers up to 5 seconds before
+	// forcing the goroutines to exit.
+	shutdownBackupUpload(5 * time.Second)
 	if a.DB != nil {
 		a.DB.Close()
 	}

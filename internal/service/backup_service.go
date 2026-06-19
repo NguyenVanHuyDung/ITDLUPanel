@@ -48,6 +48,7 @@ type BackupService struct {
 	db                  *sql.DB
 	ftpStorageService   *FTPStorageService
 	cloudStorageService *CloudStorageService
+	uploadService       *BackupUploadService
 	notifier            *NotificationService
 }
 
@@ -56,8 +57,49 @@ func NewBackupService(db *sql.DB, ftpStorageService *FTPStorageService, cloudSto
 	return &BackupService{db: db, ftpStorageService: ftpStorageService, cloudStorageService: cloudStorageService}
 }
 
+// SetUploadService wires the async upload service so Create can enqueue
+// background uploads.
+func (s *BackupService) SetUploadService(u *BackupUploadService) { s.uploadService = u }
+
 // SetNotifier sets the notification service for event dispatching.
 func (s *BackupService) SetNotifier(n *NotificationService) { s.notifier = n }
+
+// ---------------------------------------------------------------------------
+// Cloud upload (delegated to BackupUploadService)
+// ---------------------------------------------------------------------------
+
+// StartCloudUpload enqueues an async upload of an existing backup to a
+// cloud storage. Convenience wrapper around BackupUploadService.
+func (s *BackupService) StartCloudUpload(backupID, storageID int64) (*BackupUpload, error) {
+	if s.uploadService == nil {
+		return nil, apperrors.New(apperrors.ErrInternal, "upload service not available")
+	}
+	return s.uploadService.StartUpload(backupID, storageID)
+}
+
+// ListUploads returns all upload attempts for a backup.
+func (s *BackupService) ListUploads(backupID int64) ([]*BackupUpload, error) {
+	if s.uploadService == nil {
+		return nil, apperrors.New(apperrors.ErrInternal, "upload service not available")
+	}
+	return s.uploadService.ListByBackup(backupID)
+}
+
+// GetUpload returns a single upload by id.
+func (s *BackupService) GetUpload(uploadID int64) (*BackupUpload, error) {
+	if s.uploadService == nil {
+		return nil, apperrors.New(apperrors.ErrInternal, "upload service not available")
+	}
+	return s.uploadService.GetByID(uploadID)
+}
+
+// CancelUpload marks an upload as cancelled.
+func (s *BackupService) CancelUpload(uploadID int64) error {
+	if s.uploadService == nil {
+		return apperrors.New(apperrors.ErrInternal, "upload service not available")
+	}
+	return s.uploadService.Cancel(uploadID)
+}
 
 func (s *BackupService) notifyBackup(ok bool, name string, size int64, err error) {
 	if s.notifier == nil {
@@ -546,6 +588,11 @@ func remoteBackupPath(backupType, fileName string) string {
 }
 
 // UploadBackupToFTP uploads an existing backup to an FTP storage.
+//
+// Kept synchronous because FTP transfers are usually quick on the same
+// network and we want to surface errors immediately. For long-running
+// transfers a future enhancement can wrap this in the same async
+// queue used by cloud uploads.
 func (s *BackupService) UploadBackupToFTP(backupID, storageID int64) error {
 	if s.ftpStorageService == nil {
 		return apperrors.New(apperrors.ErrInternal, "FTP storage service not available")
@@ -578,37 +625,18 @@ func (s *BackupService) UploadBackupToFTP(backupID, storageID int64) error {
 	return nil
 }
 
-// UploadBackupToCloud uploads an existing backup to a cloud storage.
+// UploadBackupToCloud enqueues an async upload of an existing backup to
+// a cloud storage (Google Drive / S3 / OneDrive). It returns the
+// backup_uploads row id so the caller can poll progress.
+//
+// Replaces the previous synchronous implementation that blocked the
+// HTTP request for the entire duration of a multi-GB upload.
 func (s *BackupService) UploadBackupToCloud(backupID, storageID int64, storageType string) error {
-	if s.cloudStorageService == nil {
-		return apperrors.New(apperrors.ErrInternal, "cloud storage service not available")
+	if s.uploadService == nil {
+		return apperrors.New(apperrors.ErrInternal, "upload service not available")
 	}
-
-	b, err := s.GetByID(backupID)
-	if err != nil {
-		return err
-	}
-
-	if _, err := os.Stat(b.FilePath); os.IsNotExist(err) {
-		return apperrors.New(apperrors.ErrNotFound, "backup file not found on disk")
-	}
-
-	remoteFileName := remoteBackupPath(b.Type, filepath.Base(b.FilePath))
-	if err := s.cloudStorageService.UploadFile(storageID, b.FilePath, remoteFileName, ""); err != nil {
-		return err
-	}
-
-	// Update backup record with cloud storage info (local copy is kept)
-	_, err = s.db.Exec(
-		"UPDATE backups SET storage = ?, storage_id = ? WHERE id = ?",
-		"local+"+storageType, storageID, backupID,
-	)
-	if err != nil {
-		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to update backup storage info")
-	}
-
-	logger.Info().Int64("backup_id", backupID).Int64("storage_id", storageID).Str("type", storageType).Msg("backup uploaded to cloud storage")
-	return nil
+	_, err := s.uploadService.StartUpload(backupID, storageID)
+	return err
 }
 
 // ---------------------------------------------------------------------------

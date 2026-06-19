@@ -28,5 +28,6 @@ func All() []Migration {
 		&Migration015DockerCleanup{},
 		&Migration016WAF{},
 		&Migration017WAFEnhance{},
+		&Migration018BackupUploads{},
 	}
 }

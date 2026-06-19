@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/ITDLUPanel/panel/internal/app"
 	"github.com/ITDLUPanel/panel/internal/config"
@@ -239,6 +240,10 @@ func runBackupCommand() {
 	ftpStorageSvc := service.NewFTPStorageService(db.GetDB())
 	cloudStorageSvc := service.NewCloudStorageService(db.GetDB())
 	backupSvc := service.NewBackupService(db.GetDB(), ftpStorageSvc, cloudStorageSvc)
+	uploadSvc := service.NewBackupUploadService(db.GetDB(), cloudStorageSvc, backupSvc)
+	uploadSvc.Start(2)
+	defer uploadSvc.Stop(10 * time.Second)
+	backupSvc.SetUploadService(uploadSvc)
 	const systemUserID int64 = 1 // system/admin user
 
 	type result struct {
