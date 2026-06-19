@@ -3,9 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,7 +14,6 @@ import (
 	"os"
 	"path"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -472,100 +469,200 @@ func (s *CloudStorageService) googleOAuthConfig(cfg GoogleDriveConfig, redirectU
 }
 
 // ---------------------------------------------------------------------------
-// Google "device_id" / "device_name" support
+// Google Device Authorization Flow (RFC 8628)
 // ---------------------------------------------------------------------------
 //
-// Google added a verification framework in 2025 that rejects OAuth
-// requests whose redirect_uri points at a loopback / private IP unless
-// the request carries:
+// Google OAuth for servers without a public HTTPS domain must use the
+// Device Authorization Flow instead of the standard authorization code
+// redirect flow.
 //
-//   device_id    — stable, opaque, panel-wide identifier
-//                  (≥10 chars, ASCII, no PII). We persist it in
-//                  /var/lib/itdlupanel/device_id so a panel upgrade or
-//                  process restart doesn't change the device identity.
-//   device_name  — human-readable label shown in the user's
-//                  "Third-party apps with account access" page. We use
-//                  "<hostname> — ITDLUPanel".
+// Why we need this
+//   The standard redirect-based flow requires registering a redirect_uri
+//   with Google. Google only allows:
+//     - http://localhost:<port>/...
+//     - https://<public-domain>/...
+//   It does NOT allow private IPs like 10.20.1.243. Even with
+//   device_id+device_name params, the redirect_uri mismatch kills the flow.
 //
-// Both values are panel-scoped (not per-user) because the OAuth client
-// belongs to the panel, not the user.
+// How the device flow works
+//   1. Panel → Google: POST /device/code (client_id + scopes)
+//      ← Google: { device_code, user_code, verification_uri,
+//                  interval, expires_in }
+//   2. Panel → user: "Visit https://www.google.com/device and enter XXXX-XXXX"
+//      (shown in the UI)
+//   3. Panel polls Google: POST /token every `interval` seconds
+//      ← Google: pending (user hasn't approved yet)
+//      … user approves in browser …
+//      ← Google: { access_token, refresh_token, expiry }
 //
-// See: https://developers.google.com/identity/protocols/oauth2/resources/devices-behavior
-//      "device_id and device_name are required for private IP"
+// Unlike the redirect flow, device flow does NOT require a redirect_uri
+// to be registered — it only needs the client_id. This is the correct
+// OAuth pattern for internal / CLI tools.
+//
+// References:
+//   https://developers.google.com/identity/protocols/oauth2/limited-input-device
+//   https://datatracker.ietf.org/doc/html/rfc8628
 
-const deviceIDPath = "/var/lib/itdlupanel/device_id"
-
-var (
-	deviceIDOnce  sync.Once
-	cachedDeviceID string
-)
-
-// panelDeviceID returns a stable random identifier for this panel
-// install. Generated once and cached in memory + on disk.
-func panelDeviceID() (string, error) {
-	deviceIDOnce.Do(func() {
-		// Try disk first so we keep the same identity across restarts.
-		if data, err := os.ReadFile(deviceIDPath); err == nil {
-			cachedDeviceID = strings.TrimSpace(string(data))
-			if len(cachedDeviceID) >= 10 {
-				return
-			}
-		}
-		// Generate a 32-char hex string. crypto/rand is fine here —
-		// this is a *device* identifier, not a security boundary.
-		buf := make([]byte, 16)
-		if _, err := rand.Read(buf); err != nil {
-			cachedDeviceID = "itdlupanel-device-fallback"
-			return
-		}
-		cachedDeviceID = "itdlupanel-" + hex.EncodeToString(buf)
-		// Best-effort persist. If we can't write, we still work
-		// for this process lifetime.
-		_ = os.MkdirAll("/var/lib/itdlupanel", 0755)
-		_ = os.WriteFile(deviceIDPath, []byte(cachedDeviceID), 0644)
-	})
-	return cachedDeviceID, nil
+// DeviceAuthInfo is returned by InitiateDeviceAuth so the frontend
+// can display the user_code and tell the user what URL to visit.
+type DeviceAuthInfo struct {
+	DeviceCode      string `json:"device_code"`
+	UserCode        string `json:"user_code"`
+	VerificationURL string `json:"verification_url"`
+	ExpiresIn       int    `json:"expires_in"`      // seconds until code expires
+	Interval        int    `json:"interval"`        // seconds between polls
 }
 
-// panelDeviceName returns a friendly label for Google's app list.
-// Falls back to "ITDLUPanel" if hostname lookup fails.
-func panelDeviceName() string {
-	host, err := os.Hostname()
-	if err != nil || host == "" {
-		host = "panel"
-	}
-	return host + " — ITDLUPanel"
-}
-
-// GetGoogleAuthURL returns an OAuth authorization URL for Google Drive.
-func (s *CloudStorageService) GetGoogleAuthURL(storageID int64, redirectURL string) (string, error) {
+// InitiateDeviceAuth starts a Google Device Authorization flow and
+// returns the info needed to display the user_code to the user.
+// The caller (frontend) should poll PollDeviceAuth() every
+// DeviceAuthInfo.Interval seconds until tokens arrive or
+// ExpiresIn seconds have elapsed.
+func (s *CloudStorageService) InitiateDeviceAuth(storageID int64) (*DeviceAuthInfo, error) {
 	cs, err := s.GetByID(storageID)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	cfg, err := s.parseGoogleDriveConfig(cs)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	oauthCfg := s.googleOAuthConfig(cfg, redirectURL)
-	state := fmt.Sprintf("%d", storageID)
-	authURL := oauthCfg.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.ApprovalForce)
-
-	// Append device_id + device_name. Google's 2025 verification
-	// framework requires these for any OAuth client whose
-	// redirect_uri is a loopback / private IP. Without them the
-	// consent screen returns:
-	//   "device_id and device_name are required for private IP"
-	// See panelDeviceID() above for why we make device_id stable.
-	deviceID, _ := panelDeviceID()
-	sep := "&"
-	if !strings.Contains(authURL, "?") {
-		sep = "?"
+	// Step 1: request device + user code from Google
+	v := url.Values{
+		"client_id": {cfg.ClientID},
+		"scope":     {"https://www.googleapis.com/auth/drive.file"},
 	}
-	authURL = authURL + sep + "device_id=" + url.QueryEscape(deviceID) +
-		"&device_name=" + url.QueryEscape(panelDeviceName())
-	return authURL, nil
+	resp, err := http.PostForm("https://oauth2.googleapis.com/device/code", v)
+	if err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to contact Google device endpoint")
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != 200 {
+		return nil, apperrors.New(apperrors.ErrValidation,
+			"Google device authorization error: "+string(body))
+	}
+
+	var raw struct {
+		DeviceCode      string `json:"device_code"`
+		UserCode        string `json:"user_code"`
+		VerificationURI string `json:"verification_uri"`
+		ExpiresIn       int    `json:"expires_in"`
+		Interval        int    `json:"interval"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "malformed Google device response")
+	}
+
+	return &DeviceAuthInfo{
+		DeviceCode:      raw.DeviceCode,
+		UserCode:        raw.UserCode,
+		VerificationURL: raw.VerificationURI,
+		ExpiresIn:       raw.ExpiresIn,
+		Interval:        raw.Interval,
+	}, nil
+}
+
+// PollDeviceAuth checks whether the user has approved the device auth
+// request. It returns nil+nil when the user hasn't approved yet
+// (caller should retry after Interval seconds). It returns the saved
+// tokens when the user approves. It returns an error on permanent
+// failures (expired, denied, etc.).
+func (s *CloudStorageService) PollDeviceAuth(storageID int64, deviceCode string) (*oauth2.Token, error) {
+	cs, err := s.GetByID(storageID)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := s.parseGoogleDriveConfig(cs)
+	if err != nil {
+		return nil, err
+	}
+
+	v := url.Values{
+		"client_id":     {cfg.ClientID},
+		"client_secret": {cfg.ClientSecret},
+		"device_code":   {deviceCode},
+		"grant_type":    {"urn:ietf:params:oauth:grant-type:device_code"},
+	}
+	resp, err := http.PostForm("https://oauth2.googleapis.com/token", v)
+	if err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to poll Google token endpoint")
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != 200 {
+		var errResp struct {
+			Error string `json:"error"`
+		}
+		json.Unmarshal(body, &errResp)
+		switch errResp.Error {
+		case "authorization_pending":
+			return nil, nil // still waiting — caller should poll again
+		case "slow_down":
+			return nil, nil // Google wants us to wait longer — still "pending"
+		case "expired_token":
+			return nil, apperrors.New(apperrors.ErrValidation,
+				"device code expired — please restart the authorization flow")
+		case "access_denied":
+			return nil, apperrors.New(apperrors.ErrValidation,
+				"authorization denied by user")
+		default:
+			return nil, apperrors.New(apperrors.ErrValidation,
+				"Google token error: "+errResp.Error)
+		}
+	}
+
+	var token oauth2.Token
+	if err := json.Unmarshal(body, &token); err != nil {
+		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "malformed Google token response")
+	}
+
+	// Persist the tokens so the storage becomes usable.
+	cfg.AccessToken = token.AccessToken
+	cfg.RefreshToken = token.RefreshToken
+	if !token.Expiry.IsZero() {
+		cfg.TokenExpiry = token.Expiry.Format(time.RFC3339)
+	}
+	if err := s.updateConfig(storageID, cfg); err != nil {
+		return nil, err
+	}
+	return &token, nil
+}
+
+// DeviceFlowAuthInfo is returned by GetGoogleDeviceFlowAuthInfo and is
+// sent to the frontend so it can display the user_code and start polling.
+type DeviceFlowAuthInfo struct {
+	UserCode        string `json:"user_code"`
+	VerificationURL string `json:"verification_url"`
+	ExpiresIn       int    `json:"expires_in"`
+	Interval        int    `json:"interval"`
+	DeviceCode      string `json:"device_code"` // internal: used for polling
+}
+
+// GetGoogleDeviceFlowAuthInfo starts a Google Device Authorization flow
+// (RFC 8628). This is the correct flow for panels running on private IPs
+// or localhost because it does NOT require a redirect_uri to be registered
+// with Google — only a client_id. The user visits the verification URL
+// and enters the user_code; the panel polls until the user approves.
+//
+// The caller (frontend) should poll PollDeviceAuth() every Interval
+// seconds, passing back the DeviceCode, until a token is returned or
+// ExpiresIn seconds have passed.
+func (s *CloudStorageService) GetGoogleDeviceFlowAuthInfo(storageID int64) (*DeviceFlowAuthInfo, error) {
+	info, err := s.InitiateDeviceAuth(storageID)
+	if err != nil {
+		return nil, err
+	}
+	return &DeviceFlowAuthInfo{
+		UserCode:        info.UserCode,
+		VerificationURL: info.VerificationURL,
+		ExpiresIn:       info.ExpiresIn,
+		Interval:        info.Interval,
+		DeviceCode:      info.DeviceCode,
+	}, nil
 }
 
 // HandleGoogleCallback exchanges an OAuth code for tokens and saves them.
@@ -1732,9 +1829,13 @@ func (s *CloudStorageService) GetAuthURL(id int64, redirectURL string) (string, 
 
 	switch cs.Type {
 	case "google_drive":
-		url, err := s.GetGoogleAuthURL(id, redirectURL)
-		return url, "google_drive", err
+		// Google Drive now uses the Device Authorization Flow via
+		// InitiateDeviceAuth / PollDeviceAuth (POST /:id/device-auth/*).
+		// GET /:id/auth-url no longer returns a URL for Google Drive.
+		return "", "", apperrors.New(apperrors.ErrValidation,
+			"google_drive uses device authorization flow — call POST /:id/device-auth/start")
 	case "onedrive":
+		// OneDrive: redirect flow works fine — no private IP restriction.
 		url, err := s.GetOneDriveAuthURL(id, redirectURL)
 		return url, "onedrive", err
 	default:

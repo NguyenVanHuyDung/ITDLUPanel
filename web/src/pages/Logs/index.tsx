@@ -241,8 +241,8 @@ function MetricCard({ value, label, color, p, isDark }: {
   );
 }
 
-function ToggleBtn({ active, color, label, onClick }: {
-  active: boolean; color: string; label: string; onClick: () => void;
+function ToggleBtn({ active, color, label, onClick, p: _p }: {
+  active: boolean; color: string; label: string; onClick: () => void; p?: unknown;
 }) {
   return (
     <button onClick={onClick} style={{

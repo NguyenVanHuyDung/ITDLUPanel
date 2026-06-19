@@ -1,10 +1,11 @@
 // GoogleDriveManageModal v2 — GoogleDriveConnectionsTab extracted as top-level component
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Modal, Form, Input, Switch, message, Popconfirm, Tooltip, Spin } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, EditOutlined, ReloadOutlined,
   CheckCircleOutlined, ExclamationCircleOutlined,
   LinkOutlined, CloudOutlined, SafetyCertificateOutlined,
+  GlobalOutlined,
 } from '@ant-design/icons';
 import api from '@/services/api';
 import { formatDateTime } from '@/lib/datetime';
@@ -29,6 +30,18 @@ interface GDriveConfigParsed {
   refresh_token?: string;
 }
 
+// DeviceFlowState — drives the in-modal device authorization UI
+interface DeviceFlowState {
+  phase: 'idle' | 'starting' | 'waiting' | 'success' | 'error';
+  userCode?: string;
+  verificationURL?: string;
+  expiresIn?: number;   // seconds remaining
+  interval?: number;     // seconds between polls
+  deviceCode?: string;  // used for polling
+  errorMsg?: string;
+  pollCount?: number;
+}
+
 // ── GoogleDriveConnectionsTab ──────────────────────────────────────────────────
 interface ConnectionsTabProps { open: boolean }
 
@@ -44,6 +57,10 @@ function GoogleDriveConnectionsTab({ open }: ConnectionsTabProps) {
   const [testResult, setTestResult] = useState<{ id: number; ok: boolean; msg: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [authorizingId, setAuthorizingId] = useState<number | null>(null);
+  const [deviceFlow, setDeviceFlow] = useState<Record<number, DeviceFlowState>>({});
+  const [deviceModalOpen, setDeviceModalOpen] = useState(false);
+  const [deviceFlowStorageId, setDeviceFlowStorageId] = useState<number | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchStorages = useCallback(async () => {
     setLoading(true);
@@ -134,55 +151,81 @@ function GoogleDriveConnectionsTab({ open }: ConnectionsTabProps) {
 
   const handleAuthorize = async (id: number) => {
     setAuthorizingId(id);
-    let popup: Window | null = null;
+    setDeviceFlowStorageId(id);
     try {
-      const { data } = await api.get(`/cloud-storages/${id}/auth-url`);
-      const authUrl = (data.data as { auth_url?: string })?.auth_url || (data.data as string);
-      if (!authUrl) {
-        message.error('Failed to get authorization URL');
-        return;
-      }
-      popup = window.open(authUrl, '_blank', 'width=600,height=700,scrollbars=yes');
-      if (!popup) {
-        message.error('Popup was blocked — please allow popups for this site and try again');
-        return;
-      }
-      message.info('Complete authorization in the popup window');
+      const { data } = await api.post(`/cloud-storages/${id}/device-auth/start`);
+      const info = data.data as {
+        user_code: string;
+        verification_url: string;
+        expires_in: number;
+        interval: number;
+        device_code: string;
+      };
 
-      // Listen for postMessage from popup callback
-      await new Promise<void>((resolve) => {
-        const handler = (event: MessageEvent) => {
-          if (event.data?.type === 'oauth_callback_done') {
-            window.removeEventListener('message', handler);
-            resolve();
-          }
-        };
-        window.addEventListener('message', handler);
-        // Timeout after 5 minutes
-        const timeout = setTimeout(() => {
-          window.removeEventListener('message', handler);
-          resolve();
-        }, 5 * 60 * 1000);
-        // Also resolve if popup is closed without postMessage
-        const checkClosed = setInterval(() => {
-          if (popup?.closed) {
-            clearInterval(checkClosed);
-            clearTimeout(timeout);
-            window.removeEventListener('message', handler);
-            resolve();
-          }
-        }, 500);
-      });
+      setDeviceFlow(prev => ({
+        ...prev,
+        [id]: {
+          phase: 'waiting',
+          userCode: info.user_code,
+          verificationURL: info.verification_url,
+          expiresIn: info.expires_in,
+          interval: info.interval,
+          deviceCode: info.device_code,
+          pollCount: 0,
+        },
+      }));
+      setDeviceModalOpen(true);
 
-      if (popup && !popup.closed) {
-        popup.close();
-      }
-      message.success('Authorization complete');
-      fetchStorages();
+      const poll = async () => {
+        const state = deviceFlow[id];
+        if (!state || state.phase !== 'waiting') return;
+
+        try {
+          const pollResp = await api.post(`/cloud-storages/${id}/device-auth/poll`, {
+            device_code: info.device_code,
+          });
+          const pollData = pollResp.data as { pending?: boolean; connected?: boolean };
+
+          if (!pollData.pending && pollData.connected) {
+            clearTimeout(pollTimerRef.current ?? undefined);
+            setDeviceFlow(prev => ({ ...prev, [id]: { ...prev[id], phase: 'success' } }));
+            setTimeout(() => {
+              setDeviceModalOpen(false);
+              setDeviceFlow(prev => { const n = { ...prev }; delete n[id]; return n; });
+              fetchStorages();
+            }, 2000);
+            return;
+          }
+        } catch {
+          // Network errors during polling are normal — keep polling
+        }
+
+        const remaining = (deviceFlow[id]?.expiresIn ?? 0) - (info.interval);
+        if (remaining <= 0) {
+          clearTimeout(pollTimerRef.current ?? undefined);
+          setDeviceFlow(prev => ({
+            ...prev,
+            [id]: { ...prev[id], phase: 'error', errorMsg: 'Authorization timed out. Please try again.' },
+          }));
+          return;
+        }
+
+        setDeviceFlow(prev => ({
+          ...prev,
+          [id]: { ...prev[id], expiresIn: remaining, pollCount: (prev[id]?.pollCount ?? 0) + 1 },
+        }));
+
+        pollTimerRef.current = setTimeout(poll, info.interval * 1000);
+      };
+
+      poll();
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      message.error(detail || 'Failed to get authorization URL');
-      if (popup && !popup.closed) popup.close();
+      const raw = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '';
+      setDeviceFlow(prev => ({
+        ...prev,
+        [id]: { phase: 'error', errorMsg: raw || 'Failed to start device authorization' },
+      }));
+      setDeviceModalOpen(true);
     } finally {
       setAuthorizingId(null);
     }
@@ -389,6 +432,136 @@ function GoogleDriveConnectionsTab({ open }: ConnectionsTabProps) {
           </button>
         </div>
       </Modal>
+
+      {/* ── Device Authorization Flow Modal ──────────────────────── */}
+      {deviceFlowStorageId !== null && deviceFlow[deviceFlowStorageId] && (
+        <Modal
+          open={deviceModalOpen}
+          onCancel={() => {
+            clearTimeout(pollTimerRef.current ?? undefined);
+            setDeviceModalOpen(false);
+            setDeviceFlow(prev => { const n = { ...prev }; delete n[deviceFlowStorageId]; return n; });
+          }}
+          footer={null}
+          width={420}
+          closable
+          maskClosable={false}
+          styles={{ body: { padding: '28px 28px 24px' } }}
+          title={
+            <span style={{ fontSize: 15, fontWeight: 600, color: p.text, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <SafetyCertificateOutlined style={{ color: '#4285F4' }} />
+              Google Drive Authorization
+            </span>
+          }
+        >
+          {(() => {
+            const df = deviceFlow[deviceFlowStorageId];
+            if (!df) return null;
+
+            if (df.phase === 'waiting') {
+              return (
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 48, fontFamily: 'monospace', fontWeight: 700, color: '#4285F4',
+                    letterSpacing: '4px', background: '#E8F0FE', borderRadius: 8, padding: '16px 24px',
+                    marginBottom: 20, border: '2px dashed #4285F4' }}>
+                    {df.userCode}
+                  </div>
+                  <div style={{ fontSize: 13, color: p.text, marginBottom: 6, fontWeight: 500 }}>
+                    1. Open this URL in your browser:
+                  </div>
+                  <a href={df.verificationURL} target="_blank" rel="noopener noreferrer"
+                    style={{ fontSize: 12, color: '#4285F4', wordBreak: 'break-all', marginBottom: 16, display: 'block' }}>
+                    <GlobalOutlined style={{ marginRight: 4 }} />
+                    {df.verificationURL}
+                  </a>
+                  <div style={{ fontSize: 13, color: p.text, marginBottom: 6, fontWeight: 500 }}>
+                    2. Enter the code shown above
+                  </div>
+                  <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 20 }}>
+                    {df.expiresIn ? (
+                      <>Expires in <strong>{Math.floor(df.expiresIn / 60)}m {df.expiresIn % 60}s</strong></>
+                    ) : 'Waiting...'}
+                    {df.pollCount !== undefined && df.pollCount > 0 && (
+                      <span style={{ marginLeft: 8 }}>— polling #{df.pollCount + 1}</span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                    <Spin size="small" />
+                    <span style={{ fontSize: 12, color: p.textMuted }}>
+                      Waiting for authorization — keep this window open...
+                    </span>
+                  </div>
+                </div>
+              );
+            }
+
+            if (df.phase === 'success') {
+              return (
+                <div style={{ textAlign: 'center', padding: '16px 0' }}>
+                  <CheckCircleOutlined style={{ fontSize: 48, color: p.green, marginBottom: 16, display: 'block' }} />
+                  <div style={{ fontSize: 15, fontWeight: 600, color: p.text, marginBottom: 8 }}>
+                    Authorization successful!
+                  </div>
+                  <div style={{ fontSize: 12, color: p.textMuted }}>
+                    Google Drive connected. This window will close automatically.
+                  </div>
+                </div>
+              );
+            }
+
+            // error phase
+            const isClientTypeError = df.errorMsg?.includes('Only clients of type') || df.errorMsg?.includes('TVs and Limited Input');
+            return (
+              <div>
+                <div style={{ textAlign: 'center', marginBottom: 20 }}>
+                  <ExclamationCircleOutlined style={{ fontSize: 40, color: p.red, marginBottom: 12, display: 'block' }} />
+                  <div style={{ fontSize: 14, fontWeight: 600, color: p.text, marginBottom: 8 }}>
+                    Authorization Failed
+                  </div>
+                  {isClientTypeError ? (
+                    <div>
+                      <div style={{ fontSize: 12, color: p.textMuted, background: `${p.red}10`, borderRadius: 8, padding: '12px 16px', textAlign: 'left', marginBottom: 16 }}>
+                        <strong>Cause:</strong> Your Google OAuth Client is registered as <em>"Web application"</em>, which does not support the Device Authorization Flow required for server panels without a public domain.
+                        <br /><br />
+                        <strong>Solution:</strong> Create a new OAuth client of type <em>"TVs and Limited Input devices"</em> in Google Cloud Console.
+                      </div>
+                      <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer"
+                        style={{ fontSize: 12, color: '#4285F4', display: 'block', marginBottom: 16 }}>
+                        Open Google Cloud Console → APIs &amp; Services → Credentials
+                      </a>
+                      <div style={{ fontSize: 11, color: p.textMuted, background: p.card, borderRadius: 6, padding: '12px 16px', textAlign: 'left' }}>
+                        <strong>Steps:</strong><br />
+                        1. Go to <strong>Credentials</strong> → click <strong>+ CREATE CREDENTIALS</strong><br />
+                        2. Select <strong>OAuth client ID</strong><br />
+                        3. Application type: select <strong>"TVs and Limited Input devices"</strong><br />
+                        4. Give it a name (e.g. "ITDLUPanel Device") and click <strong>Create</strong><br />
+                        5. Copy the <strong>Client ID</strong> and <strong>Client Secret</strong><br />
+                        6. Edit your storage in ITDLUPanel and paste the new credentials<br />
+                        7. Click <strong>Authorize</strong> again
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12, color: p.textMuted, marginBottom: 16 }}>
+                      {df.errorMsg}
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button onClick={() => {
+                    setDeviceModalOpen(false);
+                    setDeviceFlow(prev => { const n = { ...prev }; delete n[deviceFlowStorageId]; return n; });
+                  }} style={{
+                    padding: '6px 16px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
+                    background: p.card, color: p.textMuted, fontSize: 12, cursor: 'pointer',
+                  }}>
+                    Close
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+        </Modal>
+      )}
     </div>
   );
 }

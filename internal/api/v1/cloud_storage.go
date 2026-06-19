@@ -35,7 +35,14 @@ func (h *CloudStorageHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.Han
 		g.DELETE("/:id", rbac("backup.delete"), h.Delete)
 		g.POST("/:id/test", rbac("backup.read"), h.TestByID)
 		g.POST("/test", rbac("backup.read"), h.TestInline)
+		// Standard OAuth redirect URL — kept for OneDrive (which supports
+		// redirect URIs) and for Google Drive if the operator has a
+		// proper public HTTPS domain.
 		g.GET("/:id/auth-url", rbac("backup.create"), h.GetAuthURL)
+		// Device Authorization Flow — preferred for Google Drive on
+		// private IPs; does NOT require a registered redirect URI.
+		g.POST("/:id/device-auth/start", rbac("backup.create"), h.StartDeviceAuth)
+		g.POST("/:id/device-auth/poll", rbac("backup.create"), h.PollDeviceAuth)
 	}
 
 	// OAuth callback — no auth middleware (browser redirect from provider)
@@ -205,6 +212,9 @@ func (h *CloudStorageHandler) TestInline(c *gin.Context) {
 }
 
 // GetAuthURL returns an OAuth URL for Google Drive or OneDrive.
+// For Google Drive this returns a standard redirect-based URL which
+// requires a registered redirect_uri. For OneDrive this is the only
+// supported flow.
 func (h *CloudStorageHandler) GetAuthURL(c *gin.Context) {
 	id, err := parseID(c, "id")
 	if err != nil {
@@ -212,14 +222,76 @@ func (h *CloudStorageHandler) GetAuthURL(c *gin.Context) {
 	}
 
 	redirectURL := oauthCallbackURL(c)
-	url, provider, err := h.cloudStorageService.GetAuthURL(id, redirectURL)
+	authURL, provider, err := h.cloudStorageService.GetAuthURL(id, redirectURL)
 	if err != nil {
 		response.Error(c, err)
 		return
 	}
 	response.Success(c, gin.H{
-		"auth_url": url,
+		"auth_url": authURL,
 		"provider": provider,
+	})
+}
+
+// StartDeviceAuth initiates a Google Device Authorization Flow (RFC 8628).
+// This is the preferred flow for Google Drive on private IPs because it
+// does NOT require a registered redirect_uri. Returns a user_code that
+// the user must enter at https://www.google.com/device.
+func (h *CloudStorageHandler) StartDeviceAuth(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+
+	info, err := h.cloudStorageService.GetGoogleDeviceFlowAuthInfo(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{
+		"user_code":         info.UserCode,
+		"verification_url":  info.VerificationURL,
+		"expires_in":       info.ExpiresIn,
+		"interval":         info.Interval,
+		"device_code":      info.DeviceCode,
+	})
+}
+
+// PollDeviceAuth checks whether the user has approved the device auth
+// request started by StartDeviceAuth. The frontend should poll this
+// every `interval` seconds. Returns success with tokens when approved,
+// or {pending: true} while waiting.
+func (h *CloudStorageHandler) PollDeviceAuth(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+
+	var req struct {
+		DeviceCode string `json:"device_code" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "device_code", Message: "required"},
+		})
+		return
+	}
+
+	token, err := h.cloudStorageService.PollDeviceAuth(id, req.DeviceCode)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	if token == nil {
+		// Still waiting — not an error, frontend should retry.
+		response.Success(c, gin.H{"pending": true})
+		return
+	}
+
+	response.Success(c, gin.H{
+		"pending":   false,
+		"connected": true,
+		"message":   "Google Drive connected successfully",
 	})
 }
 
