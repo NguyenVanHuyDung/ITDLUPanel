@@ -30,9 +30,10 @@ type UserResource struct {
 
 // validResourceTypes defines allowed resource types.
 var validResourceTypes = map[string]bool{
-	"site":     true,
-	"database": true,
-	"ftp":      true,
+	"site":             true,
+	"database":         true,
+	"ftp":              true,
+	"docker_container": true,
 }
 
 // Assign grants a user access to a specific resource.

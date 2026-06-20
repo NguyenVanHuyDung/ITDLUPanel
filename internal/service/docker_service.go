@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,6 +40,7 @@ type Container struct {
 	State   string `json:"state"`
 	Ports   []Port `json:"ports"`
 	Created int64  `json:"created"`
+	OwnerID int64  `json:"owner_id,omitempty"` // User ID that owns this container (0 = panel / system)
 }
 
 // ContainerDetail holds the full inspect result for a single container.
@@ -79,26 +81,28 @@ type ContainerStats struct {
 	PIDs       uint64  `json:"pids"`
 }
 
-// Image represents a Docker image.
+// Image represents a Docker image with optional ownership.
 type Image struct {
-	ID      string   `json:"id"`
-	Tags    []string `json:"tags"`
-	Size    int64    `json:"size"`
-	Created int64    `json:"created"`
+	ID       string   `json:"id"`
+	RepoTags []string `json:"repo_tags,omitempty"`
+	Tags     []string `json:"tags,omitempty"`
+	Size     int64    `json:"size"`
+	Created  int64    `json:"created"`
+	OwnerID  int64    `json:"owner_id,omitempty"` // 0 = panel / system
 }
 
 // Network represents a Docker network.
 type Network struct {
-	ID              string `json:"id"`
-	Name            string `json:"name"`
-	Driver          string `json:"driver"`
-	Scope           string `json:"scope"`
-	Subnet          string `json:"subnet"`
-	Gateway         string `json:"gateway"`
-	Internal        bool   `json:"internal"`
-	EnableIPv6      bool   `json:"enable_ipv6"`
-	ContainerCount  int    `json:"container_count"`
-	Created         string `json:"created"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Driver         string `json:"driver"`
+	Scope          string `json:"scope"`
+	Subnet         string `json:"subnet"`
+	Gateway        string `json:"gateway"`
+	Internal       bool   `json:"internal"`
+	EnableIPv6     bool   `json:"enable_ipv6"`
+	ContainerCount int    `json:"container_count"`
+	Created        string `json:"created"`
 }
 
 // Volume represents a Docker volume.
@@ -134,6 +138,11 @@ type CreateContainerRequest struct {
 	Volumes       []string          `json:"volumes"`
 	RestartPolicy string            `json:"restart_policy"`
 	Command       string            `json:"command"`
+	Labels        map[string]string `json:"labels,omitempty"`
+	// OwnerID is the user that created/owns the container. 0 means
+	// the panel itself. When non-zero the container is tagged with
+	// the label `panel.owner=<id>` so it can be filtered back later.
+	OwnerID int64 `json:"-"`
 }
 
 // NetworkContainerEndpoint holds per-container info inside a network.
@@ -152,18 +161,18 @@ type IPAMConfig struct {
 
 // NetworkDetail holds full info about a Docker network.
 type NetworkDetail struct {
-	ID           string                               `json:"id"`
-	Name         string                               `json:"name"`
-	Driver       string                               `json:"driver"`
-	Scope        string                               `json:"scope"`
-	Internal     bool                                 `json:"internal"`
-	EnableIPv6   bool                                 `json:"enable_ipv6"`
-	IPAM         []IPAMConfig                         `json:"ipam"`
-	IPAMDriver   string                               `json:"ipam_driver"`
-	Containers   map[string]NetworkContainerEndpoint   `json:"containers"`
-	Options      map[string]string                    `json:"options"`
-	Labels       map[string]string                    `json:"labels"`
-	Created      string                               `json:"created"`
+	ID         string                              `json:"id"`
+	Name       string                              `json:"name"`
+	Driver     string                              `json:"driver"`
+	Scope      string                              `json:"scope"`
+	Internal   bool                                `json:"internal"`
+	EnableIPv6 bool                                `json:"enable_ipv6"`
+	IPAM       []IPAMConfig                        `json:"ipam"`
+	IPAMDriver string                              `json:"ipam_driver"`
+	Containers map[string]NetworkContainerEndpoint `json:"containers"`
+	Options    map[string]string                   `json:"options"`
+	Labels     map[string]string                   `json:"labels"`
+	Created    string                              `json:"created"`
 	// Convenience fields kept for backward compat
 	Subnet  string `json:"subnet"`
 	Gateway string `json:"gateway"`
@@ -301,18 +310,18 @@ func (s *DockerService) GetDockerInfo() (*DockerInfo, error) {
 	}
 
 	var raw struct {
-		ServerVersion  string `json:"ServerVersion"`
-		NCPU           int    `json:"NCPU"`
-		MemTotal       int64  `json:"MemTotal"`
-		Containers     int    `json:"Containers"`
-		ContRunning    int    `json:"ContainersRunning"`
-		ContPaused     int    `json:"ContainersPaused"`
-		ContStopped    int    `json:"ContainersStopped"`
-		Images         int    `json:"Images"`
-		Driver         string `json:"Driver"`
-		DockerRootDir  string `json:"DockerRootDir"`
+		ServerVersion   string `json:"ServerVersion"`
+		NCPU            int    `json:"NCPU"`
+		MemTotal        int64  `json:"MemTotal"`
+		Containers      int    `json:"Containers"`
+		ContRunning     int    `json:"ContainersRunning"`
+		ContPaused      int    `json:"ContainersPaused"`
+		ContStopped     int    `json:"ContainersStopped"`
+		Images          int    `json:"Images"`
+		Driver          string `json:"Driver"`
+		DockerRootDir   string `json:"DockerRootDir"`
 		OperatingSystem string `json:"OperatingSystem"`
-		Architecture   string `json:"Architecture"`
+		Architecture    string `json:"Architecture"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("docker info decode: %w", err)
@@ -362,6 +371,7 @@ func (s *DockerService) ListContainers(all bool) ([]*Container, error) {
 		Status  string
 		State   string
 		Created int64
+		Labels  map[string]string
 		Ports   []struct {
 			IP          string `json:"IP"`
 			PrivatePort uint16 `json:"PrivatePort"`
@@ -388,6 +398,10 @@ func (s *DockerService) ListContainers(all bool) ([]*Container, error) {
 				Type:        p.Type,
 			})
 		}
+		owner := int64(0)
+		if v, ok := c.Labels["panel.owner"]; ok {
+			owner, _ = strconv.ParseInt(v, 10, 64)
+		}
 		containers = append(containers, &Container{
 			ID:      c.ID[:12],
 			Name:    name,
@@ -396,6 +410,7 @@ func (s *DockerService) ListContainers(all bool) ([]*Container, error) {
 			State:   c.State,
 			Ports:   ports,
 			Created: c.Created,
+			OwnerID: owner,
 		})
 	}
 	return containers, nil
@@ -414,11 +429,11 @@ func (s *DockerService) GetContainer(id string) (*ContainerDetail, error) {
 	}
 
 	var raw struct {
-		ID      string `json:"Id"`
-		Name    string
-		Created string
+		ID       string `json:"Id"`
+		Name     string
+		Created  string
 		Platform string
-		Config  struct {
+		Config   struct {
 			Image string
 			Env   []string
 			Cmd   []string
@@ -530,6 +545,18 @@ func (s *DockerService) CreateContainer(req CreateContainerRequest) (*Container,
 		body["Env"] = req.Env
 	}
 
+	// Labels — merge caller-supplied labels with panel-owned metadata.
+	labels := map[string]string{}
+	for k, v := range req.Labels {
+		labels[k] = v
+	}
+	if req.OwnerID > 0 {
+		labels["panel.owner"] = strconv.FormatInt(req.OwnerID, 10)
+	}
+	if len(labels) > 0 {
+		body["Labels"] = labels
+	}
+
 	// Port bindings & exposed ports.
 	exposedPorts := map[string]any{}
 	portBindings := map[string]any{}
@@ -610,10 +637,11 @@ func (s *DockerService) CreateContainer(req CreateContainerRequest) (*Container,
 		shortID = shortID[:12]
 	}
 	return &Container{
-		ID:    shortID,
-		Name:  req.Name,
-		Image: req.Image,
-		State: "created",
+		ID:      shortID,
+		Name:    req.Name,
+		Image:   req.Image,
+		State:   "created",
+		OwnerID: req.OwnerID,
 	}, nil
 }
 
@@ -680,6 +708,38 @@ func (s *DockerService) RemoveContainer(id string, force bool) error {
 	}
 	logger.Info().Str("container", id).Bool("force", force).Msg("container removed")
 	return nil
+}
+
+// GetContainerOwner returns the user ID that owns the given container based
+// on the `panel.owner` label. Returns 0 if the label is missing (system
+// container) or the container doesn't exist.
+func (s *DockerService) GetContainerOwner(id string) (int64, error) {
+	resp, err := s.get(fmt.Sprintf("/containers/%s/json", id))
+	if err != nil {
+		return 0, fmt.Errorf("get container: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return 0, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return 0, s.readError(resp)
+	}
+
+	var raw struct {
+		Config struct {
+			Labels map[string]string `json:"Labels"`
+		} `json:"Config"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return 0, fmt.Errorf("get container decode: %w", err)
+	}
+	if v, ok := raw.Config.Labels["panel.owner"]; ok {
+		owner, _ := strconv.ParseInt(v, 10, 64)
+		return owner, nil
+	}
+	return 0, nil
 }
 
 // GetContainerLogs returns the last N lines from a container's logs.
@@ -840,10 +900,11 @@ func (s *DockerService) ListImages() ([]*Image, error) {
 			id = id[:12]
 		}
 		images = append(images, &Image{
-			ID:      id,
-			Tags:    i.RepoTags,
-			Size:    i.Size,
-			Created: i.Created,
+			ID:       id,
+			Tags:     i.RepoTags,
+			RepoTags: i.RepoTags,
+			Size:     i.Size,
+			Created:  i.Created,
 		})
 	}
 	return images, nil
@@ -868,6 +929,127 @@ func (s *DockerService) PullImage(name string) error {
 
 	logger.Info().Str("image", name).Msg("image pulled")
 	return nil
+}
+
+// LoadImage loads one or more images from a tarball (output of `docker save`).
+// It streams the tar body to the Docker daemon's /images/load endpoint.
+//
+// The Docker API returns a stream of JSON progress messages terminated by a
+// final entry that contains the loaded image IDs in its `stream` field. We
+// decode only that final entry and return the parsed IDs.
+//
+// `quiet` silences the per-layer progress messages in the response; the final
+// summary is still returned. The HTTP client's per-request timeout is
+// extended because docker load can take much longer than the default 30s
+// for large images.
+func (s *DockerService) LoadImage(reader io.Reader, quiet bool) ([]string, error) {
+	path := "/images/load"
+	if quiet {
+		path += "?quiet=1"
+	}
+
+	req, err := http.NewRequest(http.MethodPost, s.apiURL(path), reader)
+	if err != nil {
+		return nil, fmt.Errorf("load image request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-tar")
+
+	// Use a longer-lived client for image load: docker load can easily
+	// take minutes for gigabyte-sized images. We copy the existing
+	// transport so the Unix socket dial context is preserved.
+	loadClient := &http.Client{
+		Transport: s.client.Transport,
+		Timeout:   30 * time.Minute,
+	}
+	resp, err := loadClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("load image: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, s.readError(resp)
+	}
+
+	// Drain the streamed body. We're only interested in the final
+	// summary line ("Loading image..." / "Loaded image ID: sha256:...").
+	// The stream is small so reading the whole thing into memory is fine.
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("load image read body: %w", err)
+	}
+
+	var ids []string
+	var tags []string
+	for _, line := range strings.Split(string(body), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Final summary can take two shapes depending on the Docker
+		// engine version:
+		//   {"stream":"Loaded image: busybox:latest\n"}
+		//   {"stream":"Loaded image ID: sha256:abc..."}
+		var msg struct {
+			Stream string `json:"stream"`
+		}
+		if err := json.Unmarshal([]byte(line), &msg); err != nil {
+			continue
+		}
+		s := strings.TrimSpace(msg.Stream)
+		switch {
+		case strings.HasPrefix(s, "Loaded image ID:"):
+			id := strings.TrimSpace(strings.TrimPrefix(s, "Loaded image ID:"))
+			ids = append(ids, id)
+		case strings.HasPrefix(s, "Loaded image:"):
+			name := strings.TrimSpace(strings.TrimPrefix(s, "Loaded image:"))
+			if name != "" {
+				tags = append(tags, name)
+			}
+		}
+	}
+
+	// For the "Loaded image: <repo>:<tag>" format the daemon does
+	// not return an ID inline. Resolve each tag to its real image ID
+	// by inspecting it via the API.
+	for _, ref := range tags {
+		id, err := s.ResolveImageID(ref)
+		if err != nil {
+			logger.Warn().Err(err).Str("ref", ref).Msg("could not resolve loaded image to ID")
+			continue
+		}
+		ids = append(ids, id)
+	}
+
+	logger.Info().Strs("image_ids", ids).Msg("image loaded from tarball")
+	return ids, nil
+}
+
+// ResolveImageID looks up the canonical image ID (sha256:...) for a
+// repository:tag reference (or partial ID). Returns the ID with the
+// `sha256:` prefix preserved so callers can pass it straight to other
+// Docker API endpoints that accept both forms.
+func (s *DockerService) ResolveImageID(ref string) (string, error) {
+	if ref == "" {
+		return "", fmt.Errorf("empty reference")
+	}
+	resp, err := s.get("/images/" + ref + "/json")
+	if err != nil {
+		return "", fmt.Errorf("inspect image %q: %w", ref, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", s.readError(resp)
+	}
+
+	var raw struct {
+		ID string `json:"Id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return "", fmt.Errorf("decode image inspect: %w", err)
+	}
+	return raw.ID, nil
 }
 
 // RemoveImage removes an image.
@@ -1247,8 +1429,8 @@ func (s *DockerService) InspectNetwork(id string) (*NetworkDetail, error) {
 		Options    map[string]string
 		Labels     map[string]string
 		IPAM       struct {
-			Driver  string
-			Config  []struct {
+			Driver string
+			Config []struct {
 				Subnet  string
 				Gateway string
 			}

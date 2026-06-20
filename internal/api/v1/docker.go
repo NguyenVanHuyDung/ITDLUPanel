@@ -7,13 +7,15 @@ import (
 	"github.com/gin-gonic/gin"
 
 	apperrors "github.com/ITDLUPanel/panel/internal/pkg/errors"
+	"github.com/ITDLUPanel/panel/internal/pkg/logger"
 	"github.com/ITDLUPanel/panel/internal/pkg/response"
 	"github.com/ITDLUPanel/panel/internal/service"
 )
 
 // DockerHandler handles Docker management API requests.
 type DockerHandler struct {
-	dockerService *service.DockerService
+	dockerService       *service.DockerService
+	userResourceService *service.UserResourceService
 }
 
 // dockerErr wraps a plain error into an AppError so response.Error()
@@ -23,8 +25,71 @@ func dockerErr(c *gin.Context, err error) {
 }
 
 // NewDockerHandler creates a new DockerHandler.
-func NewDockerHandler(dockerService *service.DockerService) *DockerHandler {
-	return &DockerHandler{dockerService: dockerService}
+func NewDockerHandler(dockerService *service.DockerService, userResourceService *service.UserResourceService) *DockerHandler {
+	return &DockerHandler{dockerService: dockerService, userResourceService: userResourceService}
+}
+
+// dockerFullAccess reports whether the current request is from a user that
+// bypasses per-container ownership checks (admin and operator). Such users
+// see and can manage every container / image on the host.
+func (h *DockerHandler) dockerFullAccess(c *gin.Context) bool {
+	role, _ := c.Get("role")
+	r, _ := role.(string)
+	return r == "admin" || r == "operator"
+}
+
+// currentUserID returns the user_id from the auth context, or 0 if missing.
+func (h *DockerHandler) currentUserID(c *gin.Context) int64 {
+	v, _ := c.Get("user_id")
+	uid, _ := v.(int64)
+	return uid
+}
+
+// requireContainerAccess ensures the caller is allowed to act on the
+// given container. Admins and operators always pass; ordinary users only
+// pass if they own the container (label panel.owner=<uid>).
+//
+// On denial it writes a 403 response and returns false.
+func (h *DockerHandler) requireContainerAccess(c *gin.Context, containerID string) bool {
+	if h.dockerFullAccess(c) {
+		return true
+	}
+	uid := h.currentUserID(c)
+	if uid == 0 {
+		c.AbortWithStatusJSON(http.StatusForbidden, response.Response{
+			Code:    http.StatusForbidden,
+			Message: "access denied",
+		})
+		return false
+	}
+	owner, err := h.dockerService.GetContainerOwner(containerID)
+	if err != nil || owner != uid {
+		c.AbortWithStatusJSON(http.StatusForbidden, response.Response{
+			Code:    http.StatusForbidden,
+			Message: "access denied to this container",
+		})
+		return false
+	}
+	return true
+}
+
+// filterOwnedContainers drops containers the current user is not allowed to
+// see. Admins and operators get the full list back unchanged.
+func (h *DockerHandler) filterOwnedContainers(c *gin.Context, containers []*service.Container) []*service.Container {
+	if h.dockerFullAccess(c) || len(containers) == 0 {
+		return containers
+	}
+	uid := h.currentUserID(c)
+	if uid == 0 {
+		return []*service.Container{}
+	}
+	out := make([]*service.Container, 0, len(containers))
+	for _, ctr := range containers {
+		if ctr.OwnerID == uid {
+			out = append(out, ctr)
+		}
+	}
+	return out
 }
 
 // RegisterRoutes registers Docker routes on the given router group.
@@ -52,6 +117,7 @@ func (h *DockerHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFu
 		docker.GET("/images", rbac("docker.read"), h.listImages)
 		docker.GET("/images/search", rbac("docker.read"), h.searchImages)
 		docker.POST("/images/pull", rbac("docker.manage"), h.pullImage)
+		docker.POST("/images/load", rbac("docker.upload"), h.loadImage)
 		docker.POST("/images/prune", rbac("docker.manage"), h.pruneImages)
 		docker.DELETE("/images/:id", rbac("docker.manage"), h.removeImage)
 		docker.GET("/images/:id/inspect", rbac("docker.read"), h.inspectImage)
@@ -138,11 +204,14 @@ func (h *DockerHandler) listContainers(c *gin.Context) {
 		dockerErr(c, err)
 		return
 	}
-	response.Success(c, containers)
+	response.Success(c, h.filterOwnedContainers(c, containers))
 }
 
 func (h *DockerHandler) getContainer(c *gin.Context) {
 	id := c.Param("id")
+	if !h.requireContainerAccess(c, id) {
+		return
+	}
 	detail, err := h.dockerService.GetContainer(id)
 	if err != nil {
 		dockerErr(c, err)
@@ -177,6 +246,11 @@ func (h *DockerHandler) createContainer(c *gin.Context) {
 		return
 	}
 
+	// The current user is recorded as the container owner. For
+	// admin/operator this is still recorded (so admins can audit
+	// who triggered the create) but doesn't gate visibility.
+	owner := h.currentUserID(c)
+
 	container, err := h.dockerService.CreateContainer(service.CreateContainerRequest{
 		Name:          body.Name,
 		Image:         body.Image,
@@ -185,6 +259,7 @@ func (h *DockerHandler) createContainer(c *gin.Context) {
 		Volumes:       body.Volumes,
 		RestartPolicy: body.RestartPolicy,
 		Command:       body.Command,
+		OwnerID:       owner,
 	})
 	if err != nil {
 		dockerErr(c, err)
@@ -196,6 +271,9 @@ func (h *DockerHandler) createContainer(c *gin.Context) {
 
 func (h *DockerHandler) startContainer(c *gin.Context) {
 	id := c.Param("id")
+	if !h.requireContainerAccess(c, id) {
+		return
+	}
 	if err := h.dockerService.StartContainer(id); err != nil {
 		dockerErr(c, err)
 		return
@@ -205,6 +283,9 @@ func (h *DockerHandler) startContainer(c *gin.Context) {
 
 func (h *DockerHandler) stopContainer(c *gin.Context) {
 	id := c.Param("id")
+	if !h.requireContainerAccess(c, id) {
+		return
+	}
 	if err := h.dockerService.StopContainer(id); err != nil {
 		dockerErr(c, err)
 		return
@@ -214,6 +295,9 @@ func (h *DockerHandler) stopContainer(c *gin.Context) {
 
 func (h *DockerHandler) restartContainer(c *gin.Context) {
 	id := c.Param("id")
+	if !h.requireContainerAccess(c, id) {
+		return
+	}
 	if err := h.dockerService.RestartContainer(id); err != nil {
 		dockerErr(c, err)
 		return
@@ -223,16 +307,27 @@ func (h *DockerHandler) restartContainer(c *gin.Context) {
 
 func (h *DockerHandler) removeContainer(c *gin.Context) {
 	id := c.Param("id")
+	if !h.requireContainerAccess(c, id) {
+		return
+	}
 	force := c.Query("force") == "true"
 	if err := h.dockerService.RemoveContainer(id, force); err != nil {
 		dockerErr(c, err)
 		return
 	}
+	// Best-effort cleanup of the owner resource row. We hash the
+	// container ID into an int64 to fit the existing user_resources
+	// schema (resource_id is INTEGER). The hash is stable for the
+	// lifetime of the install.
+	_ = h.userResourceService.RemoveAllForResource("docker_container", stableContainerID(id))
 	response.Success(c, gin.H{"message": "container removed"})
 }
 
 func (h *DockerHandler) containerLogs(c *gin.Context) {
 	id := c.Param("id")
+	if !h.requireContainerAccess(c, id) {
+		return
+	}
 	tail := 100
 	if v := c.Query("tail"); v != "" {
 		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
@@ -250,6 +345,9 @@ func (h *DockerHandler) containerLogs(c *gin.Context) {
 
 func (h *DockerHandler) containerStats(c *gin.Context) {
 	id := c.Param("id")
+	if !h.requireContainerAccess(c, id) {
+		return
+	}
 	stats, err := h.dockerService.GetContainerStats(id)
 	if err != nil {
 		dockerErr(c, err)
@@ -291,6 +389,97 @@ func (h *DockerHandler) pullImage(c *gin.Context) {
 	response.Success(c, gin.H{"message": "image pulled", "name": body.Name})
 }
 
+// loadImage accepts a multipart upload of a Docker image tarball (the
+// output of `docker save ... > image.tar`) and loads it into the local
+// Docker daemon.
+//
+// The "quiet" form flag toggles the daemon-side quiet mode. Repository
+// and tag in the form data are optional: when both are provided the
+// freshly-loaded image is also tagged as <repo>:<tag> so users can
+// reference it by name when creating a container.
+//
+// Errors during the load are returned verbatim — the tarball itself
+// is streamed straight to the Docker socket so memory usage stays
+// bounded.
+func (h *DockerHandler) loadImage(c *gin.Context) {
+	const maxMemory = 64 << 20 // 64 MiB in memory; rest spooled to a temp file
+	if err := c.Request.ParseMultipartForm(maxMemory); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "file", Message: "could not parse multipart upload: " + err.Error()},
+		})
+		return
+	}
+
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "file", Message: "a 'file' field with the tarball is required"},
+		})
+		return
+	}
+	defer file.Close()
+
+	quiet := c.Request.FormValue("quiet") == "1" || c.Request.FormValue("quiet") == "true"
+
+	logger.Info().
+		Str("filename", header.Filename).
+		Int64("size", header.Size).
+		Msg("loading docker image from tarball")
+
+	ids, err := h.dockerService.LoadImage(file, quiet)
+	if err != nil {
+		dockerErr(c, err)
+		return
+	}
+
+	// Optional auto-tag so users can reference the image by name.
+	// If the caller supplied repo+tag, retag using the resolved ID.
+	repo := c.Request.FormValue("repo")
+	tag := c.Request.FormValue("tag")
+	if repo != "" && tag != "" && len(ids) > 0 {
+		if tErr := h.dockerService.TagImage(ids[0], repo, tag); tErr != nil {
+			logger.Warn().Err(tErr).Msg("auto-tag after load failed")
+		}
+	}
+
+	response.Success(c, gin.H{
+		"message":   "image loaded",
+		"image_ids": ids,
+		"filename":  header.Filename,
+		"size":      header.Size,
+	})
+}
+
+// stableContainerID hashes a container ID (full 64-char SHA or short 12-char
+// prefix) into a stable int64 so it can be stored in the user_resources
+// table whose resource_id column is INTEGER. The truncation+sign-handling
+// keeps the value in the positive int64 range.
+func stableContainerID(id string) int64 {
+	if id == "" {
+		return 0
+	}
+	id = stripSHA256Prefix(id)
+	// Use first 15 hex chars -> fits in int63.
+	if len(id) > 15 {
+		id = id[:15]
+	}
+	v, err := strconv.ParseUint(id, 16, 64)
+	if err != nil {
+		return 0
+	}
+	// Mask off the high bit to keep the value positive (int64 range).
+	return int64(v & 0x7FFFFFFFFFFFFFFF)
+}
+
+// stripSHA256Prefix removes the "sha256:" prefix Docker uses for image IDs.
+func stripSHA256Prefix(id string) string {
+	const p = "sha256:"
+	if len(id) > len(p) && id[:len(p)] == p {
+		return id[len(p):]
+	}
+	return id
+}
+
 func (h *DockerHandler) removeImage(c *gin.Context) {
 	id := c.Param("id")
 	force := c.Query("force") == "true"
@@ -329,6 +518,9 @@ func (h *DockerHandler) listVolumes(c *gin.Context) {
 
 func (h *DockerHandler) pauseContainer(c *gin.Context) {
 	id := c.Param("id")
+	if !h.requireContainerAccess(c, id) {
+		return
+	}
 	if err := h.dockerService.PauseContainer(id); err != nil {
 		dockerErr(c, err)
 		return
@@ -338,6 +530,9 @@ func (h *DockerHandler) pauseContainer(c *gin.Context) {
 
 func (h *DockerHandler) unpauseContainer(c *gin.Context) {
 	id := c.Param("id")
+	if !h.requireContainerAccess(c, id) {
+		return
+	}
 	if err := h.dockerService.UnpauseContainer(id); err != nil {
 		dockerErr(c, err)
 		return
@@ -351,6 +546,9 @@ type renameContainerBody struct {
 
 func (h *DockerHandler) renameContainer(c *gin.Context) {
 	id := c.Param("id")
+	if !h.requireContainerAccess(c, id) {
+		return
+	}
 	var body renameContainerBody
 	if err := c.ShouldBindJSON(&body); err != nil || body.Name == "" {
 		response.ValidationError(c, []response.FieldError{

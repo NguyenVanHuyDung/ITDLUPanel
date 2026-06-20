@@ -15,13 +15,13 @@ import (
 	"github.com/gin-gonic/gin"
 
 	panel "github.com/ITDLUPanel/panel"
-	"github.com/ITDLUPanel/panel/internal/config"
 	v1 "github.com/ITDLUPanel/panel/internal/api/v1"
 	"github.com/ITDLUPanel/panel/internal/api/ws"
-	"github.com/ITDLUPanel/panel/internal/service"
-	"github.com/ITDLUPanel/panel/internal/plugin"
-	"github.com/ITDLUPanel/panel/internal/service/installer"
+	"github.com/ITDLUPanel/panel/internal/config"
 	"github.com/ITDLUPanel/panel/internal/pkg/logger"
+	"github.com/ITDLUPanel/panel/internal/plugin"
+	"github.com/ITDLUPanel/panel/internal/service"
+	"github.com/ITDLUPanel/panel/internal/service/installer"
 	"github.com/ITDLUPanel/panel/internal/task"
 	"github.com/ITDLUPanel/panel/internal/websocket"
 )
@@ -151,8 +151,8 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		dashboardHandler := v1.NewDashboardHandler(monitorService)
 		dashboardHandler.RegisterRoutes(authGroup)
 
-	monitorHandler := v1.NewMonitorHandler(monitorService, metricsCollector)
-	monitorHandler.RegisterRoutes(authGroup, RBACMiddleware)
+		monitorHandler := v1.NewMonitorHandler(monitorService, metricsCollector)
+		monitorHandler.RegisterRoutes(authGroup, RBACMiddleware)
 
 		// -------------------------------------------------------
 		// Task management (all authenticated users)
@@ -225,7 +225,7 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		// -------------------------------------------------------
 		// Docker management
 		// -------------------------------------------------------
-		dockerHandler := v1.NewDockerHandler(dockerService)
+		dockerHandler := v1.NewDockerHandler(dockerService, userResourceService)
 		dockerHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
 
 		// -------------------------------------------------------
