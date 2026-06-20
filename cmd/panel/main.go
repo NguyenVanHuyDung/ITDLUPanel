@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -263,6 +264,19 @@ func runBackupCommand() {
 	}
 	defer db.Close()
 
+	// Resolve a real user ID for system-initiated actions. The default
+	// admin row historically lived at id=1, but if it has been removed
+	// (e.g. an operator account was created and the original admin was
+	// deleted) we must not use a stale id, otherwise the
+	// backups.created_by foreign key will reject the insert and the
+	// backup silently writes a tarball but no DB record. We fall back
+	// to whichever user currently exists in the table.
+	systemUserID, err := resolveSystemUserID(db.GetDB())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to resolve system user: %v\n", err)
+		os.Exit(1)
+	}
+
 	ftpStorageSvc := service.NewFTPStorageService(db.GetDB())
 	cloudStorageSvc := service.NewCloudStorageService(db.GetDB())
 	backupSvc := service.NewBackupService(db.GetDB(), ftpStorageSvc, cloudStorageSvc)
@@ -270,7 +284,6 @@ func runBackupCommand() {
 	uploadSvc.Start(2)
 	defer uploadSvc.Stop(10 * time.Second)
 	backupSvc.SetUploadService(uploadSvc)
-	const systemUserID int64 = 1 // system/admin user
 
 	type result struct {
 		Status  string `json:"status"`
@@ -451,6 +464,18 @@ func runCronCommand() {
 	}
 	defer db.Close()
 
+	// Resolve a real user ID for system-initiated actions. The default
+	// admin row historically lived at id=1, but if it has been removed
+	// (e.g. an operator account was created and the original admin was
+	// deleted) we must not use a stale id, otherwise the
+	// backups.created_by foreign key will reject the insert and the
+	// backup silently writes a tarball but no DB record. We fall back
+	// to whichever user currently exists in the table.
+	if _, err := resolveSystemUserID(db.GetDB()); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to resolve system user: %v\n", err)
+		os.Exit(1)
+	}
+
 	cronSvc := service.NewCronService(db.GetDB())
 	// Wire up notification service so cron can dispatch alerts.
 	notifSvc := service.NewNotificationService(db.GetDB(), nil)
@@ -472,4 +497,39 @@ func runCronCommand() {
 		fmt.Print(output)
 	}
 	os.Exit(0)
+}
+
+// resolveSystemUserID returns the user ID that should be recorded as the
+// creator of system-initiated actions (cron-driven backups, etc.).
+//
+// Historically the first admin row was inserted at id=1 and the backup
+// command hard-coded that value. When the original admin account is
+// removed (e.g. replaced by a different user) the hard-coded value
+// stops pointing at a real row, the backups.created_by foreign key
+// rejects the insert, and the backup silently produces a tarball with
+// no DB record. We pick the first existing user (admin role preferred)
+// instead of a magic number.
+func resolveSystemUserID(db *sql.DB) (int64, error) {
+	// Prefer an admin so audit trails clearly attribute system jobs.
+	var id int64
+	err := db.QueryRow(
+		`SELECT id FROM users WHERE role = 'admin' AND status = 1 ORDER BY id LIMIT 1`,
+	).Scan(&id)
+	if err == nil {
+		return id, nil
+	}
+	if err != sql.ErrNoRows {
+		return 0, err
+	}
+	// Fall back to any active user.
+	err = db.QueryRow(
+		`SELECT id FROM users WHERE status = 1 ORDER BY id LIMIT 1`,
+	).Scan(&id)
+	if err == nil {
+		return id, nil
+	}
+	if err == sql.ErrNoRows {
+		return 0, fmt.Errorf("no active users in database; cannot record backup creator")
+	}
+	return 0, err
 }

@@ -35,6 +35,7 @@ func (h *SoftwareHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gi
 	{
 		sw.GET("", h.list)
 		sw.GET("/webserver-check", h.getInstalledWebServer)
+	sw.GET("/php-versions", h.getAvailablePHPVersions)
 		sw.POST("/install", h.install)
 		sw.POST("/install-stack", h.installStack)
 		sw.DELETE("/:name", h.uninstall)

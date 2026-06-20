@@ -503,6 +503,23 @@ func (s *SiteService) Update(id int64, req UpdateSiteRequest) error {
 }
 
 // Delete removes a site, its vhost config and document root.
+//
+// This is a *full* deletion: every artifact associated with the site
+// is purged so that re-using the domain later doesn't pick up stale
+// state. The cleanup covers:
+//
+//   - Webserver vhost config and its sites-enabled symlink (via gen).
+//   - Document root at /ITDLUPanel/wwwroot/<domain>.
+//   - Per-site access / error log directory at /ITDLUPanel/logs/<domain>.
+//   - Rewrite template file at /ITDLUPanel/server/config/rewrite/<domain>.conf.
+//   - Per-site JSON config files in /ITDLUPanel/server/config/sites/<id>_*.json.
+//   - DB rows in: domains, backups, backup_uploads (CASCADE), ssl_certificates,
+//     user_resources. The sites row itself is removed last.
+//   - Backup tarballs on local disk matching /ITDLUPanel/backup/site/<domain>_*.tar*.
+//
+// Failures during the cleanup phase are logged but do NOT abort the
+// operation: the site row is removed regardless, otherwise the user
+// is stuck with an orphan site they cannot delete a second time.
 func (s *SiteService) Delete(id int64) error {
 	site, err := s.GetByID(id)
 	if err != nil {
@@ -530,11 +547,75 @@ func (s *SiteService) Delete(id int64) error {
 		logger.Warn().Err(err).Str("path", docRoot).Msg("failed to remove document root during delete")
 	}
 
-	// Delete DB records — explicitly delete domains first as a safety net
-	// (CASCADE may not fire if foreign_keys pragma isn't active on this connection)
-	_, _ = s.db.Exec("DELETE FROM domains WHERE site_id = ?", id)
-	_, err = s.db.Exec("DELETE FROM sites WHERE id = ?", id)
-	if err != nil {
+	// Remove per-site log directory (access.log / error.log + rotated .gz).
+	logsDir := filepath.Join("/ITDLUPanel/logs", site.Domain)
+	if err := os.RemoveAll(logsDir); err != nil {
+		logger.Warn().Err(err).Str("path", logsDir).Msg("failed to remove site log directory")
+	}
+
+	// Remove rewrite template config file.
+	rewritePath := filepath.Join("/ITDLUPanel/server/config/rewrite", site.Domain+".conf")
+	if err := os.Remove(rewritePath); err != nil && !os.IsNotExist(err) {
+		logger.Warn().Err(err).Str("path", rewritePath).Msg("failed to remove rewrite config")
+	}
+
+	// Remove per-site JSON config files (default_doc, hotlink, limit_access,
+	// maintenance, redirect, reverse_proxy, subdir, traffic, deny_access).
+	siteConfigDir := "/ITDLUPanel/server/config/sites"
+	if entries, err := os.ReadDir(siteConfigDir); err == nil {
+		prefix := fmt.Sprintf("%d_", id)
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasPrefix(e.Name(), prefix) {
+				p := filepath.Join(siteConfigDir, e.Name())
+				if err := os.Remove(p); err != nil {
+					logger.Warn().Err(err).Str("path", p).Msg("failed to remove site config file")
+				}
+			}
+		}
+	}
+
+	// Remove local backup tarballs for this domain. We don't touch
+	// already-uploaded remote copies (S3/Google Drive/etc.) — those
+	// are considered the user's long-term archive.
+	backupSiteDir := "/ITDLUPanel/backup/site"
+	if entries, err := os.ReadDir(backupSiteDir); err == nil {
+		prefix := site.Domain + "_"
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasPrefix(e.Name(), prefix) {
+				p := filepath.Join(backupSiteDir, e.Name())
+				if err := os.Remove(p); err != nil {
+					logger.Warn().Err(err).Str("path", p).Msg("failed to remove local backup file")
+				}
+			}
+		}
+	}
+
+	// Delete DB records — explicitly delete related rows as a safety
+	// net (CASCADE may not fire if foreign_keys pragma isn't active on
+	// this connection). The order matters: child tables first, sites
+	// last.
+	if _, err := s.db.Exec("DELETE FROM domains WHERE site_id = ?", id); err != nil {
+		logger.Warn().Err(err).Int64("site_id", id).Msg("failed to delete domains rows")
+	}
+	if _, err := s.db.Exec("DELETE FROM user_resources WHERE resource_type = 'site' AND resource_id = ?", id); err != nil {
+		logger.Warn().Err(err).Int64("site_id", id).Msg("failed to delete user_resources rows")
+	}
+	if _, err := s.db.Exec("DELETE FROM ssl_certificates WHERE domain = ?", site.Domain); err != nil {
+		logger.Warn().Err(err).Str("domain", site.Domain).Msg("failed to delete ssl_certificates row")
+	}
+	// Backups are referenced by backup_uploads via FK with NO ACTION,
+	// so we must remove the upload rows first.
+	if _, err := s.db.Exec(
+		"DELETE FROM backup_uploads WHERE backup_id IN (SELECT id FROM backups WHERE type = 'site' AND target_id = ?)",
+		id,
+	); err != nil {
+		logger.Warn().Err(err).Int64("site_id", id).Msg("failed to delete backup_uploads rows")
+	}
+	if _, err := s.db.Exec("DELETE FROM backups WHERE type = 'site' AND target_id = ?", id); err != nil {
+		logger.Warn().Err(err).Int64("site_id", id).Msg("failed to delete backups rows")
+	}
+
+	if _, err := s.db.Exec("DELETE FROM sites WHERE id = ?", id); err != nil {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to delete site")
 	}
 
