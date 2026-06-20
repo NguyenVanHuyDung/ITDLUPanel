@@ -1,19 +1,79 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Table, Button, Modal, Form, Input, InputNumber, message, Popconfirm, Tooltip, Tree, Progress, Checkbox } from 'antd';
+import { Button, Modal, Form, Input, InputNumber, message, Popconfirm, Tooltip, Tree, Progress, Select } from 'antd';
 import {
-  PlusOutlined, SearchOutlined, ReloadOutlined, UserOutlined,
-  FolderOpenOutlined, LockOutlined, DeleteOutlined, PoweroffOutlined,
-  TeamOutlined, DownloadOutlined, CloseOutlined, CheckSquareOutlined,
+  PlusOutlined, SearchOutlined, ReloadOutlined,
+  FolderOpenOutlined, DeleteOutlined,
+  TeamOutlined, DownloadOutlined, CloseOutlined,
   StopOutlined, PlayCircleOutlined, ExclamationCircleOutlined,
+  CheckSquareOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
 import type { ApiResponse } from '@/types';
-import { formatDateTime } from '@/lib/datetime';
 import { usePalette } from '@/hooks/usePalette';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import RequireSoftware from '@/components/RequireSoftware';
 
+// ─── SVG Icons ───────────────────────────────────────────────────────────────
+const Icon = {
+  User: ({ color, size = 16 }: { color: string; size?: number }) => (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+      <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
+    </svg>
+  ),
+  Folder: ({ color, size = 16 }: { color: string; size?: number }) => (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+      <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
+    </svg>
+  ),
+  Lock: ({ color, size = 16 }: { color: string; size?: number }) => (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+      <path d="M7 11V7a5 5 0 0110 0v4" />
+    </svg>
+  ),
+  Trash: ({ color, size = 16 }: { color: string; size?: number }) => (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+      <polyline points="3,6 5,6 21,6" />
+      <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2" />
+    </svg>
+  ),
+  Play: ({ color, size = 16 }: { color: string; size?: number }) => (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+      <circle cx="12" cy="12" r="10" />
+      <polygon points="10,8 16,12 10,16 10,8" fill={color} stroke="none" />
+    </svg>
+  ),
+  Stop: ({ color, size = 16 }: { color: string; size?: number }) => (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+      <circle cx="12" cy="12" r="10" />
+      <rect x="9" y="9" width="6" height="6" rx="1" fill={color} stroke="none" />
+    </svg>
+  ),
+  Chart: ({ color, size = 16 }: { color: string; size?: number }) => (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+      <rect x="3" y="12" width="4" height="9" rx="1" fill={`${color}25`} />
+      <rect x="10" y="7" width="4" height="14" rx="1" fill={`${color}25`} />
+      <rect x="17" y="3" width="4" height="18" rx="1" fill={`${color}25`} />
+      <rect x="3" y="12" width="4" height="9" rx="1" />
+      <rect x="10" y="7" width="4" height="14" rx="1" />
+      <rect x="17" y="3" width="4" height="18" rx="1" />
+    </svg>
+  ),
+  Ftp: ({ color, size = 20 }: { color: string; size?: number }) => (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+      <rect x="3" y="4" width="18" height="4" rx="2" fill={`${color}20`} />
+      <path d="M3 8v4l9 3 9-3V8" />
+      <path d="M3 12v4l9 3 9-3v-4" />
+      <circle cx="12" cy="3" r="1.5" fill={color} stroke="none" />
+      <circle cx="3" cy="4" r="1" fill={color} stroke="none" />
+      <circle cx="21" cy="4" r="1" fill={color} stroke="none" />
+    </svg>
+  ),
+};
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 interface FTPAccount {
   id: number;
   username: string;
@@ -23,6 +83,7 @@ interface FTPAccount {
   created_at: string;
 }
 
+// ─── Helpers ───────────────────────────────────────────────────────────────────
 const generatePassword = () => {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%';
   return Array.from({ length: 16 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
@@ -42,9 +103,6 @@ const relativeTime = (dateStr: string) => {
   return `${Math.floor(months / 12)}y ago`;
 };
 
-// ---------------------------------------------------------------------------
-// Path browser helpers
-// ---------------------------------------------------------------------------
 const loadPathChildren = async (parentPath: string) => {
   try {
     const { data } = await api.get('/files', { params: { path: parentPath } });
@@ -60,15 +118,310 @@ const loadPathChildren = async (parentPath: string) => {
   }
 };
 
+// ─── Sub-components ────────────────────────────────────────────────────────────
+interface StatCardProps {
+  label: string;
+  value: number;
+  icon: React.ReactNode;
+  color: string;
+  onClick?: () => void;
+  p: ReturnType<typeof usePalette>['p'];
+  isDark: boolean;
+}
+
+function StatCard({ label, value, icon, color, onClick, p, isDark }: StatCardProps) {
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        flex: 1,
+        minWidth: 140,
+        background: p.card,
+        border: `1px solid ${p.cardBorder}`,
+        borderRadius: 10,
+        padding: '14px 18px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 14,
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'all 0.15s',
+        boxShadow: isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.06)',
+      }}
+      onMouseEnter={e => {
+        if (onClick) {
+          (e.currentTarget as HTMLElement).style.borderColor = `${color}50`;
+          (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)';
+        }
+      }}
+      onMouseLeave={e => {
+        (e.currentTarget as HTMLElement).style.borderColor = p.cardBorder;
+        (e.currentTarget as HTMLElement).style.transform = 'translateY(0)';
+      }}
+    >
+      <div style={{
+        width: 40, height: 40, borderRadius: 10,
+        background: `${color}15`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+      }}>
+        {icon}
+      </div>
+      <div>
+        <div style={{
+          fontSize: 11, color: p.textMuted, fontWeight: 500,
+          textTransform: 'uppercase', letterSpacing: '0.04em'
+        }}>
+          {label}
+        </div>
+        <div style={{
+          fontSize: 22, fontWeight: 700, color: p.text, lineHeight: 1.2, marginTop: 2
+        }}>
+          {value}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface AccountRowProps {
+  account: FTPAccount;
+  p: ReturnType<typeof usePalette>['p'];
+  isDark: boolean;
+  selected: boolean;
+  onSelect: () => void;
+  onEditPath: () => void;
+  onChangePassword: () => void;
+  onToggleStatus: () => void;
+  onDelete: () => void;
+}
+
+function AccountRow({ account, p, isDark, selected, onSelect, onEditPath, onChangePassword, onToggleStatus, onDelete }: AccountRowProps) {
+  const isActive = account.status === 1;
+  const statusColor = isActive ? p.green : p.red;
+
+  return (
+    <div
+      onClick={onSelect}
+      style={{
+        background: selected ? `${p.accent}08` : p.card,
+        border: `1px solid ${selected ? p.accent : p.cardBorder}`,
+        borderRadius: 10,
+        padding: '14px 16px',
+        transition: 'all 0.15s',
+        cursor: 'pointer',
+        position: 'relative',
+        overflow: 'hidden',
+        boxShadow: isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.06)',
+      }}
+      onMouseEnter={e => {
+        if (!selected) {
+          (e.currentTarget as HTMLElement).style.borderColor = `${p.accent}40`;
+          (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)';
+        }
+      }}
+      onMouseLeave={e => {
+        if (!selected) {
+          (e.currentTarget as HTMLElement).style.borderColor = p.cardBorder;
+          (e.currentTarget as HTMLElement).style.transform = 'translateY(0)';
+        }
+      }}
+    >
+      <div style={{
+        position: 'absolute', left: 0, top: 0, bottom: 0,
+        width: 3, borderRadius: '10px 0 0 10px',
+        background: statusColor,
+      }} />
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div style={{
+          width: 20, height: 20, borderRadius: 4,
+          border: `2px solid ${selected ? p.accent : p.cardBorder}`,
+          background: selected ? p.accent : 'transparent',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0, transition: 'all 0.15s',
+        }}>
+          {selected && (
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20,6 9,17 4,12" />
+            </svg>
+          )}
+        </div>
+
+        <div style={{
+          width: 36, height: 36, borderRadius: 10,
+          background: `${p.accent}12`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0,
+        }}>
+          <Icon.User color={p.accent} size={14} />
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 14, fontWeight: 600, color: p.text }}>
+              {account.username}
+            </span>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '2px 8px', borderRadius: 20,
+              fontSize: 10.5, fontWeight: 600,
+              background: `${statusColor}12`,
+              color: statusColor,
+            }}>
+              <span style={{ width: 5, height: 5, borderRadius: '50%', background: statusColor }} />
+              {isActive ? 'Active' : 'Disabled'}
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+            <Icon.Folder color={p.amber} size={11} />
+            <span style={{
+              fontSize: 12, color: p.textMuted,
+              fontFamily: 'JetBrains Mono, Consolas, monospace',
+              wordBreak: 'break-all',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              maxWidth: '100%',
+            }}>
+              {account.path}
+            </span>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <span style={{ fontSize: 11.5, color: p.textDim }}>
+            {relativeTime(account.created_at)}
+          </span>
+        </div>
+
+        <div style={{
+          display: 'flex', gap: 4, flexShrink: 0,
+          background: p.headerBg,
+          borderRadius: 8,
+          padding: 3,
+        }}>
+          <Tooltip title="Edit Path">
+            <button
+              onClick={(e) => { e.stopPropagation(); onEditPath(); }}
+              style={{
+                padding: '5px 8px', borderRadius: 6,
+                border: 'none',
+                background: 'transparent',
+                color: p.textMuted, fontSize: 12, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'all 0.15s',
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLElement).style.background = `${p.accent}15`;
+                (e.currentTarget as HTMLElement).style.color = p.accent;
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLElement).style.background = 'transparent';
+                (e.currentTarget as HTMLElement).style.color = p.textMuted;
+              }}
+            >
+              <Icon.Folder color="currentColor" size={12} />
+            </button>
+          </Tooltip>
+          <Tooltip title="Change Password">
+            <button
+              onClick={(e) => { e.stopPropagation(); onChangePassword(); }}
+              style={{
+                padding: '5px 8px', borderRadius: 6,
+                border: 'none',
+                background: 'transparent',
+                color: p.textMuted, fontSize: 12, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'all 0.15s',
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLElement).style.background = `${p.amber}15`;
+                (e.currentTarget as HTMLElement).style.color = p.amber;
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLElement).style.background = 'transparent';
+                (e.currentTarget as HTMLElement).style.color = p.textMuted;
+              }}
+            >
+              <Icon.Lock color="currentColor" size={12} />
+            </button>
+          </Tooltip>
+          <Tooltip title={isActive ? 'Disable' : 'Enable'}>
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleStatus(); }}
+              style={{
+                padding: '5px 8px', borderRadius: 6,
+                border: 'none',
+                background: 'transparent',
+                color: p.textMuted, fontSize: 12, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'all 0.15s',
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLElement).style.background = `${statusColor}15`;
+                (e.currentTarget as HTMLElement).style.color = statusColor;
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLElement).style.background = 'transparent';
+                (e.currentTarget as HTMLElement).style.color = p.textMuted;
+              }}
+            >
+              {isActive
+                ? <Icon.Stop color="currentColor" size={12} />
+                : <Icon.Play color="currentColor" size={12} />
+              }
+            </button>
+          </Tooltip>
+          <Popconfirm
+            title="Delete this account?"
+            onConfirm={(e) => { e?.stopPropagation(); onDelete(); }}
+            okText="Yes"
+            cancelText="No"
+            okButtonProps={{ danger: true }}
+          >
+            <Tooltip title="Delete">
+              <button
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  padding: '5px 8px', borderRadius: 6,
+                  border: 'none',
+                  background: 'transparent',
+                  color: p.textMuted, fontSize: 12, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'all 0.15s',
+                }}
+                onMouseEnter={e => {
+                  (e.currentTarget as HTMLElement).style.background = `${p.red}15`;
+                  (e.currentTarget as HTMLElement).style.color = p.red;
+                }}
+                onMouseLeave={e => {
+                  (e.currentTarget as HTMLElement).style.background = 'transparent';
+                  (e.currentTarget as HTMLElement).style.color = p.textMuted;
+                }}
+              >
+                <Icon.Trash color="currentColor" size={12} />
+              </button>
+            </Tooltip>
+          </Popconfirm>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 function FTPContent() {
   const { t } = useTranslation();
   const { p, isDark } = usePalette();
   const isMobile = useIsMobile();
 
-  // Data
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState<FTPAccount[]>([]);
   const [searchText, setSearchText] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'disabled'>('all');
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Modals
   const [createOpen, setCreateOpen] = useState(false);
@@ -103,9 +456,7 @@ function FTPContent() {
   const [batchPathOpen, setBatchPathOpen] = useState(false);
   const [batchPathForm] = Form.useForm();
 
-  // ---------------------------------------------------------------------------
-  // Data fetching
-  // ---------------------------------------------------------------------------
+  // ─── Data ──────────────────────────────────────────────────────────────────
   const fetchAccounts = useCallback(async () => {
     setLoading(true);
     try {
@@ -118,20 +469,24 @@ function FTPContent() {
     }
   }, [t]);
 
-  useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
+  useEffect(() => { fetchAccounts(); }, [fetchAccounts, refreshKey]);
 
   const filteredAccounts = useMemo(() => {
-    if (!searchText) return accounts;
-    const q = searchText.toLowerCase();
-    return accounts.filter(a =>
-      a.username.toLowerCase().includes(q) ||
-      a.path.toLowerCase().includes(q)
-    );
-  }, [accounts, searchText]);
+    let result = accounts;
+    if (statusFilter === 'active') result = result.filter(a => a.status === 1);
+    if (statusFilter === 'disabled') result = result.filter(a => a.status !== 1);
+    if (searchText) {
+      const q = searchText.toLowerCase();
+      result = result.filter(a => a.username.toLowerCase().includes(q) || a.path.toLowerCase().includes(q));
+    }
+    return result;
+  }, [accounts, searchText, statusFilter]);
 
-  // ---------------------------------------------------------------------------
-  // CRUD handlers
-  // ---------------------------------------------------------------------------
+  const totalAccounts = accounts.length;
+  const activeAccounts = accounts.filter(a => a.status === 1).length;
+  const disabledAccounts = accounts.length - activeAccounts;
+
+  // ─── Handlers ──────────────────────────────────────────────────────────────
   const handleCreate = async (values: Record<string, string>) => {
     setSubmitting(true);
     try {
@@ -198,9 +553,7 @@ function FTPContent() {
     }
   };
 
-  // ---------------------------------------------------------------------------
-  // Path browser
-  // ---------------------------------------------------------------------------
+  // ─── Path browser ─────────────────────────────────────────────────────────
   const onPathTreeLoad = (node: any): Promise<void> =>
     new Promise(async (resolve) => {
       if (node.children) { resolve(); return; }
@@ -209,12 +562,7 @@ function FTPContent() {
         const update = (nodes: any[]): any[] =>
           nodes.map(n =>
             n.key === node.key
-              ? {
-                  ...n,
-                  children: children.length
-                    ? children
-                    : [{ title: '(empty)', key: `${node.key}/__empty`, isLeaf: true, disabled: true, selectable: false }],
-                }
+              ? { ...n, children: children.length ? children : [{ title: '(empty)', key: `${node.key}/__empty`, isLeaf: true, disabled: true, selectable: false }] }
               : { ...n, children: n.children ? update(n.children) : undefined }
           );
         return update(prev);
@@ -242,9 +590,7 @@ function FTPContent() {
     setPathBrowserOpen(false);
   };
 
-  // ---------------------------------------------------------------------------
-  // Bulk create
-  // ---------------------------------------------------------------------------
+  // ─── Bulk create ───────────────────────────────────────────────────────────
   const handleQuickGenerate = () => {
     if (!bulkPrefix) { message.warning('Enter a prefix'); return; }
     const users: BulkUser[] = [];
@@ -304,9 +650,7 @@ function FTPContent() {
   const bulkProgress = bulkUsers.filter(u => u.status === 'success' || u.status === 'error').length;
   const bulkTotal = bulkUsers.filter(u => u.username && u.password && u.path).length;
 
-  // ---------------------------------------------------------------------------
-  // Batch operations
-  // ---------------------------------------------------------------------------
+  // ─── Batch ─────────────────────────────────────────────────────────────────
   const selectedIds = selectedRowKeys.map(Number);
 
   const handleBatchDelete = () => {
@@ -364,263 +708,293 @@ function FTPContent() {
   };
 
   const hasSelection = selectedRowKeys.length > 0;
-  // ---------------------------------------------------------------------------
-  const columns = [
-    {
-      title: t('auth.username'),
-      dataIndex: 'username',
-      key: 'username',
-      sorter: (a: FTPAccount, b: FTPAccount) => a.username.localeCompare(b.username),
-      render: (v: string) => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <UserOutlined style={{ color: p.accent, fontSize: 13 }} />
-          <span style={{ fontWeight: 600, fontSize: 13, color: p.text }}>{v}</span>
-        </div>
-      ),
-    },
-    {
-      title: 'Home Directory',
-      dataIndex: 'path',
-      key: 'path',
-      ellipsis: true,
-      render: (v: string) => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <FolderOpenOutlined style={{ color: p.amber, fontSize: 12, flexShrink: 0 }} />
-          <a
-            href={`/files?path=${encodeURIComponent(v)}`}
-            style={{
-              fontSize: 12,
-              color: p.accent, background: p.codeBg,
-              padding: '1px 6px', borderRadius: 4,
-              textDecoration: 'none', wordBreak: 'break-all',
-            }}
-          >
-            {v}
-          </a>
-        </div>
-      ),
-    },
-    {
-      title: t('common.status'),
-      dataIndex: 'status',
-      key: 'status',
-      width: 110,
-      render: (status: number) => {
-        const color = status === 1 ? p.green : p.red;
-        const label = status === 1 ? t('common.enabled') : t('common.disabled');
-        return (
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 5,
-            padding: '2px 10px', borderRadius: 99,
-            background: `${color}15`, color, fontSize: 11, fontWeight: 500,
-          }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: color }} />
-            {label}
-          </span>
-        );
-      },
-    },
-    {
-      title: 'Created',
-      dataIndex: 'created_at',
-      key: 'created_at',
-      width: 120,
-      render: (val: string) => val
-        ? (
-          <Tooltip title={formatDateTime(val)}>
-            <span style={{ fontSize: 12, color: p.textMuted }}>{relativeTime(val)}</span>
-          </Tooltip>
-        )
-        : <span style={{ color: p.textDim }}>—</span>,
-    },
-    {
-      title: '',
-      key: 'actions',
-      width: 160,
-      align: 'right' as const,
-      render: (_: unknown, record: FTPAccount) => (
-        <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
-          <Tooltip title="Edit Path">
-            <Button type="text" size="small"
-              icon={<FolderOpenOutlined style={{ color: p.accent }} />}
-              onClick={() => {
-                setSelectedAccount(record);
-                editPathForm.setFieldsValue({ path: record.path });
-                setEditPathOpen(true);
-              }}
-            />
-          </Tooltip>
-          <Tooltip title="Change Password">
-            <Button type="text" size="small"
-              icon={<LockOutlined style={{ color: p.amber }} />}
-              onClick={() => { setSelectedAccount(record); setPasswordOpen(true); }}
-            />
-          </Tooltip>
-          <Tooltip title={record.status === 1 ? t('common.disable') : t('common.enable')}>
-            <Button type="text" size="small"
-              icon={<PoweroffOutlined style={{ color: record.status === 1 ? p.green : p.red }} />}
-              onClick={() => handleToggleStatus(record)}
-            />
-          </Tooltip>
-          <Popconfirm
-            title={t('common.confirm_delete')}
-            onConfirm={() => handleDelete(record.id)}
-            okText={t('common.yes')}
-            cancelText={t('common.no')}
-            okButtonProps={{ danger: true }}
-          >
-            <Button type="text" size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
-        </div>
-      ),
-    },
-  ];
 
-  const mobileColumns = columns.filter(c => !['created_at'].includes(c.key));
-
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
+  // ─── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{
-      background: p.card, borderRadius: 12,
-      border: `1px solid ${p.cardBorder}`,
-      boxShadow: isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.06)',
-      overflow: 'hidden',
-    }}>
-      {/* Header */}
+    <div style={{ padding: isMobile ? 12 : 24 }}>
+      {/* ── Main Container ───────────────────────────────────────────────── */}
       <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '16px 20px',
-        background: p.headerBg,
-        borderBottom: `1px solid ${p.cardBorder}`,
-        borderRadius: '8px 8px 0 0',
-        flexWrap: 'wrap', gap: 10,
+        background: p.card, borderRadius: 12,
+        border: `1px solid ${p.cardBorder}`,
+        boxShadow: isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.06)',
+        overflow: 'hidden',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 18, fontWeight: 700, color: p.text }}>FTP Accounts</span>
-          <span style={{
-            background: `${p.accent}22`, color: p.accent,
-            fontSize: 12, fontWeight: 600, padding: '2px 10px',
-            borderRadius: 10,
-          }}>{filteredAccounts.length}</span>
+        {/* Header */}
+        <div style={{
+          padding: '16px 20px', borderBottom: `1px solid ${p.cardBorder}`,
+          background: p.headerBg,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          flexWrap: 'wrap', gap: 12,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{
+              width: 38, height: 38, borderRadius: 10,
+              background: `${p.accent}12`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Icon.Ftp color={p.accent} size={20} />
+            </div>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: p.text }}>FTP Accounts</div>
+              <div style={{ fontSize: 12, color: p.textMuted, marginTop: 1 }}>
+                Manage FTP access accounts for your server
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Button
+              icon={<TeamOutlined />}
+              onClick={() => {
+                setBulkOpen(true);
+                setBulkUsers([{ username: '', password: '', path: '' }, { username: '', password: '', path: '' }, { username: '', password: '', path: '' }]);
+              }}
+              style={{
+                borderColor: p.accent, color: p.accent,
+                background: 'transparent', borderRadius: 8,
+              }}
+            >
+              Bulk Create
+            </Button>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => setCreateOpen(true)}
+              style={{
+                background: p.accent, borderColor: p.accent, borderRadius: 8,
+              }}
+            >
+              Add Account
+            </Button>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+
+        {/* Toolbar */}
+        <div style={{
+          padding: '12px 20px', borderBottom: `1px solid ${p.cardBorder}`,
+          display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center',
+          background: p.card,
+        }}>
           <Input
-            placeholder="Search..."
-            prefix={<SearchOutlined style={{ color: p.textDim }} />}
+            placeholder="Search accounts..."
+            prefix={<SearchOutlined style={{ color: p.textMuted, fontSize: 13 }} />}
             value={searchText}
             onChange={e => setSearchText(e.target.value)}
             allowClear
             size="middle"
-            style={{ width: isMobile ? 140 : 200, background: p.inputBg }}
+            style={{
+              width: isMobile ? 140 : 220,
+              background: p.inputBg,
+              border: `1px solid ${p.cardBorder}`,
+              borderRadius: 8,
+              color: p.text,
+              fontSize: 13,
+            }}
           />
-          <Tooltip title={t('common.refresh')}>
-            <Button icon={<ReloadOutlined />} onClick={fetchAccounts} />
-          </Tooltip>
+          <Select
+            value={statusFilter}
+            onChange={v => setStatusFilter(v as 'all' | 'active' | 'disabled')}
+            style={{ width: isMobile ? 120 : 140 }}
+            size="middle"
+            options={[
+              { value: 'all', label: 'All Status' },
+              { value: 'active', label: 'Active' },
+              { value: 'disabled', label: 'Disabled' },
+            ]}
+          />
+          <div style={{ flex: 1 }} />
           <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => setCreateOpen(true)}
-            style={{ background: p.accent, borderColor: p.accent }}
+            icon={<ReloadOutlined />}
+            onClick={() => { setRefreshKey(k => k + 1); }}
+            style={{
+              borderColor: p.cardBorder, color: p.textMuted,
+              background: 'transparent', borderRadius: 8,
+            }}
           >
-            {isMobile ? '' : 'Add Account'}
+            Refresh
           </Button>
-          <Button
-            icon={<TeamOutlined />}
-            onClick={() => { setBulkOpen(true); setBulkUsers([{ username: '', password: '', path: '' }, { username: '', password: '', path: '' }, { username: '', password: '', path: '' }]); }}
-            style={{ borderColor: p.accent, color: p.accent }}
-          >
-            {isMobile ? '' : 'Bulk Create'}
-          </Button>
+        </div>
+
+        {/* Stats Row */}
+        <div style={{
+          display: 'flex', gap: 12, padding: '16px 20px',
+          flexWrap: 'wrap',
+          background: p.card,
+        }}>
+          <StatCard
+            label="Total"
+            value={totalAccounts}
+            icon={<Icon.Chart color={p.accent} size={18} />}
+            color={p.accent}
+            p={p}
+            isDark={isDark}
+          />
+          <StatCard
+            label="Active"
+            value={activeAccounts}
+            icon={<Icon.Play color={p.green} size={18} />}
+            color={p.green}
+            p={p}
+            isDark={isDark}
+          />
+          <StatCard
+            label="Disabled"
+            value={disabledAccounts}
+            icon={<Icon.Stop color={p.textDim} size={18} />}
+            color={p.textDim}
+            p={p}
+            isDark={isDark}
+          />
+        </div>
+
+        {/* Batch Actions */}
+        {hasSelection && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+            padding: '10px 20px',
+            background: `${p.accent}08`,
+            borderBottom: `1px solid ${p.accent}20`,
+          }}>
+            <CheckSquareOutlined style={{ color: p.accent, fontSize: 14 }} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: p.text }}>
+              {selectedRowKeys.length} selected
+            </span>
+            <div style={{ width: 1, height: 20, background: `${p.accent}30`, margin: '0 4px' }} />
+            <Button size="small" icon={<PlayCircleOutlined />} loading={batchLoading}
+              onClick={() => handleBatchStatus(true)}
+              style={{ borderColor: p.green, color: p.green, background: 'transparent', borderRadius: 7 }}
+            >
+              Enable
+            </Button>
+            <Button size="small" icon={<StopOutlined />} loading={batchLoading}
+              onClick={() => handleBatchStatus(false)}
+              style={{ borderColor: p.textDim, color: p.textDim, background: 'transparent', borderRadius: 7 }}
+            >
+              Disable
+            </Button>
+            <Button size="small" icon={<FolderOpenOutlined />} loading={batchLoading}
+              onClick={() => setBatchPathOpen(true)}
+              style={{ borderColor: p.accent, color: p.accent, background: 'transparent', borderRadius: 7 }}
+            >
+              Change Path
+            </Button>
+            <Button size="small" danger icon={<DeleteOutlined />} loading={batchLoading}
+              onClick={handleBatchDelete}
+              style={{ borderRadius: 7 }}
+            >
+              Delete
+            </Button>
+            <div style={{ flex: 1 }} />
+            <Button type="link" size="small"
+              onClick={() => setSelectedRowKeys([])}
+              style={{ color: p.textMuted, fontSize: 12 }}
+            >
+              Clear
+            </Button>
+          </div>
+        )}
+
+        {/* Account List */}
+        <div style={{ padding: '12px 20px 20px' }}>
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: 40 }}>
+              <div style={{
+                width: 32, height: 32, borderRadius: '50%',
+                border: `3px solid ${p.cardBorder}`,
+                borderTopColor: p.accent,
+                animation: 'spin 0.8s linear infinite',
+                margin: '0 auto 12px',
+              }} />
+              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+              <span style={{ color: p.textMuted, fontSize: 13 }}>Loading accounts...</span>
+            </div>
+          ) : filteredAccounts.length === 0 ? (
+            <div style={{
+              textAlign: 'center', padding: '48px 24px',
+              background: p.card,
+              borderRadius: 10,
+              border: `1px dashed ${p.cardBorder}`,
+            }}>
+              <div style={{
+                width: 56, height: 56, borderRadius: 14,
+                background: `${p.accent}08`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                margin: '0 auto 14px',
+              }}>
+                <Icon.User color={p.textDim} size={24} />
+              </div>
+              <div style={{ color: p.text, fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
+                {searchText || statusFilter !== 'all' ? 'No matching accounts' : 'No FTP accounts yet'}
+              </div>
+              <div style={{ color: p.textMuted, fontSize: 13 }}>
+                {searchText || statusFilter !== 'all'
+                  ? 'Try adjusting your search or filter'
+                  : 'Create your first FTP account to get started'}
+              </div>
+              {!searchText && statusFilter === 'all' && (
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  onClick={() => setCreateOpen(true)}
+                  style={{
+                    marginTop: 16, background: p.accent, borderColor: p.accent, borderRadius: 8,
+                  }}
+                >
+                  Create Account
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {/* Column Headers */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 14,
+                padding: '0 0 4px 54px',
+                fontSize: 11, fontWeight: 600, color: p.textDim,
+                textTransform: 'uppercase', letterSpacing: '0.05em',
+              }}>
+                <span style={{ flex: 1 }}>Username</span>
+                <span style={{ width: 80, textAlign: 'right' }}>Created</span>
+                <span style={{ width: 140 }}>Actions</span>
+              </div>
+              {filteredAccounts.map(account => (
+                <AccountRow
+                  key={account.id}
+                  account={account}
+                  p={p}
+                  isDark={isDark}
+                  selected={selectedRowKeys.includes(account.id)}
+                  onSelect={() => {
+                    setSelectedRowKeys(prev =>
+                      prev.includes(account.id)
+                        ? prev.filter(k => k !== account.id)
+                        : [...prev, account.id]
+                    );
+                  }}
+                  onEditPath={() => {
+                    setSelectedAccount(account);
+                    editPathForm.setFieldsValue({ path: account.path });
+                    setEditPathOpen(true);
+                  }}
+                  onChangePassword={() => {
+                    setSelectedAccount(account);
+                    setPasswordOpen(true);
+                  }}
+                  onToggleStatus={() => handleToggleStatus(account)}
+                  onDelete={() => handleDelete(account.id)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Batch Actions Toolbar */}
-      {hasSelection && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
-          padding: '10px 20px',
-          background: `${p.accent}08`,
-          borderBottom: `1px solid ${p.cardBorder}`,
-        }}>
-          <CheckSquareOutlined style={{ color: p.accent, fontSize: 14 }} />
-          <span style={{ fontSize: 13, fontWeight: 600, color: p.text }}>
-            {selectedRowKeys.length} selected
-          </span>
-          <div style={{ width: 1, height: 20, background: p.cardBorder, margin: '0 4px' }} />
-          <Button
-            size="small"
-            icon={<PlayCircleOutlined />}
-            loading={batchLoading}
-            onClick={() => handleBatchStatus(true)}
-            style={{ borderColor: p.green, color: p.green }}
-          >
-            Enable
-          </Button>
-          <Button
-            size="small"
-            icon={<StopOutlined />}
-            loading={batchLoading}
-            onClick={() => handleBatchStatus(false)}
-            style={{ borderColor: p.amber, color: p.amber }}
-          >
-            Disable
-          </Button>
-          <Button
-            size="small"
-            icon={<FolderOpenOutlined />}
-            loading={batchLoading}
-            onClick={() => setBatchPathOpen(true)}
-            style={{ borderColor: p.accent, color: p.accent }}
-          >
-            Change Path
-          </Button>
-          <Button
-            size="small"
-            danger
-            icon={<DeleteOutlined />}
-            loading={batchLoading}
-            onClick={handleBatchDelete}
-          >
-            Delete
-          </Button>
-          <div style={{ flex: 1 }} />
-          <Button type="link" size="small" onClick={() => setSelectedRowKeys([])} style={{ color: p.textMuted, fontSize: 12 }}>
-            Clear Selection
-          </Button>
-        </div>
-      )}
+      {/* ============ Modals ============ */}
 
-      {/* Table */}
-      <Table
-        columns={isMobile ? mobileColumns : columns}
-        dataSource={filteredAccounts}
-        rowKey="id"
-        loading={loading}
-        scroll={{ x: 650 }}
-        size="middle"
-        rowSelection={{
-          selectedRowKeys,
-          onChange: (keys) => setSelectedRowKeys(keys),
-          columnWidth: 40,
-        }}
-        pagination={{
-          pageSize: 20,
-          showSizeChanger: true,
-          size: 'small',
-          showTotal: (total) => <span style={{ color: p.textMuted, fontSize: 13 }}>Total {total}</span>,
-          style: { padding: '8px 16px', margin: 0 },
-        }}
-        style={{ background: p.card, fontSize: 13 }}
-        rowClassName={() => 'ftp-table-row'}
-      />
-
-      {/* ============ Add FTP Account Modal ============ */}
+      {/* Add FTP Account */}
       <Modal
         title={
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <UserOutlined style={{ color: p.accent }} />
+            <Icon.User color={p.accent} size={16} />
             Add FTP Account
           </span>
         }
@@ -645,7 +1019,11 @@ function FTPContent() {
             ]}
             style={{ marginBottom: 12 }}
           >
-            <Input placeholder="ftpuser" prefix={<UserOutlined style={{ color: p.textDim }} />} />
+            <Input
+              placeholder="ftpuser"
+              prefix={<Icon.User color={p.textDim} size={13} />}
+              style={{ background: p.inputBg, borderColor: p.cardBorder }}
+            />
           </Form.Item>
           <Form.Item
             name="password"
@@ -663,7 +1041,7 @@ function FTPContent() {
             rules={[{ required: true, message: 'Password is required' }, { min: 6, message: 'Min 6 characters' }]}
             style={{ marginBottom: 12 }}
           >
-            <Input.Password placeholder="••••••••" />
+            <Input.Password placeholder="••••••••" style={{ background: p.inputBg, borderColor: p.cardBorder }} />
           </Form.Item>
           <Form.Item
             name="path"
@@ -673,23 +1051,25 @@ function FTPContent() {
           >
             <Input
               placeholder="/home/ftpuser"
+              prefix={<Icon.Folder color={p.textDim} size={13} />}
               addonAfter={
                 <FolderOpenOutlined
                   style={{ cursor: 'pointer', color: p.accent }}
                   onClick={() => openPathBrowser('create')}
                 />
               }
+              style={{ background: p.inputBg, borderColor: p.cardBorder }}
             />
           </Form.Item>
         </Form>
       </Modal>
 
-      {/* ============ Change Password Modal ============ */}
+      {/* Change Password */}
       <Modal
         title={
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <LockOutlined style={{ color: p.amber }} />
-            Change Password — <code style={{ fontSize: 13, color: p.accent }}>{selectedAccount?.username ?? ''}</code>
+            <Icon.Lock color={p.amber} size={16} />
+            Change Password — <code style={{ fontSize: 13, color: p.accent, fontFamily: 'JetBrains Mono, monospace' }}>{selectedAccount?.username ?? ''}</code>
           </span>
         }
         open={passwordOpen}
@@ -718,17 +1098,17 @@ function FTPContent() {
             }
             rules={[{ required: true, message: 'Password is required' }, { min: 6, message: 'Min 6 characters' }]}
           >
-            <Input.Password placeholder="••••••••" />
+            <Input.Password placeholder="••••••••" style={{ background: p.inputBg, borderColor: p.cardBorder }} />
           </Form.Item>
         </Form>
       </Modal>
 
-      {/* ============ Edit Path Modal ============ */}
+      {/* Edit Path */}
       <Modal
         title={
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <FolderOpenOutlined style={{ color: p.accent }} />
-            Edit Path — <code style={{ fontSize: 13, color: p.accent }}>{selectedAccount?.username ?? ''}</code>
+            <Icon.Folder color={p.accent} size={16} />
+            Edit Path — <code style={{ fontSize: 13, color: p.accent, fontFamily: 'JetBrains Mono, monospace' }}>{selectedAccount?.username ?? ''}</code>
           </span>
         }
         open={editPathOpen}
@@ -746,8 +1126,9 @@ function FTPContent() {
             <div style={{
               fontSize: 12, color: p.textMuted, marginBottom: 12,
               padding: '6px 10px', background: p.codeBg, borderRadius: 6,
+              fontFamily: 'JetBrains Mono, monospace',
             }}>
-              Current: <code style={{ color: p.text }}>{selectedAccount.path}</code>
+              Current: <span style={{ color: p.text }}>{selectedAccount.path}</span>
             </div>
           )}
           <Form.Item
@@ -757,22 +1138,24 @@ function FTPContent() {
           >
             <Input
               placeholder="/home/ftpuser"
+              prefix={<Icon.Folder color={p.textDim} size={13} />}
               addonAfter={
                 <FolderOpenOutlined
                   style={{ cursor: 'pointer', color: p.accent }}
                   onClick={() => openPathBrowser('edit')}
                 />
               }
+              style={{ background: p.inputBg, borderColor: p.cardBorder }}
             />
           </Form.Item>
         </Form>
       </Modal>
 
-      {/* ============ Path Browser Modal ============ */}
+      {/* Path Browser */}
       <Modal
         title={
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <FolderOpenOutlined style={{ color: p.accent }} />
+            <Icon.Folder color={p.accent} size={16} />
             Select Directory
           </span>
         }
@@ -785,7 +1168,7 @@ function FTPContent() {
         okButtonProps={{ style: { background: p.accent, borderColor: p.accent } }}
       >
         <div style={{ padding: '8px 0', fontSize: 12, color: p.textMuted, marginBottom: 4 }}>
-          Selected: <code style={{ color: p.accent }}>{pathBrowserSelected}</code>
+          Selected: <code style={{ color: p.accent, fontFamily: 'JetBrains Mono, monospace' }}>{pathBrowserSelected}</code>
         </div>
         <div style={{
           maxHeight: 340, overflow: 'auto',
@@ -803,7 +1186,7 @@ function FTPContent() {
         </div>
       </Modal>
 
-      {/* ============ Bulk Create Modal ============ */}
+      {/* Bulk Create */}
       <Modal
         title={<span><TeamOutlined style={{ color: p.accent, marginRight: 8 }} />Bulk Create FTP Accounts</span>}
         open={bulkOpen}
@@ -812,13 +1195,12 @@ function FTPContent() {
         width={720}
         destroyOnHidden
       >
-        {/* Quick Generate */}
         <div style={{ background: p.codeBg, borderRadius: 8, padding: 12, marginBottom: 12, border: `1px solid ${p.cardBorder}` }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: p.textMuted, marginBottom: 8 }}>Quick Generate</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'end' }}>
             <div>
               <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 2 }}>Prefix</div>
-              <Input size="small" placeholder="student" value={bulkPrefix} onChange={e => setBulkPrefix(e.target.value)} style={{ width: 120 }} />
+              <Input size="small" placeholder="student" value={bulkPrefix} onChange={e => setBulkPrefix(e.target.value)} style={{ width: 120, background: p.inputBg }} />
             </div>
             <div>
               <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 2 }}>Count</div>
@@ -826,13 +1208,12 @@ function FTPContent() {
             </div>
             <div style={{ flex: 1, minWidth: 150 }}>
               <div style={{ fontSize: 11, color: p.textMuted, marginBottom: 2 }}>Base Path</div>
-              <Input size="small" value={bulkBasePath} onChange={e => setBulkBasePath(e.target.value)} />
+              <Input size="small" value={bulkBasePath} onChange={e => setBulkBasePath(e.target.value)} style={{ background: p.inputBg }} />
             </div>
             <Button size="small" type="primary" onClick={handleQuickGenerate} style={{ background: p.accent, borderColor: p.accent }}>Generate</Button>
           </div>
         </div>
 
-        {/* User rows */}
         <div style={{ maxHeight: 320, overflow: 'auto', marginBottom: 12 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.5fr 28px', gap: 4, fontSize: 11, fontWeight: 600, color: p.textMuted, marginBottom: 4, paddingRight: 4 }}>
             <span>Username</span><span>Password</span><span>Path</span><span />
@@ -841,11 +1222,13 @@ function FTPContent() {
             <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.5fr 28px', gap: 4, marginBottom: 4, alignItems: 'center' }}>
               <Input size="small" value={u.username} onChange={e => updateBulkRow(i, 'username', e.target.value)}
                 placeholder="username" disabled={bulkCreating}
-                style={{ background: u.status === 'success' ? '#E8F5E9' : u.status === 'error' ? '#FFEBEE' : undefined }} />
+                style={{ background: u.status === 'success' ? `${p.green}15` : u.status === 'error' ? `${p.red}15` : p.inputBg }} />
               <Input size="small" value={u.password} onChange={e => updateBulkRow(i, 'password', e.target.value)}
-                placeholder="password" disabled={bulkCreating} />
+                placeholder="password" disabled={bulkCreating}
+                style={{ background: p.inputBg }} />
               <Input size="small" value={u.path} onChange={e => updateBulkRow(i, 'path', e.target.value)}
                 placeholder="/path" disabled={bulkCreating}
+                style={{ background: p.inputBg }}
                 suffix={u.status === 'success' ? <span style={{ color: p.green }}>✓</span> : u.status === 'error' ? <Tooltip title={u.error}><span style={{ color: p.red }}>✗</span></Tooltip> : null} />
               {!bulkCreating && <Button type="text" size="small" icon={<CloseOutlined style={{ fontSize: 10 }} />} onClick={() => removeBulkRow(i)} disabled={bulkUsers.length <= 1} />}
             </div>
@@ -854,7 +1237,6 @@ function FTPContent() {
 
         {bulkCreating && <Progress percent={Math.round((bulkProgress / bulkTotal) * 100)} size="small" style={{ marginBottom: 8 }} />}
 
-        {/* Actions */}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', gap: 8 }}>
             <Button size="small" onClick={addBulkRow} disabled={bulkCreating}>+ Add Row</Button>
@@ -870,11 +1252,11 @@ function FTPContent() {
         </div>
       </Modal>
 
-      {/* ============ Batch Change Path Modal ============ */}
+      {/* Batch Change Path */}
       <Modal
         title={
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <FolderOpenOutlined style={{ color: p.accent }} />
+            <Icon.Folder color={p.accent} size={16} />
             Change Path — {selectedRowKeys.length} account(s)
           </span>
         }
@@ -902,22 +1284,18 @@ function FTPContent() {
           >
             <Input
               placeholder="/ITDLUPanel/wwwroot/shared"
+              prefix={<Icon.Folder color={p.textDim} size={13} />}
               addonAfter={
                 <FolderOpenOutlined
                   style={{ cursor: 'pointer', color: p.accent }}
                   onClick={() => openPathBrowser('edit')}
                 />
               }
+              style={{ background: p.inputBg, borderColor: p.cardBorder }}
             />
           </Form.Item>
         </Form>
       </Modal>
-
-      {/* Row hover style */}
-      <style>{`
-        .ftp-table-row:hover td { background: ${p.rowHover} !important; }
-        .ant-table-selection-column .ant-checkbox-wrapper { transform: scale(0.9); }
-      `}</style>
     </div>
   );
 }

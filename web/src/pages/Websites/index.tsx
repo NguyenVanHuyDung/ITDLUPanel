@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Table, Button, Modal, Form, Input, Select, message, Popconfirm, Switch, Tooltip, Spin, InputNumber, Popover, Row, Col, Tree } from 'antd';
+import AddWebsiteModal from './AddWebsiteModal';
 import {
   PlusOutlined, SettingOutlined, SafetyCertificateOutlined,
   SearchOutlined, ReloadOutlined, GlobalOutlined, CodeOutlined,
@@ -4442,158 +4443,12 @@ function WebsitesContent() {
       </div>
 
       {/* Add Site Modal */}
-      <Modal
-        title={
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {activeTab === 'proxy' ? <ApiOutlined style={{ color: p.accent }} /> : <GlobalOutlined style={{ color: p.accent }} />}
-            {activeTab === 'proxy' ? 'Add Proxy Project' : t('websites.add_site')}
-          </span>
-        }
+      <AddWebsiteModal
         open={modalOpen}
-        onOk={handleCreate}
-        onCancel={() => { setModalOpen(false); form.resetFields(); setFtpOption('none'); setPathManual(false); prevDomainRef.current = ''; }}
-        confirmLoading={submitting}
-        okText={t('common.create')}
-        cancelText={t('common.cancel')}
-        destroyOnHidden
-        width={isMobile ? '95%' : 640}
-        okButtonProps={{ style: { background: p.accent, borderColor: p.accent } }}
-      >
-        <Form form={form} layout="vertical" size="small" style={{ marginTop: 12 }}>
-          <Row gutter={12}>
-            <Col span={14}>
-              <Form.Item name="domain" label={t('websites.domain')} rules={[{ required: true, message: 'Required' }]} style={{ marginBottom: 10 }}>
-                <Input placeholder="example.com" onChange={e => {
-                  const domain = e.target.value;
-                  const prev = prevDomainRef.current;
-                  const currentName = form.getFieldValue('name');
-                  if (!currentName || currentName === prev) form.setFieldsValue({ name: domain });
-                  if (!pathManual) form.setFieldsValue({ path: `/ITDLUPanel/wwwroot/${domain}` });
-                  const sanitized = domain.replace(/[^a-zA-Z0-9]/g, '_');
-                  form.setFieldsValue({ db_name: sanitized, db_user: sanitized, ftp_user: sanitized });
-                  prevDomainRef.current = domain;
-                }} />
-              </Form.Item>
-            </Col>
-            <Col span={10}>
-              <Form.Item name="name" label="Site Name" rules={[{ required: true }]} style={{ marginBottom: 10 }}>
-                <Input placeholder="my-site" />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Form.Item name="description" label="Description" style={{ marginBottom: 10 }}>
-            <Input placeholder="Brief description (optional)" maxLength={500} />
-          </Form.Item>
-
-          <Form.Item name="path" label="Document Root" rules={[{ required: true }]} style={{ marginBottom: 10 }}>
-            <Input placeholder="/ITDLUPanel/wwwroot/example.com"
-              onChange={() => { if (!pathManual) setPathManual(true); }}
-              addonAfter={
-                <FolderOpenOutlined onClick={openPathBrowser} style={{ cursor: 'pointer', color: p.accent }} title="Browse" />
-              }
-            />
-          </Form.Item>
-
-          <Row gutter={12}>
-            <Col span={8}>
-              <Form.Item name="webserver" label={t('websites.web_server')} rules={[{ required: true }]} style={{ marginBottom: 10 }}>
-                <Select disabled={!!detectedWebServer} options={[
-                  { value: 'nginx', label: 'Nginx' },
-                  { value: 'apache', label: 'Apache' },
-                  { value: 'openlitespeed', label: 'OpenLiteSpeed' },
-                ]} />
-              </Form.Item>
-            </Col>
-            {activeTab === 'proxy' ? (
-              <Col span={16}>
-                <Form.Item name="proxy_target" label="Proxy Target" rules={[{ required: true, message: 'Required' }]} style={{ marginBottom: 10 }}>
-                  <Input placeholder="http://127.0.0.1:3000" />
-                </Form.Item>
-              </Col>
-            ) : (
-              <>
-                <Col span={8}>
-                  <Form.Item name="php_version" label={t('websites.php_version')} style={{ marginBottom: 10 }}>
-                    <Select allowClear placeholder="Select" options={[
-                      { value: '', label: 'Static' },
-                      ...phpVersions.map(v => ({ value: v, label: `PHP ${v}` })),
-                    ]} />
-                  </Form.Item>
-                </Col>
-                <Col span={8}>
-                  <Form.Item label="FTP Account" style={{ marginBottom: 10 }}>
-                    <Select value={ftpOption} onChange={val => {
-                      setFtpOption(val);
-                      if (val === 'create') {
-                        const domain = form.getFieldValue('domain') || '';
-                        form.setFieldsValue({ ftp_user: domain.replace(/[^a-zA-Z0-9]/g, '_'), ftp_pass: generatePassword() });
-                      }
-                    }} options={[
-                      { value: 'none', label: 'Not Set' },
-                      { value: 'create', label: 'Create New' },
-                    ]} />
-                  </Form.Item>
-                </Col>
-              </>
-            )}
-          </Row>
-
-          {activeTab === 'php' && ftpOption === 'create' && (
-            <Row gutter={12}>
-              <Col span={12}>
-                <Form.Item name="ftp_user" label="FTP User" rules={[{ required: true }]} style={{ marginBottom: 10 }}>
-                  <Input placeholder="ftp_username" />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item name="ftp_pass" label={<span>FTP Password <a onClick={() => form.setFieldsValue({ ftp_pass: generatePassword() })} style={{ fontSize: 11, marginLeft: 6 }}>Generate</a></span>} rules={[{ required: true }]} style={{ marginBottom: 10 }}>
-                  <Input.Password placeholder="Password" />
-                </Form.Item>
-              </Col>
-            </Row>
-          )}
-
-          {activeTab === 'php' && (
-            <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, marginTop: 2 }}>
-                <Form.Item name="create_db" valuePropName="checked" noStyle>
-                  <Switch size="small" onChange={checked => {
-                    if (checked) {
-                      const domain = form.getFieldValue('domain') || '';
-                      const sanitized = domain.replace(/[^a-zA-Z0-9]/g, '_');
-                      form.setFieldsValue({ db_name: sanitized, db_user: sanitized, db_pass: generatePassword() });
-                    }
-                  }} />
-                </Form.Item>
-                <span style={{ fontSize: 13, fontWeight: 500, color: p.text }}>Create Database</span>
-              </div>
-
-              <Form.Item noStyle shouldUpdate={(prev, cur) => prev.create_db !== cur.create_db}>
-                {({ getFieldValue }) => getFieldValue('create_db') ? (
-                  <Row gutter={12}>
-                    <Col span={8}>
-                      <Form.Item name="db_name" label="DB Name" rules={[{ required: true }]} style={{ marginBottom: 10 }}>
-                        <Input placeholder="database_name" />
-                      </Form.Item>
-                    </Col>
-                    <Col span={8}>
-                      <Form.Item name="db_user" label="DB User" rules={[{ required: true }]} style={{ marginBottom: 10 }}>
-                        <Input placeholder="database_user" />
-                      </Form.Item>
-                    </Col>
-                    <Col span={8}>
-                      <Form.Item name="db_pass" label={<span>DB Pass <a onClick={() => form.setFieldsValue({ db_pass: generatePassword() })} style={{ fontSize: 11, marginLeft: 4 }}>Gen</a></span>} rules={[{ required: true }]} style={{ marginBottom: 10 }}>
-                        <Input.Password placeholder="Password" />
-                      </Form.Item>
-                    </Col>
-                  </Row>
-                ) : null}
-              </Form.Item>
-            </>
-          )}
-        </Form>
-      </Modal>
+        onClose={() => setModalOpen(false)}
+        onSuccess={() => { fetchData(); message.success(t('common.success')); }}
+        installedWebServer={detectedWebServer}
+      />
 
       {/* Path Browser Modal */}
       <Modal
