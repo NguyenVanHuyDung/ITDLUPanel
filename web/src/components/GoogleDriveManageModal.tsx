@@ -1,6 +1,6 @@
 // GoogleDriveManageModal v2 — GoogleDriveConnectionsTab extracted as top-level component
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Modal, Form, Input, Switch, message, Popconfirm, Tooltip, Spin } from 'antd';
+import { Modal, Form, Input, Switch, message, Popconfirm, Tooltip, Spin, Alert } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, EditOutlined, ReloadOutlined,
   CheckCircleOutlined, ExclamationCircleOutlined,
@@ -572,9 +572,9 @@ const SECTIONS = [
 ] as const;
 type SectionKey = (typeof SECTIONS)[number]['key'];
 
-interface Props { open: boolean; onClose: () => void }
+interface Props { open: boolean; onClose: () => void; isInstalled?: boolean }
 
-export default function GoogleDriveManageModal({ open, onClose }: Props) {
+export default function GoogleDriveManageModal({ open, onClose, isInstalled = true }: Props) {
   const isMobile = useIsMobile();
   const { p } = usePalette();
   const [section, setSection] = useState<SectionKey>('connections');
@@ -605,6 +605,15 @@ export default function GoogleDriveManageModal({ open, onClose }: Props) {
       styles={{ body: { padding: 0, maxHeight: '80vh', overflow: 'hidden' } }}
       destroyOnHidden
     >
+      {!isInstalled && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ margin: 16, marginBottom: 0 }}
+          message="Google Drive is not installed"
+          description="Go to App Store to install Google Drive first, then configure your connections here."
+        />
+      )}
       <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', minHeight: 500 }}>
         <div style={{
           width: isMobile ? '100%' : 200,

@@ -927,8 +927,7 @@ export default function Dashboard() {
         </Col>
       </Row>
 
-      {/* ══════ STORAGE PROVIDERS (show when any storage is installed) ══════ */}
-      {installedStorageNames.length > 0 && (
+      {/* ══════ STORAGE PROVIDERS ══════ */}
       <Row gutter={16} style={{ marginTop: 16 }}>
         <Col xs={24}>
           <Card
@@ -938,51 +937,56 @@ export default function Dashboard() {
             styles={{ body: { padding: 16 }, header: { fontWeight: 600 } }}
           >
             <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '140px' : '180px'}, 1fr))`, gap: 10 }}>
-              {storageProviders.filter(sp => {
+              {storageProviders.map(sp => {
                 const keyToName: Record<string, string> = { ftp: 'ftp_storage', s3: 's3_storage', gdrive: 'google_drive', onedrive: 'onedrive' };
-                return installedStorageNames.includes(keyToName[sp.key] || '');
-              }).map(sp => (
-                <div
-                  key={sp.key}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '10px 12px', borderRadius: 8,
-                    border: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}`,
-                    background: isDark ? p.card : '#fafafa',
-                    cursor: 'pointer',
-                    transition: 'box-shadow 0.15s',
-                  }}
-                  onClick={() => {
-                    if (sp.key === 'ftp') setFtpStorageModalOpen(true);
-                    if (sp.key === 's3') setS3StorageModalOpen(true);
-                    if (sp.key === 'gdrive') setGdStorageModalOpen(true);
-                    if (sp.key === 'onedrive') setOdStorageModalOpen(true);
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}
-                >
-                  <div style={{
-                    width: 36, height: 36, borderRadius: 8,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                    background: `${sp.color}15`, color: sp.color, fontSize: 20,
-                  }}>
-                    {sp.icon}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 13, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: isDark ? p.text : undefined }}>
-                      {sp.name}
+                const softwareName = keyToName[sp.key] || '';
+                const isInstalled = installedStorageNames.includes(softwareName);
+                return (
+                  <div
+                    key={sp.key}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '10px 12px', borderRadius: 8,
+                      border: `1px solid ${isDark ? p.cardBorder : '#f0f0f0'}`,
+                      background: isDark ? p.card : '#fafafa',
+                      cursor: 'pointer',
+                      transition: 'box-shadow 0.15s',
+                    }}
+                    onClick={() => {
+                      if (sp.key === 'ftp') setFtpStorageModalOpen(true);
+                      if (sp.key === 's3') setS3StorageModalOpen(true);
+                      if (sp.key === 'gdrive') setGdStorageModalOpen(true);
+                      if (sp.key === 'onedrive') setOdStorageModalOpen(true);
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}
+                  >
+                    <div style={{
+                      width: 36, height: 36, borderRadius: 8,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                      background: `${sp.color}15`, color: sp.color, fontSize: 20,
+                    }}>
+                      {sp.icon}
                     </div>
-                    <div style={{ fontSize: 11, color: isDark ? p.textMuted : '#999' }}>
-                      {sp.count > 0 ? `${sp.count} config${sp.count !== 1 ? 's' : ''}` : 'Not configured'}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: isDark ? p.text : undefined }}>
+                        {sp.name}
+                      </div>
+                      {isInstalled ? (
+                        <div style={{ fontSize: 11, color: sp.count > 0 ? p.green : p.textMuted }}>
+                          {sp.count > 0 ? `${sp.count} config${sp.count !== 1 ? 's' : ''}` : 'Not configured'}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 11, color: p.textMuted }}>Not installed</div>
+                      )}
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </Card>
         </Col>
       </Row>
-      )}
 
       <NginxManageModal open={nginxModalOpen} onClose={() => setNginxModalOpen(false)} />
       <PhpMyAdminManageModal open={pmaModalOpen} onClose={() => setPmaModalOpen(false)} />
@@ -992,10 +996,10 @@ export default function Dashboard() {
       <RedisManageModal open={redisModalOpen} onClose={() => setRedisModalOpen(false)} />
       <PostgresqlManageModal open={postgresqlModalOpen} onClose={() => setPostgresqlModalOpen(false)} />
       <PgAdminManageModal open={pgadminModalOpen} onClose={() => setPgadminModalOpen(false)} />
-      <FTPStorageManageModal open={ftpStorageModalOpen} onClose={() => setFtpStorageModalOpen(false)} />
-      <S3StorageManageModal open={s3StorageModalOpen} onClose={() => setS3StorageModalOpen(false)} />
-      <GoogleDriveManageModal open={gdStorageModalOpen} onClose={() => setGdStorageModalOpen(false)} />
-      <OneDriveManageModal open={odStorageModalOpen} onClose={() => setOdStorageModalOpen(false)} />
+      <FTPStorageManageModal open={ftpStorageModalOpen} onClose={() => setFtpStorageModalOpen(false)} isInstalled={installedStorageNames.includes('ftp_storage')} />
+      <S3StorageManageModal open={s3StorageModalOpen} onClose={() => setS3StorageModalOpen(false)} isInstalled={installedStorageNames.includes('s3_storage')} />
+      <GoogleDriveManageModal open={gdStorageModalOpen} onClose={() => setGdStorageModalOpen(false)} isInstalled={installedStorageNames.includes('google_drive')} />
+      <OneDriveManageModal open={odStorageModalOpen} onClose={() => setOdStorageModalOpen(false)} isInstalled={installedStorageNames.includes('onedrive')} />
     </div>
   );
 }

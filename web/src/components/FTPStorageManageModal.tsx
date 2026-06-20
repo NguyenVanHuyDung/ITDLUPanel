@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Modal, Form, Input, InputNumber, message, Popconfirm, Tooltip, Spin, Switch } from 'antd';
+import { Modal, Form, Input, InputNumber, message, Popconfirm, Tooltip, Spin, Switch, Alert } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, EditOutlined, ReloadOutlined,
   CloudServerOutlined, CheckCircleOutlined, ExclamationCircleOutlined,
@@ -33,9 +33,10 @@ type SectionKey = (typeof SECTIONS)[number]['key'];
 interface Props {
   open: boolean;
   onClose: () => void;
+  isInstalled?: boolean;
 }
 
-export default function FTPStorageManageModal({ open, onClose }: Props) {
+export default function FTPStorageManageModal({ open, onClose, isInstalled = true }: Props) {
   const isMobile = useIsMobile();
   const { p, isDark } = usePalette();
   const [section, setSection] = useState<SectionKey>('connections');
@@ -78,6 +79,15 @@ export default function FTPStorageManageModal({ open, onClose }: Props) {
       styles={{ body: { padding: 0, maxHeight: '80vh', overflow: 'hidden' } }}
       destroyOnHidden
     >
+      {!isInstalled && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ margin: 16, marginBottom: 0 }}
+          message="FTP Storage is not installed"
+          description="Go to App Store to install FTP Storage first, then configure your connections here."
+        />
+      )}
       <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', minHeight: 500 }}>
         <div style={{
           width: isMobile ? '100%' : 200,
