@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Card, Col, Progress, Row, Typography, Spin, Button, Select, Space, Popover, Tag, Modal, message } from 'antd';
-import { ReloadOutlined, SyncOutlined, CloudServerOutlined, CloudOutlined, HddOutlined, AppstoreOutlined } from '@ant-design/icons';
+import { Card, Col, Progress, Row, Typography, Spin, Button, Select, Space, Popover, Tag } from 'antd';
+import { ReloadOutlined, SyncOutlined, CloudServerOutlined, CloudOutlined, HddOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
@@ -8,7 +8,6 @@ import api from '@/services/api';
 import { panelDayjs } from '@/lib/datetime';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { usePalette } from '@/hooks/usePalette';
-import { useTaskStore } from '@/stores/task';
 import type { SystemInfo, Software, ApiResponse } from '@/types';
 import NginxManageModal from '@/components/NginxManageModal';
 import PhpMyAdminManageModal from '@/components/PhpMyAdminManageModal';
@@ -247,11 +246,8 @@ export default function Dashboard() {
   const [odStorageModalOpen, setOdStorageModalOpen] = useState(false);
   const [storageProviders, setStorageProviders] = useState<{ key: string; name: string; count: number; color: string; icon: React.ReactNode }[]>([]);
   const [installedStorageNames, setInstalledStorageNames] = useState<string[]>([]);
-  const [installingStorage, setInstallingStorage] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevNetworkRef = useRef<{ sent: number; recv: number } | null>(null);
-
-  const { addTask, setModalOpen: openTaskModal, setActiveTab: setTaskTab } = useTaskStore();
 
   // New state for additional sections
   const [sslCerts, setSSLCerts] = useState<SSLCertificate[]>([]);
@@ -342,56 +338,6 @@ export default function Dashboard() {
       }
     } catch { /* ignore */ }
   }, []);
-
-  const handleInstallStorage = async (key: string, name: string, softwareName: string) => {
-    setInstallingStorage(key);
-    try {
-      const { data } = await api.post<ApiResponse<{ task_id: number }>>('/software/install', {
-        name: softwareName,
-        version: 'stable',
-      });
-      const taskId = data.data?.task_id;
-      if (taskId) {
-        addTask({
-          id: taskId,
-          name: `Install ${name}`,
-          type: 'software_install',
-          status: 'running',
-          progress: 0,
-          created_at: new Date().toISOString(),
-        });
-        openTaskModal(true);
-        setTaskTab('tasks');
-        message.success(`Installing ${name}…`);
-      }
-    } catch {
-      message.error(`Failed to install ${name}`);
-    } finally {
-      setInstallingStorage(null);
-    }
-  };
-
-  const handleStorageClick = (spKey: string, spName: string) => {
-    const keyToName: Record<string, string> = { ftp: 'ftp_storage', s3: 's3_storage', gdrive: 'google_drive', onedrive: 'onedrive' };
-    const softwareName = keyToName[spKey] || '';
-    const isInstalled = installedStorageNames.includes(softwareName);
-    if (!isInstalled) {
-      Modal.confirm({
-        title: `Install ${spName}?`,
-        content: `${spName} is not installed. You can install it now or go to App Store for more options.`,
-        okText: 'Install Now',
-        cancelText: 'Go to App Store',
-        okButtonProps: { icon: <AppstoreOutlined /> },
-        onOk: () => handleInstallStorage(spKey, spName, softwareName),
-        onCancel: () => navigate('/appstore'),
-      });
-      return;
-    }
-    if (spKey === 'ftp') setFtpStorageModalOpen(true);
-    if (spKey === 's3') setS3StorageModalOpen(true);
-    if (spKey === 'gdrive') setGdStorageModalOpen(true);
-    if (spKey === 'onedrive') setOdStorageModalOpen(true);
-  };
 
   const fetchData = useCallback(async (isInitial = false) => {
     if (!isInitial) setRefreshing(true);
@@ -1006,7 +952,12 @@ export default function Dashboard() {
                       cursor: 'pointer',
                       transition: 'box-shadow 0.15s',
                     }}
-                    onClick={() => handleStorageClick(sp.key, sp.name)}
+                    onClick={() => {
+                      if (sp.key === 'ftp') setFtpStorageModalOpen(true);
+                      if (sp.key === 's3') setS3StorageModalOpen(true);
+                      if (sp.key === 'gdrive') setGdStorageModalOpen(true);
+                      if (sp.key === 'onedrive') setOdStorageModalOpen(true);
+                    }}
                     onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)'; }}
                     onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}
                   >
