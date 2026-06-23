@@ -390,6 +390,16 @@ func setupSPAHandler(engine *gin.Engine) {
 
 	fileServer := http.FileServer(http.FS(distFS))
 
+	// Wrap the file server so JS/CSS chunks get short-lived cache headers
+	// while the index.html and other small entries stay no-cache. Vite
+	// hashes chunks by content so they can be safely cached for a year,
+	// but emitting Cache-Control avoids stale-bundle bugs after a hot
+	// reload where the browser still holds the previous chunk.
+	cacheWrappedFileServer := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		fileServer.ServeHTTP(w, r)
+	})
+
 	// Cache the raw index.html bytes in memory. The file is small (~1 KB)
 	// and immutable per build, but we still re-read it on every request so
 	// re-deploys pick up the new bundle without a process restart.
@@ -465,7 +475,7 @@ func setupSPAHandler(engine *gin.Engine) {
 			cleanPath := strings.TrimPrefix(path, "/")
 			if f, err := distFS.Open(cleanPath); err == nil {
 				f.Close()
-				fileServer.ServeHTTP(c.Writer, c.Request)
+				cacheWrappedFileServer.ServeHTTP(c.Writer, c.Request)
 				return
 			}
 		}

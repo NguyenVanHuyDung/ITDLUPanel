@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Table, Modal, Form, Input, Select, message, Popconfirm, Tooltip, Spin, Popover, InputNumber, Progress, Tag } from 'antd';
+import AddDatabaseModal from './AddDatabaseModal';
 import {
   PlusOutlined, DeleteOutlined, KeyOutlined, CloudDownloadOutlined,
   ReloadOutlined, DatabaseOutlined, CopyOutlined, LinkOutlined,
@@ -2821,92 +2822,12 @@ function DatabasesContent() {
       </div>
 
       {/* Add Database Modal */}
-      <Modal
-        title={
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <DatabaseOutlined style={{ color: p.accent }} />
-            {t('databases.add_database')}
-          </span>
-        }
+      <AddDatabaseModal
         open={modalOpen}
-        onOk={handleCreate}
-        onCancel={() => { setModalOpen(false); form.resetFields(); }}
-        confirmLoading={submitting}
-        okText={t('common.create')}
-        cancelText={t('common.cancel')}
-        destroyOnHidden
-        width={520}
-      >
-        <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
-          <Form.Item name="db_type" label={t('databases.db_type') || 'Database Type'} initialValue={detectedDbType || 'mysql'} rules={[{ required: true }]}>
-            <Select disabled={!!detectedDbType} options={detectedDbType ? [
-              { value: detectedDbType, label: detectedDbType === 'mariadb' ? 'MariaDB' : detectedDbType === 'postgresql' ? 'PostgreSQL' : 'MySQL' },
-            ] : [
-              { value: 'mysql', label: 'MySQL' },
-              { value: 'mariadb', label: 'MariaDB' },
-              { value: 'postgresql', label: 'PostgreSQL' },
-            ]} />
-          </Form.Item>
-          <Form.Item
-            name="name"
-            label={t('databases.db_name')}
-            rules={[
-              { required: true, message: 'Database name is required' },
-              { pattern: /^[a-zA-Z0-9_]+$/, message: 'Only letters, numbers and underscores' },
-              { max: 64, message: 'Maximum 64 characters' },
-            ]}
-          >
-            <Input placeholder="my_database" />
-          </Form.Item>
-          <Form.Item
-            name="username"
-            label={t('databases.db_user')}
-            rules={[
-              { required: true, message: 'Username is required' },
-              { pattern: /^[a-zA-Z0-9_]+$/, message: 'Only letters, numbers and underscores' },
-              { max: 32, message: 'Maximum 32 characters' },
-            ]}
-          >
-            <Input placeholder="db_user" />
-          </Form.Item>
-          <Form.Item name="password" label={t('auth.password')} rules={[{ required: true }, { min: 6, message: 'Minimum 6 characters' }]}>
-            <Input.Password
-              addonAfter={
-                <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-                  <Tooltip title="Generate new password">
-                    <ReloadOutlined onClick={() => form.setFieldsValue({ password: generatePassword() })} style={{ cursor: 'pointer' }} />
-                  </Tooltip>
-                  <Tooltip title="Copy password">
-                    <CopyOutlined onClick={() => {
-                      const pw = form.getFieldValue('password');
-                      if (pw) copyToClipboard(pw, 'Password');
-                    }} style={{ cursor: 'pointer' }} />
-                  </Tooltip>
-                </span>
-              }
-            />
-          </Form.Item>
-          <Form.Item name="charset" label={t('databases.charset')} initialValue={detectedDbType === 'postgresql' ? 'UTF8' : 'utf8mb4'}>
-            <Select options={(detectedDbType === 'postgresql' || form.getFieldValue('db_type') === 'postgresql') ? [
-              { value: 'UTF8', label: 'UTF8 (Recommended)' },
-              { value: 'LATIN1', label: 'LATIN1' },
-              { value: 'SQL_ASCII', label: 'SQL_ASCII' },
-            ] : [
-              { value: 'utf8mb4', label: 'utf8mb4 (Recommended)' },
-              { value: 'utf8', label: 'utf8' },
-              { value: 'latin1', label: 'latin1' },
-              { value: 'ascii', label: 'ascii' },
-            ]} />
-          </Form.Item>
-          <Form.Item name="remote_access" label="Access Permission" initialValue="localhost">
-            <Select options={[
-              { value: 'localhost', label: 'Localhost — Local access only' },
-              { value: '%', label: 'All — Allow remote connections' },
-              { value: 'ip', label: 'Specific IP' },
-            ]} />
-          </Form.Item>
-        </Form>
-      </Modal>
+        onClose={() => setModalOpen(false)}
+        onSuccess={() => { fetchData(); message.success(t('common.success')); }}
+        detectedDbType={detectedDbType}
+      />
 
       {/* Change Password Modal */}
       <Modal
