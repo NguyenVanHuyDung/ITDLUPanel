@@ -403,9 +403,26 @@ export default function HistoricalMonitor() {
   const [fullscreenChart, setFullscreenChart] = useState<HistChartKey | null>(null);
 
   // Auto-refresh: off by default; user can opt in to 30s/60s/300s
-  const [autoRefresh, setAutoRefresh] = useState(false);
-  const [autoRefreshSec, setAutoRefreshSec] = useState(60);
+  const [autoRefresh, setAutoRefreshBase] = useState(() => {
+    try { return localStorage.getItem('monitor_auto_refresh') === 'true'; }
+    catch { return false; }
+  });
+  const [autoRefreshSec, setAutoRefreshSecBase] = useState(() => {
+    try {
+      const v = localStorage.getItem('monitor_auto_refresh_sec');
+      return v ? Number(v) : 60;
+    } catch { return 60; }
+  });
   const autoTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const setAutoRefresh = (v: boolean) => {
+    setAutoRefreshBase(v);
+    try { localStorage.setItem('monitor_auto_refresh', String(v)); } catch { /* ignore */ }
+  };
+  const setAutoRefreshSec = (v: number) => {
+    setAutoRefreshSecBase(v);
+    try { localStorage.setItem('monitor_auto_refresh_sec', String(v)); } catch { /* ignore */ }
+  };
 
   useEffect(() => {
     api.get('/monitor/settings').then((res) => {
