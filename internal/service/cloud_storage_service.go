@@ -598,6 +598,7 @@ func (s *CloudStorageService) PollDeviceAuth(storageID int64, deviceCode string)
 			Error string `json:"error"`
 		}
 		json.Unmarshal(body, &errResp)
+		logger.Info().Str("error", errResp.Error).Int("status", resp.StatusCode).Msg("[device-auth] poll error")
 		switch errResp.Error {
 		case "authorization_pending":
 			return nil, nil // still waiting — caller should poll again
@@ -609,6 +610,11 @@ func (s *CloudStorageService) PollDeviceAuth(storageID int64, deviceCode string)
 		case "access_denied":
 			return nil, apperrors.New(apperrors.ErrValidation,
 				"authorization denied by user")
+		case "invalid_grant":
+			// Device code already exchanged — tokens were saved in a prior poll.
+			// Return success so the frontend treats it as connected.
+			logger.Info().Int64("storageID", storageID).Msg("[device-auth] poll: code already exchanged (success)")
+			return &oauth2.Token{}, nil
 		default:
 			return nil, apperrors.New(apperrors.ErrValidation,
 				"Google token error: "+errResp.Error)
@@ -619,6 +625,8 @@ func (s *CloudStorageService) PollDeviceAuth(storageID int64, deviceCode string)
 	if err := json.Unmarshal(body, &token); err != nil {
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "malformed Google token response")
 	}
+
+	logger.Info().Int64("storageID", storageID).Msg("[device-auth] poll SUCCESS")
 
 	// Persist the tokens so the storage becomes usable.
 	cfg.AccessToken = token.AccessToken

@@ -61,6 +61,7 @@ function GoogleDriveConnectionsTab({ open }: ConnectionsTabProps) {
   const [deviceModalOpen, setDeviceModalOpen] = useState(false);
   const [deviceFlowStorageId, setDeviceFlowStorageId] = useState<number | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flowDataRef = useRef<DeviceFlowState | null>(null);
 
   const fetchStorages = useCallback(async () => {
     setLoading(true);
@@ -176,24 +177,26 @@ function GoogleDriveConnectionsTab({ open }: ConnectionsTabProps) {
       }));
       setDeviceModalOpen(true);
 
+      flowDataRef.current = {
+        phase: 'waiting',
+        deviceCode: info.device_code,
+        interval: info.interval,
+        expiresIn: info.expires_in,
+      };
+
       const poll = async () => {
-        let currentState: DeviceFlowState | undefined;
-        setDeviceFlow(prev => {
-          currentState = prev[id];
-          return prev;
-        });
-        console.log('[poll] currentState:', currentState?.phase, currentState?.deviceCode ? 'hasDeviceCode' : 'NOdeviceCode');
-        if (!currentState || currentState.phase !== 'waiting') return;
+        const state = flowDataRef.current;
+        if (!state || state.phase !== 'waiting') return;
 
         try {
           const pollResp = await api.post(`/cloud-storages/${id}/device-auth/poll`, {
-            device_code: currentState.deviceCode,
+            device_code: state.deviceCode,
           });
-          console.log('[poll] response:', pollResp.data);
           const pollData = pollResp.data as { pending?: boolean; connected?: boolean };
 
           if (!pollData.pending && pollData.connected) {
             clearTimeout(pollTimerRef.current ?? undefined);
+            flowDataRef.current = null;
             setDeviceFlow(prev => ({ ...prev, [id]: { ...prev[id], phase: 'success' } }));
             setTimeout(() => {
               setDeviceModalOpen(false);
@@ -206,13 +209,10 @@ function GoogleDriveConnectionsTab({ open }: ConnectionsTabProps) {
           // Network errors during polling are normal — keep polling
         }
 
-        let remaining: number;
-        setDeviceFlow(prev => {
-          remaining = (prev[id]?.expiresIn ?? 0) - (currentState?.interval ?? 5);
-          return prev;
-        });
-        if (remaining! <= 0) {
+        const remaining = (state.expiresIn ?? 0) - (state.interval ?? 5);
+        if (remaining <= 0) {
           clearTimeout(pollTimerRef.current ?? undefined);
+          flowDataRef.current = null;
           setDeviceFlow(prev => ({
             ...prev,
             [id]: { ...prev[id], phase: 'error', errorMsg: 'Authorization timed out. Please try again.' },
@@ -220,12 +220,13 @@ function GoogleDriveConnectionsTab({ open }: ConnectionsTabProps) {
           return;
         }
 
+        flowDataRef.current = { ...state, expiresIn: remaining, pollCount: (state.pollCount ?? 0) + 1 };
         setDeviceFlow(prev => ({
           ...prev,
-          [id]: { ...prev[id], expiresIn: remaining!, pollCount: (prev[id]?.pollCount ?? 0) + 1 },
+          [id]: { ...prev[id], expiresIn: remaining, pollCount: (prev[id]?.pollCount ?? 0) + 1 },
         }));
 
-        pollTimerRef.current = setTimeout(poll, (currentState?.interval ?? 5) * 1000);
+        pollTimerRef.current = setTimeout(poll, (state.interval ?? 5) * 1000);
       };
 
       poll();

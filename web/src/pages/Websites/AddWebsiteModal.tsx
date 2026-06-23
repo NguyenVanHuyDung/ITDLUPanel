@@ -154,6 +154,13 @@ export default function AddWebsiteModal({ open, onClose, onSuccess, installedWeb
   }, [open, installedWebServer]);
   const effectiveWebServer = installedWebServer || localInstalledWS;
 
+  // Auto-select webserver when detected
+  useEffect(() => {
+    if (effectiveWebServer && !form.getFieldValue('webserver')) {
+      form.setFieldsValue({ webserver: effectiveWebServer });
+    }
+  }, [effectiveWebServer, form]);
+
   const handleClose = () => {
     setStep('Project Type');
     setProjectType('php');
