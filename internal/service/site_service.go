@@ -86,7 +86,7 @@ type CreateSiteRequest struct {
 	Domain      string `json:"domain" validate:"required,min=1,max=253"`
 	Description string `json:"description" validate:"omitempty,max=500"`
 	Path        string `json:"path" validate:"omitempty"`
-	Webserver   string `json:"webserver" validate:"required,oneof=nginx apache openlitespeed"`
+	Webserver   string `json:"webserver" validate:"omitempty,oneof=nginx apache openlitespeed"`
 	PHPVersion  string `json:"php_version" validate:"omitempty"`
 	SiteType    string `json:"site_type" validate:"omitempty,oneof=php proxy node"`
 	ProxyTarget string `json:"proxy_target" validate:"omitempty"`
@@ -142,13 +142,14 @@ const wwwrootBase = "/ITDLUPanel/wwwroot"
 
 // SiteService handles website CRUD and operations.
 type SiteService struct {
-	db       *sql.DB
-	notifier *NotificationService
+	db               *sql.DB
+	notifier         *NotificationService
+	softwareService  *SoftwareService
 }
 
-// NewSiteService creates a new SiteService.
-func NewSiteService(db *sql.DB) *SiteService {
-	return &SiteService{db: db}
+// NewSiteService creates a new SiteService. softwareService is optional (used for auto-detect).
+func NewSiteService(db *sql.DB, softwareService *SoftwareService) *SiteService {
+	return &SiteService{db: db, softwareService: softwareService}
 }
 
 // SetNotifier sets the notification service for event dispatching.
@@ -213,6 +214,16 @@ func (s *SiteService) Create(req CreateSiteRequest, userID int64) (*Site, error)
 	// Proxy sites don't need PHP
 	if req.SiteType == "proxy" {
 		req.PHPVersion = ""
+	}
+
+	// Auto-detect webserver if not specified
+	if req.Webserver == "" {
+		ws, err := s.softwareService.GetInstalledWebServer()
+		if err == nil && ws != "" {
+			req.Webserver = ws
+		} else {
+			req.Webserver = "nginx"
+		}
 	}
 
 	// 1. Validate domain uniqueness

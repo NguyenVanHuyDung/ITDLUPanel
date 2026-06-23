@@ -75,6 +75,8 @@ export default function AddDatabaseModal({ open, onClose, onSuccess, detectedDbT
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
   const [remoteAccess, setRemoteAccess] = useState('localhost');
+  // Store step 1 values so they're preserved when step 2 fields unmount
+  const [step1Values, setStep1Values] = useState<Record<string, unknown>>({});
 
   const stepIndex = STEPS.indexOf(step);
 
@@ -82,22 +84,24 @@ export default function AddDatabaseModal({ open, onClose, onSuccess, detectedDbT
     setStep('Database Info');
     setRemoteAccess('localhost');
     form.resetFields();
+    setStep1Values({});
     onClose();
   };
 
   const handleNext = async () => {
     if (step === 'Database Info') {
       try {
-        await form.validateFields(['name', 'username', 'password']);
+        const values = await form.validateFields(['db_type', 'name', 'username', 'password']);
+        setStep1Values(values);
         setStep('Access & Charset');
       } catch { /* validation failed */ }
       return;
     }
     // Step 2: submit
     try {
-      const values = await form.validateFields();
+      const step2Values = await form.validateFields();
       setSubmitting(true);
-      await api.post('/databases', values);
+      await api.post('/databases', { ...step1Values, ...step2Values });
       onSuccess();
       handleClose();
     } catch (err: unknown) {
@@ -150,8 +154,12 @@ export default function AddDatabaseModal({ open, onClose, onSuccess, detectedDbT
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <button
             onClick={() => {
-              if (step === 'Access & Charset') setStep('Database Info');
-              else handleClose();
+              if (step === 'Access & Charset') {
+                form.setFieldsValue(step1Values);
+                setStep('Database Info');
+              } else {
+                handleClose();
+              }
             }}
             style={{
               background: 'transparent', border: 'none', cursor: 'pointer',

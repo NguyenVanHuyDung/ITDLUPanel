@@ -5,6 +5,7 @@ const api = axios.create({
   baseURL: '/api/v1',
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true,
 });
 
 // Request interceptor - add JWT token
@@ -37,7 +38,7 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       try {
-        const { data } = await axios.post('/api/v1/auth/refresh');
+        const { data } = await axios.post('/api/v1/auth/refresh', {}, { withCredentials: true });
         const newToken = data.data.access_token;
         useAuthStore.getState().setAccessToken(newToken);
         originalRequest.headers.Authorization = `Bearer ${newToken}`;

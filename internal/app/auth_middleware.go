@@ -34,20 +34,31 @@ func AuthMiddleware() gin.HandlerFunc {
 			tokenStr = c.Query("token")
 		}
 
-		if tokenStr == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"code":    http.StatusUnauthorized,
-				"message": "authorization header is required",
-			})
-			return
-		}
+	if tokenStr == "" {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+			"code":    http.StatusUnauthorized,
+			"message": "authorization header is required",
+		})
+		logger.Warn().
+			Str("ip", c.ClientIP()).
+			Str("path", c.Request.URL.Path).
+			Str("method", c.Request.Method).
+			Str("auth_header", authHeader).
+			Msg("missing authorization token")
+		return
+	}
 
-		claims, err := service.ValidateAccessToken(tokenStr)
+	claims, err := service.ValidateAccessToken(tokenStr)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"code":    http.StatusUnauthorized,
 				"message": "invalid or expired token",
 			})
+			logger.Warn().
+				Str("ip", c.ClientIP()).
+				Str("path", c.Request.URL.Path).
+				Str("err", err.Error()).
+				Msg("invalid or expired token")
 			return
 		}
 

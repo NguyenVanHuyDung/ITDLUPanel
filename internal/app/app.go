@@ -114,7 +114,7 @@ func New(configPath string) (*App, error) {
 	logger.Info().Str("path", dbPath).Msg("Database ready")
 
 	// 5a. Reconcile vhost configs — regenerate any that are missing on disk.
-	siteService := service.NewSiteService(db.GetDB())
+	siteService := service.NewSiteService(db.GetDB(), nil)
 	siteService.ReconcileVhosts()
 
 	// 5b. Initialise i18n.

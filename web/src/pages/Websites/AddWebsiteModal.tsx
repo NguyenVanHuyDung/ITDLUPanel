@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Form, Input, Select, Switch, Row, Col, Button, Tooltip, Tree } from 'antd';
+import { Modal, Form, Input, Select, Switch, Row, Col, Button, Tooltip, Tree, message } from 'antd';
 import { FolderOpenOutlined, GlobalOutlined, ApiOutlined, EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import api from '@/services/api';
@@ -122,6 +122,9 @@ export default function AddWebsiteModal({ open, onClose, onSuccess, installedWeb
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
 
+  // Independent domain state — bypasses Ant Form timing issues
+  const [domainValue, setDomainValue] = useState('');
+
   // PHP-specific
   const [phpVersions, setPhpVersions] = useState<string[]>([]);
   const [ftpOption, setFtpOption] = useState<'none' | 'create'>('none');
@@ -154,12 +157,31 @@ export default function AddWebsiteModal({ open, onClose, onSuccess, installedWeb
   }, [open, installedWebServer]);
   const effectiveWebServer = installedWebServer || localInstalledWS;
 
-  // Auto-select webserver when detected
+  // Auto-select webserver when modal opens — fetch directly to avoid stale closure
   useEffect(() => {
-    if (effectiveWebServer && !form.getFieldValue('webserver')) {
-      form.setFieldsValue({ webserver: effectiveWebServer });
+    if (!open) return;
+    const detected = installedWebServer || localInstalledWS;
+    if (detected && !form.getFieldValue('webserver')) {
+      form.setFieldsValue({ webserver: detected });
+      return;
     }
-  }, [effectiveWebServer, form]);
+    if (!installedWebServer) {
+      api.get('/software/webserver-check').then(({ data }) => {
+        const ws = data.data?.installed_webserver || '';
+        setLocalInstalledWS(ws);
+        if (ws && !form.getFieldValue('webserver')) {
+          form.setFieldsValue({ webserver: ws });
+        }
+      }).catch(() => {});
+    }
+  }, [open, installedWebServer, form]);
+
+  // Sync when localInstalledWS updates from API
+  useEffect(() => {
+    if (localInstalledWS && !form.getFieldValue('webserver')) {
+      form.setFieldsValue({ webserver: localInstalledWS });
+    }
+  }, [localInstalledWS, form]);
 
   const handleClose = () => {
     setStep('Project Type');
@@ -176,17 +198,26 @@ export default function AddWebsiteModal({ open, onClose, onSuccess, installedWeb
       return;
     }
     if (step === 'Domain & Path') {
-      try {
-        await form.validateFields(['domain', 'name', 'path']);
-        setStep('Stack Config');
-      } catch { /* invalid */ }
+      if (!domainValue || !domainValue.trim()) {
+        form.setFields([{ name: 'domain', errors: ['Domain is required'] }]);
+        return;
+      }
+      setStep('Stack Config');
       return;
     }
     // Step 3: submit
+    if (!domainValue || !domainValue.trim()) {
+      setStep('Domain & Path');
+      form.setFields([{ name: 'domain', errors: ['Domain is required'] }]);
+      message.error('Domain is required');
+      return;
+    }
     try {
-      const values = await form.validateFields();
-      if (!values.name) values.name = values.domain;
-      if (!values.path) values.path = `/ITDLUPanel/wwwroot/${values.domain}`;
+      await form.validateFields();
+      const values = form.getFieldsValue(true);
+      values.domain = domainValue.trim();
+      if (!values.name) values.name = domainValue.trim();
+      if (!values.path) values.path = `/ITDLUPanel/wwwroot/${domainValue}`;
       values.site_type = projectType;
       if (projectType === 'php') {
         if (ftpOption !== 'create') { delete values.ftp_user; delete values.ftp_pass; }
@@ -198,8 +229,20 @@ export default function AddWebsiteModal({ open, onClose, onSuccess, installedWeb
       handleClose();
     } catch (err: unknown) {
       if (err && typeof err === 'object' && 'response' in err) {
-        const axiosErr = err as { response?: { data?: { message?: string } } };
-        // Use message from antd form error
+        const axiosErr = err as { response?: { data?: { message?: string; errors?: { field: string; message: string }[] } } };
+        if (axiosErr.response?.data?.errors?.length) {
+          const fieldErrors = axiosErr.response.data.errors;
+          const firstErr = fieldErrors[0];
+          if (firstErr && firstErr.field) {
+            message.error(firstErr.field === 'webserver' ? 'Please select a Web Server' : `${firstErr.field}: ${firstErr.message}`);
+          } else {
+            message.error(axiosErr.response?.data?.message || 'Failed to create website');
+          }
+        } else {
+          message.error(axiosErr.response?.data?.message || 'Failed to create website');
+        }
+      } else {
+        message.error('Failed to create website');
       }
     } finally {
       setSubmitting(false);
@@ -215,7 +258,8 @@ export default function AddWebsiteModal({ open, onClose, onSuccess, installedWeb
 
   const domain = Form.useWatch('domain', form);
   const handleDomainChange = (val: string) => {
-    const sanitized = val.replace(/[^a-zA-Z0-9]/g, '_');
+    setDomainValue(val);
+    const sanitized = val.replace(/[^a-zA-Z0-9.]/g, '_');
     form.setFieldsValue({
       name: form.getFieldValue('name') || val,
       path: `/ITDLUPanel/wwwroot/${val}`,
@@ -225,8 +269,9 @@ export default function AddWebsiteModal({ open, onClose, onSuccess, installedWeb
 
   const handleCreateDbToggle = (checked: boolean) => {
     setCreateDb(checked);
+    form.setFieldValue('create_db', checked);
     if (checked) {
-      const sanitized = (form.getFieldValue('domain') || '').replace(/[^a-zA-Z0-9]/g, '_');
+      const sanitized = (domainValue || '').replace(/[^a-zA-Z0-9]/g, '_');
       form.setFieldsValue({ db_name: sanitized, db_user: sanitized, db_pass: generatePassword() });
     }
   };
@@ -234,7 +279,7 @@ export default function AddWebsiteModal({ open, onClose, onSuccess, installedWeb
   const handleFtpOptionChange = (val: string) => {
     setFtpOption(val as 'none' | 'create');
     if (val === 'create') {
-      const sanitized = (form.getFieldValue('domain') || '').replace(/[^a-zA-Z0-9]/g, '_');
+      const sanitized = (domainValue || '').replace(/[^a-zA-Z0-9]/g, '_');
       form.setFieldsValue({ ftp_user: sanitized, ftp_pass: generatePassword() });
     }
   };
@@ -409,6 +454,9 @@ export default function AddWebsiteModal({ open, onClose, onSuccess, installedWeb
                 style={{ marginBottom: 14 }}
               >
                 <Input
+                  name="domain"
+                  id="add-site-domain"
+                  value={domainValue}
                   placeholder="example.com"
                   prefix={<Icon.Globe color={p.textDim} size={13} />}
                   onChange={e => handleDomainChange(e.target.value)}
@@ -549,6 +597,7 @@ export default function AddWebsiteModal({ open, onClose, onSuccess, installedWeb
                         onChange={handleCreateDbToggle}
                         size="small"
                       />
+                      <Form.Item name="create_db" hidden initialValue={createDb}><input /></Form.Item>
                     </div>
 
                     {createDb && (

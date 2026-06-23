@@ -97,14 +97,16 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		monitorService := service.NewMonitorService()
 		metricsCollector := service.NewMetricsCollector(db, monitorService)
 		metricsCollector.Start()
-		siteService := service.NewSiteService(db)
+		firewallService := service.NewFirewallService(db)
+		installerRegistry := installer.DefaultRegistry()
+		softwareService := service.NewSoftwareService(db, taskQueue, installerRegistry, firewallService)
+		siteService := service.NewSiteService(db, softwareService)
 		sslService := service.NewSSLService(db)
 		databaseService := service.NewDatabaseService(db)
 		ftpService := service.NewFTPService(db)
 		fileService := service.NewFileService()
 		cronService := service.NewCronService(db)
 		cronService.ResyncAll()
-		firewallService := service.NewFirewallService(db)
 		securityService := service.NewSecurityService()
 		dockerService := service.NewDockerService()
 		// Ensure website log directory and logrotate config exist
@@ -121,8 +123,6 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		registerBackupUploadShutdown(backupUploadService)
 		terminalService := service.NewTerminalService()
 		userResourceService := service.NewUserResourceService(db)
-		installerRegistry := installer.DefaultRegistry()
-		softwareService := service.NewSoftwareService(db, taskQueue, installerRegistry, firewallService)
 		softwareService.SetOnNginxVersionChanged(func() {
 			if err := siteService.RegenerateAllVhosts(); err != nil {
 				logger.Warn().Err(err).Msg("failed to regenerate vhosts after nginx version switch")
