@@ -38,6 +38,7 @@ interface BackupRecord {
   storage: string;
   status: string;
   created_at: string;
+  strategy: string;
 }
 
 interface ApiResponse<T> {
@@ -84,6 +85,7 @@ function DatabasesContent() {
   const [cloudStorages, setCloudStorages] = useState<{ id: number; name: string; type: string; is_default: boolean }[]>([]);
   const [backupStorage, setBackupStorage] = useState<string>('local');
   const [backupStorageId, setBackupStorageId] = useState<number | null>(null);
+  const [backupStrategy, setBackupStrategy] = useState<'full' | 'incremental'>('full');
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [batchAction, setBatchAction] = useState<'backup' | 'delete' | null>(null);
   const [importingDbId, setImportingDbId] = useState<number | null>(null);
@@ -487,7 +489,7 @@ function DatabasesContent() {
     if (!backupDb) return;
     setBackupCreating(true);
     try {
-      const payload: Record<string, unknown> = { type: 'database', target_id: backupDb.id };
+      const payload: Record<string, unknown> = { type: 'database', target_id: backupDb.id, strategy: backupStrategy };
       if (backupStorage === 'ftp' && backupStorageId) {
         payload.storage = 'ftp';
         payload.storage_id = backupStorageId;
@@ -3089,6 +3091,31 @@ function DatabasesContent() {
                     ))}
                   </select>
                 )}
+                {/* Strategy picker */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                  <label style={{ cursor: 'pointer', color: backupStrategy === 'full' ? p.accent : p.textMuted }}>
+                    <input
+                      type="radio"
+                      name="backup-strategy"
+                      value="full"
+                      checked={backupStrategy === 'full'}
+                      onChange={() => setBackupStrategy('full')}
+                      style={{ marginRight: 3 }}
+                    />
+                    Full
+                  </label>
+                  <label style={{ cursor: 'pointer', color: backupStrategy === 'incremental' ? p.accent : p.textMuted }}>
+                    <input
+                      type="radio"
+                      name="backup-strategy"
+                      value="incremental"
+                      checked={backupStrategy === 'incremental'}
+                      onChange={() => setBackupStrategy('incremental')}
+                      style={{ marginRight: 3 }}
+                    />
+                    Incremental
+                  </label>
+                </div>
               <button
                 onClick={handleCreateBackup}
                 disabled={backupCreating}
@@ -3156,6 +3183,13 @@ function DatabasesContent() {
                             <div style={{ fontSize: 12, fontWeight: 500, color: p.text, wordBreak: 'break-all' }}>
                               {fileName}
                             </div>
+                            {b.strategy === 'incremental' && (
+                              <span style={{
+                                fontSize: 9, fontWeight: 600, padding: '1px 5px',
+                                borderRadius: 3, background: `${p.amber}18`, color: p.amber,
+                                marginTop: 2, display: 'inline-block',
+                              }}>Incremental</span>
+                            )}
                           </td>
                           <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
                             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
