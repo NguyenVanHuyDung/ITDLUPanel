@@ -538,6 +538,11 @@ func (s *DockerService) CreateContainer(req CreateContainerRequest) (*Container,
 	body := map[string]any{
 		"Image": req.Image,
 	}
+
+	// Pull policy: always pull the image to ensure we have the latest version.
+	// This handles the case where the image doesn't exist locally.
+	body["ImagePullPolicy"] = "always"
+
 	if req.Command != "" {
 		body["Cmd"] = strings.Fields(req.Command)
 	}
