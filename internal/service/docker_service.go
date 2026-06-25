@@ -918,7 +918,14 @@ func (s *DockerService) ListImages() ([]*Image, error) {
 
 // PullImage pulls an image by name (e.g. "nginx:latest").
 func (s *DockerService) PullImage(name string) error {
-	path := fmt.Sprintf("/images/create?fromImage=%s", name)
+	// Split image:tag so Docker API can handle them separately.
+	image := name
+	tag := "latest"
+	if idx := strings.LastIndex(name, ":"); idx != -1 {
+		image = name[:idx]
+		tag = name[idx+1:]
+	}
+	path := fmt.Sprintf("/images/create?fromImage=%s&tag=%s", image, tag)
 
 	resp, err := s.post(path, "")
 	if err != nil {
