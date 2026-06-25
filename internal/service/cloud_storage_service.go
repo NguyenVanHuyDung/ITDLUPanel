@@ -700,16 +700,105 @@ func (s *CloudStorageService) HandleGoogleCallback(storageID int64, code, redire
 	return s.updateConfig(storageID, cfg)
 }
 
-func (s *CloudStorageService) googleHTTPClient(cfg GoogleDriveConfig, redirectURL string) (*http.Client, error) {
+// googleHTTPClient returns an HTTP client with OAuth2 tokens.
+// It uses a token source that automatically refreshes expired tokens
+// and persists the new tokens to the database.
+func (s *CloudStorageService) googleHTTPClient(storageID int64, cfg GoogleDriveConfig, redirectURL string) (*http.Client, error) {
 	oauthCfg := s.googleOAuthConfig(cfg, redirectURL)
 	expiry, _ := time.Parse(time.RFC3339, cfg.TokenExpiry)
-	token := &oauth2.Token{
+	currentToken := &oauth2.Token{
 		AccessToken:  cfg.AccessToken,
 		RefreshToken: cfg.RefreshToken,
 		Expiry:       expiry,
 		TokenType:    "Bearer",
 	}
-	return oauthCfg.Client(context.Background(), token), nil
+	// Create a token source that automatically refreshes expired tokens
+	// and saves new tokens to the database.
+	tokenSource := oauthCfg.TokenSource(context.Background(), currentToken)
+	savingTokenSource := &oauthSavingTokenSource{
+		TokenSource: tokenSource,
+		storageID:   storageID,
+		service:     s,
+		provider:    "google_drive",
+	}
+	// oauth2.NewClient creates an http.Client that automatically
+	// fetches tokens from the TokenSource as needed.
+	return oauth2.NewClient(context.Background(), savingTokenSource), nil
+}
+
+// oauthSavingTokenSource wraps an oauth2.TokenSource and persists tokens to the
+// database whenever they are refreshed. Works for both Google Drive and OneDrive.
+type oauthSavingTokenSource struct {
+	oauth2.TokenSource
+	storageID int64
+	service   *CloudStorageService
+	provider  string // "google_drive" or "onedrive"
+}
+
+// Token returns the current token, refreshing if necessary, and saves the
+// new token to the database so it persists across restarts.
+func (s *oauthSavingTokenSource) Token() (*oauth2.Token, error) {
+	token, err := s.TokenSource.Token()
+	if err != nil {
+		return nil, err
+	}
+	if token == nil || !token.Valid() {
+		return token, nil
+	}
+	// Persist refreshed tokens to database
+	switch s.provider {
+	case "google_drive":
+		cfg, err := s.service.parseGoogleDriveConfigByID(s.storageID)
+		if err != nil {
+			logger.Warn().Err(err).Int64("storageID", s.storageID).Msg("failed to parse Google Drive config for token save")
+			return token, nil
+		}
+		cfg.AccessToken = token.AccessToken
+		if token.RefreshToken != "" {
+			cfg.RefreshToken = token.RefreshToken
+		}
+		if !token.Expiry.IsZero() {
+			cfg.TokenExpiry = token.Expiry.Format(time.RFC3339)
+		}
+		if err := s.service.updateConfig(s.storageID, cfg); err != nil {
+			logger.Warn().Err(err).Int64("storageID", s.storageID).Msg("failed to persist refreshed Google OAuth token")
+		}
+	case "onedrive":
+		cfg, err := s.service.parseOneDriveConfigByID(s.storageID)
+		if err != nil {
+			logger.Warn().Err(err).Int64("storageID", s.storageID).Msg("failed to parse OneDrive config for token save")
+			return token, nil
+		}
+		cfg.AccessToken = token.AccessToken
+		if token.RefreshToken != "" {
+			cfg.RefreshToken = token.RefreshToken
+		}
+		if !token.Expiry.IsZero() {
+			cfg.TokenExpiry = token.Expiry.Format(time.RFC3339)
+		}
+		if err := s.service.updateConfig(s.storageID, cfg); err != nil {
+			logger.Warn().Err(err).Int64("storageID", s.storageID).Msg("failed to persist refreshed OneDrive OAuth token")
+		}
+	}
+	return token, nil
+}
+
+// parseGoogleDriveConfigByID parses the Google Drive config for a given storage ID.
+func (s *CloudStorageService) parseGoogleDriveConfigByID(storageID int64) (GoogleDriveConfig, error) {
+	cs, err := s.GetByID(storageID)
+	if err != nil {
+		return GoogleDriveConfig{}, err
+	}
+	return s.parseGoogleDriveConfig(cs)
+}
+
+// parseOneDriveConfigByID parses the OneDrive config for a given storage ID.
+func (s *CloudStorageService) parseOneDriveConfigByID(storageID int64) (OneDriveConfig, error) {
+	cs, err := s.GetByID(storageID)
+	if err != nil {
+		return OneDriveConfig{}, err
+	}
+	return s.parseOneDriveConfig(cs)
 }
 
 // redirectURL returns the OAuth callback URL used when constructing the
@@ -760,7 +849,7 @@ func (s *CloudStorageService) GetGoogleDriveQuota(storageID int64, redirectURL s
 	if err != nil {
 		return DriveQuota{}, err
 	}
-	client, err := s.googleHTTPClient(cfg, redirectURL)
+	client, err := s.googleHTTPClient(storageID, cfg, redirectURL)
 	if err != nil {
 		return DriveQuota{}, err
 	}
@@ -820,7 +909,7 @@ func (s *CloudStorageService) ValidateGoogleDriveToken(storageID int64, redirect
 	if cfg.AccessToken == "" && cfg.RefreshToken == "" {
 		return apperrors.New(apperrors.ErrValidation, "Google Drive not authorized — complete OAuth flow first")
 	}
-	client, err := s.googleHTTPClient(cfg, redirectURL)
+	client, err := s.googleHTTPClient(storageID, cfg, redirectURL)
 	if err != nil {
 		return err
 	}
@@ -909,7 +998,7 @@ func (s *CloudStorageService) UploadGoogleDriveResumable(
 		return err
 	}
 
-	httpClient, err := s.googleHTTPClient(cfg, redirectURL)
+	httpClient, err := s.googleHTTPClient(storageID, cfg, redirectURL)
 	if err != nil {
 		return err
 	}
@@ -1119,7 +1208,7 @@ func (s *CloudStorageService) TestGoogleDrive(storageID int64, redirectURL strin
 		return apperrors.New(apperrors.ErrValidation, "Google Drive not authorized — complete OAuth flow first")
 	}
 
-	client, err := s.googleHTTPClient(cfg, redirectURL)
+	client, err := s.googleHTTPClient(storageID, cfg, redirectURL)
 	if err != nil {
 		return err
 	}
@@ -1156,7 +1245,7 @@ func (s *CloudStorageService) UploadGoogleDrive(storageID int64, localPath, remo
 		return err
 	}
 
-	client, err := s.googleHTTPClient(cfg, redirectURL)
+	client, err := s.googleHTTPClient(storageID, cfg, redirectURL)
 	if err != nil {
 		return err
 	}
@@ -1350,7 +1439,7 @@ func (s *CloudStorageService) DownloadGoogleDrive(storageID int64, remoteFileNam
 		return err
 	}
 
-	client, err := s.googleHTTPClient(cfg, redirectURL)
+	client, err := s.googleHTTPClient(storageID, cfg, redirectURL)
 	if err != nil {
 		return err
 	}
@@ -1401,7 +1490,7 @@ func (s *CloudStorageService) DeleteGoogleDrive(storageID int64, remoteFileName,
 		return err
 	}
 
-	client, err := s.googleHTTPClient(cfg, redirectURL)
+	client, err := s.googleHTTPClient(storageID, cfg, redirectURL)
 	if err != nil {
 		return err
 	}
@@ -1507,7 +1596,10 @@ func (s *CloudStorageService) HandleOneDriveCallback(storageID int64, code, redi
 	return s.updateConfig(storageID, cfg)
 }
 
-func (s *CloudStorageService) oneDriveHTTPClient(cfg OneDriveConfig, redirectURL string) (*http.Client, error) {
+// oneDriveHTTPClient returns an HTTP client with OAuth2 tokens for OneDrive.
+// It uses a token source that automatically refreshes expired tokens
+// and persists the new tokens to the database.
+func (s *CloudStorageService) oneDriveHTTPClient(storageID int64, cfg OneDriveConfig, redirectURL string) (*http.Client, error) {
 	oauthCfg := s.oneDriveOAuthConfig(cfg, redirectURL)
 	expiry, _ := time.Parse(time.RFC3339, cfg.TokenExpiry)
 	token := &oauth2.Token{
@@ -1516,7 +1608,18 @@ func (s *CloudStorageService) oneDriveHTTPClient(cfg OneDriveConfig, redirectURL
 		Expiry:       expiry,
 		TokenType:    "Bearer",
 	}
-	return oauthCfg.Client(context.Background(), token), nil
+	// Create a token source that automatically refreshes expired tokens
+	// and saves new tokens to the database.
+	tokenSource := oauthCfg.TokenSource(context.Background(), token)
+	savingTokenSource := &oauthSavingTokenSource{
+		TokenSource: tokenSource,
+		storageID:   storageID,
+		service:     s,
+		provider:    "onedrive",
+	}
+	// oauth2.NewClient creates an http.Client that automatically
+	// fetches tokens from the TokenSource as needed.
+	return oauth2.NewClient(context.Background(), savingTokenSource), nil
 }
 
 // oneDrivePath constructs the Graph API path for a file.
@@ -1555,7 +1658,7 @@ func (s *CloudStorageService) TestOneDrive(storageID int64, redirectURL string) 
 		return apperrors.New(apperrors.ErrValidation, "OneDrive not authorized — complete OAuth flow first")
 	}
 
-	client, err := s.oneDriveHTTPClient(cfg, redirectURL)
+	client, err := s.oneDriveHTTPClient(storageID, cfg, redirectURL)
 	if err != nil {
 		return err
 	}
@@ -1589,7 +1692,7 @@ func (s *CloudStorageService) UploadOneDrive(storageID int64, localPath, remoteF
 		return err
 	}
 
-	client, err := s.oneDriveHTTPClient(cfg, redirectURL)
+	client, err := s.oneDriveHTTPClient(storageID, cfg, redirectURL)
 	if err != nil {
 		return err
 	}
@@ -1631,7 +1734,7 @@ func (s *CloudStorageService) DownloadOneDrive(storageID int64, remoteFileName, 
 		return err
 	}
 
-	client, err := s.oneDriveHTTPClient(cfg, redirectURL)
+	client, err := s.oneDriveHTTPClient(storageID, cfg, redirectURL)
 	if err != nil {
 		return err
 	}
@@ -1678,7 +1781,7 @@ func (s *CloudStorageService) DeleteOneDrive(storageID int64, remoteFileName, re
 		return err
 	}
 
-	client, err := s.oneDriveHTTPClient(cfg, redirectURL)
+	client, err := s.oneDriveHTTPClient(storageID, cfg, redirectURL)
 	if err != nil {
 		return err
 	}

@@ -297,6 +297,14 @@ func (s *SiteService) Create(req CreateSiteRequest, userID int64) (*Site, error)
 		return nil, apperrors.Wrap(err, apperrors.ErrInternal, "failed to write vhost config")
 	}
 
+	// For proxy sites, clear the rewrite file to avoid duplicate location "/" conflicts
+	if req.SiteType == "proxy" && req.Webserver == "nginx" {
+		rewritePath := RewriteFilePath("nginx", req.Domain)
+		if err := os.WriteFile(rewritePath, []byte("# Reverse proxy site - no URL rewriting needed\n"), 0644); err != nil {
+			logger.Warn().Err(err).Str("path", rewritePath).Msg("failed to clear rewrite file for proxy site")
+		}
+	}
+
 	// 5. Enable site and reload
 	if err := gen.EnableSite(req.Domain); err != nil {
 		logger.Warn().Err(err).Str("domain", req.Domain).Msg("failed to enable site (non-fatal during creation)")
@@ -1985,6 +1993,7 @@ func (s *SiteService) removeNginxBlock(confPath, startMarker, endMarker string) 
 }
 
 // replaceNginxBlock replaces the content between start/end markers with new lines.
+// It replaces ALL occurrences of the marker pair in the file (handles multi-server configs).
 func (s *SiteService) replaceNginxBlock(confPath, startMarker, endMarker string, blockLines []string) error {
 	content, err := os.ReadFile(confPath)
 	if err != nil {
@@ -2045,6 +2054,65 @@ func (s *SiteService) insertNginxBlockAll(confPath, startMarker, endMarker strin
 				newLines = append(newLines, "    "+bl)
 			}
 			newLines = append(newLines, "    "+endMarker)
+		}
+
+		if strings.Contains(trimmed, "}") && !strings.HasPrefix(trimmed, "#") {
+			depth--
+		}
+	}
+
+	return os.WriteFile(confPath, []byte(vhostJoin(newLines)), 0644)
+}
+
+// insertNginxBlockAfterMarkers inserts block lines after ALL occurrences of a marker pair.
+// This is used for reverse proxy to ensure proxy config is applied to every server block
+// (HTTP and HTTPS), but skips HTTP_TO_HTTPS redirect blocks to avoid duplicate location conflicts.
+func (s *SiteService) insertNginxBlockAfterMarkers(confPath, startMarker, endMarker string, blockLines []string) error {
+	content, err := os.ReadFile(confPath)
+	if err != nil {
+		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to read vhost config")
+	}
+
+	text := string(content)
+
+	if strings.Contains(text, startMarker) {
+		return s.replaceNginxBlock(confPath, startMarker, endMarker, blockLines)
+	}
+
+	// No markers found - insert after the LAST uncommented root directive at server block level
+	lines := vhostLines(text)
+	var newLines []string
+	depth := 0 // brace nesting: 1 = inside server{}
+	inserted := false
+	inRedirectBlock := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Track brace depth
+		if strings.Contains(trimmed, "{") && !strings.HasPrefix(trimmed, "#") {
+			depth++
+		}
+
+		// Track if we're inside a redirect block (inside HTTP_TO_HTTPS_START/END)
+		if trimmed == "#HTTP_TO_HTTPS_START" {
+			inRedirectBlock = true
+		}
+		if trimmed == "#HTTP_TO_HTTPS_END" {
+			inRedirectBlock = false
+		}
+
+		newLines = append(newLines, line)
+
+		// Insert after root at server-block level (depth == 1) - only once
+		// Skip insert in redirect blocks to avoid location / conflicts
+		if !inserted && depth == 1 && strings.HasPrefix(trimmed, "root ") && !strings.Contains(line, "#") && !inRedirectBlock {
+			newLines = append(newLines, "    "+startMarker)
+			for _, bl := range blockLines {
+				newLines = append(newLines, "    "+bl)
+			}
+			newLines = append(newLines, "    "+endMarker)
+			inserted = true
 		}
 
 		if strings.Contains(trimmed, "}") && !strings.HasPrefix(trimmed, "#") {
@@ -2858,6 +2926,14 @@ func (s *SiteService) AddReverseProxyRule(id int64, rule ReverseProxyRule) error
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to save reverse proxy rules")
 	}
 
+	// If reverse proxy is for root path "/", clear the rewrite file to avoid duplicate location "/"
+	if rule.Directory == "/" && site.Webserver == "nginx" {
+		rewritePath := RewriteFilePath(site.Webserver, site.Domain)
+		if err := os.WriteFile(rewritePath, []byte("# Reverse proxy enabled for root path\n"), 0644); err != nil {
+			logger.Warn().Err(err).Str("path", rewritePath).Msg("failed to clear rewrite file")
+		}
+	}
+
 	if err := s.rebuildReverseProxy(site, rules); err != nil {
 		return err
 	}
@@ -2898,6 +2974,14 @@ func (s *SiteService) UpdateReverseProxyRule(id int64, index int, rule ReversePr
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to save reverse proxy rules")
 	}
 
+	// If reverse proxy is for root path "/", clear the rewrite file to avoid duplicate location "/"
+	if rule.Directory == "/" && site.Webserver == "nginx" {
+		rewritePath := RewriteFilePath(site.Webserver, site.Domain)
+		if err := os.WriteFile(rewritePath, []byte("# Reverse proxy enabled for root path\n"), 0644); err != nil {
+			logger.Warn().Err(err).Str("path", rewritePath).Msg("failed to clear rewrite file")
+		}
+	}
+
 	if err := s.rebuildReverseProxy(site, rules); err != nil {
 		return err
 	}
@@ -2930,6 +3014,29 @@ func (s *SiteService) RemoveReverseProxyRule(id int64, index int) error {
 
 	if err := writeJSONFile(reverseProxyPath(id), rules); err != nil {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to save reverse proxy rules")
+	}
+
+	// If removing a root path proxy and no more root proxies exist, restore default rewrite
+	if removed.Directory == "/" && site.Webserver == "nginx" {
+		// Check if any remaining rules also proxy root
+		hasRootProxy := false
+		for _, r := range rules {
+			if r.Directory == "/" {
+				hasRootProxy = true
+				break
+			}
+		}
+		if !hasRootProxy {
+			rewritePath := RewriteFilePath(site.Webserver, site.Domain)
+			// Restore default WordPress rewrite rules
+			defaultRewrite := `location / {
+    try_files $uri $uri/ /index.php?$query_string;
+}
+`
+			if err := os.WriteFile(rewritePath, []byte(defaultRewrite), 0644); err != nil {
+				logger.Warn().Err(err).Str("path", rewritePath).Msg("failed to restore rewrite file")
+			}
+		}
 	}
 
 	if err := s.removeReverseProxy(site, rules); err != nil {
@@ -2969,7 +3076,7 @@ func (s *SiteService) removeReverseProxy(site *Site, rules []ReverseProxyRule) e
 		case "openlitespeed":
 			return s.removeOLSBlock(confPath, "#REVERSE_PROXY_START", "#REVERSE_PROXY_END")
 		default:
-			return s.removeNginxBlock(confPath, "#REVERSE_PROXY_START", "#REVERSE_PROXY_END")
+			return s.removeAllNginxBlocks(confPath, "#REVERSE_PROXY_START", "#REVERSE_PROXY_END")
 		}
 	}
 	return s.rebuildReverseProxy(site, rules)
@@ -3042,7 +3149,7 @@ func (s *SiteService) rebuildReverseProxyNginx(site *Site, rules []ReverseProxyR
 		blockLines = append(blockLines, "}")
 	}
 
-	return s.insertNginxBlockSmart(confPath, "#REVERSE_PROXY_START", "#REVERSE_PROXY_END", blockLines)
+	return s.insertNginxBlockAfterMarkers(confPath, "#REVERSE_PROXY_START", "#REVERSE_PROXY_END", blockLines)
 }
 
 // rebuildReverseProxyApache generates Apache ProxyPass directives for reverse proxy rules.
@@ -3263,6 +3370,7 @@ func (s *SiteService) insertApacheBlock(confPath, startMarker, endMarker string,
 }
 
 // replaceApacheBlock replaces content between start/end markers in Apache config.
+// It replaces ALL occurrences of the marker pair in the file.
 func (s *SiteService) replaceApacheBlock(confPath, startMarker, endMarker string, blockLines []string) error {
 	content, err := os.ReadFile(confPath)
 	if err != nil {
@@ -3298,7 +3406,7 @@ func (s *SiteService) replaceApacheBlock(confPath, startMarker, endMarker string
 
 // removeApacheBlock removes everything between (and including) the start/end markers in Apache config.
 func (s *SiteService) removeApacheBlock(confPath, startMarker, endMarker string) error {
-	return s.removeNginxBlock(confPath, startMarker, endMarker)
+	return s.removeAllNginxBlocks(confPath, startMarker, endMarker)
 }
 
 // insertOLSBlock inserts lines between start/end markers in an OLS vhost config.
@@ -3345,6 +3453,7 @@ func (s *SiteService) insertOLSBlock(confPath, startMarker, endMarker string, bl
 }
 
 // replaceOLSBlock replaces content between start/end markers in OLS config.
+// It replaces ALL occurrences of the marker pair in the file.
 func (s *SiteService) replaceOLSBlock(confPath, startMarker, endMarker string, blockLines []string) error {
 	content, err := os.ReadFile(confPath)
 	if err != nil {
@@ -3380,7 +3489,7 @@ func (s *SiteService) replaceOLSBlock(confPath, startMarker, endMarker string, b
 
 // removeOLSBlock removes everything between (and including) the start/end markers in OLS config.
 func (s *SiteService) removeOLSBlock(confPath, startMarker, endMarker string) error {
-	return s.removeNginxBlock(confPath, startMarker, endMarker)
+	return s.removeAllNginxBlocks(confPath, startMarker, endMarker)
 }
 
 // ---------------------------------------------------------------------------

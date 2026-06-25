@@ -4450,6 +4450,7 @@ function WebsitesContent() {
         onClose={() => setModalOpen(false)}
         onSuccess={() => { fetchData(); message.success(t('common.success')); }}
         installedWebServer={detectedWebServer}
+        initialProjectType={activeTab}
       />
 
       {/* Path Browser Modal */}

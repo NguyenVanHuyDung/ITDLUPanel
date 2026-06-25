@@ -88,6 +88,7 @@ interface AddWebsiteModalProps {
   onClose: () => void;
   onSuccess: () => void;
   installedWebServer?: string;
+  initialProjectType?: 'php' | 'proxy';
 }
 
 const generatePassword = () => {
@@ -112,13 +113,13 @@ const STEPS = ['Project Type', 'Domain & Path', 'Stack Config'] as const;
 type Step = typeof STEPS[number];
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export default function AddWebsiteModal({ open, onClose, onSuccess, installedWebServer }: AddWebsiteModalProps) {
+export default function AddWebsiteModal({ open, onClose, onSuccess, installedWebServer, initialProjectType }: AddWebsiteModalProps) {
   const { t } = useTranslation();
   const { p } = usePalette();
   const isMobile = useIsMobile();
 
   const [step, setStep] = useState<Step>('Project Type');
-  const [projectType, setProjectType] = useState<'php' | 'proxy'>('php');
+  const [projectType, setProjectType] = useState<'php' | 'proxy'>(initialProjectType || 'php');
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
 
@@ -145,6 +146,14 @@ export default function AddWebsiteModal({ open, onClose, onSuccess, installedWeb
       }).catch(() => {});
     }
   }, [open]);
+
+  // Sync projectType when modal opens with a new initialProjectType
+  useEffect(() => {
+    if (open && initialProjectType) {
+      setProjectType(initialProjectType);
+      setStep('Project Type');
+    }
+  }, [open, initialProjectType]);
 
   // Local state for installed web server (fallback if prop not provided)
   const [localInstalledWS, setLocalInstalledWS] = useState<string>('');
