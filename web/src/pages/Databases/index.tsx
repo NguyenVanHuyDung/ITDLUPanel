@@ -3024,17 +3024,20 @@ function DatabasesContent() {
               padding: '20px 24px 16px',
               borderBottom: `1px solid ${p.cardBorder}`,
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              minWidth: 0,
             }}>
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 600, color: p.text, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <CloudUploadOutlined style={{ color: p.accent }} />
-                  Backup — {backupDb.name}
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 600, color: p.text, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                  <CloudUploadOutlined style={{ color: p.accent, flexShrink: 0 }} />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '45%' }}>
+                    Backup — {backupDb.name}
+                  </span>
                 </div>
                 <div style={{ fontSize: 11, color: p.textMuted, marginTop: 2 }}>
                   {backupList.length} backup(s) available
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
                 <select
                   value={backupStorage}
                   onChange={(e) => {
@@ -3050,15 +3053,15 @@ function DatabasesContent() {
                     }
                   }}
                   style={{
-                    padding: '6px 10px', borderRadius: 6, fontSize: 11,
+                    padding: '5px 8px', borderRadius: 6, fontSize: 11,
                     border: `1px solid ${p.cardBorder}`, background: p.card, color: p.text,
-                    cursor: 'pointer', outline: 'none',
+                    cursor: 'pointer', outline: 'none', flexShrink: 0,
                   }}
                 >
                   <option value="local">💾 Local</option>
-                  {ftpStorages.length > 0 && <option value="ftp">📁 FTP Storage</option>}
-                  {cloudStorages.filter(s => s.type === 's3').length > 0 && <option value="s3">☁️ Amazon S3</option>}
-                  {cloudStorages.filter(s => s.type === 'google_drive').length > 0 && <option value="google_drive">☁️ Google Drive</option>}
+                  {ftpStorages.length > 0 && <option value="ftp">📁 FTP</option>}
+                  {cloudStorages.filter(s => s.type === 's3').length > 0 && <option value="s3">☁️ S3</option>}
+                  {cloudStorages.filter(s => s.type === 'google_drive').length > 0 && <option value="google_drive">☁️ GDrive</option>}
                   {cloudStorages.filter(s => s.type === 'onedrive').length > 0 && <option value="onedrive">☁️ OneDrive</option>}
                 </select>
                 {backupStorage === 'ftp' && ftpStorages.length > 1 && (
@@ -3066,9 +3069,9 @@ function DatabasesContent() {
                     value={backupStorageId ?? ''}
                     onChange={(e) => setBackupStorageId(Number(e.target.value))}
                     style={{
-                      padding: '6px 10px', borderRadius: 6, fontSize: 11,
+                      padding: '5px 8px', borderRadius: 6, fontSize: 11,
                       border: `1px solid ${p.cardBorder}`, background: p.card, color: p.text,
-                      cursor: 'pointer', outline: 'none',
+                      cursor: 'pointer', outline: 'none', flexShrink: 0,
                     }}
                   >
                     {ftpStorages.map(s => (
@@ -3081,9 +3084,9 @@ function DatabasesContent() {
                     value={backupStorageId ?? ''}
                     onChange={(e) => setBackupStorageId(Number(e.target.value))}
                     style={{
-                      padding: '6px 10px', borderRadius: 6, fontSize: 11,
+                      padding: '5px 8px', borderRadius: 6, fontSize: 11,
                       border: `1px solid ${p.cardBorder}`, background: p.card, color: p.text,
-                      cursor: 'pointer', outline: 'none',
+                      cursor: 'pointer', outline: 'none', flexShrink: 0,
                     }}
                   >
                     {cloudStorages.filter(s => s.type === backupStorage).map(s => (
@@ -3091,46 +3094,46 @@ function DatabasesContent() {
                     ))}
                   </select>
                 )}
-                {/* Strategy picker */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
-                  <label style={{ cursor: 'pointer', color: backupStrategy === 'full' ? p.accent : p.textMuted }}>
+                {/* Strategy picker + Backup button */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                  <label style={{ cursor: 'pointer', color: backupStrategy === 'full' ? p.accent : p.textMuted, fontSize: 11, whiteSpace: 'nowrap' }}>
                     <input
                       type="radio"
-                      name="backup-strategy"
+                      name="backup-strategy-db"
                       value="full"
                       checked={backupStrategy === 'full'}
                       onChange={() => setBackupStrategy('full')}
-                      style={{ marginRight: 3 }}
+                      style={{ marginRight: 2 }}
                     />
                     Full
                   </label>
-                  <label style={{ cursor: 'pointer', color: backupStrategy === 'incremental' ? p.accent : p.textMuted }}>
+                  <label style={{ cursor: 'pointer', color: backupStrategy === 'incremental' ? p.accent : p.textMuted, fontSize: 11, whiteSpace: 'nowrap' }}>
                     <input
                       type="radio"
-                      name="backup-strategy"
+                      name="backup-strategy-db"
                       value="incremental"
                       checked={backupStrategy === 'incremental'}
                       onChange={() => setBackupStrategy('incremental')}
-                      style={{ marginRight: 3 }}
+                      style={{ marginRight: 2 }}
                     />
-                    Incremental
+                    Incr
                   </label>
+                  <button
+                    onClick={handleCreateBackup}
+                    disabled={backupCreating}
+                    style={{
+                      padding: '6px 12px', borderRadius: 7, border: 'none',
+                      background: p.accent, color: '#fff',
+                      fontSize: 11, fontWeight: 600, cursor: backupCreating ? 'wait' : 'pointer',
+                      opacity: backupCreating ? 0.7 : 1,
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                      transition: 'all 0.15s', marginLeft: 2, flexShrink: 0,
+                    }}
+                  >
+                    {backupCreating ? <Spin size="small" /> : <PlusOutlined />}
+                    {backupCreating ? 'Creating...' : 'Backup'}
+                  </button>
                 </div>
-              <button
-                onClick={handleCreateBackup}
-                disabled={backupCreating}
-                style={{
-                  padding: '7px 16px', borderRadius: 7, border: 'none',
-                  background: p.accent, color: '#fff',
-                  fontSize: 12, fontWeight: 600, cursor: backupCreating ? 'wait' : 'pointer',
-                  opacity: backupCreating ? 0.7 : 1,
-                  display: 'inline-flex', alignItems: 'center', gap: 6,
-                  transition: 'all 0.15s',
-                }}
-              >
-                {backupCreating ? <Spin size="small" /> : <PlusOutlined />}
-                {backupCreating ? 'Creating...' : 'New Backup'}
-              </button>
               </div>
             </div>
 
