@@ -534,14 +534,15 @@ func (s *DockerService) GetContainer(id string) (*ContainerDetail, error) {
 
 // CreateContainer creates (but does not start) a new container.
 func (s *DockerService) CreateContainer(req CreateContainerRequest) (*Container, error) {
+	// Pull the image if it doesn't exist locally to avoid "No such image" errors.
+	if err := s.PullImage(req.Image); err != nil {
+		return nil, fmt.Errorf("pull image: %w", err)
+	}
+
 	// Build the create payload.
 	body := map[string]any{
 		"Image": req.Image,
 	}
-
-	// Pull policy: always pull the image to ensure we have the latest version.
-	// This handles the case where the image doesn't exist locally.
-	body["ImagePullPolicy"] = "always"
 
 	if req.Command != "" {
 		body["Cmd"] = strings.Fields(req.Command)
