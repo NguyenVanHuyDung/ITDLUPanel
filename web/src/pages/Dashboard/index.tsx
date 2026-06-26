@@ -930,7 +930,7 @@ export default function Dashboard() {
                         </div>
                         <div style={{ fontSize: 11, color: isDark ? p.textMuted : '#999' }}>{sw.version}</div>
                       </div>
-                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: running ? '#4CAF50' : '#d9d9d9', flexShrink: 0 }} />
+                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: running ? '#4CAF50' : '#F44336', flexShrink: 0 }} />
                     </div>
                   );
                 })}
