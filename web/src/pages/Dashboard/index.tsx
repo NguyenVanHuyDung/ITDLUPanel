@@ -426,9 +426,9 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
-    intervalRef.current = setInterval(() => { fetchData(); fetchProcesses(); }, refreshInterval * 1000);
+    intervalRef.current = setInterval(() => { fetchData(); fetchSoftware(); fetchProcesses(); }, refreshInterval * 1000);
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [fetchData, fetchProcesses, refreshInterval]);
+  }, [fetchData, fetchSoftware, fetchProcesses, refreshInterval]);
 
   if (loading) return <div style={{ textAlign: 'center', padding: 100 }}><Spin size="large" /></div>;
   if (!info) return <div style={{ textAlign: 'center', padding: 100 }}><Text type="secondary">Failed to load dashboard</Text></div>;
