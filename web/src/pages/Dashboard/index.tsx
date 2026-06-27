@@ -892,7 +892,7 @@ export default function Dashboard() {
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '140px' : '180px'}, 1fr))`, gap: 10 }}>
                 {installedSoftware.map(sw => {
-                  const running = sw.status === 1;
+                  const running = sw.is_running;
                   const swIcon = getSoftwareIcon(sw.name);
                   const clickable = ['nginx', 'phpmyadmin', 'pgadmin', 'php', 'pureftpd', 'mysql', 'redis', 'postgresql', 'docker'].includes(sw.name);
                   return (
