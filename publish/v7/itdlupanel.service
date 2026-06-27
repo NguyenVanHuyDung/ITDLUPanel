@@ -1,0 +1,23 @@
+[Unit]
+Description=ITDLUPanel - Linux Server Management Panel
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/ITDLUPanel/server/panel
+ExecStart=/ITDLUPanel/server/panel/itdlupanel -config config/panel.json
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65535
+StandardOutput=journal
+StandardError=journal
+
+# Security
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
