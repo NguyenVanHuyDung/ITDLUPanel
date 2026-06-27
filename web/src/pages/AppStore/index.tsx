@@ -412,7 +412,7 @@ export default function AppStore() {
   const WEB_SERVERS = ['nginx', 'apache', 'openlitespeed'];
   const isWebServerBlocked = (name: string) =>
     WEB_SERVERS.includes(name) && installedWebServer && installedWebServer !== name;
-  const runningCount = installed.filter(s => s.status === 1).length;
+  const runningCount = installed.filter(s => s.is_running).length;
 
   const otherSoftware = available.filter(sw => sw.type === 'tool' || sw.type === 'storage');
   const mainSoftware = available.filter(sw => sw.type !== 'tool' && sw.type !== 'storage');
@@ -543,7 +543,7 @@ export default function AppStore() {
               gap: 10,
             }}>
               {installed.map(sw => {
-                const running = sw.status === 1;
+                const running = sw.is_running;
                 const busy = !!actionLoading[sw.name];
                 return (
                   <div
@@ -1295,14 +1295,14 @@ export default function AppStore() {
                         <span style={{
                           display: 'inline-flex', alignItems: 'center', gap: 5,
                           fontWeight: 500, fontSize: 13,
-                          color: manageSW.status === 1 ? p.green : p.red,
+                          color: manageSW.is_running ? p.green : p.red,
                         }}>
                           <span style={{
                             width: 7, height: 7, borderRadius: 4,
-                            background: manageSW.status === 1 ? p.green : p.red,
+                            background: manageSW.is_running ? p.green : p.red,
                             display: 'inline-block',
                           }} />
-                          {manageSW.status === 1 ? 'Running' : 'Stopped'}
+                          {manageSW.is_running ? 'Running' : 'Stopped'}
                         </span>
                       </Descriptions.Item>
                       {swStatus && !swStatus.error && (
@@ -1356,20 +1356,20 @@ export default function AppStore() {
                         type="primary" ghost
                         icon={<PlayCircleOutlined />}
                         loading={actionLoading[manageSW.name]}
-                        disabled={manageSW.status === 1}
+                        disabled={manageSW.is_running}
                         onClick={async () => {
                           await doServiceAction(manageSW.name, 'start');
-                          openManageModal({ ...manageSW, status: 1 });
+                          openManageModal({ ...manageSW, is_running: true });
                         }}
                       >{t('common.start')}</Button>
                       <Button
                         danger ghost
                         icon={<PauseCircleOutlined />}
                         loading={actionLoading[manageSW.name]}
-                        disabled={manageSW.status !== 1}
+                        disabled={!manageSW.is_running}
                         onClick={async () => {
                           await doServiceAction(manageSW.name, 'stop');
-                          openManageModal({ ...manageSW, status: 0 });
+                          openManageModal({ ...manageSW, is_running: false });
                         }}
                       >{t('common.stop')}</Button>
                       <Button
@@ -1377,7 +1377,7 @@ export default function AppStore() {
                         loading={actionLoading[manageSW.name]}
                         onClick={async () => {
                           await doServiceAction(manageSW.name, 'restart');
-                          openManageModal({ ...manageSW, status: 1 });
+                          openManageModal({ ...manageSW, is_running: true });
                         }}
                       >{t('common.restart')}</Button>
                       <Button

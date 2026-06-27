@@ -110,6 +110,7 @@ export interface FTPAccount {
 export interface Software {
   name: string; display_name: string; version: string; type: string;
   status: number; service_name?: string;
+  is_running?: boolean;
 }
 
 export interface Task {
