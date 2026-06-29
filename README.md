@@ -8,17 +8,15 @@
 ![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-[🇻🇳 Tiếng Việt](#tiếng-việt) | [🇺🇸 English](#english)
+> **Bảng điều khiển quản lý máy chủ Linux** — Web panel hiện đại, tất-cả-trong-một, đóng gói thành một file binary duy nhất. Được phát triển cho **Đại học Đà Lạt**.
+
+[🇻🇳 Tiếng Việt](#tiếng-việt) · [🇺🇸 English](#english)
 
 ---
 
 # Tiếng Việt
 
-**Bảng điều khiển quản lý máy chủ Linux** — Web panel hiện đại, tất-cả-trong-một, đóng gói thành một file binary duy nhất (~60MB). Được phát triển cho **Đại học Đà Lạt** với Go backend và React frontend.
-
----
-
-## ✨ Tính năng
+## Tính năng
 
 | Module | Mô tả |
 |--------|-------|
@@ -40,51 +38,36 @@
 | ⚙️ **Cài đặt** | Cổng, SSL, ngôn ngữ, thông báo (Email/Telegram/Webhook) |
 | 🌓 **Giao diện** | Chế độ sáng/tối |
 
----
-
-## 🏗️ Kiến trúc
+## Kiến trúc
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│                 Browser (React 19 SPA)                    │
-│         Ant Design 6 · xterm.js · Monaco Editor           │
-└──────────────┬──────────────────────┬────────────────────┘
-               │  REST API (~160)     │  WebSocket (2)
-               ▼                      ▼
-┌──────────────────────────────────────────────────────────┐
-│            File binary Go duy nhất (~60MB)                │
-│                                                           │
-│  Gin Router → 24 Handlers → 33 Services → SQLite (25 tbl)│
-│  WebSocket Hub → PTY Terminal + Real-time Monitor         │
-│  11 Middleware: JWT · RBAC · Rate Limit · CSRF · Audit    │
-│  14 Installers · 4 Vhost Generators · Task Queue          │
-│  Embedded Frontend (go:embed)                             │
-└──────────────────────────┬───────────────────────────────┘
-                           ▼
-┌──────────────────────────────────────────────────────────┐
-│               Linux Host (Ubuntu/Debian)                  │
-│  Nginx/Apache/OLS · PHP-FPM · MySQL/MariaDB · Redis      │
-│  Docker · Fail2ban · PureFTPd · Certbot                   │
-└──────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                    Browser (React 19 SPA)                     │
+│            Ant Design 6 · xterm.js · Monaco Editor          │
+└──────────────────────┬─────────────────┬───────────────────┘
+                       │  REST API        │  WebSocket
+                       ▼                  ▼
+┌──────────────────────────────────────────────────────────────┐
+│                     Go Binary (~60MB)                        │
+│                                                              │
+│  Gin → 24 Handlers → 33 Services → SQLite (25 tables)       │
+│  WebSocket Hub → PTY Terminal + Real-time Monitor           │
+│  11 Middleware · 14 Installers · 4 Vhost Generators         │
+│  Embedded Frontend (go:embed)                               │
+└─────────────────────────┬────────────────────────────────────┘
+                          ▼
+┌──────────────────────────────────────────────────────────────┐
+│                   Linux Host (Ubuntu/Debian)                  │
+│    Nginx/Apache/OLS · PHP-FPM · MySQL/MariaDB · Redis       │
+│    Docker · Fail2ban · PureFTPd · Certbot                   │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-### Công nghệ
-
-| Tầng | Công nghệ |
-|------|-----------|
-| Backend | Go 1.25, Gin 1.12, SQLite (pure Go), zerolog |
-| Frontend | React 19, TypeScript 5.9, Ant Design 6, Vite 8 |
-| State | Zustand 5 (5 stores: auth, theme, settings, task, notification) |
-| Charts | Recharts 3.8 |
-| Editor | Monaco Editor |
-| Terminal | xterm.js 6 + WebSocket |
-| i18n | Tiếng Anh 🇺🇸 / Tiếng Việt 🇻🇳 |
-
-### Thống kê mã nguồn
+### Thống kê
 
 | Metric | Số liệu |
-|--------|---------|
-| Go files | 112 files · 43,314 LOC |
+|--------|----------|
+| Go files | 112 files · 43,000+ LOC |
 | TypeScript files | 93 files |
 | API endpoints | ~160 REST + 2 WebSocket |
 | Database tables | 25 |
@@ -92,9 +75,18 @@
 | Cron templates | 30 pre-built |
 | Supported software | 14 installers |
 
----
+### Công nghệ
 
-## 🚀 Bắt đầu nhanh
+| Tầng | Công nghệ |
+|------|-----------|
+| Backend | Go 1.25, Gin 1.12, SQLite, zerolog |
+| Frontend | React 19, TypeScript 5.9, Ant Design 6, Vite 8 |
+| State | Zustand 5 (5 stores) |
+| Charts | Recharts 3.8 |
+| Terminal | xterm.js 6 + WebSocket |
+| i18n | English 🇺🇸 / Vietnamese 🇻🇳 |
+
+## Bắt đầu nhanh
 
 ### Yêu cầu
 
@@ -106,13 +98,13 @@
 
 ```bash
 # Clone
-git clone https://github.com/your-org/ITDLUPanel.git
+git clone https://github.com/NguyenVanHuyDung/ITDLUPanel.git
 cd ITDLUPanel
 
 # Build frontend
 cd web && npm install && npx vite build && cd ..
 
-# Build backend (nhúng frontend vào binary)
+# Build backend
 export PATH=/usr/local/go/bin:$PATH
 make build
 
@@ -127,14 +119,14 @@ docker build -t itdlupanel .
 docker run -d -p 8888:8888 --name panel itdlupanel
 ```
 
-Panel mặc định chạy tại **https://localhost:8888**
+Panel chạy tại **https://localhost:8888**
 
 ### Thông tin đăng nhập mặc định
 
 | Trường | Giá trị |
-|--------|---------|
-| Tên đăng nhập | `admin` |
-| Mật khẩu | `admin@123456` |
+|--------|----------|
+| Username | `admin` |
+| Password | `admin@123456` |
 
 > ⚠️ **Đổi mật khẩu ngay sau lần đăng nhập đầu tiên.**
 
@@ -146,32 +138,16 @@ Panel mặc định chạy tại **https://localhost:8888**
 ./bin/itdlupanel reset-password -config /path/to/panel.json -password "NewPassword123"
 ```
 
-### Cấu hình
-
-File cấu hình tự động tạo tại `config/panel.json`:
-
-```json
-{
-  "server": { "host": "0.0.0.0", "port": 8888 },
-  "database": { "path": "data/panel.db" },
-  "auth": { "jwt_secret": "<tự sinh>", "access_token_ttl": 900 },
-  "paths": { "wwwroot": "/ITDLUPanel/wwwroot" },
-  "panel": { "language": "en", "version": "0.1.0" }
-}
-```
-
----
-
-## 📡 API
+## API
 
 **~160 REST endpoints** + 2 WebSocket:
 
 | Module | Endpoints | Quyền |
-|--------|-----------|-------|
+|--------|-----------|--------|
 | Auth | 9 | Public + JWT |
 | Sites | 14 | `sites.*` |
 | Databases | 8 | `databases.*` |
-| Files | 17 | `files.*` |
+| Files | 18 | `files.*` |
 | Docker | 46+ | `docker.*` |
 | Security | 12 | `security.*` |
 | Software | 14 | `software.*` |
@@ -183,15 +159,11 @@ File cấu hình tự động tạo tại `config/panel.json`:
 | Backups | 6 | `backup.*` |
 | Storage | 8 | Admin |
 | Users/Roles | 11 | Admin |
-| Notifications | 8 | Admin |
-| Dashboard/Tasks | 9 | JWT |
 
----
-
-## 🔒 Bảo mật
+## Bảo mật
 
 | Tính năng | Chi tiết |
-|-----------|---------|
+|------------|----------|
 | Xác thực | JWT HS256 (access 15 phút + refresh 7 ngày) |
 | 2FA | TOTP (RFC 6238) |
 | Mật khẩu | bcrypt cost=12 |
@@ -199,14 +171,11 @@ File cấu hình tự động tạo tại `config/panel.json`:
 | Rate Limit | 300 req/phút mỗi IP |
 | Audit Trail | Ghi lại toàn bộ thao tác ghi |
 | RBAC | Admin · Operator · Viewer |
-| TLS | HTTPS tích hợp |
 
----
-
-## 🌐 Phần mềm hỗ trợ
+## Phần mềm hỗ trợ
 
 | Phần mềm | Cài đặt | Cấu hình | Giám sát |
-|-----------|---------|----------|----------|
+|----------|----------|----------|----------|
 | Nginx | ✅ | ✅ | ✅ |
 | Apache | ✅ | ✅ | ✅ |
 | OpenLiteSpeed | ✅ | ✅ | ✅ |
@@ -217,151 +186,101 @@ File cấu hình tự động tạo tại `config/panel.json`:
 | PureFTPd | ✅ | ✅ | — |
 | Docker | Detect | ✅ | ✅ |
 
-**Storage modules:** FTP, S3/MinIO, Google Drive, OneDrive
-
----
-
-## 📁 Cấu trúc dự án
+## Cấu trúc dự án
 
 ```
 ITDLUPanel/
-├── cmd/panel/main.go          # Điểm khởi chạy
+├── cmd/panel/main.go          # Entry point
 ├── web.go                     # go:embed frontend
 ├── internal/
 │   ├── api/v1/                # 24 REST handlers
-│   ├── api/ws/                # WebSocket (terminal, monitor)
-│   ├── app/                   # Router, middleware, bootstrap
+│   ├── api/ws/                # WebSocket
+│   ├── app/                   # Router, middleware
 │   ├── service/               # 33 business services
 │   ├── service/installer/     # 14 software installers
 │   ├── service/vhost/         # 4 vhost generators
-│   ├── database/              # SQLite, 25 tables, 14 migrations
-│   ├── config/                # JSON config
-│   ├── pkg/                   # crypto, logger, errors, validator
-│   ├── i18n/                  # Đa ngôn ngữ (EN/VI)
-│   ├── task/                  # Hàng đợi tác vụ nền
-│   ├── websocket/             # WS hub
-│   ├── system/                # Shell, OS detection
-│   └── plugin/                # Plugin system
+│   ├── database/              # SQLite, 25 tables
+│   ├── pkg/                   # utilities
+│   └── system/                # Shell, OS detection
 ├── web/src/
-│   ├── pages/                 # 17 trang (lazy-loaded)
-│   ├── layouts/               # MainLayout, AuthLayout
-│   ├── components/            # 15 shared components
-│   ├── stores/                # 5 Zustand stores
-│   ├── hooks/                 # 7 custom hooks
-│   ├── services/api.ts        # Axios client
-│   ├── types/                 # TypeScript interfaces
-│   ├── router/                # Route definitions
-│   └── i18n/                  # EN/VI translations
+│   ├── pages/                 # 17 pages
+│   ├── components/            # shared components
+│   ├── stores/                # Zustand stores
+│   └── services/api.ts        # Axios client
 ├── config/panel.json          # Runtime config
-├── data/panel.db              # SQLite database
-├── docs/                      # Tài liệu kiến trúc
-├── Makefile                   # Build commands
-└── Dockerfile                 # Multi-stage build
+├── Makefile
+└── Dockerfile
 ```
 
----
-
-## 📄 Tài liệu
+## Tài liệu
 
 | Tài liệu | Nội dung |
-|-----------|---------|
-| [System Architecture](docs/SYSTEM_ARCHITECTURE.md) | Kiến trúc tổng quan, tech stack, component diagram |
-| [Technical Spec](docs/TECHNICAL_SPEC.md) | Database schema, API spec, configuration |
-| [Build Architecture](docs/BUILD_ARCHITECTURE.md) | Quy trình build, go:embed, Docker |
-| [Storage Guide](docs/STORAGE_GUIDE.md) | Hướng dẫn kết nối S3, Google Drive, OneDrive |
+|-----------|----------|
+| [System Architecture](docs/SYSTEM_ARCHITECTURE.md) | Kiến trúc tổng quan |
+| [Technical Spec](docs/TECHNICAL_SPEC.md) | Database schema, API spec |
+| [Build Architecture](docs/BUILD_ARCHITECTURE.md) | Quy trình build |
+| [Storage Guide](docs/STORAGE_GUIDE.md) | Kết nối S3, Google Drive, OneDrive |
 
----
-
-## 📝 Giấy phép
+## Giấy phép
 
 MIT License — © 2026 Đại học Đà Lạt
 
 ---
+
 ---
 
 # English
 
-**Linux Server Management Panel** — A modern, all-in-one web panel for Linux server management, packaged as a single binary (~60MB). Built for **Dalat University** with Go backend and React frontend.
+**Linux Server Management Panel** — A modern, all-in-one web panel for Linux server management, packaged as a single binary. Built for **Dalat University** with Go backend and React frontend.
 
----
-
-## ✨ Features
+## Features
 
 | Module | Description |
 |--------|-------------|
 | 🖥️ **Dashboard** | Real-time CPU, RAM, disk, network monitoring with interactive charts |
-| 🌐 **Websites** | Site management, domain aliases, PHP version switching, Nginx/Apache/OLS config |
+| 🌐 **Websites** | Site management, domain aliases, PHP version switching, Nginx/Apache/OLS |
 | 🗄️ **Databases** | MySQL/MariaDB — create, backup, restore, user management |
-| 📁 **File Manager** | Full browser with Monaco code editor, bookmarks, compress/decompress, permissions |
+| 📁 **File Manager** | Full browser with Monaco editor, bookmarks, compress/decompress, permissions |
 | 🔑 **Terminal** | xterm.js WebSocket terminal with multi-tab, fullscreen |
 | 🔒 **Security** | Firewall, port monitoring, IP blocking, SSH config, Fail2ban |
-| 📊 **Monitor** | Real-time + historical system metrics (CPU, memory, disk I/O, network) |
-| 🐳 **Docker** | Containers, images, networks, volumes, compose, 38 one-click templates, cloud images |
-| ⏰ **Cron Jobs** | 30 built-in templates, schedule builder, execution history, run-now |
-| 📋 **Logs** | Panel, SSH, website, audit logs with search and filtering |
+| 📊 **Monitor** | Real-time + historical system metrics |
+| 🐳 **Docker** | Containers, images, networks, volumes, compose, 38 one-click templates |
+| ⏰ **Cron Jobs** | 30 templates, schedule builder, execution history |
+| 📋 **Logs** | Panel, SSH, website, audit logs with search |
 | 📦 **App Store** | Install Nginx, Apache, PHP, MySQL, Redis, phpMyAdmin, Docker... |
 | 🔐 **SSL** | Let's Encrypt auto-issue, custom upload, self-signed, auto-renewal |
-| 👤 **Users** | RBAC — Admin/Operator/Viewer roles, 2FA (TOTP) support |
+| 👤 **Users** | RBAC — Admin/Operator/Viewer, 2FA (TOTP) support |
 | 📡 **FTP** | FTP account management |
 | 💾 **Storage** | Backup to FTP, S3/MinIO, Google Drive, OneDrive |
-| ⚙️ **Settings** | Port, SSL, language, notifications (Email/Telegram/Webhook) |
-| 🌓 **Theme** | Light/dark mode toggle |
+| ⚙️ **Settings** | Port, SSL, language, notifications |
+| 🌓 **Theme** | Light/dark mode |
 
----
-
-## 🏗️ Architecture
+## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│                 Browser (React 19 SPA)                    │
-│         Ant Design 6 · xterm.js · Monaco Editor           │
-└──────────────┬──────────────────────┬────────────────────┘
-               │  REST API (~160)     │  WebSocket (2)
-               ▼                      ▼
-┌──────────────────────────────────────────────────────────┐
-│              Single Go Binary (~60MB)                     │
-│                                                           │
-│  Gin Router → 24 Handlers → 33 Services → SQLite (25 tbl)│
-│  WebSocket Hub → PTY Terminal + Real-time Monitor         │
-│  11 Middleware: JWT · RBAC · Rate Limit · CSRF · Audit    │
-│  14 Installers · 4 Vhost Generators · Task Queue          │
-│  Embedded Frontend (go:embed)                             │
-└──────────────────────────┬───────────────────────────────┘
-                           ▼
-┌──────────────────────────────────────────────────────────┐
-│               Linux Host (Ubuntu/Debian)                  │
-│  Nginx/Apache/OLS · PHP-FPM · MySQL/MariaDB · Redis      │
-│  Docker · Fail2ban · PureFTPd · Certbot                   │
-└──────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                    Browser (React 19 SPA)                     │
+│            Ant Design 6 · xterm.js · Monaco Editor          │
+└──────────────────────┬─────────────────┬───────────────────┘
+                       │  REST API        │  WebSocket
+                       ▼                  ▼
+┌──────────────────────────────────────────────────────────────┐
+│                     Go Binary (~60MB)                         │
+│                                                              │
+│  Gin → 24 Handlers → 33 Services → SQLite (25 tables)      │
+│  WebSocket Hub → PTY Terminal + Real-time Monitor            │
+│  11 Middleware · 14 Installers · 4 Vhost Generators         │
+│  Embedded Frontend (go:embed)                               │
+└─────────────────────────┬────────────────────────────────────┘
+                          ▼
+┌──────────────────────────────────────────────────────────────┐
+│                   Linux Host (Ubuntu/Debian)                 │
+│    Nginx/Apache/OLS · PHP-FPM · MySQL/MariaDB · Redis        │
+│    Docker · Fail2ban · PureFTPd · Certbot                    │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-### Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Backend | Go 1.25, Gin 1.12, SQLite (pure Go), zerolog |
-| Frontend | React 19, TypeScript 5.9, Ant Design 6, Vite 8 |
-| State | Zustand 5 (5 stores: auth, theme, settings, task, notification) |
-| Charts | Recharts 3.8 |
-| Editor | Monaco Editor |
-| Terminal | xterm.js 6 + WebSocket |
-| i18n | English 🇺🇸 / Vietnamese 🇻🇳 |
-
-### Codebase Stats
-
-| Metric | Count |
-|--------|-------|
-| Go files | 112 files · 43,314 LOC |
-| TypeScript files | 93 files |
-| API endpoints | ~160 REST + 2 WebSocket |
-| Database tables | 25 |
-| Docker templates | 38 one-click apps |
-| Cron templates | 30 pre-built |
-| Software installers | 14 |
-
----
-
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -372,18 +291,14 @@ MIT License — © 2026 Đại học Đà Lạt
 ### Build from Source
 
 ```bash
-# Clone
-git clone https://github.com/your-org/ITDLUPanel.git
+git clone https://github.com/NguyenVanHuyDung/ITDLUPanel.git
 cd ITDLUPanel
 
-# Build frontend
 cd web && npm install && npx vite build && cd ..
 
-# Build backend (embeds frontend)
 export PATH=/usr/local/go/bin:$PATH
 make build
 
-# Run
 ./bin/itdlupanel -config config/panel.json
 ```
 
@@ -394,8 +309,6 @@ docker build -t itdlupanel .
 docker run -d -p 8888:8888 --name panel itdlupanel
 ```
 
-Panel starts at **https://localhost:8888**
-
 ### Default Credentials
 
 | Field | Value |
@@ -405,40 +318,16 @@ Panel starts at **https://localhost:8888**
 
 > ⚠️ **Change the default password immediately after first login.**
 
-### Reset Password
+## API
 
-```bash
-./bin/itdlupanel reset-password -password "NewPassword123"
-./bin/itdlupanel reset-password -user admin -password "NewPassword123"
-./bin/itdlupanel reset-password -config /path/to/panel.json -password "NewPassword123"
-```
-
-### Configuration
-
-Auto-generated at `config/panel.json`:
-
-```json
-{
-  "server": { "host": "0.0.0.0", "port": 8888 },
-  "database": { "path": "data/panel.db" },
-  "auth": { "jwt_secret": "<auto>", "access_token_ttl": 900 },
-  "paths": { "wwwroot": "/ITDLUPanel/wwwroot" },
-  "panel": { "language": "en", "version": "0.1.0" }
-}
-```
-
----
-
-## 📡 API
-
-**~160 REST endpoints** + 2 WebSocket:
+**~160 REST endpoints** + 2 WebSocket
 
 | Module | Endpoints | Permission |
 |--------|-----------|------------|
 | Auth | 9 | Public + JWT |
 | Sites | 14 | `sites.*` |
 | Databases | 8 | `databases.*` |
-| Files | 17 | `files.*` |
+| Files | 18 | `files.*` |
 | Docker | 46+ | `docker.*` |
 | Security | 12 | `security.*` |
 | Software | 14 | `software.*` |
@@ -450,12 +339,8 @@ Auto-generated at `config/panel.json`:
 | Backups | 6 | `backup.*` |
 | Storage | 8 | Admin |
 | Users/Roles | 11 | Admin |
-| Notifications | 8 | Admin |
-| Dashboard/Tasks | 9 | JWT |
 
----
-
-## 🔒 Security
+## Security
 
 | Feature | Details |
 |---------|---------|
@@ -466,11 +351,8 @@ Auto-generated at `config/panel.json`:
 | Rate Limiting | 300 req/min per IP |
 | Audit Trail | All write operations logged |
 | RBAC | Admin · Operator · Viewer |
-| TLS | Built-in HTTPS |
 
----
-
-## 🌐 Supported Software
+## Supported Software
 
 | Software | Install | Configure | Monitor |
 |----------|---------|-----------|---------|
@@ -486,59 +368,6 @@ Auto-generated at `config/panel.json`:
 
 **Storage modules:** FTP, S3/MinIO, Google Drive, OneDrive
 
----
+## License
 
-## 📁 Project Structure
-
-```
-ITDLUPanel/
-├── cmd/panel/main.go          # Entry point
-├── web.go                     # go:embed frontend
-├── internal/
-│   ├── api/v1/                # 24 REST handlers
-│   ├── api/ws/                # WebSocket (terminal, monitor)
-│   ├── app/                   # Router, middleware, bootstrap
-│   ├── service/               # 33 business services
-│   ├── service/installer/     # 14 software installers
-│   ├── service/vhost/         # 4 vhost generators
-│   ├── database/              # SQLite, 25 tables, 14 migrations
-│   ├── config/                # JSON config
-│   ├── pkg/                   # crypto, logger, errors, validator
-│   ├── i18n/                  # Backend translations (EN/VI)
-│   ├── task/                  # Background task queue
-│   ├── websocket/             # WS hub
-│   ├── system/                # Shell, OS detection
-│   └── plugin/                # Plugin system
-├── web/src/
-│   ├── pages/                 # 17 pages (lazy-loaded)
-│   ├── layouts/               # MainLayout, AuthLayout
-│   ├── components/            # 15 shared components
-│   ├── stores/                # 5 Zustand stores
-│   ├── hooks/                 # 7 custom hooks
-│   ├── services/api.ts        # Axios client
-│   ├── types/                 # TypeScript interfaces
-│   ├── router/                # Route definitions
-│   └── i18n/                  # EN/VI translations
-├── config/panel.json          # Runtime config
-├── data/panel.db              # SQLite database
-├── docs/                      # Architecture docs
-├── Makefile                   # Build commands
-└── Dockerfile                 # Multi-stage build
-```
-
----
-
-## 📄 Documentation
-
-| Document | Content |
-|----------|---------|
-| [System Architecture](docs/SYSTEM_ARCHITECTURE.md) | High-level architecture, tech stack, component diagram |
-| [Technical Spec](docs/TECHNICAL_SPEC.md) | Database schema, API spec, configuration |
-| [Build Architecture](docs/BUILD_ARCHITECTURE.md) | Build pipeline, go:embed, Docker |
-| [Storage Guide](docs/STORAGE_GUIDE.md) | S3, Google Drive, OneDrive connection guide |
-
----
-
-## 📝 License
-
-MIT License — © 2026 Đại học Đà Lạt (Dalat University)
+MIT License — © 2026 Dalat University
