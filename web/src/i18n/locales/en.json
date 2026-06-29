@@ -116,6 +116,8 @@
     "network": "Network",
     "network_traffic": "Network Traffic",
     "uptime": "Uptime",
+    "server_uptime": "Server Uptime",
+    "panel_uptime": "Panel Uptime",
     "hostname": "Hostname",
     "os": "Operating System",
     "kernel": "Kernel",

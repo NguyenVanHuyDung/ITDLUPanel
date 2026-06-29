@@ -21,6 +21,7 @@ import api from '@/services/api';
 import type { Database } from '@/types';
 import { formatDateTime } from '@/lib/datetime';
 import RequireSoftware from '@/components/RequireSoftware';
+import MariadbManageModal from '@/components/MariadbManageModal';
 import PostgresqlManageModal from '@/components/PostgresqlManageModal';
 import PgAdminManageModal from '@/components/PgAdminManageModal';
 import RedisManageModal from '@/components/RedisManageModal';
@@ -65,6 +66,7 @@ function DatabasesContent() {
   const [loading, setLoading] = useState(true);
   const [databases, setDatabases] = useState<Database[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
+  const [mariadbManageOpen, setMariadbManageOpen] = useState(false);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [selectedDb, setSelectedDb] = useState<Database | null>(null);
@@ -1451,7 +1453,7 @@ function DatabasesContent() {
           padding: '10px 20px',
           borderBottom: `1px solid ${p.cardBorder}`,
         }}>
-          <button onClick={() => message.info('Root password management coming soon')} style={{
+          <button onClick={() => setMariadbManageOpen(true)} style={{
             padding: '5px 14px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
             background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
             display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
@@ -1623,7 +1625,7 @@ function DatabasesContent() {
           }}>
             <DatabaseOutlined /> {!isMobile && 'Manage'}
           </button>
-          <button onClick={() => message.info('Root password management coming soon')} style={{
+          <button onClick={() => setMariadbManageOpen(true)} style={{
             padding: '5px 14px', borderRadius: 6, border: `1px solid ${p.cardBorder}`,
             background: 'transparent', color: p.textMuted, fontSize: 12, cursor: 'pointer',
             display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
@@ -3276,6 +3278,7 @@ function DatabasesContent() {
 
       <PostgresqlManageModal open={pgManageOpen} onClose={() => setPgManageOpen(false)} />
       <PgAdminManageModal open={pgaManageOpen} onClose={() => setPgaManageOpen(false)} />
+      <MariadbManageModal open={mariadbManageOpen} onClose={() => setMariadbManageOpen(false)} />
       <RedisManageModal open={redisManageOpen} onClose={() => setRedisManageOpen(false)} />
 
       {/* MongoDB Create Database Modal */}

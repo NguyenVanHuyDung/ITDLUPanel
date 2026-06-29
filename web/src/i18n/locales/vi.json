@@ -116,6 +116,8 @@
     "network": "Mạng",
     "network_traffic": "Lưu lượng mạng",
     "uptime": "Thời gian hoạt động",
+    "server_uptime": "Thời gian hoạt động máy chủ",
+    "panel_uptime": "Thời gian hoạt động panel",
     "hostname": "Tên máy chủ",
     "os": "Hệ điều hành",
     "kernel": "Kernel",

@@ -30,6 +30,7 @@ import {
   SunOutlined,
   MoonOutlined,
   BellOutlined,
+  GatewayOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/stores/auth';
@@ -62,7 +63,8 @@ interface SystemBrief {
   hostname: string;
   os: string;
   kernel: string;
-  uptime: number;
+  uptime: number;       // server uptime in seconds
+  panel_uptime: number; // panel uptime in seconds
   panel_version: string;
 }
 
@@ -101,6 +103,7 @@ export default function MainLayout() {
         os: d.system.os,
         kernel: d.system.kernel,
         uptime: d.system.uptime,
+        panel_uptime: d.system.panel_uptime,
         panel_version: d.system.panel_version,
       });
     } catch { /* ignore */ }
@@ -319,6 +322,13 @@ export default function MainLayout() {
                   <FieldTimeOutlined style={{ fontSize: 11 }} />
                   {formatUptime(sysInfo.uptime)}
                 </span>
+                <span style={{ opacity: 0.4 }}>|</span>
+                <Tooltip title={t('dashboard.panel_uptime')}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, opacity: 0.75, flexShrink: 0 }}>
+                    <GatewayOutlined style={{ fontSize: 11 }} />
+                    {formatUptime(sysInfo.panel_uptime)}
+                  </span>
+                </Tooltip>
               </div>
             )}
           </div>

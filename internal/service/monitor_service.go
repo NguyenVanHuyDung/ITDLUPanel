@@ -48,7 +48,8 @@ type SystemInfo struct {
 	Hostname     string `json:"hostname"`
 	OS           string `json:"os"`
 	Kernel       string `json:"kernel"`
-	Uptime       uint64 `json:"uptime"`
+	Uptime       uint64 `json:"uptime"`        // server uptime in seconds
+	PanelUptime  uint64 `json:"panel_uptime"`  // panel uptime in seconds
 	PanelVersion string `json:"panel_version"`
 }
 
@@ -174,11 +175,13 @@ func (s *MonitorService) GetOverview(db *sql.DB) (*SystemOverview, error) {
 	kernelVersion, _ := host.KernelVersion()
 
 	cfg := config.Get()
+	panelUptime := uint64(time.Since(PanelStartedAt).Seconds())
 	overview.System = SystemInfo{
 		Hostname:     hostname,
 		OS:           osInfo.Name + " " + osInfo.Version,
 		Kernel:       kernelVersion,
 		Uptime:       uptime,
+		PanelUptime:  panelUptime,
 		PanelVersion: cfg.Panel.Version,
 	}
 

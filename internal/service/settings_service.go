@@ -44,7 +44,7 @@ type ServerInfo struct {
 	GoVersion string   `json:"go_version"`
 }
 
-var panelStartedAt = time.Now()
+var PanelStartedAt = time.Now()
 
 // SettingsService manages panel settings.
 type SettingsService struct {
@@ -165,7 +165,7 @@ func (s *SettingsService) ConfigurePanelSSL(enable bool) error {
 func (s *SettingsService) GetPanelInfo() (*PanelInfo, error) {
 	cfg := config.Get()
 
-	uptime := time.Since(panelStartedAt).Round(time.Second)
+	uptime := time.Since(PanelStartedAt).Round(time.Second)
 
 	binaryPath, _ := os.Executable()
 
@@ -179,7 +179,7 @@ func (s *SettingsService) GetPanelInfo() (*PanelInfo, error) {
 		Uptime:     uptime.String(),
 		OS:         fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH),
 		GoVersion:  runtime.Version(),
-		StartedAt:  panelStartedAt.Format(time.RFC3339),
+		StartedAt:  PanelStartedAt.Format(time.RFC3339),
 		Port:       cfg.Server.Port,
 		SSLEnabled: cfg.Server.SSL,
 		AdminPath:  cfg.Panel.AdminPath,

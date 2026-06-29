@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Modal, Button, Space, message, Typography, Spin, Select, Form, Input, Switch, Tooltip } from 'antd';
 import {
   PlayCircleOutlined, PauseCircleOutlined, ReloadOutlined,
@@ -36,6 +37,7 @@ const SECTIONS = [
   { key: 'slowlog',      label: 'Slow Log',          icon: <FieldTimeOutlined /> },
   { key: 'binlog',       label: 'Binary Log',        icon: <DatabaseOutlined /> },
   { key: 'memory',       label: 'Memory Protection', icon: <SafetyCertificateOutlined /> },
+  { key: 'rootpwd',      label: 'Root Password',     icon: <SafetyCertificateOutlined /> },
 ] as const;
 
 type SectionKey = (typeof SECTIONS)[number]['key'];
@@ -77,6 +79,7 @@ export default function MariadbManageModal({ open, onClose }: Props) {
       case 'slowlog':      return <SlowLogTab />;
       case 'binlog':       return <BinaryLogTab />;
       case 'memory':       return <MemoryProtectionTab />;
+      case 'rootpwd':      return <RootPasswordTab />;
       default:             return null;
     }
   };
@@ -1072,6 +1075,157 @@ function MemoryProtectionTab() {
             <WarningOutlined style={{ marginRight: 6 }} />
             Changing MemoryMax applies immediately via systemd. If MariaDB exceeds this limit, it may be killed by the OOM killer.
             A service restart is recommended after changing this value.
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// Root Password Tab
+// ============================================================================
+function RootPasswordTab() {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [data, setData] = useState<any>(null);
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const { t } = useTranslation();
+
+  const fetchStatus = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data: resp } = await api.get('/software/mysql/root-password');
+      setData(resp.data);
+    } catch (e: any) {
+      message.error(e.response?.data?.message || 'Failed to load root password status');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchStatus(); }, [fetchStatus]);
+
+  const handleChangePassword = async () => {
+    if (password.length < 8) {
+      message.error('Password must be at least 8 characters');
+      return;
+    }
+    if (password !== confirmPassword) {
+      message.error('Passwords do not match');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await api.post('/software/mysql/root-password', { password });
+      message.success('MariaDB root password changed successfully');
+      setPassword('');
+      setConfirmPassword('');
+      fetchStatus();
+    } catch (e: any) {
+      message.error(e.response?.data?.message || 'Failed to change root password');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <div style={{ marginBottom: 20 }}>
+        <Text style={{ fontSize: 16, fontWeight: 600, color: TEXT_PRIMARY }}>Root Password Management</Text>
+        <Text style={{ fontSize: 12, color: TEXT_SECONDARY, display: 'block', marginTop: 4 }}>
+          Change the MariaDB root password. This affects all applications using root access.
+        </Text>
+      </div>
+
+      {loading ? <Spin /> : (
+        <>
+          {/* Status info */}
+          <div style={{ borderRadius: 10, overflow: 'hidden', border: `1px solid ${BORDER}`, marginBottom: 24 }}>
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '12px 16px',
+              background: data?.has_password ? '#E8F5E9' : '#FFF3E0',
+              borderBottom: `1px solid ${BORDER}`,
+            }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: data?.has_password ? '#2E7D32' : '#E65100' }}>
+                {data?.has_password ? '✓ Password is set' : '⚠ No password set'}
+              </span>
+              <Button size="small" icon={<ReloadOutlined />} onClick={fetchStatus} style={{ borderRadius: 4 }}>
+                Refresh
+              </Button>
+            </div>
+            {data?.password_last_changed && (
+              <div style={{ padding: '12px 16px', background: '#FAFBFC' }}>
+                <span style={{ fontSize: 13, color: TEXT_SECONDARY }}>Password last changed: </span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: TEXT_PRIMARY }}>{data.password_last_changed}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Change password form */}
+          <div style={{
+            padding: 20, borderRadius: 10,
+            background: '#F8FAFC', border: `1px solid ${BORDER}`,
+          }}>
+            <Text style={{ fontSize: 14, fontWeight: 600, color: TEXT_PRIMARY, display: 'block', marginBottom: 16 }}>
+              Change Root Password
+            </Text>
+
+            <Form layout="vertical">
+              <Form.Item label={<span style={{ fontWeight: 600 }}>New Password</span>} required>
+                <Input.Password
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="Enter new password (min 8 characters)"
+                  style={{ fontSize: 14 }}
+                  visibilityToggle={{ visible: showPassword, onVisibleChange: setShowPassword }}
+                />
+              </Form.Item>
+
+              <Form.Item label={<span style={{ fontWeight: 600 }}>Confirm Password</span>} required>
+                <Input.Password
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm new password"
+                  style={{ fontSize: 14 }}
+                  visibilityToggle={{ visible: showPassword, onVisibleChange: setShowPassword }}
+                />
+              </Form.Item>
+
+              <Form.Item>
+                <Space>
+                  <Button
+                    type="primary"
+                    onClick={handleChangePassword}
+                    loading={saving}
+                    disabled={!password || !confirmPassword}
+                    style={{ background: PRIMARY, borderColor: PRIMARY, borderRadius: 6 }}
+                  >
+                    Change Password
+                  </Button>
+                  <Button
+                    onClick={() => { setPassword(''); setConfirmPassword(''); }}
+                    disabled={saving}
+                    style={{ borderRadius: 6 }}
+                  >
+                    Clear
+                  </Button>
+                </Space>
+              </Form.Item>
+            </Form>
+          </div>
+
+          {/* Warning */}
+          <div style={{
+            marginTop: 16, padding: '12px 16px', borderRadius: 8,
+            background: '#FFF3E0', border: '1px solid #FFCC80', fontSize: 12, color: '#E65100',
+          }}>
+            <WarningOutlined style={{ marginRight: 8 }} />
+            <strong>Important:</strong> After changing the root password, make sure to update the password in all applications that connect to MariaDB using root credentials.
           </div>
         </>
       )}

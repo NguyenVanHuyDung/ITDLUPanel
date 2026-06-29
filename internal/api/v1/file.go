@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -53,6 +55,7 @@ func (h *FileHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.HandlerFunc
 		files.GET("/search", rbac("files.read"), h.search)
 		files.GET("/search-content", rbac("files.read"), h.searchContent)
 		files.POST("/calculate-size", rbac("files.read"), h.calculateSize)
+		files.POST("/remote-download", rbac("files.write"), h.remoteDownload)
 	}
 }
 
@@ -773,6 +776,124 @@ func (h *FileHandler) calculateSize(c *gin.Context) {
 	response.Success(c, gin.H{
 		"path": req.Path,
 		"size": size,
+	})
+}
+
+// ── Remote download ─────────────────────────────────────────────────────
+
+type remoteDownloadRequest struct {
+	URL      string `json:"url" validate:"required,url"`
+	Dest     string `json:"dest" validate:"required"`
+	Filename string `json:"filename"`
+}
+
+func (h *FileHandler) remoteDownload(c *gin.Context) {
+	var req remoteDownloadRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "body", Message: "invalid request body: url must be a valid URL"},
+		})
+		return
+	}
+	if errs := validator.Validate(req); errs != nil {
+		response.ValidationError(c, errs)
+		return
+	}
+
+	// Security: check for path traversal
+	if strings.Contains(req.Dest, "..") {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "dest", Message: "path traversal is not allowed"},
+		})
+		return
+	}
+	destDir := filepath.Clean(req.Dest)
+	if !filepath.IsAbs(destDir) {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "dest", Message: "destination must be an absolute path"},
+		})
+		return
+	}
+
+	// Create HTTP client with timeout
+	client := &http.Client{
+		Timeout: 5 * time.Minute,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	// Create request
+	httpReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, req.URL, nil)
+	if err != nil {
+		response.Error(c, apperrors.New(apperrors.ErrValidation, "invalid URL"))
+		return
+	}
+	httpReq.Header.Set("User-Agent", "ITDLUPanel/1.0")
+
+	// Execute request
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		logger.Error().Err(err).Str("url", req.URL).Msg("remote download failed")
+		response.Error(c, apperrors.New(apperrors.ErrInternal, "failed to connect to remote URL: "+err.Error()))
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		response.Error(c, apperrors.New(apperrors.ErrInternal, fmt.Sprintf("remote server returned status %d", resp.StatusCode)))
+		return
+	}
+
+	// Determine filename
+	filename := req.Filename
+	if filename == "" {
+		// Try to get filename from Content-Disposition header
+		contentDisp := resp.Header.Get("Content-Disposition")
+		if strings.Contains(contentDisp, "filename=") {
+			parts := strings.Split(contentDisp, "filename=")
+			if len(parts) > 1 {
+				filename = strings.Trim(strings.Split(parts[1], ";")[0], "\" ")
+			}
+		}
+		// Fallback: extract from URL
+		if filename == "" {
+			u, _ := url.Parse(req.URL)
+			filename = filepath.Base(u.Path)
+		}
+	}
+
+	if filename == "" {
+		filename = "downloaded_file"
+	}
+
+	// Create destination path
+	destPath := filepath.Join(destDir, filename)
+
+	// Create file
+	f, err := os.Create(destPath)
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to create destination file"))
+		return
+	}
+	defer f.Close()
+
+	// Copy with progress tracking (using io.Copy, server-side download)
+	written, err := io.Copy(f, resp.Body)
+	f.Close()
+	if err != nil {
+		os.Remove(destPath)
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to save file"))
+		return
+	}
+
+	logger.Info().Str("url", req.URL).Str("dest", destPath).Int64("size", written).Msg("remote download completed")
+
+	response.Success(c, gin.H{
+		"path":     destPath,
+		"filename": filename,
+		"size":     written,
+		"message":  "downloaded",
 	})
 }
 

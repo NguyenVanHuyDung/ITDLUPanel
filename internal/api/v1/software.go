@@ -69,6 +69,8 @@ func (h *SoftwareHandler) RegisterRoutes(rg *gin.RouterGroup, authMW, adminMW gi
 		sw.GET("/mysql/memory-protection", h.getMariaDBMemoryProtection)
 		sw.PUT("/mysql/memory-protection", h.setMariaDBMemoryProtection)
 		sw.GET("/mysql/ram-plans", h.getMariaDBRAMPlans)
+		sw.GET("/mysql/root-password", h.getMariaDBRootPasswordStatus)
+		sw.POST("/mysql/root-password", h.setMariaDBRootPassword)
 
 		// PostgreSQL management
 		sw.GET("/postgresql/connections", h.getPostgreSQLConnections)
@@ -1427,4 +1429,32 @@ func (h *SoftwareHandler) deleteEnvoyListener(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": fmt.Sprintf("listener on port %d removed", port)})
+}
+
+// getMariaDBRootPasswordStatus returns whether root password is set and last changed date.
+func (h *SoftwareHandler) getMariaDBRootPasswordStatus(c *gin.Context) {
+	info, err := h.softwareService.GetMariaDBRootPasswordStatus()
+	if err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to get root password status"))
+		return
+	}
+	response.Success(c, info)
+}
+
+// setMariaDBRootPassword changes the MariaDB root password.
+func (h *SoftwareHandler) setMariaDBRootPassword(c *gin.Context) {
+	var req struct {
+		Password string `json:"password" binding:"required,min=8"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "password", Message: "password is required and must be at least 8 characters"},
+		})
+		return
+	}
+	if err := h.softwareService.SetMariaDBRootPassword(req.Password); err != nil {
+		response.Error(c, apperrors.Wrap(err, apperrors.ErrInternal, "failed to set root password"))
+		return
+	}
+	response.Success(c, gin.H{"message": "MariaDB root password updated successfully"})
 }

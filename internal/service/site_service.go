@@ -1208,6 +1208,16 @@ func (s *SiteService) EnableSSL(id int64, certPath, keyPath, sslType string) err
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to regenerate vhost config with SSL")
 	}
 
+	// Rebuild reverse proxy rules after regenerating vhost (proxy rules are lost during regeneration)
+	if site.SiteType == "proxy" {
+		rules, err := s.GetReverseProxyRules(id)
+		if err == nil && len(rules) > 0 {
+			if err := s.rebuildReverseProxy(site, rules); err != nil {
+				logger.Warn().Err(err).Int64("id", id).Msg("failed to rebuild reverse proxy after SSL enable (non-fatal)")
+			}
+		}
+	}
+
 	logger.Info().Int64("id", id).Str("domain", site.Domain).Str("type", sslType).Msg("SSL enabled for site")
 	return nil
 }
@@ -1281,6 +1291,16 @@ func (s *SiteService) DisableSSL(id int64) error {
 	site.SSLType = nil
 	if err := s.regenerateVhost(site); err != nil {
 		return apperrors.Wrap(err, apperrors.ErrInternal, "failed to regenerate vhost config")
+	}
+
+	// Rebuild reverse proxy rules after regenerating vhost (proxy rules are lost during regeneration)
+	if site.SiteType == "proxy" {
+		rules, err := s.GetReverseProxyRules(id)
+		if err == nil && len(rules) > 0 {
+			if err := s.rebuildReverseProxy(site, rules); err != nil {
+				logger.Warn().Err(err).Int64("id", id).Msg("failed to rebuild reverse proxy after SSL disable (non-fatal)")
+			}
+		}
 	}
 
 	logger.Info().Int64("id", id).Str("domain", site.Domain).Msg("SSL disabled for site")

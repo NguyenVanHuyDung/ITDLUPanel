@@ -4691,3 +4691,67 @@ func (s *SoftwareService) RemoveEnvoyListener(port int) error {
 
 	return s.UpdateEnvoyConfig(string(newContent))
 }
+
+// GetMariaDBRootPasswordStatus returns the status of MariaDB root password.
+func (s *SoftwareService) GetMariaDBRootPasswordStatus() (map[string]interface{}, error) {
+	// Check if MariaDB service is running
+	svcName, _ := s.resolveServiceName("mysql")
+	res, err := system.ExecWithTimeout(5*time.Second, "systemctl", "is-active", svcName)
+	if err != nil || strings.TrimSpace(res.Stdout) != "active" {
+		return nil, fmt.Errorf("MariaDB service is not running")
+	}
+
+	result := map[string]interface{}{
+		"has_password": true,
+	}
+
+	// Check when password was last changed by querying mysql.user
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Query for root user password last changed
+	cmd := "mysql -u root -e \"SELECT Password_last_changed FROM mysql.user WHERE User='root' AND Host='localhost' LIMIT 1;\" 2>/dev/null || echo ''"
+	output, err := system.Exec(ctx, "bash", "-c", cmd)
+	if err == nil && strings.TrimSpace(output.Stdout) != "" {
+		lines := strings.Split(strings.TrimSpace(output.Stdout), "\n")
+		if len(lines) >= 2 {
+			result["password_last_changed"] = strings.TrimSpace(lines[1])
+		}
+	}
+
+	return result, nil
+}
+
+// SetMariaDBRootPassword changes the MariaDB root password.
+func (s *SoftwareService) SetMariaDBRootPassword(password string) error {
+	if len(password) < 8 {
+		return fmt.Errorf("password must be at least 8 characters")
+	}
+
+	// Check if MariaDB service is running
+	svcName, _ := s.resolveServiceName("mysql")
+	res, err := system.ExecWithTimeout(5*time.Second, "systemctl", "is-active", svcName)
+	if err != nil || strings.TrimSpace(res.Stdout) != "active" {
+		return fmt.Errorf("MariaDB service is not running")
+	}
+
+	// Escape password for MySQL
+	escapedPassword := strings.ReplaceAll(password, "'", "'\"'\"'")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Change root password using mysql admin or set password statement
+	cmd := fmt.Sprintf("mysql -u root -e \"ALTER USER 'root'@'localhost' IDENTIFIED BY '%s'; FLUSH PRIVILEGES;\" 2>&1", escapedPassword)
+	output, err := system.Exec(ctx, "bash", "-c", cmd)
+	if err != nil {
+		// Try alternative method with mysqladmin
+		cmd2 := fmt.Sprintf("mysqladmin -u root password '%s' 2>&1", escapedPassword)
+		output2, err2 := system.Exec(ctx, "bash", "-c", cmd2)
+		if err2 != nil {
+			return fmt.Errorf("failed to change MariaDB root password: %s %s", output.Stdout, output2.Stdout)
+		}
+	}
+
+	return nil
+}

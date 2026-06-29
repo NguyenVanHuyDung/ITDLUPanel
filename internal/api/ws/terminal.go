@@ -20,6 +20,12 @@ type resizeMsg struct {
 	Rows uint16 `json:"rows"`
 }
 
+// inputMsg is the JSON envelope sent by xterm.js when terminal input is received.
+type inputMsg struct {
+	Type string `json:"type"`
+	Data string `json:"data"`
+}
+
 // PermissionChecker is a callback that reports whether a role has a permission.
 // Injected from the app layer to avoid a circular import.
 type PermissionChecker func(role, permission string) bool
@@ -118,7 +124,7 @@ func HandleTerminal(termService *service.TerminalService, checkPerm PermissionCh
 				break
 			}
 
-			// Text messages may be resize commands from xterm.js.
+			// Text messages may be JSON commands from xterm.js.
 			if msgType == gorillaws.TextMessage {
 				var rm resizeMsg
 				if json.Unmarshal(msg, &rm) == nil && rm.Type == "resize" {
@@ -130,9 +136,25 @@ func HandleTerminal(termService *service.TerminalService, checkPerm PermissionCh
 					}
 					continue
 				}
+
+				var im inputMsg
+				if json.Unmarshal(msg, &im) == nil && im.Type == "input" {
+					if _, err := ptmx.Write([]byte(im.Data)); err != nil {
+						logger.Debug().Err(err).Str("session_id", session.ID).Msg("PTY write error")
+						break
+					}
+					continue
+				}
+
+				// Fallback: raw text input for backward compatibility
+				if _, err := ptmx.Write(msg); err != nil {
+					logger.Debug().Err(err).Str("session_id", session.ID).Msg("PTY write error")
+					break
+				}
+				continue
 			}
 
-			// Everything else is stdin input.
+			// Binary messages are raw PTY stdin.
 			if _, err := ptmx.Write(msg); err != nil {
 				logger.Debug().Err(err).Str("session_id", session.ID).Msg("PTY write error")
 				break
