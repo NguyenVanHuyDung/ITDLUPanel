@@ -35,6 +35,7 @@ func (h *CloudStorageHandler) RegisterRoutes(rg *gin.RouterGroup, authMW gin.Han
 		g.DELETE("/:id", rbac("backup.delete"), h.Delete)
 		g.POST("/:id/test", rbac("backup.read"), h.TestByID)
 		g.POST("/test", rbac("backup.read"), h.TestInline)
+		g.GET("/:id/quota", rbac("backup.read"), h.GetGoogleDriveQuota)
 		// Standard OAuth redirect URL — kept for OneDrive (which supports
 		// redirect URIs) and for Google Drive if the operator has a
 		// proper public HTTPS domain.
@@ -357,6 +358,47 @@ func (h *CloudStorageHandler) OAuthCallback(c *gin.Context) {
 </script>
 </body>
 </html>`)
+}
+
+// GetGoogleDriveQuota returns the Google Drive storage quota for a specific storage.
+// Returns quota info including limit, usage, usageInDrive, and available space.
+func (h *CloudStorageHandler) GetGoogleDriveQuota(c *gin.Context) {
+	id, err := parseID(c, "id")
+	if err != nil {
+		return
+	}
+
+	redirectURL := oauthCallbackURL(c)
+	cs, err := h.cloudStorageService.GetByID(id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	// Only Google Drive supports quota
+	if cs.Type != "google_drive" {
+		response.ValidationError(c, []response.FieldError{
+			{Field: "type", Message: "quota is only available for Google Drive storage"},
+		})
+		return
+	}
+
+	quota, err := h.cloudStorageService.GetGoogleDriveQuota(id, redirectURL)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{
+		"limit":        quota.Limit,
+		"usage":        quota.Usage,
+		"usage_in_drive": quota.UsageInDrive,
+		"available":    quota.Available,
+		"limit_gb":     float64(quota.Limit) / 1e9,
+		"usage_gb":     float64(quota.Usage) / 1e9,
+		"available_gb": float64(quota.Available) / 1e9,
+		"usage_pct":    0.0,
+	})
 }
 
 // oauthCallbackURL constructs the OAuth callback URL from the request.

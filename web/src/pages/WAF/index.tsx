@@ -133,6 +133,7 @@ interface WAFStatus {
   installed: boolean; running: boolean; haproxy_installed: boolean; coraza_installed: boolean;
   version: string; mode: string; uptime: number; total_sites: number; active_sites: number;
   total_rules: number; active_rules: number; blocked_today: number; total_requests_today: number;
+  webserver_installed: boolean;
 }
 
 interface WAFSite {

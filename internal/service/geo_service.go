@@ -126,7 +126,11 @@ func (s *GeoService) LookupBatch(ips []string) (map[string]*GeoInfo, error) {
 
 	// Fetch in batches with rate limiting
 	for i := 0; i < len(uniqueIPs); i += geoAPIBatchSize {
-		batch := uniqueIPs[i:min(i+geoAPIBatchSize, len(uniqueIPs))]
+		end := i + geoAPIBatchSize
+		if end > len(uniqueIPs) {
+			end = len(uniqueIPs)
+		}
+		batch := uniqueIPs[i:end]
 		infos, err := s.fetchBatchFromAPI(batch)
 		if err != nil {
 			logger.Warn().Err(err).Msg("failed to batch lookup IPs")

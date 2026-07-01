@@ -164,17 +164,40 @@ func (h *LogHandler) GetAuditLog(c *gin.Context) {
 		return
 	}
 
+	// Get geo data for unique IPs in audit entries
+	geoData, geoErr := h.logService.GetGeoForAuditEntries(entries)
+	if geoErr != nil {
+		logger.Warn().Err(geoErr).Msg("failed to get geo data for audit entries")
+	}
+	geoCount := 0
+	if geoData != nil {
+		geoCount = len(geoData)
+	}
+	logger.Info().
+		Int("entries", len(entries)).
+		Int("geo_count", geoCount).
+		Interface("geo_data", geoData).
+		Msg("audit log geo lookup result")
+
 	totalPages := total / q.PageSize
 	if total%q.PageSize > 0 {
 		totalPages++
 	}
 
-	response.Paginated(c, entries, response.Pagination{
-		Page:       q.Page,
-		PerPage:    q.PageSize,
-		Total:      int64(total),
-		TotalPages: totalPages,
-	})
+	resp := gin.H{
+		"data":       entries,
+		"pagination": gin.H{
+			"page":        q.Page,
+			"per_page":    q.PageSize,
+			"total":       total,
+			"total_pages": totalPages,
+		},
+	}
+	if geoData != nil {
+		resp["geo"] = geoData
+	}
+
+	response.Success(c, resp)
 }
 
 // ClearLog truncates a log file by type.

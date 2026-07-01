@@ -365,6 +365,7 @@ export default function Logs() {
   const [auditStatusFilter, setAuditStatusFilter] = useState<'all' | 'success' | 'failed'>('all');
   const [auditDateRange, setAuditDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
   const [auditExpandedRows, setAuditExpandedRows] = useState<Set<number>>(new Set());
+  const [auditGeoData, setAuditGeoData] = useState<Record<string, GeoInfo>>({});
 
   // Panel log filters
   const [durationFilter, setDurationFilter] = useState<number>(0);
@@ -444,13 +445,21 @@ export default function Logs() {
   const fetchAuditLog = useCallback(async (page: number, pageSize: number) => {
     setLoading(true);
     try {
-      const { data } = await api.get<ApiResponse<AuditEntry[]>>('/logs/audit', {
+      const { data } = await api.get<ApiResponse<{ data: AuditEntry[]; geo?: Record<string, GeoInfo> }>>('/logs/audit', {
         params: { page, page_size: pageSize },
       });
-      setAuditData(data.data ?? []);
+      // Response is wrapped by response.Success(), so actual data is in data.data
+      const respData = (data as unknown as { data?: { data: AuditEntry[]; geo?: Record<string, GeoInfo> } }).data;
+      const auditEntries = respData?.data ?? [];
+      setAuditData(Array.isArray(auditEntries) ? auditEntries : []);
+      // Extract geo data if available
+      const geoInfo = respData?.geo;
+      if (geoInfo) {
+        setAuditGeoData(geoInfo);
+      }
       // Backend returns paginated payload via response.Paginated → pagination.total
-      const resp = data as unknown as { pagination?: { total: number } };
-      setAuditTotal(resp.pagination?.total ?? 0);
+      const resp = data as unknown as { data?: { pagination?: { total: number } } };
+      setAuditTotal(resp?.data?.pagination?.total ?? 0);
     } catch {
       message.error(t('common.error'));
     } finally {
@@ -496,6 +505,9 @@ export default function Logs() {
   // Country code to flag emoji
   const countryToFlag = (code: string): string => {
     if (!code || code.length !== 2) return '';
+    // #region DEBUG: countryToFlag function
+    fetch('http://localhost:7258/ingest/f2ceb8fe-c770-492f-8f75-097acb47e951',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c3def'},body:JSON.stringify({sessionId:'3c3def',id:'log_flag_fn',timestamp:Date.now(),location:'Logs/index.tsx:509',message:'countryToFlag called',data:{input:code,charCodes:[code?.charCodeAt(0),code?.charCodeAt(1)],result:code.toUpperCase().split('').map(c => String.fromCodePoint(127397 + c.charCodeAt(0))).join('')},runId:'debug',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
     return code.toUpperCase().split('').map(c => String.fromCodePoint(127397 + c.charCodeAt(0))).join('');
   };
 
@@ -508,12 +520,18 @@ export default function Logs() {
         params.end_date = dateRange[1].format('YYYY-MM-DD');
       }
       const { data } = await api.get<ApiResponse<{ lines: string | string[], total_lines?: number, stats?: BackendStats, geo?: Record<string, GeoInfo> }>>(`/logs/website/${siteId}/${logType}`, { params });
+      // Backend response is wrapped: { code, message, data: { lines, geo, stats } }
       const raw = data.data?.lines;
       if (Array.isArray(raw)) setWebsiteLines(raw);
       else if (typeof raw === 'string') setWebsiteLines(raw.split('\n').filter(Boolean));
       else setWebsiteLines([]);
       setWsBackendStats(data.data?.stats ?? null);
+      // Debug: log geo data to console
+      console.log('[WebsiteLog] geo data:', data.data?.geo);
       setWsGeoData(data.data?.geo ?? {});
+      // #region DEBUG: flag rendering diagnostics
+      fetch('http://localhost:7258/ingest/f2ceb8fe-c770-492f-8f75-097acb47e951',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c3def'},body:JSON.stringify({sessionId:'3c3def',id:'log_geo_fetch',timestamp:Date.now(),location:'Logs/index.tsx:528',message:'wsGeoData set',data:{geoKeys:Object.keys(data.data?.geo ?? {}),sample:Object.values(data.data?.geo ?? {})[0]},runId:'debug',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
     } catch {
       setWebsiteLines([]);
       setWsBackendStats(null);
@@ -1041,14 +1059,29 @@ export default function Logs() {
       ),
     },
     {
-      title: t('logs.audit.col_ip'), dataIndex: 'ip', key: 'ip', width: isMobile ? 90 : 120,
-      render: (v: string) => v ? (
-        <span style={{
-          fontSize: 11, padding: '2px 7px', borderRadius: 4,
-          background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-          color: p.textMuted, fontFamily: 'monospace',
-        }}>{v}</span>
-      ) : <span style={{ color: p.textDim }}>—</span>,
+      title: t('logs.audit.col_ip'), dataIndex: 'ip', key: 'ip', width: isMobile ? 110 : 160,
+      render: (v: string) => {
+        if (!v) return <span style={{ color: p.textDim }}>—</span>;
+        const geo = auditGeoData[v];
+        // #region DEBUG: audit log flag rendering
+        fetch('http://localhost:7258/ingest/f2ceb8fe-c770-492f-8f75-097acb47e951',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c3def'},body:JSON.stringify({sessionId:'3c3def',id:'log_audit_flag',timestamp:Date.now(),location:'Logs/index.tsx:1062',message:'Audit IP render',data:{ip:v,hasGeo:!!geo,geoCountryCode:geo?.country_code,countryLen:geo?.country_code?.length,flagResult:geo?.country_code ? countryToFlag(geo.country_code) : null},runId:'debug',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
+        const flag = geo?.country_code ? countryToFlag(geo.country_code) : null;
+        return (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            {flag && (
+              <Tooltip title={geo.country || geo.country_code}>
+                <span style={{ fontSize: 14 }}>{flag}</span>
+              </Tooltip>
+            )}
+            <span style={{
+              fontSize: 11, padding: '2px 7px', borderRadius: 4,
+              background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+              color: p.textMuted, fontFamily: 'monospace',
+            }}>{v}</span>
+          </span>
+        );
+      },
     },
     {
       title: t('logs.audit.col_status'), key: 'status', width: 80,
@@ -1087,12 +1120,24 @@ export default function Logs() {
       render: (v: string) => {
         if (!v) return <span style={{ fontSize: 10, color: p.textDim, fontStyle: 'italic' }}>—</span>;
         const geo = wsGeoData[v];
+        // #region DEBUG: website log flag rendering
+        fetch('http://localhost:7258/ingest/f2ceb8fe-c770-492f-8f75-097acb47e951',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c3def'},body:JSON.stringify({sessionId:'3c3def',id:'log_ws_flag',timestamp:Date.now(),location:'Logs/index.tsx:1120',message:'Website IP render',data:{ip:v,hasGeo:!!geo,geoCountryCode:geo?.country_code,countryLen:geo?.country_code?.length,flagResult:geo?.country_code ? countryToFlag(geo.country_code) : null},runId:'debug',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
         const flag = geo?.country_code ? countryToFlag(geo.country_code) : null;
         return (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            {flag && (
-              <Tooltip title={geo.country || geo.country_code}>
-                <span style={{ fontSize: 14 }}>{flag}</span>
+            {geo && (
+              <Tooltip title={`${geo.country || geo.country_code}${geo.city ? ', ' + geo.city : ''}`}>
+                <span style={{ 
+                  fontSize: 12, 
+                  fontWeight: 500, 
+                  color: '#1890ff',
+                  background: 'rgba(24,144,255,0.1)',
+                  padding: '1px 5px', 
+                  borderRadius: 3 
+                }}>
+                  {flag ? flag : geo.country_code}
+                </span>
               </Tooltip>
             )}
             <span

@@ -75,9 +75,11 @@ export default function Login() {
   };
 
   const languageItems: MenuProps['items'] = [
-    { key: 'en', label: '🇺🇸 English' },
+    // #region DEBUG: login language
+    (() => { fetch('http://localhost:7258/ingest/f2ceb8fe-c770-492f-8f75-097acb47e951',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c3def'},body:JSON.stringify({sessionId:'3c3def',id:'log_login_lang',timestamp:Date.now(),location:'Login/index.tsx:78',message:'Login languageItems',data:{emoji:'🇺🇸',charCodes:Array.from('🇺🇸').map(c=>c.codePointAt(0))},runId:'debug',hypothesisId:'D'})}).catch(()=>{}); return { key: 'en', label: '🇺🇸 English' }; })(),
     { key: 'vi', label: '🇻🇳 Tiếng Việt' },
   ];
+  // #endregion
 
   return (
     <div style={{ width: '100%', maxWidth: 420, padding: '0 16px' }}>

@@ -405,7 +405,96 @@ Languages: JavaScript, TypeScript, Python, Go, PHP,
 
 ---
 
-## Slide 14: SSL Certificates
+## Slide 14: Hệ Thống Logs Toàn Diện
+
+# Quản Lý Logs Thông Minh
+
+### Tổng Quan Logs
+
+```
+┌───────────────────────────────────────────────────────────────────┐
+│  📋 ITDLUPanel Log Center                                         │
+│  ┌──────────────────────────────────────────────────────────────┐ │
+│  │  🔍 Filter: [All Logs ▼] [Date Range] [Search...]            │ │
+│  ├──────────────────────────────────────────────────────────────┤ │
+│  │  📅 2026-06-30 14:25:03  [AUDIT]  User admin logged in       │ │
+│  │  📅 2026-06-30 14:24:58  [ERROR]  Nginx: connection failed   │ │
+│  │  📅 2026-06-30 14:23:15  [INFO]   Backup completed: db.sql   │ │
+│  │  📅 2026-06-30 14:22:01  [WARN]   SSH: failed login attempt  │ │
+│  │  📅 2026-06-30 14:20:33  [PANEL]  Service nginx restarted    │ │
+│  └──────────────────────────────────────────────────────────────┘ │
+│  [Download] [Export] [Clear Old] [Settings]                       │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+### Các Loại Logs
+
+|| Type | Description | Location |
+|------|-------------|----------|
+| 📊 **Panel Logs** | Hoạt động của panel (login, logout, config changes) | `/var/log/itdlupanel/panel.log` |
+| 💻 **SSH Logs** | Kết nối SSH, failed login attempts | `/var/log/auth.log` |
+| 🌐 **Website Logs** | Access logs, error logs per domain | `/var/www/{domain}/logs/` |
+| 🔒 **Audit Logs** | Tất cả actions của admin | SQLite database |
+| 🐳 **Docker Logs** | Container logs, stdout/stderr | `docker logs {container}` |
+| 🔄 **Service Logs** | Systemd services, cron jobs | `/var/log/syslog` |
+
+### Tính Năng Chính
+
+- 🔍 **Advanced Filtering**: Lọc theo loại, ngày, mức độ nghiêm trọng
+- 📅 **Date Range Picker**: Chọn khoảng thời gian xem logs
+- 🔎 **Full-Text Search**: Tìm kiếm nội dung log
+- 📥 **Export**: Xuất logs ra JSON, CSV, TXT
+- 🗜️ **Auto-Compression**: Nén logs cũ tự động
+- ⏰ **Retention Policy**: Cấu hình số ngày lưu trữ
+
+### Log Levels
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Log Levels                                                       │
+│                                                                  │
+│  🔴 CRITICAL  - Lỗi nghiêm trọng, cần can thiệp ngay           │
+│  🟠 ERROR     - Lỗi hoạt động không bình thường                 │
+│  🟡 WARNING   - Cảnh báo, có thể ảnh hưởng                      │
+│  🔵 INFO      - Thông tin hoạt động bình thường                 │
+│  ⚪ DEBUG     - Chi tiết debug (dev mode)                        │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Security Audit Logs
+
+|| Field | Description |
+|-------|-------------|
+| Timestamp | Thời gian chính xác (timezone) |
+| User | Tài khoản thực hiện |
+| Action | Hành động (create/delete/update/restart) |
+| Resource | Đối tượng bị tác động |
+| IP Address | Địa chỉ IP của người dùng |
+| Result | Thành công/Thất bại |
+
+### Website Access Logs
+
+```
+# Apache/Nginx Access Log Format
+[30/Jun/2026:14:25:03 +0700] "GET /api/users HTTP/1.1" 200 1234
+[30/Jun/2026:14:25:04 +0700] "POST /login HTTP/1.1" 302 0
+[30/Jun/2026:14:25:05 +0700] "GET /dashboard HTTP/1.1" 200 5678
+```
+
+### Quick Actions
+
+|| Action | Description |
+|--------|-------------|
+| View Live | Xem logs realtime với auto-refresh |
+| Download | Tải toàn bộ log file |
+| Search | Tìm kiếm nội dung |
+| Archive | Nén và lưu trữ logs cũ |
+| Purge | Xóa logs theo retention policy |
+
+---
+
+## Slide 15: SSL Certificates
 
 # Quản Lý SSL Certificate
 
@@ -441,7 +530,7 @@ Languages: JavaScript, TypeScript, Python, Go, PHP,
 
 ---
 
-## Slide 15: Backup & Storage
+## Slide 16: Backup & Storage
 
 # Backup & Cloud Storage
 
@@ -479,7 +568,7 @@ Languages: JavaScript, TypeScript, Python, Go, PHP,
 
 ---
 
-## Slide 16: Internationalization
+## Slide 17: Internationalization
 
 # Đa Ngôn Ngữ
 
@@ -514,7 +603,7 @@ Languages: JavaScript, TypeScript, Python, Go, PHP,
 
 ---
 
-## Slide 17: Code Statistics
+## Slide 18: Code Statistics
 
 # Dự Án Bằng Con Số
 
@@ -553,7 +642,7 @@ Custom Hooks: 7
 
 ---
 
-## Slide 18: Deployment
+## Slide 19: Deployment
 
 # Triển Khai Dễ Dàng
 
@@ -594,7 +683,7 @@ vim config/panel.json
 
 ---
 
-## Slide 19: Roadmap
+## Slide 20: Roadmap
 
 # Lộ Trình Phát Triển
 
@@ -622,7 +711,7 @@ vim config/panel.json
 
 ---
 
-## Slide 20: Kết Luận
+## Slide 21: Kết Luận
 
 # Cảm Ơn!
 

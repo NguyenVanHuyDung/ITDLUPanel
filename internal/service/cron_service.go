@@ -32,7 +32,7 @@ var cronExprRegex = regexp.MustCompile(`^\S+\s+\S+\s+\S+\s+\S+\s+\S+$`)
 // CreateCronRequest holds data for creating a new cron job.
 type CreateCronRequest struct {
 	Name        string  `json:"name" validate:"required,min=1,max=255"`
-	Type        string  `json:"type" validate:"required,oneof=shell url backup_site backup_db"`
+	Type        string  `json:"type" validate:"required,oneof=shell url backup_site backup_db backup_panel"`
 	Schedule    string  `json:"schedule" validate:"required,cron_expr"`
 	Command     string  `json:"command" validate:"required"`
 	StorageType string  `json:"storage_type"`
@@ -43,7 +43,7 @@ type CreateCronRequest struct {
 // UpdateCronRequest holds data for updating an existing cron job.
 type UpdateCronRequest struct {
 	Name        string  `json:"name" validate:"omitempty,min=1,max=255"`
-	Type        string  `json:"type" validate:"omitempty,oneof=shell url backup_site backup_db"`
+	Type        string  `json:"type" validate:"omitempty,oneof=shell url backup_site backup_db backup_panel"`
 	Schedule    string  `json:"schedule" validate:"omitempty,cron_expr"`
 	Command     string  `json:"command" validate:"omitempty"`
 	StorageType *string `json:"storage_type"`
@@ -497,7 +497,7 @@ func (s *CronService) buildCrontabCommand(id int64) string {
 	}
 
 	switch job.Type {
-	case "backup_site", "backup_db":
+	case "backup_site", "backup_db", "backup_panel":
 		// `command` is a JSON-ish mini-spec the frontend writes
 		// (e.g. `{"target":"example.com","all":false,"max_keep":5}`).
 		// We translate it into real `panel backup` flags here so the
@@ -531,10 +531,14 @@ func (s *CronService) buildCrontabCommand(id int64) string {
 
 // backupTypeFor converts a cron type into the CLI's -type flag value.
 func backupTypeFor(cronType string) string {
-	if cronType == "backup_db" {
+	switch cronType {
+	case "backup_db":
 		return "database"
+	case "backup_panel":
+		return "panel"
+	default:
+		return "site"
 	}
-	return "site"
 }
 
 // backupCommandSpec is the mini-spec the frontend writes into

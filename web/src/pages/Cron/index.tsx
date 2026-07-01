@@ -9,7 +9,7 @@ import {
   MailOutlined, HddOutlined, DesktopOutlined, ToolOutlined,
   SyncOutlined, FileTextOutlined, SecurityScanOutlined, AlertOutlined,
   ClearOutlined, MonitorOutlined, CodeOutlined, SwapOutlined,
-  CloudUploadOutlined,
+  CloudUploadOutlined, CloudOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import type { ApiResponse } from '@/types';
@@ -141,40 +141,40 @@ const CRON_TEMPLATES: CronTemplate[] = [
     name: 'Backup All Databases',
     description: 'Backup every MySQL/MariaDB database (registered in panel DB)',
     schedule: '0 2 * * *',
-    command: 'itdlupanel backup -type=database -all',
-    type: 'shell', icon: <DatabaseOutlined />, color: '#4479A1',
+    command: '{"all":true,"max_keep":10}',
+    type: 'backup_db', icon: <DatabaseOutlined />, color: '#4479A1',
     cliBackupType: 'database', backupAll: true, defaultMaxKeep: 10,
   },
   {
     name: 'Backup Single Database',
     description: 'Backup a specific database — select below',
     schedule: '0 3 * * *',
-    command: 'itdlupanel backup -type=database -target=mydb',
-    type: 'shell', icon: <DatabaseOutlined />, color: '#2E7D32',
+    command: '{"target":"mydb","max_keep":10}',
+    type: 'backup_db', icon: <DatabaseOutlined />, color: '#2E7D32',
     cliBackupType: 'database', needsDbPicker: true, defaultMaxKeep: 10,
   },
   {
     name: 'Backup All Sites',
     description: 'Backup every website registered in panel',
     schedule: '0 3 * * *',
-    command: 'itdlupanel backup -type=site -all',
-    type: 'shell', icon: <CloudServerOutlined />, color: '#1565C0',
+    command: '{"all":true,"max_keep":5}',
+    type: 'backup_site', icon: <CloudServerOutlined />, color: '#1565C0',
     cliBackupType: 'site', backupAll: true, defaultMaxKeep: 5,
   },
   {
     name: 'Backup Single Site',
     description: 'Backup a specific website — select below',
     schedule: '0 4 * * *',
-    command: 'itdlupanel backup -type=site -target=example.com',
-    type: 'shell', icon: <FolderOutlined />, color: '#FF9800',
+    command: '{"target":"example.com","max_keep":10}',
+    type: 'backup_site', icon: <FolderOutlined />, color: '#FF9800',
     cliBackupType: 'site', needsSitePicker: true, defaultMaxKeep: 10,
   },
   {
     name: 'Full Panel Backup',
     description: 'Backup panel config + database (configs, data)',
     schedule: '0 1 * * 0',
-    command: 'itdlupanel backup -type=panel',
-    type: 'shell', icon: <SafetyCertificateOutlined />, color: '#9C27B0',
+    command: '{"max_keep":4}',
+    type: 'backup_panel', icon: <SafetyCertificateOutlined />, color: '#9C27B0',
     cliBackupType: 'panel', defaultMaxKeep: 4,
   },
   // ── SSL ──
@@ -410,6 +410,8 @@ export default function Cron() {
   const [storageId, setStorageId] = useState<number | null>(null);
   const [backupStrategy, setBackupStrategy] = useState<'full' | 'incremental'>('full');
   const [storageOptions, setStorageOptions] = useState<{value: string; label: string}[]>([{ value: 'local', label: 'Local Only' }]);
+  const [storageQuotas, setStorageQuotas] = useState<Record<string, { limit: number; usage: number; available: number }>>({});
+  const [loadingQuotas, setLoadingQuotas] = useState(false);
 
   const fetchJobs = useCallback(async () => {
     setLoading(true);
@@ -471,6 +473,32 @@ export default function Cron() {
     })();
   }, []);
 
+  // Fetch Google Drive quota when storage changes to google_drive
+  useEffect(() => {
+    if (storageType.startsWith('google_drive:')) {
+      const id = parseInt(storageType.split(':')[1]);
+      if (id && !storageQuotas[storageType]) {
+        setLoadingQuotas(true);
+        api.get(`/cloud-storages/${id}/quota`)
+          .then(({ data }) => {
+            if (data.data) {
+              setStorageQuotas(prev => ({ ...prev, [storageType]: data.data }));
+            }
+          })
+          .catch(() => { /* ignore */ })
+          .finally(() => setLoadingQuotas(false));
+      }
+    }
+  }, [storageType, storageQuotas]);
+
+  const formatStorageBytes = (bytes: number): string => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
+  };
+
   const filteredJobs = useMemo(() => {
     if (!searchText) return jobs;
     const q = searchText.toLowerCase();
@@ -483,52 +511,66 @@ export default function Cron() {
 
   // ── CRUD handlers ──────────────────────────────────────────────────
 
+  // buildBackupCommand creates the command for backup cron jobs.
+  // Uses JSON spec format for backup_site, backup_db, backup_panel types.
+  const buildBackupCommand = (): string => {
+    const spec: Record<string, unknown> = {};
+    if (currentTemplate?.backupAll) {
+      spec.all = true;
+    } else if (selectedTarget) {
+      spec.target = selectedTarget;
+    }
+    if (maxKeep !== null && maxKeep > 0) {
+      spec.max_keep = maxKeep;
+    }
+    if (backupStrategy === 'incremental') {
+      spec.strategy = 'incremental';
+    }
+    return JSON.stringify(spec);
+  };
+
   const handleSubmit = async (values: Record<string, string>) => {
     const schedule = schedMode === 'builder' ? buildCronFromState(schedState) : values.schedule;
     setSubmitting(true);
     try {
       let command = values.command;
-      // Strip any existing storage flags to avoid duplicates on edit
-      command = command.replace(/\s*-storage=\S+/g, '').replace(/\s*-storage-id=\d+/g, '').trim();
-      // Strip any existing max-keep flag to avoid duplicates on edit
-      command = command.replace(/\s*-max-keep=\d+/g, '').trim();
-      // Strip any existing strategy flag to avoid duplicates on edit
-      command = command.replace(/\s*-strategy=\S+/g, '').trim();
-      // For CLI-based backup templates, inject -max-keep, -target and storage flags
+      let storageTypeVal = storageType;
+      let storageIdVal = storageId;
+      let keepLocal = true;
+
+      // For CLI-based backup templates (backup_site, backup_db, backup_panel),
+      // use JSON spec format and pass storage options via cron fields
       if (currentTemplate?.cliBackupType) {
-        let cmd = `${panelBin} backup -type=${currentTemplate.cliBackupType}`;
-        if (currentTemplate.backupAll) {
-          cmd += ' -all';
-        } else if (selectedTarget) {
-          cmd += ` -target=${selectedTarget}`;
-        }
+        command = buildBackupCommand();
+        // Cron service handles storage via cron fields, not command flags
+        storageTypeVal = storageType;
+        storageIdVal = storageId;
+      } else {
+        // For shell commands, inject storage flags into command
+        // Strip any existing storage flags to avoid duplicates on edit
+        command = command.replace(/\s*-storage=\S+/g, '').replace(/\s*-storage-id=\d+/g, '').trim();
+        // Strip any existing max-keep flag to avoid duplicates on edit
+        command = command.replace(/\s*-max-keep=\d+/g, '').trim();
+        // Strip any existing strategy flag to avoid duplicates on edit
+        command = command.replace(/\s*-strategy=\S+/g, '').trim();
+        // Inject -max-keep into shell commands if specified
         if (maxKeep !== null && maxKeep > 0) {
-          cmd += ` -max-keep=${maxKeep}`;
+          command += ` -max-keep=${maxKeep}`;
         }
-        if (backupStrategy === 'incremental') {
-          cmd += ' -strategy=incremental';
-        }
+        // Inject storage flags into shell commands
         if (storageType !== 'local' && storageId) {
           const sType = storageType.split(':')[0];
-          cmd += ` -storage=${sType} -storage-id=${storageId}`;
+          command += ` -storage=${sType} -storage-id=${storageId}`;
         }
-        cmd += ` ${panelCfg}`;
-        command = cmd;
-      } else if (maxKeep !== null && maxKeep > 0) {
-        // Inject -max-keep into any shell command (works for manual or template jobs)
-        command += ` -max-keep=${maxKeep}`;
       }
-      if (storageType !== 'local' && storageId && !currentTemplate?.cliBackupType) {
-        const sType = storageType.split(':')[0];
-        command += ` -storage=${sType} -storage-id=${storageId}`;
-      }
+
       const payload = {
         ...values,
         schedule,
         command,
-        storage_type: storageType === 'local' ? '' : (storageType.split(':')[0] || ''),
-        storage_id: storageType === 'local' ? null : (storageId ?? null),
-        keep_local: true, // default; user can flip in advanced settings later
+        storage_type: storageTypeVal === 'local' ? '' : (storageTypeVal.split(':')[0] || ''),
+        storage_id: storageTypeVal === 'local' ? null : (storageIdVal ?? null),
+        keep_local: keepLocal,
       };
       if (editingJob) await api.put(`/crons/${editingJob.id}`, payload);
       else await api.post('/crons', payload);
@@ -1360,6 +1402,35 @@ export default function Cron() {
                     {storageOptions.length <= 1 && (
                       <div style={{ fontSize: 11, color: p.textDim, marginTop: 6 }}>
                         Install and configure storage providers in Storage page to enable remote backup
+                      </div>
+                    )}
+                    {/* Google Drive Quota Display */}
+                    {storageType.startsWith('google_drive:') && storageQuotas[storageType] && (
+                      <div style={{ marginTop: 10, padding: '10px 12px', background: `${p.accent}08`, borderRadius: 6, border: `1px solid ${p.accent}20` }}>
+                        <div style={{ fontSize: 11, color: p.text, marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
+                          <span><CloudOutlined /> Google Drive Storage</span>
+                          <span style={{ color: p.textMuted }}>
+                            {formatStorageBytes(storageQuotas[storageType].usage)} / {formatStorageBytes(storageQuotas[storageType].limit)}
+                            {' '}({(storageQuotas[storageType].limit > 0 ? (storageQuotas[storageType].usage / storageQuotas[storageType].limit * 100).toFixed(1) : 0)}% used)
+                          </span>
+                        </div>
+                        <div style={{ height: 6, background: `${p.accent}20`, borderRadius: 3, overflow: 'hidden' }}>
+                          <div style={{
+                            width: `${Math.min((storageQuotas[storageType].usage / storageQuotas[storageType].limit) * 100, 100)}%`,
+                            height: '100%',
+                            background: storageQuotas[storageType].available < storageQuotas[storageType].limit * 0.1 ? p.red : p.accent,
+                            borderRadius: 3,
+                            transition: 'width 0.3s ease',
+                          }} />
+                        </div>
+                        <div style={{ fontSize: 10, color: p.green, marginTop: 4 }}>
+                          ✓ {formatStorageBytes(storageQuotas[storageType].available)} available
+                        </div>
+                      </div>
+                    )}
+                    {storageType.startsWith('google_drive:') && loadingQuotas && (
+                      <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 6, color: p.textMuted, fontSize: 11 }}>
+                        <Spin size="small" /> Loading Google Drive quota...
                       </div>
                     )}
                   </div>

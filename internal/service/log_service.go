@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -675,6 +676,69 @@ func (s *LogService) GetGeoForLines(lines []string) (map[string]*GeoInfo, error)
 	for ip := range ipSet {
 		ips = append(ips, ip)
 	}
+
+	// Lookup geolocation in batch
+	return geoService.LookupBatch(ips)
+}
+
+// GetGeoForAuditEntries extracts unique IPs from audit entries and returns their geolocation info.
+func (s *LogService) GetGeoForAuditEntries(entries interface{}) (map[string]*GeoInfo, error) {
+	if geoService == nil {
+		logger.Warn().Msg("GetGeoForAuditEntries: geoService is nil, skipping geo lookup")
+		return nil, nil
+	}
+
+	// Extract unique IPs from audit entries
+	ipSet := make(map[string]bool)
+
+	// Use reflection for generic handling
+	rv := reflect.ValueOf(entries)
+	if rv.Kind() != reflect.Slice {
+		logger.Warn().Msg("GetGeoForAuditEntries: entries is not a slice")
+		return nil, nil
+	}
+
+	for i := 0; i < rv.Len(); i++ {
+		item := rv.Index(i)
+		if item.Kind() == reflect.Ptr {
+			item = item.Elem()
+		}
+		if item.Kind() != reflect.Struct {
+			continue
+		}
+
+		// Try to find IP field (case-insensitive: "IP" or "ip")
+		var ip string
+		for j := 0; j < item.NumField(); j++ {
+			field := item.Type().Field(j)
+			if field.Name == "IP" || strings.EqualFold(field.Name, "ip") {
+				if item.Field(j).Kind() == reflect.String {
+					ip = item.Field(j).String()
+				}
+				break
+			}
+		}
+
+		// Check if private IP
+		isPrivate := isPrivateIP(ip)
+		if ip != "" && !isPrivate {
+			ipSet[ip] = true
+		}
+	}
+
+	logger.Debug().Int("total_entries", rv.Len()).Int("public_ips", len(ipSet)).Msg("GetGeoForAuditEntries: extracted IPs")
+
+	if len(ipSet) == 0 {
+		return nil, nil
+	}
+
+	// Convert to slice
+	ips := make([]string, 0, len(ipSet))
+	for ip := range ipSet {
+		ips = append(ips, ip)
+	}
+
+	logger.Debug().Strs("ips", ips).Msg("GetGeoForAuditEntries: fetching geo data for IPs")
 
 	// Lookup geolocation in batch
 	return geoService.LookupBatch(ips)

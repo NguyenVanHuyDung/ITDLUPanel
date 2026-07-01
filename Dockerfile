@@ -12,6 +12,7 @@ FROM golang:1.24-alpine AS backend
 
 WORKDIR /app
 COPY go.mod go.sum ./
+ENV GOTOOLCHAIN=auto
 RUN go mod download
 COPY . .
 COPY --from=frontend /app/web/dist ./web/dist

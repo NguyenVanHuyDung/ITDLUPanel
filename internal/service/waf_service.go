@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ITDLUPanel/panel/internal/pkg/logger"
+	"github.com/ITDLUPanel/panel/internal/service/installer"
 )
 
 // ---------------------------------------------------------------------------
@@ -18,19 +19,20 @@ import (
 
 // WAFStatus represents the overall WAF service status.
 type WAFStatus struct {
-	Installed        bool   `json:"installed"`
-	Running          bool   `json:"running"`
-	HAProxyInstalled bool   `json:"haproxy_installed"`
-	CorazaInstalled  bool   `json:"coraza_installed"`
-	Version          string `json:"version"`
-	Mode             string `json:"mode"`
-	Uptime           int64  `json:"uptime"`
-	TotalSites       int    `json:"total_sites"`
-	ActiveSites      int    `json:"active_sites"`
-	TotalRules       int    `json:"total_rules"`
-	ActiveRules      int    `json:"active_rules"`
-	BlockedToday     int64  `json:"blocked_today"`
-	TotalRequestsToday int64 `json:"total_requests_today"`
+	Installed          bool   `json:"installed"`
+	Running            bool   `json:"running"`
+	HAProxyInstalled   bool   `json:"haproxy_installed"`
+	CorazaInstalled    bool   `json:"coraza_installed"`
+	Version            string `json:"version"`
+	Mode               string `json:"mode"`
+	Uptime             int64  `json:"uptime"`
+	TotalSites         int    `json:"total_sites"`
+	ActiveSites        int    `json:"active_sites"`
+	TotalRules         int    `json:"total_rules"`
+	ActiveRules        int    `json:"active_rules"`
+	BlockedToday       int64  `json:"blocked_today"`
+	TotalRequestsToday int64  `json:"total_requests_today"`
+	WebServerInstalled bool   `json:"webserver_installed"`
 }
 
 // WAFSite represents a WAF-protected site.
@@ -385,6 +387,12 @@ func NewWAFService(db *sql.DB) *WAFService {
 // GetStatus returns the current WAF service status.
 func (s *WAFService) GetStatus() (*WAFStatus, error) {
 	status := &WAFStatus{}
+
+	// Check if web server is installed (nginx, apache, or openlitespeed)
+	nginxInst := installer.NewNginxInstaller()
+	apacheInst := installer.NewApacheInstaller()
+	olsInst := installer.NewOLSInstaller()
+	status.WebServerInstalled = nginxInst.IsInstalled() || apacheInst.IsInstalled() || olsInst.IsInstalled()
 
 	// Check if WAF is installed
 	haproxyInstalled := s.haproxyMgr.IsInstalled()

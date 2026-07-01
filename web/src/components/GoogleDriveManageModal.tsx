@@ -30,6 +30,16 @@ interface GDriveConfigParsed {
   refresh_token?: string;
 }
 
+interface DriveQuota {
+  limit: number;
+  usage: number;
+  usage_in_drive: number;
+  available: number;
+  limit_gb: number;
+  usage_gb: number;
+  available_gb: number;
+}
+
 // DeviceFlowState — drives the in-modal device authorization UI
 interface DeviceFlowState {
   phase: 'idle' | 'starting' | 'waiting' | 'success' | 'error';
@@ -60,6 +70,8 @@ function GoogleDriveConnectionsTab({ open }: ConnectionsTabProps) {
   const [deviceFlow, setDeviceFlow] = useState<Record<number, DeviceFlowState>>({});
   const [deviceModalOpen, setDeviceModalOpen] = useState(false);
   const [deviceFlowStorageId, setDeviceFlowStorageId] = useState<number | null>(null);
+  const [quotaData, setQuotaData] = useState<Record<number, DriveQuota>>({});
+  const [quotaLoading, setQuotaLoading] = useState<Record<number, boolean>>({});
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flowDataRef = useRef<DeviceFlowState | null>(null);
 
@@ -76,6 +88,36 @@ function GoogleDriveConnectionsTab({ open }: ConnectionsTabProps) {
   }, []);
 
   useEffect(() => { if (open) fetchStorages(); }, [open, fetchStorages]);
+
+  // Fetch quota when authorized storage is loaded
+  useEffect(() => {
+    if (!open || storages.length === 0) return;
+    storages.forEach((s) => {
+      if (isAuthorized(s) && !quotaData[s.id]) {
+        fetchQuota(s.id);
+      }
+    });
+  }, [open, storages, quotaData]);
+
+  const fetchQuota = async (id: number) => {
+    setQuotaLoading(prev => ({ ...prev, [id]: true }));
+    try {
+      const { data } = await api.get(`/cloud-storages/${id}/quota`);
+      setQuotaData(prev => ({ ...prev, [id]: data.data }));
+    } catch {
+      // Quota fetch failed - not critical
+    } finally {
+      setQuotaLoading(prev => ({ ...prev, [id]: false }));
+    }
+  };
+
+  const formatBytes = (bytes: number): string => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
+  };
 
   const parseConfig = (configStr: string): Partial<GDriveConfigParsed> => {
     try { return JSON.parse(configStr); } catch { return {}; }
@@ -322,6 +364,38 @@ function GoogleDriveConnectionsTab({ open }: ConnectionsTabProps) {
                     {cfg.folder_id && <span><strong>Folder:</strong> {cfg.folder_id}</span>}
                     <span>{formatDateTime(s.created_at, 'DD/MM/YYYY')}</span>
                   </div>
+                  {/* Google Drive Quota Display */}
+                  {authorized && quotaData[s.id] && (
+                    <div style={{ marginTop: 8, padding: '8px 10px', background: `${p.accent}08`, borderRadius: 6, border: `1px solid ${p.accent}20` }}>
+                      <div style={{ fontSize: 10, color: p.textMuted, marginBottom: 4 }}>
+                        <strong>Storage:</strong> {formatBytes(quotaData[s.id].usage)} / {formatBytes(quotaData[s.id].limit)}
+                        {quotaData[s.id].limit > 0 && (
+                          <span style={{ marginLeft: 8 }}>
+                            ({((quotaData[s.id].usage / quotaData[s.id].limit) * 100).toFixed(1)}% used)
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ flex: 1, height: 6, background: `${p.accent}20`, borderRadius: 3, overflow: 'hidden' }}>
+                          <div style={{
+                            width: `${Math.min((quotaData[s.id].usage / quotaData[s.id].limit) * 100, 100)}%`,
+                            height: '100%',
+                            background: quotaData[s.id].available < quotaData[s.id].limit * 0.1 ? p.red : p.accent,
+                            borderRadius: 3,
+                            transition: 'width 0.3s ease',
+                          }} />
+                        </div>
+                        <span style={{ fontSize: 10, color: p.textMuted, whiteSpace: 'nowrap' }}>
+                          {formatBytes(quotaData[s.id].available)} free
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  {authorized && quotaLoading[s.id] && (
+                    <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6, color: p.textMuted, fontSize: 11 }}>
+                      <Spin size="small" /> Loading storage quota...
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                   <Tooltip title="Authorize">

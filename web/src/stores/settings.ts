@@ -10,16 +10,24 @@ interface PanelSettings {
   [key: string]: unknown;
 }
 
+interface WAFStatus {
+  installed: boolean;
+  running: boolean;
+  webserver_installed: boolean;
+}
+
 interface SettingsState {
   timezone: string;
   panelName: string;
   loaded: boolean;
   hiddenMenuKeys: string[];
+  webServerInstalled: boolean;
   fetchSettings: () => Promise<void>;
   setTimezone: (tz: string) => void;
   setPanelName: (name: string) => void;
   setHiddenMenuKeys: (keys: string[]) => void;
   toggleMenuKey: (key: string) => void;
+  checkWAFVisibility: () => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -29,6 +37,7 @@ export const useSettingsStore = create<SettingsState>()(
       panelName: 'ITDLUPanel',
       loaded: false,
       hiddenMenuKeys: [],
+      webServerInstalled: false,
       fetchSettings: async () => {
         try {
           const { data } = await api.get<ApiResponse<PanelSettings>>('/settings');
@@ -56,6 +65,25 @@ export const useSettingsStore = create<SettingsState>()(
           ? current.filter(k => k !== key)
           : [...current, key];
         set({ hiddenMenuKeys: next });
+      },
+      checkWAFVisibility: async () => {
+        try {
+          const { data } = await api.get<ApiResponse<WAFStatus>>('/waf/status');
+          const wafStatus = data.data;
+          set({ webServerInstalled: wafStatus.webserver_installed });
+
+          // Auto-hide WAF menu by default (user must manually enable in Menu Visibility)
+          const currentHidden = get().hiddenMenuKeys;
+          if (!currentHidden.includes('/waf')) {
+            set({ hiddenMenuKeys: [...currentHidden, '/waf'] });
+          }
+        } catch {
+          // If WAF API fails, hide WAF by default
+          const currentHidden = get().hiddenMenuKeys;
+          if (!currentHidden.includes('/waf')) {
+            set({ hiddenMenuKeys: [...currentHidden, '/waf'] });
+          }
+        }
       },
     }),
     {
