@@ -160,8 +160,8 @@ export default function MainLayout() {
   });
 
   const languageItems: MenuProps['items'] = [
-    { key: 'en', label: <img src="https://flagcdn.com/w20/us.png" alt="English" style={{ width: 20, height: 15, borderRadius: 2 }} /> },
-    { key: 'vi', label: <img src="https://flagcdn.com/w20/vn.png" alt="Tiếng Việt" style={{ width: 20, height: 15, borderRadius: 2 }} /> },
+    { key: 'en', label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><img src="https://flagcdn.com/w20/us.png" alt="English" style={{ width: 20, height: 15, borderRadius: 2 }} />English</span> },
+    { key: 'vi', label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><img src="https://flagcdn.com/w20/vn.png" alt="Tiếng Việt" style={{ width: 20, height: 15, borderRadius: 2 }} />Tiếng Việt</span> },
   ];
 
   const userMenuItems: MenuProps['items'] = [
