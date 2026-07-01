@@ -1,49 +1,50 @@
 #!/usr/bin/env python3
 """
-ITDLUPanel Slides PPTX Generator
-Converts Markdown slides to PowerPoint using python-pptx
+ITDLUPanel Slides PPTX Generator - Enhanced Version
+Converts Markdown slides to PowerPoint with professional layout
 """
 
 from pptx import Presentation
-from pptx.util import Inches, Pt
+from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_SHAPE
+from pptx.oxml.ns import qn
+from pptx.oxml import parse_xml
 import re
 import os
 
-# Color scheme
-PRIMARY_COLOR = RGBColor(0x15, 0x65, 0xC0)  # #1565C0
-SECONDARY_COLOR = RGBColor(0x2E, 0x7D, 0x32)  # #2E7D32
-ACCENT_COLOR = RGBColor(0x02, 0x88, 0xD1)  # #0288D1
-DARK_COLOR = RGBColor(0x1B, 0x2A, 0x4A)  # #1B2A4A
-LIGHT_COLOR = RGBColor(0xF5, 0xF7, 0xFA)  # #F5F7FA
+# Color scheme - Professional ITDLU Panel colors
+PRIMARY_COLOR = RGBColor(0x15, 0x65, 0xC0)  # #1565C0 - ITDLU Blue
+SECONDARY_COLOR = RGBColor(0x2E, 0x7D, 0x32)  # #2E7D32 - Green
+ACCENT_COLOR = RGBColor(0x02, 0x88, 0xD1)  # #0288D1 - Light Blue
+DARK_COLOR = RGBColor(0x1B, 0x2A, 0x4A)  # #1B2A4A - Dark Navy
+LIGHT_COLOR = RGBColor(0xF5, 0xF7, 0xFA)  # #F5F7FA - Light Gray
 WHITE_COLOR = RGBColor(0xFF, 0xFF, 0xFF)
 TEXT_COLOR = RGBColor(0x1A, 0x1A, 0x2E)  # #1A1A2E
 TEXT_SECONDARY = RGBColor(0x64, 0x74, 0x8B)  # #64748B
+CODE_BG = RGBColor(0x2D, 0x2D, 0x2D)  # Dark code background
+SUCCESS_COLOR = RGBColor(0x22, 0xC5, 0x5E)  # Green for checkmarks
+WARNING_COLOR = RGBColor(0xFF, 0xA5, 0x00)  # Orange warning
+ERROR_COLOR = RGBColor(0xEF, 0x44, 0x44)  # Red error
 
 def parse_markdown_slides(content):
     """Parse markdown content into individual slides"""
     slides = []
     parts = content.split('\n---\n')
-    
     for part in parts:
         part = part.strip()
         if part:
             slides.append(part)
-    
     return slides
 
 def extract_title_and_content(slide_md):
     """Extract title and content from slide markdown"""
     lines = slide_md.split('\n')
-    
     title = ""
     content_lines = []
-    in_code_block = False
     
     for line in lines:
-        # Skip markdown headers for content (we extract them)
         if line.startswith('# '):
             if not title:
                 title = line[2:].strip()
@@ -52,160 +53,84 @@ def extract_title_and_content(slide_md):
     
     return title, '\n'.join(content_lines)
 
+def clean_text(text):
+    """Remove markdown formatting"""
+    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
+    text = re.sub(r'\*([^*]+)\*', r'\1', text)
+    text = re.sub(r'`([^`]+)`', r'\1', text)
+    text = re.sub(r'#\w+\s*', '', text)  # Remove emoji prefixes
+    return text.strip()
+
 def add_title_slide(prs, title, subtitle=""):
-    """Add a title slide"""
-    slide_layout = prs.slide_layouts[6]  # Blank layout
+    """Add a professional title slide with gradient effect"""
+    slide_layout = prs.slide_layouts[6]
     slide = prs.slides.add_slide(slide_layout)
     
-    # Background shape
-    bg_shape = slide.shapes.add_shape(
+    # Background gradient simulation with shapes
+    bg = slide.shapes.add_shape(
         MSO_SHAPE.RECTANGLE,
         Inches(0), Inches(0),
         prs.slide_width, prs.slide_height
     )
-    bg_shape.fill.solid()
-    bg_shape.fill.fore_color.rgb = PRIMARY_COLOR
-    bg_shape.line.fill.background()
+    bg.fill.solid()
+    bg.fill.fore_color.rgb = PRIMARY_COLOR
+    bg.line.fill.background()
+    
+    # Accent bar at bottom
+    accent = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE,
+        Inches(0), Inches(6.8),
+        prs.slide_width, Inches(0.7)
+    )
+    accent.fill.solid()
+    accent.fill.fore_color.rgb = DARK_COLOR
+    accent.line.fill.background()
+    
+    # Decorative element
+    deco = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE,
+        Inches(0), Inches(2.2),
+        Inches(0.3), Inches(1.5)
+    )
+    deco.fill.solid()
+    deco.fill.fore_color.rgb = ACCENT_COLOR
+    deco.line.fill.background()
     
     # Title
-    title_box = slide.shapes.add_textbox(Inches(0.5), Inches(2.5), Inches(9), Inches(1.5))
+    title_box = slide.shapes.add_textbox(Inches(0.5), Inches(2), Inches(9), Inches(1.5))
     tf = title_box.text_frame
     tf.word_wrap = True
     p = tf.paragraphs[0]
     p.text = title
-    p.font.size = Pt(44)
+    p.font.size = Pt(42)
     p.font.bold = True
     p.font.color.rgb = WHITE_COLOR
     p.alignment = PP_ALIGN.CENTER
     
     # Subtitle
     if subtitle:
-        sub_box = slide.shapes.add_textbox(Inches(0.5), Inches(4.2), Inches(9), Inches(1))
+        sub_box = slide.shapes.add_textbox(Inches(0.5), Inches(3.8), Inches(9), Inches(1.5))
         tf = sub_box.text_frame
         tf.word_wrap = True
         p = tf.paragraphs[0]
         p.text = subtitle
-        p.font.size = Pt(24)
-        p.font.color.rgb = WHITE_COLOR
+        p.font.size = Pt(22)
+        p.font.color.rgb = RGBColor(0xCC, 0xDD, 0xFF)
         p.alignment = PP_ALIGN.CENTER
+    
+    # Footer
+    footer = slide.shapes.add_textbox(Inches(0.5), Inches(6.9), Inches(9), Inches(0.5))
+    tf = footer.text_frame
+    p = tf.paragraphs[0]
+    p.text = "Đại học Đà Lạt | © 2026"
+    p.font.size = Pt(14)
+    p.font.color.rgb = WHITE_COLOR
+    p.alignment = PP_ALIGN.CENTER
     
     return slide
 
 def add_content_slide(prs, title, content):
-    """Add a content slide with title and bullet points"""
-    slide_layout = prs.slide_layouts[6]  # Blank layout
-    slide = prs.slides.add_slide(slide_layout)
-    
-    # Header bar
-    header = slide.shapes.add_shape(
-        MSO_SHAPE.RECTANGLE,
-        Inches(0), Inches(0),
-        prs.slide_width, Inches(1.2)
-    )
-    header.fill.solid()
-    header.fill.fore_color.rgb = PRIMARY_COLOR
-    header.line.fill.background()
-    
-    # Title in header
-    title_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.3), Inches(9), Inches(0.7))
-    tf = title_box.text_frame
-    tf.word_wrap = True
-    p = tf.paragraphs[0]
-    p.text = title
-    p.font.size = Pt(28)
-    p.font.bold = True
-    p.font.color.rgb = WHITE_COLOR
-    
-    # Content area
-    content_box = slide.shapes.add_textbox(Inches(0.5), Inches(1.5), Inches(9), Inches(5.5))
-    tf = content_box.text_frame
-    tf.word_wrap = True
-    
-    lines = content.split('\n')
-    first_para = True
-    
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        
-        # Code block
-        if line.startswith('```'):
-            continue
-        
-        # Heading 2
-        if line.startswith('## '):
-            heading_text = line[3:].strip()
-            if first_para:
-                p = tf.paragraphs[0]
-                first_para = False
-            else:
-                p = tf.add_paragraph()
-            p.text = heading_text
-            p.font.size = Pt(20)
-            p.font.bold = True
-            p.font.color.rgb = PRIMARY_COLOR
-            p.space_before = Pt(16)
-            p.space_after = Pt(8)
-        
-        # Heading 3
-        elif line.startswith('### '):
-            heading_text = line[4:].strip()
-            p = tf.add_paragraph()
-            p.text = heading_text
-            p.font.size = Pt(16)
-            p.font.bold = True
-            p.font.color.rgb = ACCENT_COLOR
-            p.space_before = Pt(12)
-            p.space_after = Pt(4)
-        
-        # Bullet point
-        elif line.startswith('- ') or line.startswith('* '):
-            text = line[2:].strip()
-            p = tf.add_paragraph()
-            p.text = "• " + text
-            p.font.size = Pt(14)
-            p.font.color.rgb = TEXT_COLOR
-            p.level = 0
-            p.space_before = Pt(4)
-        
-        # Sub bullet
-        elif line.startswith('  - ') or line.startswith('    - '):
-            text = line[5:].strip()
-            p = tf.add_paragraph()
-            p.text = "  ◦ " + text
-            p.font.size = Pt(12)
-            p.font.color.rgb = TEXT_SECONDARY
-            p.level = 1
-            p.space_before = Pt(2)
-        
-        # Checkbox
-        elif line.startswith('- [ ] ') or line.startswith('- [x] '):
-            text = line[6:].strip()
-            prefix = "☐ " if line.startswith('- [ ]') else "☑ "
-            p = tf.add_paragraph()
-            p.text = prefix + text
-            p.font.size = Pt(14)
-            p.font.color.rgb = TEXT_COLOR
-            p.space_before = Pt(4)
-        
-        # Regular text
-        else:
-            # Remove markdown formatting
-            text = re.sub(r'\*\*([^*]+)\*\*', r'\1', line)  # Bold
-            text = re.sub(r'\*([^*]+)\*', r'\1', text)  # Italic
-            text = re.sub(r'`([^`]+)`', r'\1', text)  # Inline code
-            
-            p = tf.add_paragraph()
-            p.text = text
-            p.font.size = Pt(14)
-            p.font.color.rgb = TEXT_COLOR
-            p.space_before = Pt(4)
-    
-    return slide
-
-def add_table_slide(prs, title, table_content):
-    """Add a slide with table"""
+    """Add a content slide with professional layout"""
     slide_layout = prs.slide_layouts[6]
     slide = prs.slides.add_slide(slide_layout)
     
@@ -213,55 +138,191 @@ def add_table_slide(prs, title, table_content):
     header = slide.shapes.add_shape(
         MSO_SHAPE.RECTANGLE,
         Inches(0), Inches(0),
-        prs.slide_width, Inches(1.2)
+        prs.slide_width, Inches(1.1)
+    )
+    header.fill.solid()
+    header.fill.fore_color.rgb = PRIMARY_COLOR
+    header.line.fill.background()
+    
+    # Title in header
+    title_box = slide.shapes.add_textbox(Inches(0.4), Inches(0.25), Inches(9.2), Inches(0.7))
+    tf = title_box.text_frame
+    tf.word_wrap = True
+    p = tf.paragraphs[0]
+    p.text = title
+    p.font.size = Pt(26)
+    p.font.bold = True
+    p.font.color.rgb = WHITE_COLOR
+    
+    # Content area with sections
+    lines = content.split('\n')
+    
+    # Parse into sections
+    sections = []
+    current_section = {"title": None, "items": [], "type": "bullet"}
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        
+        # Code block marker
+        if line.startswith('```'):
+            continue
+        
+        # Section heading (###)
+        if line.startswith('### '):
+            if current_section["items"] or current_section["title"]:
+                sections.append(current_section)
+            current_section = {"title": clean_text(line[4:]), "items": [], "type": "bullet"}
+        
+        # Subsection (code block content)
+        elif line.startswith('```'):
+            current_section["type"] = "code"
+        
+        # Bullet point
+        elif line.startswith('- ') or line.startswith('* '):
+            text = clean_text(line[2:])
+            if text:
+                current_section["items"].append(text)
+        
+        # Sub bullet
+        elif line.startswith('  - ') or line.startswith('    - '):
+            text = clean_text(line[5:])
+            if text:
+                current_section["items"].append({"indent": 1, "text": text})
+        
+        # Checkbox
+        elif line.startswith('- [ ] ') or line.startswith('- [x] '):
+            is_checked = line.startswith('- [x]')
+            text = clean_text(line[6:])
+            if text:
+                current_section["items"].append({"checked": is_checked, "text": text})
+        
+        # Regular paragraph
+        else:
+            text = clean_text(line)
+            if text:
+                current_section["items"].append(text)
+    
+    if current_section["items"] or current_section["title"]:
+        sections.append(current_section)
+    
+    # Render content
+    y_pos = Inches(1.35)
+    max_height = Inches(5.8)
+    
+    for section in sections[:6]:  # Limit sections
+        if y_pos > max_height:
+            break
+            
+        if section["title"]:
+            # Section title
+            title_shape = slide.shapes.add_textbox(Inches(0.4), y_pos, Inches(9.2), Inches(0.4))
+            tf = title_shape.text_frame
+            p = tf.paragraphs[0]
+            p.text = section["title"]
+            p.font.size = Pt(16)
+            p.font.bold = True
+            p.font.color.rgb = ACCENT_COLOR
+            y_pos += Inches(0.4)
+        
+        if section["type"] == "code":
+            continue
+        
+        # Render items
+        for item in section["items"][:8]:
+            if y_pos > max_height:
+                break
+                
+            if isinstance(item, dict):
+                if "indent" in item:
+                    # Sub bullet
+                    text_shape = slide.shapes.add_textbox(Inches(0.9), y_pos, Inches(8.6), Inches(0.3))
+                    tf = text_shape.text_frame
+                    p = tf.paragraphs[0]
+                    p.text = "    ◦ " + item["text"]
+                    p.font.size = Pt(12)
+                    p.font.color.rgb = TEXT_SECONDARY
+                elif "checked" in item:
+                    # Checkbox
+                    text_shape = slide.shapes.add_textbox(Inches(0.5), y_pos, Inches(9), Inches(0.3))
+                    tf = text_shape.text_frame
+                    p = tf.paragraphs[0]
+                    p.text = ("☑ " if item["checked"] else "☐ ") + item["text"]
+                    p.font.size = Pt(13)
+                    p.font.color.rgb = SUCCESS_COLOR if item["checked"] else TEXT_COLOR
+            else:
+                # Regular bullet
+                text_shape = slide.shapes.add_textbox(Inches(0.5), y_pos, Inches(9), Inches(0.3))
+                tf = text_shape.text_frame
+                p = tf.paragraphs[0]
+                p.text = "• " + item
+                p.font.size = Pt(13)
+                p.font.color.rgb = TEXT_COLOR
+            
+            y_pos += Inches(0.32)
+        
+        y_pos += Inches(0.15)
+    
+    return slide
+
+def add_table_slide(prs, title, content):
+    """Add a slide with professional table"""
+    slide_layout = prs.slide_layouts[6]
+    slide = prs.slides.add_slide(slide_layout)
+    
+    # Header bar
+    header = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE,
+        Inches(0), Inches(0),
+        prs.slide_width, Inches(1.1)
     )
     header.fill.solid()
     header.fill.fore_color.rgb = PRIMARY_COLOR
     header.line.fill.background()
     
     # Title
-    title_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.3), Inches(9), Inches(0.7))
+    title_box = slide.shapes.add_textbox(Inches(0.4), Inches(0.25), Inches(9.2), Inches(0.7))
     tf = title_box.text_frame
     p = tf.paragraphs[0]
     p.text = title
-    p.font.size = Pt(28)
+    p.font.size = Pt(26)
     p.font.bold = True
     p.font.color.rgb = WHITE_COLOR
     
     # Parse table
-    lines = table_content.strip().split('\n')
+    lines = content.strip().split('\n')
     table_data = []
     headers = []
     
     for i, line in enumerate(lines):
         line = line.strip()
-        if not line or line.startswith('#'):
+        if not line or line.startswith('#') or line.startswith('```'):
             continue
         
         if line.startswith('|'):
-            # Parse table row
             cells = [c.strip() for c in line.split('|')[1:-1]]
-            if i == 0 or (i > 0 and '---' not in line):
-                if '---' not in line:
-                    if not headers:
-                        headers = cells
-                    else:
-                        table_data.append(cells)
+            if '---' not in line:
+                if not headers:
+                    headers = cells
+                else:
+                    table_data.append(cells)
     
-    if table_data:
-        rows = len(table_data) + 1
-        cols = len(headers) if headers else 3
+    if table_data and headers:
+        rows = min(len(table_data) + 1, 12)
+        cols = min(len(headers), 4)
         
-        # Limit columns for readability
-        cols = min(cols, 5)
+        table = slide.shapes.add_table(
+            rows, cols, 
+            Inches(0.4), Inches(1.4), 
+            Inches(9.2), Inches(4.5)
+        ).table
         
-        table = slide.shapes.add_table(rows, cols, Inches(0.5), Inches(1.6), 
-                                        Inches(9), Inches(4)).table
-        
-        # Header row
+        # Style header
         for j, header_text in enumerate(headers[:cols]):
             cell = table.cell(0, j)
-            cell.text = header_text
+            cell.text = clean_text(header_text)
             cell.fill.solid()
             cell.fill.fore_color.rgb = DARK_COLOR
             para = cell.text_frame.paragraphs[0]
@@ -269,19 +330,27 @@ def add_table_slide(prs, title, table_content):
             para.font.bold = True
             para.font.color.rgb = WHITE_COLOR
             para.alignment = PP_ALIGN.CENTER
+            cell.text_frame.paragraphs[0].space_before = Pt(6)
+            cell.text_frame.paragraphs[0].space_after = Pt(6)
         
-        # Data rows
+        # Style data rows
         for i, row in enumerate(table_data[:rows-1]):
             for j, cell_text in enumerate(row[:cols]):
                 cell = table.cell(i+1, j)
-                cell.text = cell_text
+                cell.text = clean_text(cell_text)
                 para = cell.text_frame.paragraphs[0]
                 para.font.size = Pt(11)
                 para.font.color.rgb = TEXT_COLOR
-                # Alternate row colors
+                para.space_before = Pt(4)
+                para.space_after = Pt(4)
+                
+                # Alternating row colors
                 if i % 2 == 0:
                     cell.fill.solid()
-                    cell.fill.fore_color.rgb = RGBColor(0xF5, 0xF7, 0xFA)
+                    cell.fill.fore_color.rgb = LIGHT_COLOR
+                else:
+                    cell.fill.solid()
+                    cell.fill.fore_color.rgb = WHITE_COLOR
     
     return slide
 
@@ -290,48 +359,57 @@ def add_code_slide(prs, title, code_content):
     slide_layout = prs.slide_layouts[6]
     slide = prs.slides.add_slide(slide_layout)
     
-    # Header bar
+    # Header bar (dark theme for code)
     header = slide.shapes.add_shape(
         MSO_SHAPE.RECTANGLE,
         Inches(0), Inches(0),
-        prs.slide_width, Inches(1.2)
+        prs.slide_width, Inches(1.1)
     )
     header.fill.solid()
     header.fill.fore_color.rgb = DARK_COLOR
     header.line.fill.background()
     
     # Title
-    title_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.3), Inches(9), Inches(0.7))
+    title_box = slide.shapes.add_textbox(Inches(0.4), Inches(0.25), Inches(9.2), Inches(0.7))
     tf = title_box.text_frame
     p = tf.paragraphs[0]
     p.text = title
-    p.font.size = Pt(28)
+    p.font.size = Pt(26)
     p.font.bold = True
     p.font.color.rgb = WHITE_COLOR
     
-    # Code block background
+    # Code background
     code_bg = slide.shapes.add_shape(
         MSO_SHAPE.ROUNDED_RECTANGLE,
-        Inches(0.5), Inches(1.5),
-        Inches(9), Inches(5)
+        Inches(0.3), Inches(1.3),
+        Inches(9.4), Inches(5.4)
     )
     code_bg.fill.solid()
-    code_bg.fill.fore_color.rgb = RGBColor(0x1E, 0x1E, 0x1E)
+    code_bg.fill.fore_color.rgb = CODE_BG
     code_bg.line.fill.background()
     
     # Code text
-    code_box = slide.shapes.add_textbox(Inches(0.7), Inches(1.7), Inches(8.6), Inches(4.6))
+    code_box = slide.shapes.add_textbox(Inches(0.5), Inches(1.5), Inches(9), Inches(5))
     tf = code_box.text_frame
     tf.word_wrap = True
     
-    lines = code_content.strip().split('\n')
-    for i, line in enumerate(lines):
+    # Parse code content
+    code_lines = []
+    in_code = False
+    for line in code_content.split('\n'):
+        if line.strip().startswith('```'):
+            in_code = not in_code
+            continue
+        if in_code:
+            code_lines.append(line)
+    
+    for i, line in enumerate(code_lines[:30]):
         if i == 0:
             p = tf.paragraphs[0]
         else:
             p = tf.add_paragraph()
         p.text = line
-        p.font.size = Pt(11)
+        p.font.size = Pt(10)
         p.font.name = 'Courier New'
         p.font.color.rgb = RGBColor(0xD4, 0xD4, 0xD4)
     
@@ -353,7 +431,7 @@ def generate_pptx(md_path, pptx_path):
     print(f"Found {len(slides)} slides")
     
     for i, slide_md in enumerate(slides):
-        print(f"Processing slide {i+1}...")
+        print(f"Processing slide {i+1}/{len(slides)}...")
         
         title, content = extract_title_and_content(slide_md)
         
@@ -361,21 +439,17 @@ def generate_pptx(md_path, pptx_path):
             continue
         
         # Determine slide type
-        if not title or ('Slide' in title and i > 0 and i < len(slides)-1):
-            # Content slide
-            if '```' in content:
-                add_code_slide(prs, title or "Code", content)
-            elif content.startswith('|') or '|' in content[:200]:
-                add_table_slide(prs, title, content)
-            else:
-                add_content_slide(prs, title, content)
+        content_lines = [l for l in content.split('\n') if l.strip() and not l.strip().startswith('#')]
+        
+        # Title slide detection
+        if len(content_lines) <= 2 and title and i == 0:
+            add_title_slide(prs, title, content)
+        elif '```' in content or content.startswith('```'):
+            add_code_slide(prs, title or "Code", content)
+        elif content.strip().startswith('|') and '|' in content:
+            add_table_slide(prs, title, content)
         else:
-            # Check if it's a title slide (short content)
-            content_lines = [l for l in content.split('\n') if l.strip() and not l.strip().startswith('#')]
-            if len(content_lines) <= 2 and title:
-                add_title_slide(prs, title, '\n'.join(content_lines))
-            else:
-                add_content_slide(prs, title, content)
+            add_content_slide(prs, title, content)
     
     print(f"Saving PPTX: {pptx_path}")
     prs.save(pptx_path)

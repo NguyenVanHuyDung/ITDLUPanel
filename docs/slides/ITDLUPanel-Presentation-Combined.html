@@ -1,0 +1,3256 @@
+<h1>ITDLUPanel - Presentation Documentation</h1>
+<p><strong>Đại học Đà Lạt | © 2026</strong></p>
+<hr />
+<h1>PHẦN 1: GIỚI THIỆU CHUNG (v1.0)</h1>
+<hr />
+<h1>ITDLUPanel - Bảng Điều Khiển Quản Lý Máy Chủ Linux</h1>
+<p><strong>Đại học Đà Lạt | © 2026</strong></p>
+<hr />
+<h2>Slide 1: Giới Thiệu ITDLUPanel</h2>
+<h1>ITDLUPanel</h1>
+<h2>Bảng Điều Khiển Quản Lý Máy Chủ Linux</h2>
+<p><strong>Single Binary • Zero Dependencies • Production-Ready</strong></p>
+<p>Được phát triển bởi <strong>Đại học Đà Lạt</strong></p>
+<p><img alt="Logo" src="https://via.placeholder.com/200x80/1565C0/FFFFFF?text=ITDLUPanel" /></p>
+<hr />
+<h2>Slide 2: Tổng Quan</h2>
+<h1>ITDLUPanel Là Gì?</h1>
+<p><strong>ITDLUPanel</strong> (IT Đại học Đà Lạt Panel) là một <strong>bảng điều khiển quản lý máy chủ Linux hiện đại</strong>, đóng gói trong một file nhị phân duy nhất (~60MB) với <strong>không phụ thuộc runtime bên ngoài</strong>.</p>
+<h3>Điểm Nổi Bật</h3>
+<ul>
+<li><strong>Single Binary</strong>: Toàn bộ stack trong một file Go</li>
+<li><strong>Zero Dependencies</strong>: Không cần cài đặt Node.js, Python hay database riêng</li>
+<li><strong>Cross-Platform</strong>: Biên dịch không cần CGO, chạy trên mọi Linux</li>
+<li><strong>Production-Ready</strong>: Đã được kiểm chứng tại môi trường thực tế</li>
+</ul>
+<hr />
+<h2>Slide 3: Tại Sao Chọn ITDLUPanel?</h2>
+<h1>Vì Sao Chọn ITDLUPanel?</h1>
+<h3>So Sánh Với Các Giải Pháp Khác</h3>
+<table>
+<thead>
+<tr>
+<th>Tiêu Chí</th>
+<th>ITDLUPanel</th>
+<th>cPanel</th>
+<th>DirectAdmin</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Chi phí</td>
+<td>Miễn phí</td>
+<td>Trả phí</td>
+<td>Trả phí</td>
+</tr>
+<tr>
+<td>Dependencies</td>
+<td>Không</td>
+<td>Cần nhiều</td>
+<td>Cần nhiều</td>
+</tr>
+<tr>
+<td>Giao diện</td>
+<td>Hiện đại (React)</td>
+<td>Cũ</td>
+<td>Trung bình</td>
+</tr>
+<tr>
+<td>Docker tích hợp</td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>WebSocket Terminal</td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+</tr>
+</tbody>
+</table>
+<h3>Phù Hợp Cho</h3>
+<ul>
+<li><strong>Trường học &amp; đại học</strong>: Quản lý server học tập</li>
+<li><strong>Doanh nghiệp nhỏ</strong>: Host website nội bộ</li>
+<li><strong>DevOps</strong>: Môi trường development/staging</li>
+</ul>
+<hr />
+<h2>Slide 4: Technology Stack</h2>
+<h1>Công Nghệ Sử Dụng</h1>
+<h2>Backend - Go 1.25</h2>
+<pre><code>┌─────────────────────────────────────────────────────┐
+│  Gin Framework        │  JWT Auth        │  SQLite │
+│  WebSocket           │  TOTP 2FA        │  gopsutil│
+└─────────────────────────────────────────────────────┘
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Technology</th>
+<th>Version</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Language</td>
+<td>Go</td>
+<td>1.25</td>
+</tr>
+<tr>
+<td>HTTP Framework</td>
+<td>Gin</td>
+<td>1.12</td>
+</tr>
+<tr>
+<td>Database</td>
+<td>SQLite</td>
+<td>modernc.org/sqlite 1.47</td>
+</tr>
+<tr>
+<td>Auth</td>
+<td>JWT</td>
+<td>golang-jwt/jwt 5.3.1</td>
+</tr>
+<tr>
+<td>Terminal</td>
+<td>xterm.js PTY</td>
+<td>creack/pty 1.1.24</td>
+</tr>
+<tr>
+<td>Storage</td>
+<td>MinIO Go</td>
+<td>7.0.100</td>
+</tr>
+</tbody>
+</table>
+<h2>Frontend - React 19</h2>
+<pre><code>┌─────────────────────────────────────────────────────┐
+│  React 19            │  Ant Design 6.3    │  Vite  │
+│  TypeScript 5.9      │  Tailwind CSS 4    │  i18n  │
+└─────────────────────────────────────────────────────┘
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Technology</th>
+<th>Version</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Framework</td>
+<td>React</td>
+<td>19.2.4</td>
+</tr>
+<tr>
+<td>UI Library</td>
+<td>Ant Design</td>
+<td>6.3.3</td>
+</tr>
+<tr>
+<td>Build Tool</td>
+<td>Vite</td>
+<td>8.0.1</td>
+</tr>
+<tr>
+<td>State</td>
+<td>Zustand</td>
+<td>5.0.12</td>
+</tr>
+<tr>
+<td>Charts</td>
+<td>Recharts</td>
+<td>3.8.0</td>
+</tr>
+<tr>
+<td>Terminal</td>
+<td>xterm.js</td>
+<td>6.0.0</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Slide 5: Kiến Trúc Hệ Thống</h2>
+<h1>Kiến Trúc Tổng Quan</h1>
+<pre><code>┌──────────────────────────────────────────────────────────────┐
+│                    Browser (React 19 SPA)                     │
+│         Ant Design 6 • xterm.js • Monaco Editor              │
+│         Recharts • Zustand • React Query • i18n              │
+└────────────────┬──────────────────────┬──────────────────────┘
+                 │  REST API (~160)      │  WebSocket (2)
+                 │  HTTPS / JWT          │  PTY Terminal + Monitor
+                 ▼                       ▼
+┌──────────────────────────────────────────────────────────────┐
+│              Single Go Binary (go:embed)                     │
+│  ┌─────────┐  ┌──────────────┐  ┌──────────────────────┐   │
+│  │   Gin   │→ │  24 Handlers │→ │  33+ Services         │   │
+│  │  Router │  │  (REST API)  │  │  14 Installers        │   │
+│  └─────────┘  └──────────────┘  │  4 Vhost Generators  │   │
+│  ┌─────────┐  ┌──────────────┐  └──────────┬───────────┘   │
+│  │   WS    │→ │  Terminal    │              │               │
+│  │   Hub   │  │  Monitor     │              ▼               │
+│  └─────────┘  └──────────────┘  ┌──────────────────────┐   │
+│  ┌─────────────────────────┐    │  SQLite (25 tables)  │   │
+│  │  Middleware Stack (11)   │    └──────────────────────┘   │
+│  └─────────────────────────┘                                │
+└──────────────────────────┬───────────────────────────────────┘
+                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│                   Linux Host (Ubuntu/Debian)                  │
+│   Nginx/Apache/OLS • PHP-FPM • MySQL/MariaDB • Redis       │
+│   Docker • Fail2ban • PureFTPd • Certbot                     │
+└──────────────────────────────────────────────────────────────┘
+</code></pre>
+<hr />
+<h2>Slide 6: Các Module Chính</h2>
+<h1>Tính Năng Chính</h1>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Mô Tả</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>📊 <strong>Dashboard</strong></td>
+<td>Theo dõi CPU, RAM, Disk, Network realtime</td>
+</tr>
+<tr>
+<td>🌐 <strong>Websites</strong></td>
+<td>Quản lý site, domain, PHP version, Nginx/Apache</td>
+</tr>
+<tr>
+<td>🗄️ <strong>Databases</strong></td>
+<td>MySQL/MariaDB - create, backup, restore</td>
+</tr>
+<tr>
+<td>📁 <strong>File Manager</strong></td>
+<td>Trình duyệt file với Monaco Editor</td>
+</tr>
+<tr>
+<td>💻 <strong>Terminal</strong></td>
+<td>WebSocket terminal với multi-tab</td>
+</tr>
+<tr>
+<td>🔒 <strong>Security</strong></td>
+<td>Firewall, IP blocking, Fail2ban</td>
+</tr>
+<tr>
+<td>🐳 <strong>Docker</strong></td>
+<td>38+ one-click app templates</td>
+</tr>
+<tr>
+<td>⏰ <strong>Cron Jobs</strong></td>
+<td>30 templates, schedule builder</td>
+</tr>
+<tr>
+<td>📝 <strong>Logs</strong></td>
+<td>Panel, SSH, website, audit logs</td>
+</tr>
+<tr>
+<td>🔐 <strong>SSL</strong></td>
+<td>Let's Encrypt auto-issue, auto-renewal</td>
+</tr>
+<tr>
+<td>💾 <strong>Backups</strong></td>
+<td>FTP, S3, Google Drive, OneDrive</td>
+</tr>
+<tr>
+<td>👥 <strong>Users</strong></td>
+<td>RBAC - Admin/Operator/Viewer + 2FA</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Slide 7: Dashboard - Giám Sát Realtime</h2>
+<h1>Dashboard Thông Minh</h1>
+<h3>Trực Quan Hóa Dữ Liệu</h3>
+<pre><code>┌────────────────────────────────────────────────────────┐
+│  CPU Usage          RAM Usage         Disk Usage       │
+│  ████████░░ 78%    ██████░░░░ 62%   ███░░░░░░ 31%     │
+│  [==========]      [==========]       [==========]    │
+└────────────────────────────────────────────────────────┘
+</code></pre>
+<h3>Tính Năng Dashboard</h3>
+<ul>
+<li>✅ <strong>Realtime Monitoring</strong>: Cập nhật mỗi 2 giây qua WebSocket</li>
+<li>✅ <strong>Interactive Charts</strong>: Biểu đồ tương tác với Recharts</li>
+<li>✅ <strong>Network Stats</strong>: Bandwidth in/out theo thời gian thực</li>
+<li>✅ <strong>Process List</strong>: Top processes đang chạy</li>
+<li>✅ <strong>Service Status</strong>: Health check các dịch vụ</li>
+</ul>
+<h3>Các Chỉ Số Theo Dõi</h3>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Update Interval</th>
+<th>Retention</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU</td>
+<td>2s</td>
+<td>1 hour</td>
+</tr>
+<tr>
+<td>Memory</td>
+<td>2s</td>
+<td>1 hour</td>
+</tr>
+<tr>
+<td>Disk I/O</td>
+<td>5s</td>
+<td>1 hour</td>
+</tr>
+<tr>
+<td>Network</td>
+<td>2s</td>
+<td>1 hour</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Slide 8: Quản Lý Websites</h2>
+<h1>Quản Lý Website Chuyên Nghiệp</h1>
+<h3>Hỗ Trợ Đa Web Server</h3>
+<pre><code>┌─────────────────────────────────────────────────────────┐
+│  Web Server Support                                     │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐                 │
+│  │  Nginx  │  │ Apache  │  │   OLS   │                 │
+│  │   ✅    │  │   ✅    │  │   ✅    │                 │
+│  └─────────┘  └─────────┘  └─────────┘                 │
+│                                                         │
+│  PHP Versions: 7.4 • 8.0 • 8.1 • 8.2 • 8.3 • 8.4     │
+└─────────────────────────────────────────────────────────┘
+</code></pre>
+<h3>Tính Năng Nổi Bật</h3>
+<ul>
+<li>🔄 <strong>PHP Version Switching</strong>: Chuyển đổi PHP version dễ dàng</li>
+<li>📝 <strong>Config Editor</strong>: Chỉnh sửa Nginx/Apache config</li>
+<li>🌐 <strong>Domain Aliases</strong>: Quản lý multiple domains</li>
+<li>📊 <strong>Access Logs</strong>: Xem logs theo thời gian thực</li>
+<li>🔒 <strong>SSL Integration</strong>: Tích hợp Let's Encrypt</li>
+</ul>
+<h3>Quick Actions</h3>
+<pre><code class="language-bash">[Create Site]  [PHP Settings]  [SSL Cert]  [Config Editor]
+</code></pre>
+<hr />
+<h2>Slide 9: Quản Lý Databases</h2>
+<h1>Quản Lý Database Toàn Diện</h1>
+<h3>Supported Databases</h3>
+<table>
+<thead>
+<tr>
+<th>Database</th>
+<th>Port</th>
+<th>Features</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MySQL</td>
+<td>3306</td>
+<td>Full support</td>
+</tr>
+<tr>
+<td>MariaDB</td>
+<td>3306</td>
+<td>Full support</td>
+</tr>
+<tr>
+<td>Redis</td>
+<td>6379</td>
+<td>Cache management</td>
+</tr>
+</tbody>
+</table>
+<h3>Database Features</h3>
+<ul>
+<li>✅ <strong>Create/Drop</strong>: Tạo và xóa database nhanh chóng</li>
+<li>✅ <strong>User Management</strong>: Phân quyền user database</li>
+<li>✅ <strong>Backup/Restore</strong>: Sao lưu với nhiều destination</li>
+<li>✅ <strong>phpMyAdmin</strong>: Giao diện web quản lý</li>
+<li>✅ <strong>Connection Info</strong>: Thông tin kết nối chi tiết</li>
+</ul>
+<h3>Backup Destinations</h3>
+<pre><code>┌─────────────────────────────────────────────────────────┐
+│  📁 FTP Server    │   ☁️ S3/MinIO   │   🔵 Google Drive │
+│  📁 OneDrive      │   📁 Local      │   📁 SFTP          │
+└─────────────────────────────────────────────────────────┘
+</code></pre>
+<hr />
+<h2>Slide 10: File Manager &amp; Code Editor</h2>
+<h1>File Manager Thông Minh</h1>
+<h3>Monaco Editor Tích Hợp</h3>
+<ul>
+<li>🔥 <strong>Syntax Highlighting</strong>: Hỗ trợ 50+ ngôn ngữ</li>
+<li>📂 <strong>File Tree</strong>: Duyệt file với tree view</li>
+<li>📁 <strong>Compress/Extract</strong>: ZIP, TAR, GZ</li>
+<li>🔐 <strong>Permission Editor</strong>: Chmod trực quan</li>
+<li>⭐ <strong>Bookmarks</strong>: Đánh dấu thư mục yêu thích</li>
+<li>🔍 <strong>Search</strong>: Tìm kiếm file nhanh</li>
+</ul>
+<h3>Supported File Types</h3>
+<pre><code>Languages: JavaScript, TypeScript, Python, Go, PHP, 
+           Ruby, Java, C++, Rust, HTML, CSS, JSON, YAML...
+</code></pre>
+<h3>Quick Actions</h3>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>New File</td>
+<td>Tạo file mới</td>
+</tr>
+<tr>
+<td>Upload</td>
+<td>Upload file lên server</td>
+</tr>
+<tr>
+<td>Download</td>
+<td>Tải file về local</td>
+</tr>
+<tr>
+<td>Compress</td>
+<td>Nén file/folder</td>
+</tr>
+<tr>
+<td>Extract</td>
+<td>Giải nén archive</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Slide 11: WebSocket Terminal</h2>
+<h1>Terminal Trong Trình Duyệt</h1>
+<h3>Tính Năng Terminal</h3>
+<pre><code>┌──────────────────────────────────────────────────────────────┐
+│  ITDLUPanel Terminal                           [+] [_] [X]   │
+│  ──────────────────────────────────────────────────────────  │
+│  ┌─────────────────────────────────────────────────────────┐ │
+│  │  admin@server:~$ ssh user@server                       │ │
+│  │  user@server's password: ********                      │ │
+│  │  Welcome to Ubuntu 22.04 LTS                           │ │
+│  │  user@server:~$ ls -la                                  │ │
+│  │  drwxr-xr-x  5 admin admin  4096 Jun 29 10:00 .       │ │
+│  │  drwxr-xr-x 14 admin admin  4096 Jun 29 09:30 ..       │ │
+│  └─────────────────────────────────────────────────────────┘ │
+│  ──────────────────────────────────────────────────────────  │
+│  [Tab 1] [Tab 2] [+]              [Fullscreen] [Theme: Dark] │
+└──────────────────────────────────────────────────────────────┘
+</code></pre>
+<ul>
+<li>💻 <strong>Full PTY Support</strong>: Terminal đầy đủ chức năng</li>
+<li>📑 <strong>Multi-Tab</strong>: Nhiều terminal cùng lúc</li>
+<li>🔲 <strong>Fullscreen</strong>: Chế độ toàn màn hình</li>
+<li>🎨 <strong>Theme Support</strong>: Light/Dark theme</li>
+<li>📜 <strong>Scrollback</strong>: Buffer không giới hạn</li>
+</ul>
+<h3>Technology</h3>
+<ul>
+<li><strong>Backend</strong>: gorill/websocket + creack/pty</li>
+<li><strong>Frontend</strong>: xterm.js với custom themes</li>
+</ul>
+<hr />
+<h2>Slide 12: Docker Management</h2>
+<h1>Docker Container Management</h1>
+<h3>Container Features</h3>
+<pre><code>┌─────────────────────────────────────────────────────────┐
+│  🐳 Docker Status: Running                               │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐        │
+│  │nginx:1.2│ │mysql:8 │ │redis:7 │ │node:20 │        │
+│  │ ● RUN   │ │ ● RUN   │ │ ● RUN   │ │ ● RUN   │        │
+│  └─────────┘ └─────────┘ └─────────┘ └─────────┘        │
+└─────────────────────────────────────────────────────────┘
+</code></pre>
+<h3>Management Capabilities</h3>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Containers</strong></td>
+<td>Start, stop, restart, remove</td>
+</tr>
+<tr>
+<td><strong>Images</strong></td>
+<td>Pull, build, remove images</td>
+</tr>
+<tr>
+<td><strong>Networks</strong></td>
+<td>Create and manage networks</td>
+</tr>
+<tr>
+<td><strong>Volumes</strong></td>
+<td>Persistent storage management</td>
+</tr>
+<tr>
+<td><strong>Compose</strong></td>
+<td>Docker Compose editor &amp; runner</td>
+</tr>
+</tbody>
+</table>
+<h3>One-Click App Templates (38+)</h3>
+<pre><code>┌────────────────────────────────────────────────────────┐
+│  Popular Templates                                      │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐              │
+│  │ WordPress │ │  Nextcloud│ │  GitLab  │              │
+│  └──────────┘ └──────────┘ └──────────┘              │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐              │
+│  │  Matomo   │ │   Jira   │ │ Prometheus│              │
+│  └──────────┘ └──────────┘ └──────────┘              │
+└────────────────────────────────────────────────────────┘
+</code></pre>
+<hr />
+<h2>Slide 13: Security Features</h2>
+<h1>Bảo Mật Toàn Diện</h1>
+<h3>Security Stack</h3>
+<pre><code>┌─────────────────────────────────────────────────────────┐
+│                    Security Layers                        │
+│  ┌─────────────────────────────────────────────────────┐ │
+│  │  JWT Auth (15min access + 7day refresh token)     │ │
+│  │  TOTP 2FA (RFC 6238)                               │ │
+│  │  RBAC (Admin/Operator/Viewer)                      │ │
+│  │  bcrypt password hashing (cost=12)                 │ │
+│  │  CSRF Protection                                    │ │
+│  │  Rate Limiting (300 req/min per IP)                │ │
+│  │  Audit Logging                                      │ │
+│  └─────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────┘
+</code></pre>
+<h3>Security Features</h3>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>🔥 <strong>Firewall</strong></td>
+<td>UFW rules management</td>
+</tr>
+<tr>
+<td>🚫 <strong>IP Blocking</strong></td>
+<td>Block malicious IPs</td>
+</tr>
+<tr>
+<td>🛡️ <strong>Fail2ban</strong></td>
+<td>Auto-ban failed login attempts</td>
+</tr>
+<tr>
+<td>🔑 <strong>SSH Config</strong></td>
+<td>SSH hardening options</td>
+</tr>
+<tr>
+<td>📊 <strong>Port Monitor</strong></td>
+<td>Track open ports</td>
+</tr>
+<tr>
+<td>📝 <strong>Audit Logs</strong></td>
+<td>Log all admin actions</td>
+</tr>
+</tbody>
+</table>
+<h3>RBAC Roles</h3>
+<table>
+<thead>
+<tr>
+<th>Role</th>
+<th>Permissions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Admin</strong></td>
+<td>Full access</td>
+</tr>
+<tr>
+<td><strong>Operator</strong></td>
+<td>Manage services, no user management</td>
+</tr>
+<tr>
+<td><strong>Viewer</strong></td>
+<td>Read-only access</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Slide 14: Hệ Thống Logs Toàn Diện</h2>
+<h1>Quản Lý Logs Thông Minh</h1>
+<h3>Tổng Quan Logs</h3>
+<pre><code>┌───────────────────────────────────────────────────────────────────┐
+│  📋 ITDLUPanel Log Center                                         │
+│  ┌──────────────────────────────────────────────────────────────┐ │
+│  │  🔍 Filter: [All Logs ▼] [Date Range] [Search...]            │ │
+│  ├──────────────────────────────────────────────────────────────┤ │
+│  │  📅 2026-06-30 14:25:03  [AUDIT]  User admin logged in       │ │
+│  │  📅 2026-06-30 14:24:58  [ERROR]  Nginx: connection failed   │ │
+│  │  📅 2026-06-30 14:23:15  [INFO]   Backup completed: db.sql   │ │
+│  │  📅 2026-06-30 14:22:01  [WARN]   SSH: failed login attempt  │ │
+│  │  📅 2026-06-30 14:20:33  [PANEL]  Service nginx restarted    │ │
+│  └──────────────────────────────────────────────────────────────┘ │
+│  [Download] [Export] [Clear Old] [Settings]                       │
+└───────────────────────────────────────────────────────────────────┘
+</code></pre>
+<h3>Các Loại Logs</h3>
+<p>|| Type | Description | Location |
+|------|-------------|----------|
+| 📊 <strong>Panel Logs</strong> | Hoạt động của panel (login, logout, config changes) | <code>/var/log/itdlupanel/panel.log</code> |
+| 💻 <strong>SSH Logs</strong> | Kết nối SSH, failed login attempts | <code>/var/log/auth.log</code> |
+| 🌐 <strong>Website Logs</strong> | Access logs, error logs per domain | <code>/var/www/{domain}/logs/</code> |
+| 🔒 <strong>Audit Logs</strong> | Tất cả actions của admin | SQLite database |
+| 🐳 <strong>Docker Logs</strong> | Container logs, stdout/stderr | <code>docker logs {container}</code> |
+| 🔄 <strong>Service Logs</strong> | Systemd services, cron jobs | <code>/var/log/syslog</code> |</p>
+<h3>Tính Năng Chính</h3>
+<ul>
+<li>🔍 <strong>Advanced Filtering</strong>: Lọc theo loại, ngày, mức độ nghiêm trọng</li>
+<li>📅 <strong>Date Range Picker</strong>: Chọn khoảng thời gian xem logs</li>
+<li>🔎 <strong>Full-Text Search</strong>: Tìm kiếm nội dung log</li>
+<li>📥 <strong>Export</strong>: Xuất logs ra JSON, CSV, TXT</li>
+<li>🗜️ <strong>Auto-Compression</strong>: Nén logs cũ tự động</li>
+<li>⏰ <strong>Retention Policy</strong>: Cấu hình số ngày lưu trữ</li>
+</ul>
+<h3>Log Levels</h3>
+<pre><code>┌─────────────────────────────────────────────────────────────────┐
+│  Log Levels                                                       │
+│                                                                  │
+│  🔴 CRITICAL  - Lỗi nghiêm trọng, cần can thiệp ngay           │
+│  🟠 ERROR     - Lỗi hoạt động không bình thường                 │
+│  🟡 WARNING   - Cảnh báo, có thể ảnh hưởng                      │
+│  🔵 INFO      - Thông tin hoạt động bình thường                 │
+│  ⚪ DEBUG     - Chi tiết debug (dev mode)                        │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+</code></pre>
+<h3>Security Audit Logs</h3>
+<p>|| Field | Description |
+|-------|-------------|
+| Timestamp | Thời gian chính xác (timezone) |
+| User | Tài khoản thực hiện |
+| Action | Hành động (create/delete/update/restart) |
+| Resource | Đối tượng bị tác động |
+| IP Address | Địa chỉ IP của người dùng |
+| Result | Thành công/Thất bại |</p>
+<h3>Website Access Logs</h3>
+<pre><code># Apache/Nginx Access Log Format
+[30/Jun/2026:14:25:03 +0700] &quot;GET /api/users HTTP/1.1&quot; 200 1234
+[30/Jun/2026:14:25:04 +0700] &quot;POST /login HTTP/1.1&quot; 302 0
+[30/Jun/2026:14:25:05 +0700] &quot;GET /dashboard HTTP/1.1&quot; 200 5678
+</code></pre>
+<h3>Quick Actions</h3>
+<p>|| Action | Description |
+|--------|-------------|
+| View Live | Xem logs realtime với auto-refresh |
+| Download | Tải toàn bộ log file |
+| Search | Tìm kiếm nội dung |
+| Archive | Nén và lưu trữ logs cũ |
+| Purge | Xóa logs theo retention policy |</p>
+<hr />
+<h2>Slide 15: SSL Certificates</h2>
+<h1>Quản Lý SSL Certificate</h1>
+<h3>SSL Features</h3>
+<pre><code>┌─────────────────────────────────────────────────────────┐
+│  🔒 SSL Certificate Manager                              │
+│  ┌─────────────────────────────────────────────────────┐ │
+│  │  Domain: example.com                                │ │
+│  │  Provider: Let's Encrypt                            │ │
+│  │  Valid Until: 2026-09-29                            │ │
+│  │  Auto-Renewal: ✅ Enabled                           │ │
+│  │  [View] [Renew] [Download] [Delete]                │ │
+│  └─────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────┘
+</code></pre>
+<h3>Certificate Options</h3>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Let's Encrypt</strong></td>
+<td>Free auto-renewal SSL</td>
+</tr>
+<tr>
+<td><strong>Self-Signed</strong></td>
+<td>For internal/testing</td>
+</tr>
+<tr>
+<td><strong>Custom</strong></td>
+<td>Upload your own cert</td>
+</tr>
+</tbody>
+</table>
+<h3>Features</h3>
+<ul>
+<li>✅ <strong>Auto-Issue</strong>: Tự động cấp phát certificate</li>
+<li>✅ <strong>Auto-Renewal</strong>: Gia hạn tự động trước 30 ngày</li>
+<li>✅ <strong>Wildcard Support</strong>: Hỗ trợ wildcard certificates</li>
+<li>✅ <strong>Multi-Domain</strong>: Nhiều domain trong 1 cert</li>
+</ul>
+<hr />
+<h2>Slide 16: Backup &amp; Storage</h2>
+<h1>Backup &amp; Cloud Storage</h1>
+<h3>Supported Storage Backends</h3>
+<pre><code>┌─────────────────────────────────────────────────────────┐
+│  ☁️ Cloud Storage Options                              │
+│                                                         │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
+│  │  Amazon S3  │  │  Google     │  │  OneDrive   │    │
+│  │   (AWS)     │  │   Drive     │  │  (Microsoft)│    │
+│  └─────────────┘  └─────────────┘  └─────────────┘    │
+│                                                         │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
+│  │   MinIO     │  │   FTP/SFTP  │  │   Local     │    │
+│  │  (S3-like)  │  │   Server    │  │   Storage   │    │
+│  └─────────────┘  └─────────────┘  └─────────────┘    │
+└─────────────────────────────────────────────────────────┘
+</code></pre>
+<h3>Backup Features</h3>
+<ul>
+<li>✅ <strong>Scheduled Backups</strong>: Đặt lịch backup tự động</li>
+<li>✅ <strong>Incremental Backup</strong>: Chỉ backup thay đổi</li>
+<li>✅ <strong>Compression</strong>: Nén gzip/tar</li>
+<li>✅ <strong>Encryption</strong>: Mã hóa backup files</li>
+<li>✅ <strong>Retention Policy</strong>: Xóa backup cũ tự động</li>
+</ul>
+<h3>OAuth2 Integration</h3>
+<ul>
+<li>Google Drive via OAuth2</li>
+<li>OneDrive via OAuth2</li>
+<li>S3/MinIO via Access Keys</li>
+</ul>
+<hr />
+<h2>Slide 17: Internationalization</h2>
+<h1>Đa Ngôn Ngữ</h1>
+<h3>Supported Languages</h3>
+<pre><code>┌─────────────────────────────────────────────────────────┐
+│  🌍 Language Support                                    │
+│                                                         │
+│  ┌─────────────┐              ┌─────────────┐         │
+│  │ 🇺🇸 English  │              │ 🇻🇳 Tiếng Việt│         │
+│  │   (EN)      │              │    (VI)     │         │
+│  └─────────────┘              └─────────────┘         │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+</code></pre>
+<h3>i18n Coverage</h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Coverage</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Backend API Messages</td>
+<td>100%</td>
+</tr>
+<tr>
+<td>Frontend UI</td>
+<td>100%</td>
+</tr>
+<tr>
+<td>Error Messages</td>
+<td>100%</td>
+</tr>
+<tr>
+<td>Documentation</td>
+<td>EN + VI</td>
+</tr>
+</tbody>
+</table>
+<h3>Implementation</h3>
+<ul>
+<li><strong>Frontend</strong>: i18next với react-i18next</li>
+<li><strong>Backend</strong>: Custom i18n package</li>
+<li><strong>Dynamic Switching</strong>: Đổi ngôn ngữ không cần reload</li>
+</ul>
+<hr />
+<h2>Slide 18: Code Statistics</h2>
+<h1>Dự Án Bằng Con Số</h1>
+<h3>Codebase Metrics</h3>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Count</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Go files</td>
+<td>112 files • 43,314 LOC</td>
+</tr>
+<tr>
+<td>TypeScript files</td>
+<td>93 files</td>
+</tr>
+<tr>
+<td>API endpoints</td>
+<td>~160 REST + 2 WebSocket</td>
+</tr>
+<tr>
+<td>Database tables</td>
+<td>25</td>
+</tr>
+<tr>
+<td>Docker templates</td>
+<td>38 one-click apps</td>
+</tr>
+<tr>
+<td>Cron templates</td>
+<td>30 pre-built</td>
+</tr>
+<tr>
+<td>Software installers</td>
+<td>14</td>
+</tr>
+<tr>
+<td>Frontend pages</td>
+<td>17 (lazy-loaded)</td>
+</tr>
+<tr>
+<td>Shared components</td>
+<td>15</td>
+</tr>
+</tbody>
+</table>
+<h3>Backend Architecture</h3>
+<pre><code>Middleware Stack: 11 layers
+API Handlers: 24 files
+Services: 33+
+Installers: 14
+Vhost Generators: 4 (Nginx, Apache, OLS, Node)
+</code></pre>
+<h3>Frontend Architecture</h3>
+<pre><code>Pages: 17 (all lazy-loaded)
+Components: 15 shared
+Zustand Stores: 5
+Custom Hooks: 7
+</code></pre>
+<hr />
+<h2>Slide 19: Deployment</h2>
+<h1>Triển Khai Dễ Dàng</h1>
+<h3>Quick Start</h3>
+<pre><code class="language-bash"># 1. Build
+cd web &amp;&amp; npm install &amp;&amp; npx vite build &amp;&amp; cd ..
+make build
+
+# 2. Configure
+cp config/panel.json.example config/panel.json
+vim config/panel.json
+
+# 3. Run
+./bin/itdlupanel -config config/panel.json
+
+# 4. Access
+# Open https://localhost:8888
+</code></pre>
+<h3>Default Credentials</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Username</td>
+<td><code>admin</code></td>
+</tr>
+<tr>
+<td>Password</td>
+<td><code>admin@123456</code></td>
+</tr>
+<tr>
+<td>Default Port</td>
+<td><code>8888</code></td>
+</tr>
+</tbody>
+</table>
+<h3>System Requirements</h3>
+<table>
+<thead>
+<tr>
+<th>Resource</th>
+<th>Minimum</th>
+<th>Recommended</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>RAM</td>
+<td>1 GB</td>
+<td>2 GB</td>
+</tr>
+<tr>
+<td>CPU</td>
+<td>1 core</td>
+<td>2+ cores</td>
+</tr>
+<tr>
+<td>Disk</td>
+<td>5 GB</td>
+<td>20 GB</td>
+</tr>
+<tr>
+<td>OS</td>
+<td>Ubuntu 18.04+</td>
+<td>Ubuntu 22.04 LTS</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Slide 20: Roadmap</h2>
+<h1>Lộ Trình Phát Triển</h1>
+<h3>Phase 1: ✅ Completed</h3>
+<ul>
+<li>[x] Core panel functionality</li>
+<li>[x] Docker management</li>
+<li>[x] WebSocket terminal</li>
+<li>[x] SSL certificates</li>
+<li>[x] Multi-language support</li>
+</ul>
+<h3>Phase 2: 🚧 In Progress</h3>
+<ul>
+<li>[ ] Kubernetes cluster management</li>
+<li>[ ] Advanced monitoring (Prometheus/Grafana)</li>
+<li>[ ] Plugin marketplace</li>
+<li>[ ] API documentation (OpenAPI)</li>
+</ul>
+<h3>Phase 3: 📋 Planned</h3>
+<ul>
+<li>[ ] Multi-server management</li>
+<li>[ ] Mobile app (React Native)</li>
+<li>[ ] AI-powered suggestions</li>
+<li>[ ] GitOps integration</li>
+</ul>
+<hr />
+<h2>Slide 21: Kết Luận</h2>
+<h1>Cảm Ơn!</h1>
+<h2>ITDLUPanel</h2>
+<h3>Contact &amp; Support</h3>
+<ul>
+<li>🌐 <strong>Website</strong>: https://github.com/itdlu/ITDLUPanel</li>
+<li>📧 <strong>Email</strong>: support@itdlu.edu.vn</li>
+<li>📖 <strong>Docs</strong>: https://docs.itdlu.edu.vn</li>
+</ul>
+<h3>Key Takeaways</h3>
+<pre><code>┌─────────────────────────────────────────────────────────┐
+│  ✓ Single Binary Deployment                             │
+│  ✓ Zero External Dependencies                          │
+│  ✓ Production-Ready Security (JWT, 2FA, RBAC)          │
+│  ✓ Docker &amp; Cloud Storage Integration                  │
+│  ✓ Real-time WebSocket Terminal                        │
+│  ✓ EN/VI Language Support                              │
+│  ✓ MIT License - Completely Free                       │
+└─────────────────────────────────────────────────────────┘
+</code></pre>
+<p><strong>© 2026 Đại học Đà Lạt (Dalat University)</strong></p>
+<hr />
+<p><em>Generated by ITDLUPanel Documentation System</em></p>
+<hr />
+<h1>PHẦN 2: PHÂN TÍCH KỸ THUẬT CHI TIẾT (v2.0)</h1>
+<hr />
+<h1>ITDLUPanel v2 - Phân Tích Kỹ Thuật Chi Tiết</h1>
+<p><strong>Đại học Đà Lạt | © 2026</strong></p>
+<hr />
+<h2>Slide 1: Tổng Quan Kiến Trúc</h2>
+<h1>ITDLUPanel v2 - Technical Deep Dive</h1>
+<h2>Phân Tích Kỹ Thuật Toàn Diện</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────────────────┐
+│                         ITDLUPanel v2 Architecture                          │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                    Frontend Layer (React 19)                         │   │
+│  │   Ant Design 6 • xterm.js • Monaco • Recharts • Zustand            │   │
+│  └─────────────────────────────────┬───────────────────────────────────┘   │
+│                                    │                                        │
+│  ┌─────────────────────────────────▼───────────────────────────────────┐   │
+│  │                      API Gateway Layer                               │   │
+│  │   11 Middleware Layers • JWT/RBAC • Rate Limiting • CSRF           │   │
+│  └─────────────────────────────────┬───────────────────────────────────┘   │
+│                                    │                                        │
+│  ┌─────────────────────────────────▼───────────────────────────────────┐   │
+│  │                    Business Logic Layer                              │   │
+│  │   33 Services • 14 Installers • 4 Vhost Generators                │   │
+│  └─────────────────────────────────┬───────────────────────────────────┘   │
+│                                    │                                        │
+│  ┌─────────────────────────────────▼───────────────────────────────────┐   │
+│  │                       Data Layer                                     │   │
+│  │   SQLite (25 tables) • File System • Docker Socket                │   │
+│  └─────────────────────────────────┬───────────────────────────────────┘   │
+│                                    │                                        │
+│  ┌─────────────────────────────────▼───────────────────────────────────┐   │
+│  │                     System Integration Layer                         │   │
+│  │   systemctl • /proc • crontab • docker.sock                        │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+</code></pre>
+<h3>Key Metrics</h3>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Go Files</td>
+<td>112 files</td>
+</tr>
+<tr>
+<td>Lines of Code</td>
+<td>43,314 LOC</td>
+</tr>
+<tr>
+<td>API Endpoints</td>
+<td>~160 REST + 2 WS</td>
+</tr>
+<tr>
+<td>Database Tables</td>
+<td>25</td>
+</tr>
+<tr>
+<td>Services</td>
+<td>33+</td>
+</tr>
+<tr>
+<td>Middleware Layers</td>
+<td>11</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Slide 2: Backend Layer Architecture</h2>
+<h1>Backend Go Architecture</h1>
+<h2>Layered Design Pattern</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────┐
+│                      HTTP Request                                │
+└──────────────────────────────────┬──────────────────────────────┘
+                                   │
+                                   ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Middleware Stack (11 layers - ordered execution)              │
+│                                                                 │
+│  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐   │
+│  │ Recovery  │→ │  Logger   │→ │Security   │→ │   CORS    │   │
+│  │  (panic)  │  │ (zerolog) │  │ Headers   │  │           │   │
+│  └───────────┘  └───────────┘  └───────────┘  └───────────┘   │
+│       ↓             ↓              ↓              ↓              │
+│  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐   │
+│  │Compress   │→ │ Language  │→ │Rate Limit │→ │   CSRF    │   │
+│  │  (gzip)   │  │   (i18n)  │  │(300/min)  │  │           │   │
+│  └───────────┘  └───────────┘  └───────────┘  └───────────┘   │
+│       ↓             ↓              ↓              ↓              │
+│  ┌───────────┐  ┌───────────┐                                   │
+│  │   Audit   │→ │   Auth    │→ RBAC Permission Check           │
+│  │  Logging  │  │   (JWT)   │                                   │
+│  └───────────┘  └───────────┘                                   │
+└──────────────────────────────────┬──────────────────────────────┘
+                                   │
+                                   ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  API Handlers (24 files - REST endpoints)                      │
+│                                                                 │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐         │
+│  │  auth    │ │  site    │ │ database  │ │  docker   │         │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘         │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐         │
+│  │   file   │ │ security │ │  cron     │ │  backup   │         │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘         │
+│  ... more handlers ...                                          │
+└──────────────────────────────────┬──────────────────────────────┘
+                                   │
+                                   ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Service Layer (33+ services)                                   │
+│                                                                 │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐          │
+│  │ AuthService  │ │ SiteService  │ │DatabaseService│          │
+│  │ JWT + TOTP   │ │ CRUD + Stats │ │  CRUD + Dump  │          │
+│  └──────────────┘ └──────────────┘ └──────────────┘          │
+│                                                                 │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐          │
+│  │DockerService│ │ FileService  │ │ BackupService │          │
+│  │ 46+ methods  │ │ Upload/Download│ │ Multi-backend │          │
+│  └──────────────┘ └──────────────┘ └──────────────┘          │
+└──────────────────────────────────┬──────────────────────────────┘
+                                   │
+                                   ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Data Access Layer                                               │
+│                                                                 │
+│  ┌──────────────────┐ ┌──────────────────┐ ┌────────────────┐  │
+│  │   SQLite 1.47   │ │  File System    │ │ Docker Socket  │  │
+│  │  modernc.org    │ │   os/exec       │ │  API v1.41     │  │
+│  └──────────────────┘ └──────────────────┘ └────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+</code></pre>
+<hr />
+<h2>Slide 3: Middleware Stack Chi Tiết</h2>
+<h1>Middleware Pipeline Deep Dive</h1>
+<h2>11-Layer Middleware Stack</h2>
+<h3>Layer 1: Recovery Middleware</h3>
+<pre><code class="language-go">func RecoveryMiddleware() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        defer func() {
+            if err := recover(); err != nil {
+                // Log panic with stack trace
+                zerolog.Error().
+                    Interface(&quot;panic&quot;, err).
+                    Str(&quot;stack&quot;, string(debug.Stack())).
+                    Msg(&quot;Panic recovered&quot;)
+
+                c.AbortWithStatusJSON(500, gin.H{
+                    &quot;error&quot;: &quot;Internal server error&quot;,
+                })
+            }
+        }()
+        c.Next()
+    }
+}
+</code></pre>
+<h3>Layer 2: Structured Logging</h3>
+<pre><code class="language-go">// zerolog with lumberjack rotation
+zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+log := zerolog.New(os.Stdout).
+    Level(zerolog.InfoLevel).
+    With().
+    Timestamp().
+    Caller().
+    Logger()
+</code></pre>
+<h3>Layer 3-6: Security Layers</h3>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Header</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Security</td>
+<td>X-Frame-Options</td>
+<td>Clickjacking protection</td>
+</tr>
+<tr>
+<td>Security</td>
+<td>X-Content-Type-Options</td>
+<td>MIME sniffing prevention</td>
+</tr>
+<tr>
+<td>Security</td>
+<td>X-XSS-Protection</td>
+<td>XSS filter (legacy)</td>
+</tr>
+<tr>
+<td>Security</td>
+<td>Strict-Transport-Security</td>
+<td>Force HTTPS</td>
+</tr>
+<tr>
+<td>CORS</td>
+<td>Access-Control-*</td>
+<td>Cross-origin requests</td>
+</tr>
+</tbody>
+</table>
+<h3>Layer 7: Rate Limiting</h3>
+<pre><code>Algorithm: Token Bucket
+├── Rate: 300 requests/minute
+├── Per: IP address
+└── Response: 429 Too Many Requests
+</code></pre>
+<h3>Layer 8: CSRF Protection</h3>
+<pre><code>┌─────────────────────────────────────────────────────────────┐
+│  CSRF Token Flow                                           │
+│                                                             │
+│  1. Server generates: csrf_token = crypto随机数          │
+│  2. Set-Cookie: HttpOnly; SameSite=Strict                │
+│  3. Response includes: X-CSRF-Token header               │
+│  4. Client must send both cookie + header                 │
+│  5. Server validates: cookie == header                    │
+└─────────────────────────────────────────────────────────────┘
+</code></pre>
+<h3>Layer 9: Audit Logging</h3>
+<pre><code class="language-go">// Write operation audit trail
+type AuditLog struct {
+    UserID    uint      `db:&quot;user_id&quot;`
+    Username  string    `db:&quot;username&quot;`
+    Action    string    `db:&quot;action&quot;`     // CREATE, UPDATE, DELETE
+    Resource  string    `db:&quot;resource&quot;`   // sites, databases, users
+    Details   string    `db:&quot;details&quot;`    // JSON payload
+    IPAddress string    `db:&quot;ip_address&quot;`
+    Timestamp time.Time `db:&quot;created_at&quot;`
+}
+</code></pre>
+<h3>Layer 10-11: Auth + RBAC</h3>
+<pre><code class="language-go">// JWT Token Structure
+type Claims struct {
+    UserID      uint     `json:&quot;user_id&quot;`
+    Username    string   `json:&quot;username&quot;`
+    Role        string   `json:&quot;role&quot;`
+    Permissions []string `json:&quot;permissions&quot;`
+    jwt.RegisteredClaims
+}
+
+// RBAC Permission Check
+func CheckPermission(permissions []string, required string) bool {
+    for _, p := range permissions {
+        if p == &quot;*&quot; || p == required {
+            return true
+        }
+    }
+    return false
+}
+</code></pre>
+<hr />
+<h2>Slide 4: Source Code Structure</h2>
+<h1>Go Project Structure</h1>
+<h2>Directory Layout</h2>
+<pre><code>internal/
+├── api/
+│   ├── v1/                    # 24 REST handler files (9,814 LOC)
+│   │   ├── auth.go            # Authentication endpoints
+│   │   ├── site.go            # Website management
+│   │   ├── database.go        # Database CRUD
+│   │   ├── docker.go          # Docker management (46+ endpoints)
+│   │   ├── file.go            # File browser/editor
+│   │   ├── docker_compose.go  # Compose projects
+│   │   ├── ssl.go             # SSL certificates
+│   │   ├── backup.go          # Backup management
+│   │   ├── security.go         # Firewall, SSH, Fail2ban
+│   │   ├── cron.go            # Cron jobs
+│   │   ├── log.go             # Log viewer
+│   │   ├── monitor.go         # System metrics
+│   │   ├── user.go            # User management
+│   │   ├── role.go             # RBAC roles
+│   │   ├── settings.go         # Panel settings
+│   │   ├── software.go         # Software installation
+│   │   ├── ftp.go              # FTP accounts
+│   │   ├── ftp_storage.go     # FTP backup storage
+│   │   ├── cloud_storage.go    # S3/GDrive/OneDrive
+│   │   ├── redis.go           # Redis management
+│   │   ├── task.go            # Background tasks
+│   │   ├── notification.go     # Notifications
+│   │   ├── plugin.go          # Plugin system
+│   │   ├── waf.go             # WAF management
+│   │   ├── system.go          # System info
+│   │   └── docker_cleanup.go   # Docker auto-cleanup
+│   │
+│   └── ws/                     # 2 WebSocket handlers
+│       ├── terminal.go         # PTY terminal (xterm.js ↔ creack/pty)
+│       └── monitor.go          # Real-time metrics stream
+│
+├── app/                        # Application bootstrap
+│   ├── app.go                  # Main entry, graceful shutdown
+│   ├── router.go               # Gin route registration
+│   ├── auth_middleware.go      # JWT + RBAC middleware
+│   └── middleware.go          # CORS, rate limit, compression
+│
+├── service/                    # Business logic (23,437 LOC)
+│   ├── auth_service.go         # Login, register, 2FA
+│   ├── jwt.go                  # Token generation/validation
+│   ├── totp_service.go         # TOTP 2FA (RFC 6238)
+│   ├── user_service.go         # User CRUD
+│   ├── role_service.go         # RBAC role management
+│   ├── site_service.go         # Website CRUD + config
+│   ├── site_statistics_service.go  # Traffic statistics
+│   ├── database_service.go     # MySQL/MariaDB management
+│   ├── file_service.go         # File operations
+│   ├── docker_service.go       # Docker API wrapper
+│   ├── docker_compose_service.go   # Compose project management
+│   ├── docker_cleanup_service.go    # Auto-cleanup old images/containers
+│   ├── backup_service.go       # Backup orchestration
+│   ├── backup_incremental.go    # Incremental backup logic
+│   ├── backup_encryption.go    # AES-256 encryption
+│   ├── backup_upload_service.go    # Multi-destination upload
+│   ├── ssl_service.go          # Let's Encrypt integration
+│   ├── ssl_renewer.go          # Auto-renewal scheduler
+│   ├── cron_service.go         # Cron job management
+│   ├── terminal_service.go     # PTY session management
+│   ├── monitor_service.go      # System metrics collection
+│   ├── metrics_collector.go    # CPU/RAM/Disk/Network
+│   ├── security_service.go     # SSH, Fail2ban, hardening
+│   ├── firewall_service.go     # UFW rules management
+│   ├── software_service.go     # Software install/uninstall
+│   ├── settings_service.go     # Panel configuration
+│   ├── redis_service.go        # Redis management
+│   ├── ftp_service.go         # PureFTPd management
+│   ├── ftp_storage_service.go  # FTP storage backends
+│   ├── cloud_storage_service.go # S3/GDrive/OneDrive
+│   ├── notification_service.go # Email/Telegram/Webhook
+│   ├── email_service.go        # SMTP integration
+│   ├── telegram_service.go     # Telegram bot notifications
+│   ├── geo_service.go          # GeoIP lookup
+│   ├── log_service.go         # Log aggregation
+│   ├── waf_service.go         # WAF rule management
+│   ├── waf_log_service.go     # WAF access logs
+│   ├── haproxy_manager.go      # HAProxy configuration
+│   ├── coraza_spoa.go         # Coraza WAF SPOA integration
+│   ├── permission_cache.go     # RBAC permission caching
+│   ├── user_resource_service.go    # User quotas
+│   ├── site_defaults.go       # Default site configuration
+│   │
+│   ├── installer/             # 14 software installers
+│   │   ├── installer.go       # Base installer interface
+│   │   ├── nginx.go          # Nginx installation
+│   │   ├── apache.go         # Apache installation
+│   │   ├── ols.go            # OpenLiteSpeed
+│   │   ├── php.go            # PHP (multiple versions)
+│   │   ├── mysql.go          # MySQL installation
+│   │   ├── postgresql.go     # PostgreSQL
+│   │   ├── mongodb.go        # MongoDB
+│   │   ├── redis.go         # Redis
+│   │   ├── memcached.go     # Memcached
+│   │   ├── phpmyadmin.go     # phpMyAdmin
+│   │   ├── pgadmin.go       # pgAdmin
+│   │   ├── pureftpd.go       # PureFTPd
+│   │   ├── supervisor.go     # Supervisor
+│   │   ├── docker.go         # Docker Engine
+│   │   ├── nodejs.go         # Node.js
+│   │   ├── python.go         # Python
+│   │   ├── golang.go         # Go
+│   │   ├── java.go           # Java/Tomcat
+│   │   ├── elasticsearch.go   # Elasticsearch
+│   │   ├── s3_storage.go     # MinIO S3
+│   │   ├── google_drive.go   # Google Drive OAuth
+│   │   ├── onedrive.go       # OneDrive OAuth
+│   │   └── ftp_storage.go    # FTP storage
+│   │
+│   └── vhost/                 # 4 web server vhost generators
+│       ├── vhost.go          # Base vhost interface
+│       ├── nginx.go          # Nginx site config
+│       ├── apache.go         # Apache vhost
+│       └── ols.go            # OpenLiteSpeed vhost
+│
+├── database/                   # SQLite + models
+│   ├── sqlite.go              # Database connection pool
+│   ├── models/               # Data models
+│   │   └── role.go          # RBAC models
+│   └── migrations/           # 14 migration files
+│       ├── migrations.go     # Migration runner
+│       ├── 002_monitor_metrics.go
+│       ├── 003_firewall_settings.go
+│       ├── 004_phpmyadmin_default_port.go
+│       ├── 005_quota.go
+│       ├── 006_site_description.go
+│       ├── 007_permissions.go
+│       ├── 008_panel_settings.go
+│       ├── 009_ftp_storage.go
+│       ├── 010_cloud_storages.go
+│       ├── 011_user_resources.go
+│       ├── 012_notifications.go
+│       ├── 013_notification_templates.go
+│       ├── 014_site_type.go
+│       ├── 015_docker_cleanup.go
+│       ├── 016_waf.go
+│       ├── 017_waf_enhance.go
+│       ├── 018_backup_uploads.go
+│       ├── 019_cron_storage.go
+│       └── 020_incremental_backups.go
+│
+├── config/                    # Configuration
+│   └── config.go             # JSON config reader/writer
+│
+├── pkg/                      # Shared utilities
+│   └── ...                   # Crypto, logger, errors
+│
+├── i18n/                     # Backend i18n
+│   └── ...                   # EN/VI translations
+│
+├── task/                     # Background task queue
+│   └── queue.go             # Async task with progress
+│
+├── websocket/               # WebSocket hub
+│   └── ...                  # Connection management
+│
+├── system/                   # System utilities
+│   ├── shell.go            # Shell execution
+│   └── os_detect.go       # OS detection
+│
+└── plugin/                  # Plugin system
+    ├── plugin.go          # Plugin interface
+    └── manager.go         # Plugin loader
+
+cmd/
+└── panel/
+    └── main.go            # Entry point
+</code></pre>
+<hr />
+<h2>Slide 5: Authentication &amp; Authorization</h2>
+<h1>JWT + TOTP 2FA + RBAC</h1>
+<h2>Authentication Flow</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────────────┐
+│                     Authentication Pipeline                             │
+│                                                                         │
+│  ┌─────────┐      ┌─────────┐      ┌─────────┐      ┌─────────┐       │
+│  │  Login │ ──→  │  Verify │ ──→  │ Generate│ ──→  │ Return  │       │
+│  │ Request│      │Password │      │  Token  │      │  Tokens │       │
+│  └─────────┘      └─────────┘      └─────────┘      └─────────┘       │
+│       │                │                │                             │
+│       │           bcrypt              JWT HS256                       │
+│       │           cost=12        ┌──────────────┐                      │
+│       │                     ┌────│ Access Token │                     │
+│       │                     │    │ (15 min)     │                     │
+│       │                     │    └──────────────┘                      │
+│       │                     │    ┌──────────────┐                      │
+│       │                     └────│Refresh Token│                      │
+│       │                          │ (7 days)    │                      │
+│       │                          └──────────────┘                      │
+│       ▼                                                                   │
+│  ┌─────────────────────────────────────────────────────────────┐        │
+│  │  2FA Check (if enabled)                                    │        │
+│  │  ┌─────────┐      ┌─────────────┐      ┌──────────────┐   │        │
+│  │  │  TOTP   │ ──→  │   Validate  │ ──→  │ Update Login │   │        │
+│  │  │  Code   │      │ 6-digit RFC │      │   Status     │   │        │
+│  │  └─────────┘      └─────────────┘      └──────────────┘   │        │
+│  └─────────────────────────────────────────────────────────────┘        │
+└─────────────────────────────────────────────────────────────────────────┘
+</code></pre>
+<h2>JWT Token Structure</h2>
+<pre><code class="language-go">// Access Token Claims (15 minutes TTL)
+type AccessClaims struct {
+    UserID      uint     `json:&quot;user_id&quot;`
+    Username    string   `json:&quot;username&quot;`
+    Email       string   `json:&quot;email&quot;`
+    Role        string   `json:&quot;role&quot;`
+    Permissions []string `json:&quot;permissions&quot;`  // Cached permissions
+    TokenType   string   `json:&quot;type&quot;`         // &quot;access&quot;
+    RegisteredClaims
+}
+
+// Refresh Token Claims (7 days TTL)
+type RefreshClaims struct {
+    UserID    uint   `json:&quot;user_id&quot;`
+    TokenType string `json:&quot;type&quot;`  // &quot;refresh&quot;
+    jti       string `json:&quot;jti&quot;`  // Unique token ID for revocation
+    RegisteredClaims
+}
+</code></pre>
+<h2>RBAC Permission Model</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────┐
+│  Permission Namespace System                                     │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  Admin Role: [&quot;*&quot;]                                       │   │
+│  │  ├── Full access to all resources                        │   │
+│  │  └── Can manage users and roles                          │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  Operator Role:                                          │   │
+│  │  ├── sites.*           (all site operations)            │   │
+│  │  ├── databases.*       (all database operations)        │   │
+│  │  ├── files.*           (all file operations)           │   │
+│  │  ├── docker.*         (all docker operations)          │   │
+│  │  ├── cron.*            (all cron operations)           │   │
+│  │  ├── backup.*         (all backup operations)          │   │
+│  │  └── terminal.access  (terminal access)                │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  Viewer Role:                                            │   │
+│  │  ├── sites.read         (read-only site view)           │   │
+│  │  ├── databases.read     (read-only database view)       │   │
+│  │  ├── files.read         (read-only file view)          │   │
+│  │  ├── logs.read          (read-only log view)           │   │
+│  │  └── docker.read        (read-only docker view)         │   │
+│  └─────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+</code></pre>
+<h2>TOTP 2FA Implementation</h2>
+<pre><code class="language-go">// TOTP Configuration (RFC 6238)
+const (
+    TOTPIssuer      = &quot;ITDLUPanel&quot;
+    TOTPDigits      = 6
+    TOTPPeriod      = 30  // seconds
+    TOTPSecretSize  = 20  // bytes
+)
+
+// Enable 2FA - Generate QR Code Secret
+func (s *AuthService) EnableTOTP(userID uint) (*TOTPResponse, error) {
+    // Generate random secret
+    secret, err := totp.Generate(totp.GenerateOpts{
+        Issuer:      TOTPIssuer,
+        AccountName: username,
+        SecretSize:  TOTPSecretSize,
+        Period:      TOTPPeriod,
+        Digits:      otp.DigitsSix,
+        Algorithm:   otp.AlgorithmSHA1,
+    })
+
+    // Generate provisioning URI for QR code
+    provisioningURI := secret.URL()
+
+    return &amp;TOTPResponse{
+        Secret:     secret.Secret(),
+        ProvisioningURI: provisioningURI,
+        QRCode:     generateQRCodeBase64(provisioningURI),
+    }
+}
+
+// Verify TOTP Code
+func (s *AuthService) VerifyTOTP(secret, code string) bool {
+    return totp.Validate(code, secret)
+}
+</code></pre>
+<hr />
+<h2>Slide 6: Database Schema Chi Tiết</h2>
+<h1>SQLite Database Architecture</h1>
+<h2>Entity Relationship Diagram</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Core User &amp; Auth Entities                            │
+│                                                                             │
+│    ┌──────────┐         ┌─────────────────┐         ┌──────────┐           │
+│    │  users   │────────│   user_roles    │────────│   roles   │           │
+│    │          │   1:N  │                 │  N:1  │          │           │
+│    │ • id     │────────│ • user_id (FK)  │────────│ • id     │           │
+│    │ • username│        │ • role_id (FK) │        │ • name   │           │
+│    │ • email  │        └─────────────────┘        │ • perms  │           │
+│    │ • password│                                        │ • is_sys │           │
+│    │ • totp   │                                        └──────────┘           │
+│    │ • status │                                                                  │
+│    │ • last   │                                                                  │
+│    │ • created│                                                                  │
+│    └────┬─────┘                                                                  │
+│         │ 1:N                                                                    │
+│         ▼                                                                        │
+│    ┌──────────┐                                                                  │
+│    │audit_logs│                                                                  │
+│    │          │                                                                  │
+│    │ • user_id│                                                                  │
+│    │ • action │                                                                  │
+│    │ • details│                                                                  │
+│    │ • ip     │                                                                  │
+│    └──────────┘                                                                  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Application Entities                                  │
+│                                                                             │
+│    ┌──────────┐       ┌───────────┐       ┌──────────────┐                  │
+│    │   sites  │───────│  domains  │       │   crons      │                  │
+│    │          │  1:N  │           │       │              │                  │
+│    │ • domain │       │ • domain  │       │ • name       │                  │
+│    │ • root   │       │ • type    │       │ • schedule   │                  │
+│    │ • php    │       └───────────┘       │ • command    │                  │
+│    │ • server │                            │ • last_run   │                  │
+│    │ • ssl    │                            │ • status     │                  │
+│    └────┬─────┘                            └──────┬───────┘                  │
+│         │ 1:N                                       │                         │
+│         ▼                                          ▼                         │
+│    ┌──────────┐       ┌───────────┐       ┌──────────────┐                   │
+│    │databases │       │   ftps   │       │    tasks     │                   │
+│    │          │       │          │       │              │                   │
+│    │ • name   │       │ • username│      │ • name       │                   │
+│    │ • type   │       │ • path   │       │ • type       │                   │
+│    │ • user   │       │ • status │       │ • status     │                   │
+│    │ • pass   │       └───────────┘       │ • progress   │                   │
+│    └──────────┘                            │ • message   │                   │
+│                                             └──────────────┘                   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Storage &amp; Backup Entities                             │
+│                                                                             │
+│    ┌──────────┐       ┌───────────────┐       ┌──────────────┐             │
+│    │ backups  │───────│ftp_storages   │───────│cloud_storages│             │
+│    │          │  N:1 │               │  N:1  │              │             │
+│    │ • name   │       │ • host        │       │ • type       │             │
+│    │ • type   │       │ • port        │       │ • config     │             │
+│    │ • target │       │ • username    │       │ (encrypted) │             │
+│    │ • file   │       │ • path        │       └──────────────┘             │
+│    │ • size   │       └───────────────┘                                     │
+│    │ • storage│                                                                 │
+│    └──────────┘                                                                 │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Docker &amp; Notification Entities                        │
+│                                                                             │
+│    ┌─────────────┐     ┌─────────────────┐     ┌──────────────────┐       │
+│    │   docker   │     │notification_ch  │─────│notification_rules│       │
+│    │ containers │     │                 │ 1:N │                  │       │
+│    │            │     │ • name          │─────│ • event          │       │
+│    │ • name     │     │ • type          │     │ • threshold      │       │
+│    │ • image    │     │ • config        │     │ • enabled        │       │
+│    │ • status   │     │ • enabled       │     └──────────────────┘       │
+│    └─────────────┘     └────────┬────────┘                                 │
+│                                 │ 1:N                                       │
+│                                 ▼                                           │
+│                          ┌──────────────┐                                   │
+│                          │notification_ │                                   │
+│                          │logs          │                                   │
+│                          │              │                                   │
+│                          │ • status     │                                   │
+│                          │ • message    │                                   │
+│                          └──────────────┘                                   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+</code></pre>
+<h2>Key Table Definitions</h2>
+<h3>Users Table</h3>
+<pre><code class="language-sql">CREATE TABLE users (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    username        TEXT UNIQUE NOT NULL,
+    email           TEXT UNIQUE,
+    password_hash   TEXT NOT NULL,          -- bcrypt cost=12
+    totp_secret     TEXT,                    -- base32 encoded
+    totp_enabled    INTEGER DEFAULT 0,
+    status          INTEGER DEFAULT 1,       -- 1=active, 0=disabled
+    last_login      DATETIME,
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes
+CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX idx_users_email ON users(email);
+</code></pre>
+<h3>Roles Table</h3>
+<pre><code class="language-sql">CREATE TABLE roles (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT UNIQUE NOT NULL,
+    description TEXT,
+    permissions TEXT NOT NULL,              -- JSON array [&quot;sites.*&quot;, &quot;docker.*&quot;]
+    is_system   INTEGER DEFAULT 0,          -- 1=system role (cannot delete)
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- System roles
+INSERT INTO roles (name, permissions, is_system) VALUES
+    ('admin', '[&quot;*&quot;]', 1),
+    ('operator', '[&quot;sites.*&quot;,&quot;databases.*&quot;,&quot;files.*&quot;,&quot;docker.*&quot;,&quot;cron.*&quot;,&quot;backup.*&quot;,&quot;terminal.access&quot;]', 1),
+    ('viewer', '[&quot;sites.read&quot;,&quot;databases.read&quot;,&quot;files.read&quot;,&quot;logs.read&quot;,&quot;docker.read&quot;]', 1);
+</code></pre>
+<h3>Audit Logs Table</h3>
+<pre><code class="language-sql">CREATE TABLE audit_logs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER REFERENCES users(id),
+    username    TEXT,
+    action      TEXT NOT NULL,               -- CREATE, UPDATE, DELETE, LOGIN, etc.
+    resource    TEXT,                        -- sites, databases, users, etc.
+    details     TEXT,                        -- JSON with additional details
+    ip_address  TEXT,
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Index for efficient querying
+CREATE INDEX idx_audit_user ON audit_logs(user_id);
+CREATE INDEX idx_audit_created ON audit_logs(created_at);
+CREATE INDEX idx_audit_action ON audit_logs(action);
+</code></pre>
+<hr />
+<h2>Slide 7: Docker Integration Chi Tiết</h2>
+<h1>Docker Management System</h1>
+<h2>Architecture Overview</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────────────────┐
+│                     Docker Management Architecture                          │
+│                                                                             │
+│   ┌─────────────────────────────────────────────────────────────────┐      │
+│   │                    ITDLUPanel Backend                             │      │
+│   │                                                                   │      │
+│   │  ┌─────────────────┐          ┌─────────────────────────────┐  │      │
+│   │  │ DockerService   │          │  OneClick App Templates     │  │      │
+│   │  │                 │          │  (38+ pre-configured)       │  │      │
+│   │  │ • List/Inspect  │          │                             │  │      │
+│   │  │ • Start/Stop    │          │  WordPress, Nextcloud,      │  │      │
+│   │  │ • Logs/Stats    │          │  GitLab, Matomo, Jira,      │  │      │
+│   │  │ • Exec/Attach   │          │  Prometheus, Grafana...    │  │      │
+│   │  └────────┬────────┘          └─────────────────────────────┘  │      │
+│   │           │                                                       │      │
+│   │  ┌────────▼───────────────────────────────────────────────┐    │      │
+│   │  │              Docker API Client                          │    │      │
+│   │  │              (moby/moby client)                        │    │      │
+│   │  │                                                       │    │      │
+│   │  │  API Version: 1.41                                    │    │      │
+│   │  │  Transport: Unix Socket (/var/run/docker.sock)        │    │      │
+│   │  └───────────────────────┬───────────────────────────────┘    │      │
+│   └──────────────────────────┼────────────────────────────────────┘      │
+│                              │                                              │
+│                              ▼                                              │
+│   ┌─────────────────────────────────────────────────────────────────┐      │
+│   │              Docker Engine (UNIX Socket)                        │      │
+│   │                                                                   │      │
+│   │   ┌────────────┐   ┌────────────┐   ┌────────────┐           │      │
+│   │   │ Containers │   │   Images   │   │  Networks  │           │      │
+│   │   │            │   │            │   │            │           │      │
+│   │   │ nginx:1.2 │   │ nginx:1.2  │   │  bridge    │           │      │
+│   │   │ mysql:8.0 │   │ mysql:8.0  │   │  host      │           │      │
+│   │   │ redis:7   │   │ redis:7    │   │  custom    │           │      │
+│   │   └────────────┘   └────────────┘   └────────────┘           │      │
+│   │                                                                   │      │
+│   │   ┌────────────┐                                               │      │
+│   │   │  Volumes   │                                               │      │
+│   │   │            │                                               │      │
+│   │   │ data_vol   │                                               │      │
+│   │   │ cache_vol  │                                               │      │
+│   │   └────────────┘                                               │      │
+│   │                                                                   │      │
+│   └───────────────────────────────────────────────────────────────────┘      │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+</code></pre>
+<h2>Docker API Endpoints</h2>
+<h3>Container Management (20+ endpoints)</h3>
+<pre><code class="language-go">// Container CRUD
+GET    /api/v1/docker/containers              // List all containers
+POST   /api/v1/docker/containers              // Create container
+GET    /api/v1/docker/containers/:id         // Inspect container
+DELETE /api/v1/docker/containers/:id         // Remove container
+
+// Container Lifecycle
+POST   /api/v1/docker/containers/:id/start     // Start container
+POST   /api/v1/docker/containers/:id/stop      // Stop container
+POST   /api/v1/docker/containers/:id/restart    // Restart container
+POST   /api/v1/docker/containers/:id/pause      // Pause container
+POST   /api/v1/docker/containers/:id/unpause    // Unpause container
+
+// Container Operations
+GET    /api/v1/docker/containers/:id/logs    // Get container logs
+GET    /api/v1/docker/containers/:id/stats   // Get resource stats
+POST   /api/v1/docker/containers/:id/rename  // Rename container
+POST   /api/v1/docker/containers/:id/exec    // Execute command
+POST   /api/v1/docker/containers/:id/commit  // Create image from container
+</code></pre>
+<h3>Image Management (6 endpoints)</h3>
+<pre><code class="language-go">GET    /api/v1/docker/images                 // List all images
+POST   /api/v1/docker/images/pull            // Pull image from registry
+DELETE /api/v1/docker/images/:id            // Remove image
+GET    /api/v1/docker/images/:id            // Inspect image
+GET    /api/v1/docker/images/search         // Search Docker Hub
+POST   /api/v1/docker/images/:id/tag        // Tag image
+</code></pre>
+<h3>Network Management (7 endpoints)</h3>
+<pre><code class="language-go">GET    /api/v1/docker/networks               // List networks
+POST   /api/v1/docker/networks             // Create network
+DELETE /api/v1/docker/networks/:id          // Remove network
+GET    /api/v1/docker/networks/:id          // Inspect network
+POST   /api/v1/docker/networks/:id/connect    // Connect container
+POST   /api/v1/docker/networks/:id/disconnect // Disconnect container
+</code></pre>
+<h3>Volume Management (5 endpoints)</h3>
+<pre><code class="language-go">GET    /api/v1/docker/volumes               // List volumes
+POST   /api/v1/docker/volumes              // Create volume
+DELETE /api/v1/docker/volumes/:name        // Remove volume
+GET    /api/v1/docker/volumes/:name        // Inspect volume
+POST   /api/v1/docker/volumes/prune        // Prune unused volumes
+</code></pre>
+<h3>Docker Compose (5 endpoints)</h3>
+<pre><code class="language-go">GET    /api/v1/docker/compose               // List compose projects
+POST   /api/v1/docker/compose              // Create compose project
+POST   /api/v1/docker/compose/:name/up      // Start project
+POST   /api/v1/docker/compose/:name/down   // Stop project
+DELETE /api/v1/docker/compose/:name        // Remove project
+</code></pre>
+<h3>System (5 endpoints)</h3>
+<pre><code class="language-go">GET    /api/v1/docker/info                 // Docker engine info
+GET    /api/v1/docker/daemon/config       // Get daemon.json
+POST   /api/v1/docker/daemon/config       // Save daemon.json
+POST   /api/v1/docker/restart             // Restart Docker
+POST   /api/v1/docker/stop                // Stop Docker
+</code></pre>
+<h2>OneClick App Templates</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────────────────┐
+│                     38+ OneClick Application Templates                      │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │  Content &amp; CMS           │  Development &amp; DevOps                      │  │
+│  ├──────────────────────────┼──────────────────────────────────────────────┤
+│  │ • WordPress              │ • GitLab (CE)                               │  │
+│  │ • WordPress + WooComm   │ • Jenkins                                   │  │
+│  │ • Drupal                 │ • Drone CI                                  │  │
+│  │ • Joomla                 │ • Nexus Repository                         │  │
+│  │ • Ghost                  │ • SonarQube                                 │  │
+│  │ • Hugo                   │ • Portainer                                │  │
+│  └──────────────────────────┴──────────────────────────────────────────────┘  │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │  Analytics &amp; Monitoring                                              │  │
+│  ├───────────────────────────────────────────────────────────────────────┤
+│  │ • Matomo (Analytics)      │ • Grafana                                 │  │
+│  │ • Plausible (Analytics)   │ • Prometheus + Node Exporter              │  │
+│  │ • Umami (Analytics)       │ • ELK Stack (Elasticsearch)              │  │
+│  │ • Alertmanager            │ • Loki (Log aggregation)                  │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │  Productivity &amp; Collaboration                                         │  │
+│  ├───────────────────────────────────────────────────────────────────────┤
+│  │ • Nextcloud (File Sync)   │ • Mattermost                              │  │
+│  │ • OwnCloud               │ • Rocket.Chat                             │  │
+│  │ • Jellyfin (Media)       │ • Bitwarden (Password)                    │  │
+│  │ • Emby (Media)           │ • Invoice Ninja                           │  │
+│  │ • Monica (CRM)           │ • Monica                                  │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │  Database &amp; Cache                                                       │  │
+│  ├───────────────────────────────────────────────────────────────────────┤
+│  │ • PostgreSQL              │ • Redis                                   │  │
+│  │ • MongoDB                 │ • Memcached                               │  │
+│  │ • Adminer (DB UI)         │ • phpMyAdmin                              │  │
+│  │ • pgAdmin                │                                           │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+</code></pre>
+<hr />
+<h2>Slide 8: WebSocket Real-Time Communication</h2>
+<h1>WebSocket Architecture</h1>
+<h2>Dual WebSocket Endpoints</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────────────────┐
+│                        WebSocket Connection Flow                            │
+│                                                                             │
+│   Browser (xterm.js / React)                                                │
+│        │                                                                     │
+│        │  1. Connect to /api/v1/terminal                                    │
+│        │  2. Send: { &quot;type&quot;: &quot;resize&quot;, &quot;cols&quot;: 80, &quot;rows&quot;: 24 }           │
+│        │  3. Send: { &quot;type&quot;: &quot;input&quot;, &quot;data&quot;: &quot;ls -la\r&quot; }                 │
+│        │                                                                     │
+│        ▼                                                                    │
+│   ┌───────────────────────────────────────────────────────────────────┐     │
+│   │                    WebSocket Hub                                   │     │
+│   │                                                                     │     │
+│   │   ┌─────────────────────┐       ┌─────────────────────┐           │     │
+│   │   │   Terminal Hub     │       │   Monitor Hub       │           │     │
+│   │   │                    │       │                     │           │     │
+│   │   │ • conns: map[id]   │       │ • conns: map[id]   │           │     │
+│   │   │ • pty: *exec.PTY   │       │ • metrics: []Point │           │     │
+│   │   │ • mu: sync.RWMutex │       │ • interval: 2s     │           │     │
+│   │   └──────────┬──────────┘       └──────────┬──────────┘           │     │
+│   │              │                              │                       │     │
+│   └──────────────┼──────────────────────────────┼───────────────────────┘     │
+│                   │                              │                             │
+│                   ▼                              ▼                             │
+│   ┌───────────────────────────────┐  ┌───────────────────────────────┐      │
+│   │      Terminal PTY Service     │  │     Monitor Service          │      │
+│   │                               │  │                               │      │
+│   │  • creack/pty for pseudo-TTY  │  │  • gopsutil for metrics      │      │
+│   │  • Shell: /bin/bash           │  │  • CPU, RAM, Disk, Network   │      │
+│   │  • Window resize handling     │  │  • 2-second intervals         │      │
+│   │  • Buffer scrollback          │  │  • Buffered history           │      │
+│   └───────────────────────────────┘  └───────────────────────────────┘      │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+</code></pre>
+<h2>Terminal WebSocket Protocol</h2>
+<pre><code class="language-go">// Client → Server Messages
+type TerminalInput struct {
+    Type string `json:&quot;type&quot;`  // &quot;input&quot;
+    Data string `json:&quot;data&quot;`  // Keystrokes
+}
+
+type TerminalResize struct {
+    Type  string `json:&quot;type&quot;`  // &quot;resize&quot;
+    Cols  int    `json:&quot;cols&quot;`
+    Rows  int    `json:&quot;rows&quot;`
+}
+
+// Server → Client Messages
+type TerminalOutput struct {
+    Type string `json:&quot;type&quot;`  // &quot;output&quot;
+    Data string `json:&quot;data&quot;`  // Terminal output (base64 or raw)
+}
+
+// Backend Implementation
+func (h *TerminalHub) HandleWebSocket(c *gin.Context) {
+    // Upgrade HTTP to WebSocket
+    conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+    defer conn.Close()
+
+    // Create PTY
+    f, tty, err := pty.StartWithSize(cmd, nil)
+    defer f.Close()
+
+    // Bidirectional copy
+    go func() {
+        io.Copy(f, conn)  // Client → PTY
+    }()
+    io.Copy(conn, f)     // PTY → Client
+}
+</code></pre>
+<h2>Monitor WebSocket Protocol</h2>
+<pre><code class="language-go">// Server → Client (every 2 seconds)
+type MetricsUpdate struct {
+    Type     string    `json:&quot;type&quot;`      // &quot;metrics&quot;
+    Timestamp time.Time `json:&quot;timestamp&quot;`
+    CPU       CPUMetrics  `json:&quot;cpu&quot;`
+    Memory    MemMetrics  `json:&quot;memory&quot;`
+    Disk      DiskMetrics `json:&quot;disk&quot;`
+    Network   NetMetrics  `json:&quot;network&quot;`
+}
+
+type CPUMetrics struct {
+    Percent   float64   `json:&quot;percent&quot;`   // 0-100
+    User      float64   `json:&quot;user&quot;`
+    System    float64   `json:&quot;system&quot;`
+    Idle      float64   `json:&quot;idle&quot;`
+    CoreCount int       `json:&quot;core_count&quot;`
+}
+
+type MemMetrics struct {
+    Total       uint64  `json:&quot;total&quot;`      // bytes
+    Used        uint64  `json:&quot;used&quot;`
+    Available   uint64  `json:&quot;available&quot;`
+    UsedPercent float64 `json:&quot;used_percent&quot;`
+}
+
+type DiskMetrics struct {
+    Total       uint64  `json:&quot;total&quot;`
+    Used        uint64  `json:&quot;used&quot;`
+    Free        uint64  `json:&quot;free&quot;`
+    UsedPercent float64 `json:&quot;used_percent&quot;`
+}
+
+type NetMetrics struct {
+    BytesSent   uint64 `json:&quot;bytes_sent&quot;`
+    BytesRecv   uint64 `json:&quot;bytes_recv&quot;`
+    PacketsSent uint64 `json:&quot;packets_sent&quot;`
+    PacketsRecv uint64 `json:&quot;packets_recv&quot;`
+}
+</code></pre>
+<hr />
+<h2>Slide 9: File Management System</h2>
+<h1>File Manager Architecture</h1>
+<h2>Capabilities Overview</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────────────────┐
+│                        File Manager Feature Matrix                           │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │  Core Operations                                                      │  │
+│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐   │  │
+│  │  │   Browse    │ │   Create    │ │   Upload    │ │   Download  │   │  │
+│  │  │   (tree)    │ │(file/dir)   │ │  (chunked)  │ │   (stream)  │   │  │
+│  │  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘   │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │  Edit &amp; Modify                                                        │  │
+│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐   │  │
+│  │  │   Monaco    │ │   Rename    │ │    Copy     │ │    Move     │   │  │
+│  │  │   Editor    │ │             │ │             │ │             │   │  │
+│  │  │ (50+ langs) │ │             │ │             │ │             │   │  │
+│  │  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘   │  │
+│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐                  │  │
+│  │  │   Chmod     │ │    Search   │ │   Remote    │                  │  │
+│  │  │  (visual)   │ │  (full-text)│ │  Download   │                  │  │
+│  │  └─────────────┘ └─────────────┘ └─────────────┘                  │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │  Archive Operations                                                   │  │
+│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐   │  │
+│  │  │   ZIP       │ │    TAR      │ │   TAR.GZ    │ │   Extract   │   │  │
+│  │  │  Compress   │ │  Compress   │ │  Compress   │ │  (auto-det) │   │  │
+│  │  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘   │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+</code></pre>
+<h2>Monaco Editor Integration</h2>
+<pre><code class="language-go">// Monaco Editor Supported Languages (50+)
+var supportedLanguages = []string{
+    // Web
+    &quot;javascript&quot;, &quot;typescript&quot;, &quot;html&quot;, &quot;css&quot;, &quot;scss&quot;, &quot;less&quot;,
+    &quot;json&quot;, &quot;xml&quot;, &quot;yaml&quot;, &quot;markdown&quot;,
+
+    // Backend
+    &quot;go&quot;, &quot;python&quot;, &quot;java&quot;, &quot;c&quot;, &quot;cpp&quot;, &quot;csharp&quot;, &quot;ruby&quot;, &quot;php&quot;, &quot;rust&quot;,
+
+    // Config
+    &quot;ini&quot;, &quot;properties&quot;, &quot;dotenv&quot;, &quot;nginx&quot;, &quot;apache&quot;,
+
+    // Shell
+    &quot;shell&quot;, &quot;powershell&quot;, &quot;dockerfile&quot;,
+
+    // Database
+    &quot;sql&quot;, &quot;plsql&quot;, &quot;mysql&quot;,
+
+    // Data
+    &quot;csv&quot;, &quot;toml&quot;,
+}
+</code></pre>
+<h2>File API Endpoints</h2>
+<pre><code class="language-go">// Navigation &amp; Info
+GET  /api/v1/files                  // List directory contents
+GET  /api/v1/files/info             // Get file/directory info
+GET  /api/v1/files/tree            // Get directory tree
+
+// Read &amp; Write
+GET  /api/v1/files/read            // Read file content
+POST /api/v1/files/save            // Save file content
+
+// Create &amp; Delete
+POST /api/v1/files/create           // Create file or directory
+DELETE /api/v1/files                // Delete files/directories
+
+// Modify
+POST /api/v1/files/rename          // Rename file/directory
+POST /api/v1/files/copy            // Copy file/directory
+POST /api/v1/files/move            // Move file/directory
+POST /api/v1/files/permissions     // Change permissions (chmod)
+
+// Transfer
+POST /api/v1/files/upload          // Upload file (multipart)
+GET  /api/v1/files/download        // Download file
+POST /api/v1/files/remote-download // Download from URL
+
+// Archive
+POST /api/v1/files/compress        // Compress to ZIP/TAR/TARGZ
+POST /api/v1/files/decompress      // Extract archive
+
+// Search
+POST /api/v1/files/search          // Search files
+</code></pre>
+<hr />
+<h2>Slide 10: Backup System Architecture</h2>
+<h1>Multi-Destination Backup System</h1>
+<h2>Backup Flow</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────────────────┐
+│                     Multi-Destination Backup Architecture                     │
+│                                                                             │
+│   ┌──────────────┐                                                          │
+│   │   Backup     │                                                          │
+│   │   Request    │                                                          │
+│   └──────┬───────┘                                                          │
+│          │                                                                   │
+│          ▼                                                                   │
+│   ┌──────────────────────────────────────────────────────────────────┐     │
+│   │                     Backup Service                                 │     │
+│   │                                                                   │     │
+│   │  1. Determine backup type (full/incremental)                     │     │
+│   │  2. Create temporary directory                                   │     │
+│   │  3. Execute backup (mysqldump, tar, etc.)                        │     │
+│   │  4. Calculate checksum (SHA256)                                  │     │
+│   │  5. Encrypt if enabled (AES-256-GCM)                            │     │
+│   │  6. Compress (gzip)                                              │     │
+│   │  7. Upload to destination(s)                                     │     │
+│   │  8. Record metadata in database                                  │     │
+│   │  9. Cleanup old backups                                          │     │
+│   │                                                                   │     │
+│   └──────────────────────────────────────────────────────────────────┘     │
+│                                    │                                          │
+│          ┌─────────────────────────┼─────────────────────────┐             │
+│          │                         │                         │             │
+│          ▼                         ▼                         ▼             │
+│   ┌──────────────┐          ┌──────────────┐          ┌──────────────┐     │
+│   │    Local     │          │   Network    │          │    Cloud     │     │
+│   │   Storage    │          │   Storage    │          │   Storage    │     │
+│   ├──────────────┤          ├──────────────┤          ├──────────────┤     │
+│   │ /ITDLUPanel │          │ FTP/SFTP     │          │ Amazon S3    │     │
+│   │ /backups    │          │              │          │ MinIO        │     │
+│   │              │          │              │          │              │     │
+│   │              │          │              │          │ Google Drive │     │
+│   │              │          │              │          │              │     │
+│   │              │          │              │          │ OneDrive     │     │
+│   └──────────────┘          └──────────────┘          └──────────────┘     │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+</code></pre>
+<h2>Backup Types</h2>
+<h3>Full Backup</h3>
+<pre><code class="language-bash"># Database (MySQL)
+mysqldump --single-transaction --routines --triggers \
+    --events --all-databases | gzip &gt; backup_full.sql.gz
+
+# Files
+tar -czf backup_files.tar.gz /var/www/sites/
+</code></pre>
+<h3>Incremental Backup</h3>
+<pre><code class="language-go">// Incremental backup using rsync-style diff
+type IncrementalBackup struct {
+    BaseBackupID  uint      `db:&quot;base_backup_id&quot;`
+    DiffPath      string    `db:&quot;diff_path&quot;`
+    ChangesCount  int       `db:&quot;changes_count&quot;`
+    ChangesSize   int64     `db:&quot;changes_size&quot;`
+    CreatedAt     time.Time `db:&quot;created_at&quot;`
+}
+
+// Only backup changed files since last backup
+func (s *BackupService) CreateIncremental(ctx context.Context, siteID uint) error {
+    lastBackup := s.getLastBackup(siteID)
+    lastBackupTime := lastBackup.CreatedAt
+
+    // Find all modified files
+    changes, err := s.findChanges(siteID, lastBackupTime)
+
+    // Create diff archive
+    for _, change := range changes {
+        s.addToDiff(change)
+    }
+
+    return nil
+}
+</code></pre>
+<h2>Encryption</h2>
+<pre><code class="language-go">// AES-256-GCM Encryption
+type EncryptedBackup struct {
+    Ciphertext   []byte
+    Nonce        []byte    // 12 bytes
+    Tag          []byte    // 16 bytes
+}
+
+// Encrypt backup
+func EncryptBackup(data []byte, password string) (*EncryptedBackup, error) {
+    key := deriveKey(password)  // PBKDF2 with 100,000 iterations
+
+    block, err := aes.NewCipher(key)
+    gcm, err := cipher.NewGCM(block)
+
+    nonce := make([]byte, gcm.NonceSize())
+    io.ReadFull(rand.Reader, nonce)
+
+    sealed := gcm.Seal(nonce, nonce, data, nil)
+
+    return &amp;EncryptedBackup{
+        Ciphertext: sealed[len(nonce):],
+        Nonce:      nonce,
+        Tag:        sealed[len(nonce):],
+    }, nil
+}
+</code></pre>
+<hr />
+<h2>Slide 11: SSL Certificate Management</h2>
+<h1>Let's Encrypt Integration</h1>
+<h2>Certificate Lifecycle</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────────────────┐
+│                      SSL Certificate Lifecycle                              │
+│                                                                             │
+│   ┌─────────┐     ┌─────────┐     ┌─────────┐     ┌─────────┐             │
+│   │ Request │────▶│  Issue  │────▶│ Install │────▶│  Renew  │             │
+│   │  Cert   │     │  Cert   │     │  Cert   │     │  (auto) │             │
+│   └─────────┘     └─────────┘     └─────────┘     └─────────┘             │
+│        │                                                    ▲              │
+│        │  ┌─────────────────────────────────────────────┐   │              │
+│        │  │  ACME Protocol Flow                          │   │              │
+│        │  │                                              │   │              │
+│        │  │  1. GET /directory (ACME server)            │   │              │
+│        │  │  2. POST /new-account                       │   │              │
+│        │  │  3. POST /new-order (domain validation)     │   │              │
+│        │  │  4. ACME Challenge (http-01 or dns-01)      │   │              │
+│        │  │  5. POST /challenge (validation)            │   │              │
+│        │  │  6. POST /chalange (poll status)            │   │              │
+│        │  │  7. GET /order/:id (certificate ready)      │   │              │
+│        │  │  8. POST /order/:id/cert (download cert)    │   │              │
+│        │  │                                              │   │              │
+│        │  └─────────────────────────────────────────────┘   │              │
+│        │                                                    │              │
+│        └────────────────────────────────────────────────────┘              │
+│                                                                             │
+│   ┌─────────────────────────────────────────────────────────────────────┐  │
+│   │  Auto-Renewal Schedule                                              │  │
+│   │                                                                       │  │
+│   │  ┌────────────────────────────────────────────────────────────┐    │  │
+│   │  │  Certificate Lifetime: 90 days                            │    │  │
+│   │  │  Auto-Renew: 30 days before expiry                         │    │  │
+│   │  │  Check Schedule: Daily at 00:00 UTC                        │    │  │
+│   │  │  Renewal Process: Silent (no user interaction required)    │    │  │
+│   │  └────────────────────────────────────────────────────────────┘    │  │
+│   └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+</code></pre>
+<h2>Certificate Storage</h2>
+<pre><code class="language-go">// Certificate Storage Structure
+type SSLCertificate struct {
+    Domain         string    `json:&quot;domain&quot;`
+    CertPath       string    `json:&quot;cert_path&quot;`       // /etc/ssl/certs/domain.crt
+    KeyPath        string    `json:&quot;key_path&quot;`        // /etc/ssl/private/domain.key
+    ChainPath      string    `json:&quot;chain_path&quot;`      // /etc/ssl/certs/domain.chain.crt
+    Provider       string    `json:&quot;provider&quot;`        // &quot;letsencrypt&quot;
+    ValidFrom      time.Time `json:&quot;valid_from&quot;`
+    ValidUntil     time.Time `json:&quot;valid_until&quot;`
+    AutoRenew      bool      `json:&quot;auto_renew&quot;`
+    LastRenewed    time.Time `json:&quot;last_renewed&quot;`
+}
+
+// Nginx Configuration
+const nginxSSLConfig = `
+server {
+    listen 443 ssl http2;
+    server_name {{.Domain}};
+
+    ssl_certificate     {{.CertPath}};
+    ssl_certificate_key {{.KeyPath}};
+    ssl_trusted_certificate {{.ChainPath}};
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache shared:SSL:10m;
+
+    # Security headers
+    add_header Strict-Transport-Security &quot;max-age=31536000&quot; always;
+    add_header X-Frame-Options DENY;
+    add_header X-Content-Type-Options nosniff;
+}
+`
+</code></pre>
+<hr />
+<h2>Slide 12: Frontend Architecture</h2>
+<h1>React 19 SPA Architecture</h1>
+<h2>Component Hierarchy</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Frontend Architecture                                │
+│                                                                             │
+│  ┌───────────────────────────────────────────────────────────────────────┐ │
+│  │  App.tsx (Root)                                                        │ │
+│  │  ├── AuthProvider (Context)                                            │ │
+│  │  │   └── Login Page (unauthenticated routes)                          │ │
+│  │  │                                                                     │ │
+│  │  └── MainLayout                                                       │ │
+│  │      ├── Sidebar (Navigation)                                          │ │
+│  │      ├── Header (User menu, notifications)                            │ │
+│  │      └── Content Area                                                 │ │
+│  │          │                                                            │ │
+│  │          ├── Lazy-loaded Pages:                                       │ │
+│  │          │                                                            │ │
+│  │          ├── /dashboard     → DashboardPage                           │ │
+│  │          ├── /sites         → WebsitesPage                            │ │
+│  │          ├── /databases    → DatabasesPage                           │ │
+│  │          ├── /files         → FilesPage (15 components)              │ │
+│  │          ├── /terminal      → TerminalPage                            │ │
+│  │          ├── /docker        → DockerPage (10 components)              │ │
+│  │          ├── /security      → SecurityPage                           │ │
+│  │          ├── /firewall      → FirewallPage                           │ │
+│  │          ├── /monitor       → MonitorPage (3 charts)                  │ │
+│  │          ├── /cron          → CronPage                                │ │
+│  │          ├── /logs           → LogsPage                               │ │
+│  │          ├── /appstore       → AppStorePage                           │ │
+│  │          ├── /storage        → StoragePage                            │ │
+│  │          ├── /ftp            → FTPPage                                 │ │
+│  │          ├── /users          → UsersPage                               │ │
+│  │          ├── /settings       → SettingsPage                           │ │
+│  │          │                                                            │ │
+│  │          └── Shared Components:                                       │ │
+│  │              ├── Modal/ (12 software modals)                          │ │
+│  │              ├── RequireSoftware.tsx                                  │ │
+│  │              ├── PermissionTree.tsx                                   │ │
+│  │              └── MessagesBox.tsx                                      │ │
+│  │                                                                     │ │
+│  └───────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+│  ┌───────────────────────────────────────────────────────────────────────┐ │
+│  │  State Management (Zustand)                                            │ │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐   │ │
+│  │  │  auth    │ │  theme   │ │ settings │ │   task   │ │notif     │   │ │
+│  │  │  store  │ │  store   │ │  store   │ │  store   │ │  store   │   │ │
+│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘   │ │
+│  └───────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+│  ┌───────────────────────────────────────────────────────────────────────┐ │
+│  │  Styling System                                                        │ │
+│  │  ├── Tailwind CSS v4 (utility classes)                                │ │
+│  │  ├── Ant Design 6.3.3 (components)                                   │ │
+│  │  └── usePalette() hook (theme-aware colors)                          │ │
+│  └───────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+</code></pre>
+<h2>Key React Patterns</h2>
+<h3>State Management</h3>
+<pre><code class="language-typescript">// Zustand Store Example
+interface AuthState {
+  user: User | null;
+  accessToken: string | null;
+  refreshToken: string | null;
+  isAuthenticated: boolean;
+
+  // Actions
+  login: (credentials: LoginCredentials) =&gt; Promise&lt;void&gt;;
+  logout: () =&gt; void;
+  refreshTokens: () =&gt; Promise&lt;void&gt;;
+  updateProfile: (data: Partial&lt;User&gt;) =&gt; void;
+}
+
+export const useAuthStore = create&lt;AuthState&gt;((set, get) =&gt; ({
+  user: null,
+  accessToken: null,
+  refreshToken: null,
+  isAuthenticated: false,
+
+  login: async (credentials) =&gt; {
+    const response = await api.post('/auth/login', credentials);
+    const { user, access_token, refresh_token } = response.data;
+
+    set({ 
+      user, 
+      accessToken: access_token, 
+      refreshToken: refresh_token,
+      isAuthenticated: true 
+    });
+
+    // Store in localStorage for persistence
+    localStorage.setItem('refresh_token', refresh_token);
+  },
+
+  logout: () =&gt; {
+    api.post('/auth/logout');
+    set({ user: null, accessToken: null, refreshToken: null, isAuthenticated: false });
+    localStorage.removeItem('refresh_token');
+  },
+}));
+</code></pre>
+<h3>Theme System</h3>
+<pre><code class="language-typescript">// usePalette hook
+export function usePalette() {
+  const isDark = document.body.getAttribute('data-theme') === 'dark';
+
+  return {
+    isDark,
+    p: {
+      bg: isDark ? '#0D1117' : '#F5F7FA',
+      card: isDark ? '#161B22' : '#FFFFFF',
+      cardBorder: isDark ? 'rgba(255,255,255,0.1)' : '#E8EDF2',
+      text: isDark ? '#E6EDF3' : '#1A1A2E',
+      textMuted: isDark ? '#8B949E' : '#64748B',
+      headerBg: isDark ? '#21262D' : '#FAFBFC',
+      accent: '#1565C0',
+      green: '#52C41A',
+      red: '#FF4D4F',
+      amber: '#FAAD14',
+      purple: '#722ED1',
+      cyan: '#13C2C2',
+    }
+  };
+}
+</code></pre>
+<hr />
+<h2>Slide 13: Performance Optimization</h2>
+<h1>Performance &amp; Optimization</h1>
+<h2>Backend Optimizations</h2>
+<h3>Database Connection Pooling</h3>
+<pre><code class="language-go">// SQLite connection pool settings
+type DBConfig struct {
+    MaxOpenConns    int = 25        // Maximum open connections
+    MaxIdleConns    int = 5         // Maximum idle connections
+    ConnMaxLifetime time.Duration = time.Hour
+}
+
+// Prepared statements for frequently used queries
+type PreparedStatements struct {
+    GetUserByUsername *sql.Stmt
+    GetSitesByUser    *sql.Stmt
+    GetContainers     *sql.Stmt
+    InsertAuditLog    *sql.Stmt
+}
+</code></pre>
+<h3>Concurrent Request Handling</h3>
+<pre><code class="language-go">// Gin context pool for memory optimization
+engine.Use(gin.Logger())
+engine.Use(gin.Recovery())
+
+// Custom context pool
+engine.Use(func(c *gin.Context) {
+    c.Next()
+})
+
+// HTTP server settings
+s := &amp;http.Server{
+    Addr:         &quot;:8888&quot;,
+    Handler:      engine,
+    ReadTimeout:  30 * time.Second,
+    WriteTimeout: 30 * time.Second,
+    IdleTimeout:  120 * time.Second,
+    MaxHeaderBytes: 1 &lt;&lt; 20, // 1MB
+}
+</code></pre>
+<h3>Caching Strategy</h3>
+<pre><code class="language-go">// Permission cache with TTL
+type PermissionCache struct {
+    mu    sync.RWMutex
+    data  map[uint][]string
+    timer map[uint]*time.Timer
+    ttl   time.Duration
+}
+
+func (c *PermissionCache) Get(userID uint) ([]string, bool) {
+    c.mu.RLock()
+    defer c.mu.RUnlock()
+    perms, ok := c.data[userID]
+    return perms, ok
+}
+
+func (c *PermissionCache) Set(userID uint, perms []string) {
+    c.mu.Lock()
+    defer c.mu.Unlock()
+
+    c.data[userID] = perms
+
+    // Reset timer
+    if c.timer[userID] != nil {
+        c.timer[userID].Stop()
+    }
+    c.timer[userID] = time.AfterFunc(c.ttl, func() {
+        c.Delete(userID)
+    })
+}
+</code></pre>
+<h2>Frontend Optimizations</h2>
+<h3>Code Splitting</h3>
+<pre><code class="language-typescript">// React.lazy for all pages
+const Dashboard = lazy(() =&gt; import('./pages/Dashboard'));
+const Websites = lazy(() =&gt; import('./pages/Websites'));
+const Docker = lazy(() =&gt; import('./pages/Docker'));
+const Files = lazy(() =&gt; import('./pages/Files'));
+
+// Route-level splitting
+&lt;Suspense fallback={&lt;Spin /&gt;}&gt;
+  &lt;Routes&gt;
+    &lt;Route path=&quot;/dashboard&quot; element={&lt;Dashboard /&gt;} /&gt;
+    &lt;Route path=&quot;/docker/*&quot; element={&lt;Docker /&gt;} /&gt;
+  &lt;/Routes&gt;
+&lt;/Suspense&gt;
+</code></pre>
+<h3>Memoization</h3>
+<pre><code class="language-typescript">// Heavy component memoization
+const HeavyTable = memo(({ data, columns }: TableProps) =&gt; {
+  return (
+    &lt;Table 
+      dataSource={data}
+      columns={useMemo(() =&gt; columns, [columns])}
+      pagination={false}
+    /&gt;
+  );
+});
+
+// Expensive computation memoization
+const processedData = useMemo(() =&gt; {
+  return data.map(item =&gt; transformItem(item));
+}, [data]);
+</code></pre>
+<h3>WebSocket Optimization</h3>
+<pre><code class="language-typescript">// Debounced metrics updates
+const MetricsUpdater = () =&gt; {
+  const [metrics, setMetrics] = useState&lt;Metrics&gt;(null);
+
+  useEffect(() =&gt; {
+    let buffer: Metrics[] = [];
+    let rafId: number;
+
+    const processBuffer = () =&gt; {
+      // Take latest from buffer, ignore others
+      if (buffer.length &gt; 0) {
+        setMetrics(buffer[buffer.length - 1]);
+        buffer = [];
+      }
+      rafId = requestAnimationFrame(processBuffer);
+    };
+
+    ws.onmessage = (event) =&gt; {
+      buffer.push(JSON.parse(event.data));
+    };
+
+    rafId = requestAnimationFrame(processBuffer);
+    return () =&gt; cancelAnimationFrame(rafId);
+  }, []);
+};
+</code></pre>
+<hr />
+<h2>Slide 14: Security Implementation</h2>
+<h1>Security Hardening</h1>
+<h2>Security Layers</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────────────────┐
+│                           Security Architecture                              │
+│                                                                             │
+│   ┌─────────────────────────────────────────────────────────────────────┐ │
+│   │  Transport Layer (TLS)                                                │ │
+│   │  ├── TLS 1.2/1.3 only                                               │ │
+│   │  ├── Strong cipher suites                                            │ │
+│   │  ├── HSTS (HTTP Strict Transport Security)                           │ │
+│   │  └── Certificate pinning (optional)                                  │ │
+│   └─────────────────────────────────────────────────────────────────────┘ │
+│                                    │                                         │
+│                                    ▼                                         │
+│   ┌─────────────────────────────────────────────────────────────────────┐ │
+│   │  Application Layer                                                   │ │
+│   │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐                 │ │
+│   │  │ JWT (HS256)  │ │  TOTP 2FA    │ │  bcrypt     │                 │ │
+│   │  │ 15min token  │ │ RFC 6238     │ │  cost=12    │                 │ │
+│   │  └──────────────┘ └──────────────┘ └──────────────┘                 │ │
+│   │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐                 │ │
+│   │  │    RBAC      │ │  Rate Limit  │ │    CSRF     │                 │ │
+│   │  │ 11 namespaces│ │ 300/min/IP   │ │   tokens    │                 │ │
+│   │  └──────────────┘ └──────────────┘ └──────────────┘                 │ │
+│   └─────────────────────────────────────────────────────────────────────┘ │
+│                                    │                                         │
+│                                    ▼                                         │
+│   ┌─────────────────────────────────────────────────────────────────────┐ │
+│   │  Infrastructure Layer                                               │ │
+│   │  ├── Firewall (UFW)                                                 │ │
+│   │  ├── Fail2ban (brute-force protection)                              │ │
+│   │  ├── AppArmor/SELinux (optional)                                    │ │
+│   │  └── Regular security updates                                       │ │
+│   └─────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+</code></pre>
+<h2>Security Headers</h2>
+<pre><code class="language-go">// Middleware: SecurityHeaders
+func SecurityHeadersMiddleware() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        // Prevent clickjacking
+        c.Header(&quot;X-Frame-Options&quot;, &quot;DENY&quot;)
+
+        // Prevent MIME sniffing
+        c.Header(&quot;X-Content-Type-Options&quot;, &quot;nosniff&quot;)
+
+        // XSS filter (legacy but still useful)
+        c.Header(&quot;X-XSS-Protection&quot;, &quot;1; mode=block&quot;)
+
+        // Content Security Policy
+        c.Header(&quot;Content-Security-Policy&quot;, 
+            &quot;default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';&quot;)
+
+        // Referrer Policy
+        c.Header(&quot;Referrer-Policy&quot;, &quot;strict-origin-when-cross-origin&quot;)
+
+        c.Next()
+    }
+}
+</code></pre>
+<h2>Password Security</h2>
+<pre><code class="language-go">// bcrypt with cost=12
+const bcryptCost = 12
+
+func HashPassword(password string) (string, error) {
+    bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
+    return string(bytes), err
+}
+
+func CheckPassword(password, hash string) bool {
+    err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+    return err == nil
+}
+
+// Password requirements
+const passwordMinLength = 8
+const passwordRequireUppercase = true
+const passwordRequireLowercase = true
+const passwordRequireNumber = true
+const passwordRequireSpecial = true
+</code></pre>
+<h2>Rate Limiting</h2>
+<pre><code class="language-go">// Token bucket rate limiter
+type RateLimiter struct {
+    tokens     float64
+    maxTokens  float64
+    refillRate float64  // tokens per second
+    lastRefill time.Time
+    mu         sync.Mutex
+}
+
+func (rl *RateLimiter) Allow() bool {
+    rl.mu.Lock()
+    defer rl.mu.Unlock()
+
+    // Refill tokens
+    now := time.Now()
+    elapsed := now.Sub(rl.lastRefill).Seconds()
+    rl.tokens = min(rl.maxTokens, rl.tokens+elapsed*rl.refillRate)
+    rl.lastRefill = now
+
+    // Check if request allowed
+    if rl.tokens &gt;= 1 {
+        rl.tokens--
+        return true
+    }
+    return false
+}
+
+// Configuration: 300 requests per minute = 5 requests per second
+rateLimiter := &amp;RateLimiter{
+    maxTokens:  300,
+    refillRate: 5,
+}
+</code></pre>
+<hr />
+<h2>Slide 15: CI/CD &amp; Deployment</h2>
+<h1>Build &amp; Deployment Pipeline</h1>
+<h2>Build Process</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────────────────┐
+│                          Build Pipeline                                      │
+│                                                                             │
+│   ┌─────────────────────────────────────────────────────────────────────┐ │
+│   │  Phase 1: Frontend Build (Node.js 22)                                  │ │
+│   │                                                                       │ │
+│   │  $ cd web &amp;&amp; npm install                                              │ │
+│   │  $ npx vite build                                                     │ │
+│   │                                                                       │ │
+│   │  Output: web/dist/                                                    │ │
+│   │  ├── index.html                                                       │ │
+│   │  ├── assets/                                                          │ │
+│   │  └── favicon.ico                                                      │ │
+│   └─────────────────────────────────────────────────────────────────────┘ │
+│                                    │                                         │
+│                                    ▼                                         │
+│   ┌─────────────────────────────────────────────────────────────────────┐ │
+│   │  Phase 2: Go Embed &amp; Compile                                          │ │
+│   │                                                                       │ │
+│   │  // main.go                                                           │ │
+│   │  //go:embed web/dist                                                 │ │
+│   │  var staticFS embed.FS                                               │ │
+│   │                                                                       │ │
+│   │  $ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \                           │ │
+│   │      go build -ldflags=&quot;-s -w&quot; -o bin/itdlupanel ./cmd/panel         │ │
+│   │                                                                       │ │
+│   │  Output: bin/itdlupanel (~60MB, static binary)                       │ │
+│   └─────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+</code></pre>
+<h2>Deployment Options</h2>
+<h3>1. Direct Binary</h3>
+<pre><code class="language-bash"># Download and install
+wget https://github.com/itdlu/ITDLUPanel/releases/latest/itdlupanel
+chmod +x itdlupanel
+sudo mv itdlupanel /usr/local/bin/
+
+# Create systemd service
+sudo tee /etc/systemd/system/itdlupanel.service &lt;&lt;EOF
+[Unit]
+Description=ITDLUPanel Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/ITDLUPanel
+ExecStart=/usr/local/bin/itdlupanel -config /ITDLUPanel/config/panel.json
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Enable and start
+sudo systemctl daemon-reload
+sudo systemctl enable itdlupanel
+sudo systemctl start itdlupanel
+</code></pre>
+<h3>2. Docker Deployment</h3>
+<pre><code class="language-dockerfile"># Dockerfile
+FROM alpine:3.21
+
+RUN apk add --no-cache ca-certificates tzdata
+
+COPY itdlupanel /usr/local/bin/
+RUN chmod +x /usr/local/bin/itdlupanel
+
+EXPOSE 8888
+
+USER 1000
+
+ENTRYPOINT [&quot;itdlupanel&quot;]
+CMD [&quot;-config&quot;, &quot;/data/panel.json&quot;]
+
+VOLUME [&quot;/data&quot;]
+</code></pre>
+<pre><code class="language-bash"># Run with Docker
+docker run -d \
+  --name itdlupanel \
+  -p 8888:8888 \
+  -v /ITDLUPanel/data:/data \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  --restart unless-stopped \
+  itdlu/itdlupanel:latest
+</code></pre>
+<hr />
+<h2>Slide 16: Code Statistics</h2>
+<h1>Project Metrics</h1>
+<h2>Backend (Go)</h2>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Count</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Total Go Files</strong></td>
+<td>112</td>
+</tr>
+<tr>
+<td><strong>Total Lines of Code</strong></td>
+<td>43,314</td>
+</tr>
+<tr>
+<td><strong>API Handlers</strong></td>
+<td>24 files</td>
+</tr>
+<tr>
+<td><strong>Services</strong></td>
+<td>33+</td>
+</tr>
+<tr>
+<td><strong>Installers</strong></td>
+<td>14</td>
+</tr>
+<tr>
+<td><strong>Vhost Generators</strong></td>
+<td>4</td>
+</tr>
+<tr>
+<td><strong>Database Migrations</strong></td>
+<td>14</td>
+</tr>
+</tbody>
+</table>
+<h3>LOC Breakdown by Layer</h3>
+<pre><code>┌─────────────────────────────────────────────────────────────────────────────┐
+│  Backend Code Distribution                                                  │
+│                                                                             │
+│  Service Layer          ████████████████████████████████████  23,437 LOC   │
+│  API Handlers          ████████████  9,814 LOC                            │
+│  Database/Migrations   ████████  5,234 LOC                                │
+│  Installers            ██████  4,123 LOC                                  │
+│  Other (config, i18n)  ████  2,706 LOC                                   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+</code></pre>
+<h2>Frontend (React/TypeScript)</h2>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Count</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Total TSX/TS Files</strong></td>
+<td>93</td>
+</tr>
+<tr>
+<td><strong>Pages</strong></td>
+<td>17 (lazy-loaded)</td>
+</tr>
+<tr>
+<td><strong>Shared Components</strong></td>
+<td>15</td>
+</tr>
+<tr>
+<td><strong>Zustand Stores</strong></td>
+<td>5</td>
+</tr>
+<tr>
+<td><strong>Custom Hooks</strong></td>
+<td>7+</td>
+</tr>
+</tbody>
+</table>
+<h3>Frontend Code Distribution</h3>
+<pre><code>┌─────────────────────────────────────────────────────────────────────────────┐
+│  Frontend Code Distribution                                                  │
+│                                                                             │
+│  Pages                  ████████████████████████████████████████          │
+│  Components             ████████████████████████                           │
+│  Hooks/Utils            ████████████                                        │
+│  Stores                 ████████                                             │
+│  Types                  █████                                                │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+</code></pre>
+<h2>API Coverage</h2>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>REST Endpoints</th>
+<th>WebSocket</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Auth</td>
+<td>9</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Dashboard</td>
+<td>2</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Sites</td>
+<td>14</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Databases</td>
+<td>8</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Docker</td>
+<td>46+</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Files</td>
+<td>17</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Security</td>
+<td>12</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Cron</td>
+<td>8</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Logs</td>
+<td>7</td>
+<td>-</td>
+</tr>
+<tr>
+<td>SSL</td>
+<td>9</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Backup</td>
+<td>6</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Monitor</td>
+<td>5</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Terminal</td>
+<td>-</td>
+<td>1</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td><strong>~160</strong></td>
+<td><strong>2</strong></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Slide 17: Testing Strategy</h2>
+<h1>Quality Assurance</h1>
+<h2>Testing Pyramid</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────────────────┐
+│                              Testing Pyramid                                 │
+│                                                                             │
+│                                    ▲                                         │
+│                                   ╱ ╲                                        │
+│                                  ╱   ╲                                       │
+│                                 ╱     ╲                                      │
+│                                ╱ Test  ╲                                     │
+│                               ╱ Pyramid ╲                                    │
+│                              ╱           ╲                                   │
+│                             ╱─────────────╲                                  │
+│                            ╱               ╲                                 │
+│                           ╱─────────────────╲                                │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  E2E Tests (few, high confidence)                                    │   │
+│  │  ├── Selenium/Playwright                                              │   │
+│  │  ├── Full user flows                                                  │   │
+│  │  └── Cross-browser testing                                            │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Integration Tests (medium, API validation)                          │   │
+│  │  ├── API endpoint testing                                             │   │
+│  │  ├── Database operations                                              │   │
+│  │  └── Service interactions                                             │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Unit Tests (many, fast feedback)                                     │   │
+│  │  ├── Service layer functions                                          │   │
+│  │  ├── Utility functions                                                │   │
+│  │  └── Model validation                                                 │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+</code></pre>
+<h2>Backend Testing</h2>
+<pre><code class="language-go">// Example: Service unit test
+func TestSiteService_Create(t *testing.T) {
+    db := setupTestDB(t)
+    service := NewSiteService(db)
+
+    // Test successful creation
+    site, err := service.Create(&amp;CreateSiteRequest{
+        Domain:   &quot;example.com&quot;,
+        RootPath: &quot;/var/www/example&quot;,
+        PHPVer:   &quot;8.2&quot;,
+        WebServ:  &quot;nginx&quot;,
+    })
+
+    require.NoError(t, err)
+    require.NotNil(t, site)
+    require.Equal(t, &quot;example.com&quot;, site.Domain)
+
+    // Test duplicate domain
+    _, err = service.Create(&amp;CreateSiteRequest{
+        Domain: &quot;example.com&quot;,
+    })
+    require.Error(t, err)
+    require.Equal(t, ErrDomainExists, err)
+}
+
+// Example: Integration test
+func TestDockerAPI_ListContainers(t *testing.T) {
+    if testing.Short() {
+        t.Skip(&quot;Skipping integration test&quot;)
+    }
+
+    // Requires running Docker daemon
+    service := NewDockerService()
+    containers, err := service.ListContainers()
+
+    require.NoError(t, err)
+    require.NotNil(t, containers)
+}
+</code></pre>
+<h2>Frontend Testing</h2>
+<pre><code class="language-typescript">// Example: Component test with React Testing Library
+describe('SiteCard', () =&gt; {
+  it('renders site information correctly', () =&gt; {
+    const site = {
+      id: 1,
+      domain: 'example.com',
+      php_version: '8.2',
+      status: 'running'
+    };
+
+    render(&lt;SiteCard site={site} onEdit={jest.fn()} /&gt;);
+
+    expect(screen.getByText('example.com')).toBeInTheDocument();
+    expect(screen.getByText('PHP 8.2')).toBeInTheDocument();
+  });
+
+  it('calls onEdit when edit button is clicked', () =&gt; {
+    const onEdit = jest.fn();
+    render(&lt;SiteCard site={site} onEdit={onEdit} /&gt;);
+
+    fireEvent.click(screen.getByRole('button', { name: /edit/i }));
+
+    expect(onEdit).toHaveBeenCalledWith(1);
+  });
+});
+
+// Example: Hook test
+describe('useMetrics', () =&gt; {
+  it('fetches and updates metrics', async () =&gt; {
+    const { result } = renderHook(() =&gt; useMetrics());
+
+    // Initial state
+    expect(result.current.loading).toBe(true);
+
+    // Wait for data
+    await waitFor(() =&gt; {
+      expect(result.current.loading).toBe(false);
+      expect(result.current.metrics).toBeDefined();
+    });
+  });
+});
+</code></pre>
+<hr />
+<h2>Slide 18: Monitoring &amp; Observability</h2>
+<h1>System Monitoring</h1>
+<h2>Metrics Collection</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────────────────┐
+│                      Real-Time Monitoring System                             │
+│                                                                             │
+│   ┌───────────────────────────────────────────────────────────────────────┐ │
+│   │  Data Sources                                                          │ │
+│   │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐   │ │
+│   │  │  gopsutil │ │ /proc/   │ │  systemctl│ │  docker   │ │  nginx   │   │ │
+│   │  │  (CPU,RAM)│ │  stats   │ │  (services)│ │  (stats)  │ │  (logs)  │   │ │
+│   │  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘   │ │
+│   └───────────────────────────────────────────────────────────────────────┘ │
+│                                    │                                         │
+│                                    ▼                                         │
+│   ┌───────────────────────────────────────────────────────────────────────┐ │
+│   │  Metrics Collector Service                                            │ │
+│   │                                                                       │ │
+│   │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐                     │ │
+│   │  │   CPU/Mem   │ │    Disk     │ │   Network   │                     │ │
+│   │  │  Collector  │ │  Collector  │ │  Collector  │                     │ │
+│   │  └─────────────┘ └─────────────┘ └─────────────┘                     │ │
+│   │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐                     │ │
+│   │  │  Services   │ │   Docker    │ │    Custom    │                     │ │
+│   │  │  Monitor    │ │   Monitor   │ │   Metrics    │                     │ │
+│   │  └─────────────┘ └─────────────┘ └─────────────┘                     │ │
+│   └───────────────────────────────────────────────────────────────────────┘ │
+│                                    │                                         │
+│                                    ▼                                         │
+│   ┌───────────────────────────────────────────────────────────────────────┐ │
+│   │  WebSocket Broadcast (2-second interval)                              │ │
+│   │                                                                       │ │
+│   │  Clients: Dashboard • Monitor Page • External Systems               │ │
+│   └───────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+</code></pre>
+<h2>Metrics API</h2>
+<pre><code class="language-go">// System metrics endpoint
+type SystemMetrics struct {
+    Timestamp time.Time  `json:&quot;timestamp&quot;`
+
+    CPU       CPUMetrics  `json:&quot;cpu&quot;`
+    Memory    MemMetrics  `json:&quot;memory&quot;`
+    Disk      DiskMetrics `json:&quot;disk&quot;`
+    Network   NetMetrics  `json:&quot;network&quot;`
+    Services  []ServiceStatus `json:&quot;services&quot;`
+    Uptime    time.Duration   `json:&quot;uptime&quot;`
+}
+
+type CPUMetrics struct {
+    Percent    float64   `json:&quot;percent&quot;`
+    User       float64   `json:&quot;user&quot;`
+    System     float64   `json:&quot;system&quot;`
+    Idle       float64   `json:&quot;idle&quot;`
+    CoreCount  int       `json:&quot;core_count&quot;`
+    PerCore    []float64 `json:&quot;per_core&quot;`
+}
+
+type MemMetrics struct {
+    Total       uint64  `json:&quot;total&quot;`        // bytes
+    Used        uint64  `json:&quot;used&quot;`
+    Available   uint64  `json:&quot;available&quot;`
+    Cached      uint64  `json:&quot;cached&quot;`
+    UsedPercent float64 `json:&quot;used_percent&quot;`
+}
+
+type DiskMetrics struct {
+    Partitions []Partition `json:&quot;partitions&quot;`
+    IOStats    IOStats      `json:&quot;io_stats&quot;`
+}
+
+type NetMetrics struct {
+    BytesSent   uint64    `json:&quot;bytes_sent&quot;`
+    BytesRecv   uint64    `json:&quot;bytes_recv&quot;`
+    PacketsSent uint64    `json:&quot;packets_sent&quot;`
+    PacketsRecv uint64    `json:&quot;packets_recv&quot;`
+    ErrIn      uint64    `json:&quot;err_in&quot;`
+    ErrOut     uint64    `json:&quot;err_out&quot;`
+    PerInterface []IFaceStats `json:&quot;per_interface&quot;`
+}
+</code></pre>
+<hr />
+<h2>Slide 19: Error Handling &amp; Logging</h2>
+<h1>Logging &amp; Error Management</h1>
+<h2>Structured Logging</h2>
+<pre><code class="language-go">// zerolog configuration
+import &quot;github.com/rs/zerolog&quot;
+
+func initLogger() zerolog.Logger {
+    // Console writer with color
+    output := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
+
+    logger := zerolog.New(output).
+        Level(zerolog.InfoLevel).
+        With().
+        Timestamp().
+        Caller().
+        Str(&quot;service&quot;, &quot;itdlupanel&quot;).
+        Logger()
+
+    return logger
+}
+
+// Usage with structured logging
+log.Info().
+    Str(&quot;user&quot;, username).
+    Str(&quot;action&quot;, &quot;login&quot;).
+    Str(&quot;ip&quot;, clientIP).
+    Msg(&quot;User logged in&quot;)
+
+log.Error().
+    Err(err).
+    Str(&quot;site_id&quot;, &quot;123&quot;).
+    Str(&quot;operation&quot;, &quot;backup&quot;).
+    Msg(&quot;Backup failed&quot;)
+</code></pre>
+<h2>Error Types</h2>
+<pre><code class="language-go">// Custom error types
+type AppError struct {
+    Code    string `json:&quot;code&quot;`
+    Message string `json:&quot;message&quot;`
+    Details string `json:&quot;details,omitempty&quot;`
+    Status  int    `json:&quot;-&quot;`
+}
+
+var (
+    ErrNotFound = &amp;AppError{
+        Code:    &quot;NOT_FOUND&quot;,
+        Message: &quot;Resource not found&quot;,
+        Status:  404,
+    }
+
+    ErrUnauthorized = &amp;AppError{
+        Code:    &quot;UNAUTHORIZED&quot;,
+        Message: &quot;Authentication required&quot;,
+        Status:  401,
+    }
+
+    ErrForbidden = &amp;AppError{
+        Code:    &quot;FORBIDDEN&quot;,
+        Message: &quot;Permission denied&quot;,
+        Status:  403,
+    }
+
+    ErrValidation = &amp;AppError{
+        Code:    &quot;VALIDATION_ERROR&quot;,
+        Message: &quot;Invalid request data&quot;,
+        Status:  400,
+    }
+
+    ErrInternal = &amp;AppError{
+        Code:    &quot;INTERNAL_ERROR&quot;,
+        Message: &quot;Internal server error&quot;,
+        Status:  500,
+    }
+)
+
+// Error handling middleware
+func ErrorHandler() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        c.Next()
+
+        if len(c.Errors) &gt; 0 {
+            err := c.Errors.Last()
+            appErr, ok := err.Err.(*AppError)
+            if !ok {
+                appErr = ErrInternal
+            }
+
+            c.JSON(appErr.Status, gin.H{
+                &quot;error&quot;: appErr.Code,
+                &quot;message&quot;: appErr.Message,
+                &quot;details&quot;: appErr.Details,
+            })
+        }
+    }
+}
+</code></pre>
+<h2>Audit Log Format</h2>
+<pre><code class="language-json">{
+  &quot;id&quot;: 12345,
+  &quot;user_id&quot;: 1,
+  &quot;username&quot;: &quot;admin&quot;,
+  &quot;action&quot;: &quot;UPDATE&quot;,
+  &quot;resource&quot;: &quot;sites&quot;,
+  &quot;details&quot;: {
+    &quot;site_id&quot;: 5,
+    &quot;domain&quot;: &quot;example.com&quot;,
+    &quot;changes&quot;: {
+      &quot;php_version&quot;: {&quot;old&quot;: &quot;8.1&quot;, &quot;new&quot;: &quot;8.2&quot;},
+      &quot;ssl_enabled&quot;: {&quot;old&quot;: false, &quot;new&quot;: true}
+    }
+  },
+  &quot;ip_address&quot;: &quot;192.168.1.100&quot;,
+  &quot;user_agent&quot;: &quot;Mozilla/5.0...&quot;,
+  &quot;created_at&quot;: &quot;2026-06-30T14:25:03Z&quot;
+}
+</code></pre>
+<hr />
+<h2>Slide 20: Kết Luận &amp; Roadmap</h2>
+<h1>Tổng Kết</h1>
+<h2>Những Điểm Nổi Bật Kỹ Thuật</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────────────────┐
+│                     Technical Highlights Summary                             │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │  ✅ Single Binary Deployment                                          │  │
+│  │     ~60MB static binary, no dependencies, CGO-free                   │  │
+│  ├─────────────────────────────────────────────────────────────────────┤  │
+│  │  ✅ 11-Layer Security Stack                                           │  │
+│  │     JWT, TOTP 2FA, RBAC, CSRF, Rate Limiting, Audit Logs             │  │
+│  ├─────────────────────────────────────────────────────────────────────┤  │
+│  │  ✅ Real-Time WebSocket                                               │  │
+│  │     Terminal (PTY) + Metrics (2s interval)                           │  │
+│  ├─────────────────────────────────────────────────────────────────────┤  │
+│  │  ✅ 46+ Docker Endpoints                                              │  │
+│  │     Full container lifecycle + Compose + 38 OneClick apps           │  │
+│  ├─────────────────────────────────────────────────────────────────────┤  │
+│  │  ✅ Multi-Storage Backups                                             │  │
+│  │     Local, FTP, S3, Google Drive, OneDrive + Encryption              │  │
+│  ├─────────────────────────────────────────────────────────────────────┤  │
+│  │  ✅ 43K+ Lines of Production Code                                     │  │
+│  │     Well-structured, tested, maintainable                            │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+</code></pre>
+<h2>Phase 1: Completed ✅</h2>
+<ul>
+<li>[x] Core panel functionality (112 Go files, 43K LOC)</li>
+<li>[x] Docker management (46+ endpoints, 38 OneClick apps)</li>
+<li>[x] WebSocket terminal (xterm.js ↔ PTY)</li>
+<li>[x] SSL certificates (Let's Encrypt auto-renewal)</li>
+<li>[x] Multi-language (EN/VI)</li>
+<li>[x] RBAC with 3 roles</li>
+<li>[x] TOTP 2FA</li>
+<li>[x] Incremental backups</li>
+<li>[x] File manager with Monaco Editor</li>
+</ul>
+<h2>Phase 2: In Progress 🚧</h2>
+<ul>
+<li>[ ] Kubernetes cluster management</li>
+<li>[ ] Advanced monitoring (Prometheus/Grafana)</li>
+<li>[ ] Plugin marketplace</li>
+<li>[ ] API documentation (OpenAPI/Swagger)</li>
+<li>[ ] WAF (Coraza + HAProxy)</li>
+</ul>
+<h2>Phase 3: Planned 📋</h2>
+<ul>
+<li>[ ] Multi-server management</li>
+<li>[ ] Mobile app (React Native)</li>
+<li>[ ] AI-powered suggestions</li>
+<li>[ ] GitOps integration</li>
+</ul>
+<hr />
+<h2>Liên Hệ</h2>
+<ul>
+<li><strong>Website</strong>: https://github.com/itdlu/ITDLUPanel</li>
+<li><strong>Email</strong>: support@itdlu.edu.vn</li>
+<li><strong>Docs</strong>: https://docs.itdlu.edu.vn</li>
+</ul>
+<p><strong>© 2026 Đại học Đà Lạt (Dalat University)</strong></p>
+<hr />
+<p><em>Generated by ITDLUPanel Documentation System - Technical Deep Dive v2</em></p>
+<hr />
+<p><em>Document generated: 2026-07-01 07:11:37</em></p>
