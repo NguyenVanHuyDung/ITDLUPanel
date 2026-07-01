@@ -160,8 +160,8 @@ export default function MainLayout() {
   });
 
   const languageItems: MenuProps['items'] = [
-    { key: 'en', label: '🇺🇸 English' },
-    { key: 'vi', label: '🇻🇳 Tiếng Việt' },
+    { key: 'en', label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><img src="https://flagcdn.com/w20/us.png" alt="US" style={{ width: 20, height: 15, borderRadius: 2 }} />English</span> },
+    { key: 'vi', label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><img src="https://flagcdn.com/w20/vn.png" alt="VN" style={{ width: 20, height: 15, borderRadius: 2 }} />Tiếng Việt</span> },
   ];
 
   const userMenuItems: MenuProps['items'] = [
@@ -365,7 +365,7 @@ export default function MainLayout() {
               <Button type="text" icon={<TranslationOutlined />} size="small"
                 style={{ color: 'rgba(255,255,255,0.9)', fontSize: 13 }}
               >
-                {i18n.language === 'vi' ? '🇻🇳' : '🇺🇸'}
+                <img src={i18n.language === 'vi' ? 'https://flagcdn.com/w20/vn.png' : 'https://flagcdn.com/w20/us.png'} alt="" style={{ width: 20, height: 15, borderRadius: 2, verticalAlign: 'middle' }} />
               </Button>
             </Dropdown>
             <Dropdown menu={{ items: userMenuItems, onClick: handleUserMenu }}>
