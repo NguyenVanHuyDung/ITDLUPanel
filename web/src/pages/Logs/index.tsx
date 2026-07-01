@@ -450,6 +450,7 @@ export default function Logs() {
       });
       // Response is wrapped by response.Success(), so actual data is in data.data
       const respData = (data as unknown as { data?: { data: AuditEntry[]; geo?: Record<string, GeoInfo> } }).data;
+      console.log('[AuditLog] API response geo data:', respData?.geo);
       const auditEntries = respData?.data ?? [];
       setAuditData(Array.isArray(auditEntries) ? auditEntries : []);
       // Extract geo data if available
@@ -502,13 +503,10 @@ export default function Logs() {
   }
   const [wsGeoData, setWsGeoData] = useState<Record<string, GeoInfo>>({});
 
-  // Country code to flag emoji
-  const countryToFlag = (code: string): string => {
+  // Country code to flag image URL (using flagcdn.com)
+  const countryToFlagUrl = (code: string): string => {
     if (!code || code.length !== 2) return '';
-    // #region DEBUG: countryToFlag function
-    fetch('http://localhost:7258/ingest/f2ceb8fe-c770-492f-8f75-097acb47e951',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c3def'},body:JSON.stringify({sessionId:'3c3def',id:'log_flag_fn',timestamp:Date.now(),location:'Logs/index.tsx:509',message:'countryToFlag called',data:{input:code,charCodes:[code?.charCodeAt(0),code?.charCodeAt(1)],result:code.toUpperCase().split('').map(c => String.fromCodePoint(127397 + c.charCodeAt(0))).join('')},runId:'debug',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
-    return code.toUpperCase().split('').map(c => String.fromCodePoint(127397 + c.charCodeAt(0))).join('');
+    return `https://flagcdn.com/w40/${code.toLowerCase()}.png`;
   };
 
   const fetchWebsiteLog = useCallback(async (siteId: number, logType: 'access' | 'error', numLines: number, dateRange: [dayjs.Dayjs, dayjs.Dayjs] | null) => {
@@ -521,17 +519,13 @@ export default function Logs() {
       }
       const { data } = await api.get<ApiResponse<{ lines: string | string[], total_lines?: number, stats?: BackendStats, geo?: Record<string, GeoInfo> }>>(`/logs/website/${siteId}/${logType}`, { params });
       // Backend response is wrapped: { code, message, data: { lines, geo, stats } }
+      console.log('[WebsiteLog] API full response:', JSON.stringify(data.data?.geo).slice(0, 500));
       const raw = data.data?.lines;
       if (Array.isArray(raw)) setWebsiteLines(raw);
       else if (typeof raw === 'string') setWebsiteLines(raw.split('\n').filter(Boolean));
       else setWebsiteLines([]);
       setWsBackendStats(data.data?.stats ?? null);
-      // Debug: log geo data to console
-      console.log('[WebsiteLog] geo data:', data.data?.geo);
       setWsGeoData(data.data?.geo ?? {});
-      // #region DEBUG: flag rendering diagnostics
-      fetch('http://localhost:7258/ingest/f2ceb8fe-c770-492f-8f75-097acb47e951',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c3def'},body:JSON.stringify({sessionId:'3c3def',id:'log_geo_fetch',timestamp:Date.now(),location:'Logs/index.tsx:528',message:'wsGeoData set',data:{geoKeys:Object.keys(data.data?.geo ?? {}),sample:Object.values(data.data?.geo ?? {})[0]},runId:'debug',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
     } catch {
       setWebsiteLines([]);
       setWsBackendStats(null);
@@ -724,7 +718,20 @@ export default function Logs() {
   }, [parsedWebsite, search, websiteLogType, wsStatusFilters, wsMethodFilters, wsIpFilter, wsPathFilter]);
 
   // Website side panel data
-  const wsTopIps = useMemo(() => topN(filteredWebsite, l => l.ip, 10), [filteredWebsite]);
+  const wsTopIps = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const l of filteredWebsite) {
+      if (l.ip) counts.set(l.ip, (counts.get(l.ip) || 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([ip, count]) => ({
+        ip,
+        count,
+        countryCode: wsGeoData[ip]?.country_code || null,
+      }));
+  }, [filteredWebsite, wsGeoData]);
   const wsTopPaths = useMemo(() => topN(filteredWebsite, l => l.path, 10), [filteredWebsite]);
 
   // Audit stats
@@ -1063,15 +1070,16 @@ export default function Logs() {
       render: (v: string) => {
         if (!v) return <span style={{ color: p.textDim }}>—</span>;
         const geo = auditGeoData[v];
-        // #region DEBUG: audit log flag rendering
-        fetch('http://localhost:7258/ingest/f2ceb8fe-c770-492f-8f75-097acb47e951',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c3def'},body:JSON.stringify({sessionId:'3c3def',id:'log_audit_flag',timestamp:Date.now(),location:'Logs/index.tsx:1062',message:'Audit IP render',data:{ip:v,hasGeo:!!geo,geoCountryCode:geo?.country_code,countryLen:geo?.country_code?.length,flagResult:geo?.country_code ? countryToFlag(geo.country_code) : null},runId:'debug',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
-        const flag = geo?.country_code ? countryToFlag(geo.country_code) : null;
         return (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            {flag && (
-              <Tooltip title={geo.country || geo.country_code}>
-                <span style={{ fontSize: 14 }}>{flag}</span>
+            {geo && (
+              <Tooltip title={`${geo.country || geo.country_code}${geo.city ? ', ' + geo.city : ''}`}>
+                <img
+                  src={countryToFlagUrl(geo.country_code)}
+                  alt={geo.country_code}
+                  style={{ width: 20, height: 15, borderRadius: 2, verticalAlign: 'middle' }}
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
               </Tooltip>
             )}
             <span style={{
@@ -1120,24 +1128,17 @@ export default function Logs() {
       render: (v: string) => {
         if (!v) return <span style={{ fontSize: 10, color: p.textDim, fontStyle: 'italic' }}>—</span>;
         const geo = wsGeoData[v];
-        // #region DEBUG: website log flag rendering
-        fetch('http://localhost:7258/ingest/f2ceb8fe-c770-492f-8f75-097acb47e951',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c3def'},body:JSON.stringify({sessionId:'3c3def',id:'log_ws_flag',timestamp:Date.now(),location:'Logs/index.tsx:1120',message:'Website IP render',data:{ip:v,hasGeo:!!geo,geoCountryCode:geo?.country_code,countryLen:geo?.country_code?.length,flagResult:geo?.country_code ? countryToFlag(geo.country_code) : null},runId:'debug',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
-        const flag = geo?.country_code ? countryToFlag(geo.country_code) : null;
+        console.log('[IP render]', v, 'geo:', geo, 'flagUrl:', geo?.country_code ? countryToFlagUrl(geo.country_code) : null);
         return (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            {geo && (
+            {geo && geo.country_code && (
               <Tooltip title={`${geo.country || geo.country_code}${geo.city ? ', ' + geo.city : ''}`}>
-                <span style={{ 
-                  fontSize: 12, 
-                  fontWeight: 500, 
-                  color: '#1890ff',
-                  background: 'rgba(24,144,255,0.1)',
-                  padding: '1px 5px', 
-                  borderRadius: 3 
-                }}>
-                  {flag ? flag : geo.country_code}
-                </span>
+                <img
+                  src={countryToFlagUrl(geo.country_code)}
+                  alt={geo.country_code}
+                  style={{ width: 20, height: 15, borderRadius: 2, verticalAlign: 'middle', border: '1px solid #ddd' }}
+                  onError={(e) => { console.log('[Flag img error]', geo.country_code); (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
               </Tooltip>
             )}
             <span
@@ -1689,9 +1690,59 @@ export default function Logs() {
                   <div style={{ fontSize: 12, fontWeight: 600, color: p.text }}>Top 10 IPs</div>
                 </div>
                 {wsTopIps.length > 0 ? (
-                  <RankList items={wsTopIps} maxCount={wsTopIps[0].count} color={p.accent} p={p}
-                    onClickItem={(ip) => setWsIpFilter(ip)}
-                    onBlockItem={(ip) => { setBlockIPValue(ip); setBlockIPModalOpen(true); }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {wsTopIps.map((item, i) => (
+                      <div key={item.ip}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 8, fontSize: 11,
+                          cursor: 'pointer', padding: '3px 6px', borderRadius: 4,
+                        }}
+                      >
+                        <span style={{ color: p.textDim, width: 14, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
+                              {item.countryCode && (
+                                <img
+                                  src={countryToFlagUrl(item.countryCode)}
+                                  alt={item.countryCode}
+                                  style={{ width: 20, height: 15, borderRadius: 2, flexShrink: 0 }}
+                                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                />
+                              )}
+                              <span style={{
+                                color: p.text, fontFamily: 'monospace', fontSize: 11,
+                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                              }}>{item.ip}</span>
+                            </div>
+                            <span style={{ color: p.textMuted, flexShrink: 0, marginLeft: 8 }}>{item.count}</span>
+                          </div>
+                          <div style={{ height: 3, borderRadius: 2, background: p.barTrack, overflow: 'hidden' }}>
+                            <div style={{
+                              height: '100%', borderRadius: 2, background: p.accent,
+                              width: `${wsTopIps[0].count > 0 ? (item.count / wsTopIps[0].count) * 100 : 0}%`,
+                              transition: 'width 0.3s',
+                            }} />
+                          </div>
+                        </div>
+                        <Tooltip title={`Block ${item.ip}`}>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setBlockIPValue(item.ip); setBlockIPModalOpen(true); }}
+                            style={{
+                              background: 'none', border: 'none', cursor: 'pointer',
+                              color: p.red, padding: '2px 3px', display: 'flex', alignItems: 'center',
+                              borderRadius: 3, opacity: 0.5, flexShrink: 0,
+                              transition: 'opacity 0.15s',
+                            }}
+                            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
+                            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '0.5'; }}
+                          >
+                            <StopOutlined style={{ fontSize: 11 }} />
+                          </button>
+                        </Tooltip>
+                      </div>
+                    ))}
+                  </div>
                 ) : (
                   <div style={{ fontSize: 11, color: p.textDim }}>No data</div>
                 )}

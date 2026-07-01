@@ -160,11 +160,9 @@ export default function MainLayout() {
   });
 
   const languageItems: MenuProps['items'] = [
-    // #region DEBUG: language items
-    { key: 'en', label: (() => { fetch('http://localhost:7258/ingest/f2ceb8fe-c770-492f-8f75-097acb47e951',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c3def'},body:JSON.stringify({sessionId:'3c3def',id:'log_lang_en',timestamp:Date.now(),location:'MainLayout.tsx:163',message:'languageItems en',data:{emoji:'🇺🇸',charCodes:Array.from('🇺🇸').map(c=>c.codePointAt(0))},runId:'debug',hypothesisId:'D'})}).catch(()=>{}); return '🇺🇸 English'; })() },
+    { key: 'en', label: '🇺🇸 English' },
     { key: 'vi', label: '🇻🇳 Tiếng Việt' },
   ];
-  // #endregion
 
   const userMenuItems: MenuProps['items'] = [
     { key: 'profile', icon: <UserOutlined />, label: t('auth.profile') },
@@ -367,9 +365,7 @@ export default function MainLayout() {
               <Button type="text" icon={<TranslationOutlined />} size="small"
                 style={{ color: 'rgba(255,255,255,0.9)', fontSize: 13 }}
               >
-                {/* #region DEBUG: language button */}
-                {(() => { fetch('http://localhost:7258/ingest/f2ceb8fe-c770-492f-8f75-097acb47e951',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'3c3def'},body:JSON.stringify({sessionId:'3c3def',id:'log_lang_btn',timestamp:Date.now(),location:'MainLayout.tsx:372',message:'languageButton render',data:{lang:i18n.language,emoji:i18n.language === 'vi' ? '🇻🇳' : '🇺🇸',charCodes:Array.from(i18n.language === 'vi' ? '🇻🇳' : '🇺🇸').map(c=>c.codePointAt(0))},runId:'debug',hypothesisId:'D'})}).catch(()=>{}); return i18n.language === 'vi' ? '🇻🇳' : '🇺🇸'; })()}
-                {/* #endregion */}
+                {i18n.language === 'vi' ? '🇻🇳' : '🇺🇸'}
               </Button>
             </Dropdown>
             <Dropdown menu={{ items: userMenuItems, onClick: handleUserMenu }}>
