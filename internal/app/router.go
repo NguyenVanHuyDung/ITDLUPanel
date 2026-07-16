@@ -314,6 +314,16 @@ func SetupRouter(db *sql.DB, logDir string) *gin.Engine {
 		dockerCleanupHandler.RegisterRoutes(apiV1, authMW, RBACMiddleware)
 
 		// -------------------------------------------------------
+		// Optimization management (server optimization)
+		// -------------------------------------------------------
+		optimizationHandler := v1.GetOptimizationHandler()
+		optimizationHandler.RegisterRoutes(apiV1, RBACMiddleware)
+
+		// Start optimization scheduler for adaptive mode
+		optimizationScheduler := service.NewOptimizationScheduler(db)
+		optimizationScheduler.Start()
+
+		// -------------------------------------------------------
 		// WebSocket endpoints (terminal handles its own JWT auth via query param)
 		// -------------------------------------------------------
 		apiV1.GET("/terminal", ws.HandleTerminal(terminalService, CheckPermission))

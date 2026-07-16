@@ -141,6 +141,7 @@ export default function MainLayout() {
     { key: '/files', icon: <FolderOutlined />, label: t('sidebar.files') },
     { key: '/docker', icon: <ContainerOutlined />, label: t('sidebar.docker') },
     { key: '/monitor', icon: <MonitorOutlined />, label: t('sidebar.monitor') },
+    { key: '/optimization', icon: <ClusterOutlined />, label: 'Optimization' },
     { key: '/security', icon: <SafetyOutlined />, label: t('sidebar.security') },
     { key: '/firewall', icon: <FireOutlined />, label: 'Firewall' },
     { key: '/waf', icon: <SafetyCertificateOutlined />, label: t('sidebar.waf') },

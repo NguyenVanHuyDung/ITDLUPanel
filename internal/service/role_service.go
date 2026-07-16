@@ -272,6 +272,14 @@ var AllPermissions = []PermissionGroup{
 		},
 	},
 	{
+		Key:   "optimization",
+		Label: "Server Optimization",
+		Permissions: []Permission{
+			{Key: "optimization.read", Label: "View Optimization"},
+			{Key: "optimization.manage", Label: "Manage Optimization"},
+		},
+	},
+	{
 		Key:   "system",
 		Label: "System (Admin)",
 		Permissions: []Permission{

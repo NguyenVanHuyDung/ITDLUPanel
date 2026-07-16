@@ -13,6 +13,7 @@ const Storage = lazy(() => import('@/pages/Storage'));
 const Files = lazy(() => import('@/pages/Files'));
 const Docker = lazy(() => import('@/pages/Docker'));
 const Monitor = lazy(() => import('@/pages/Monitor'));
+const Optimization = lazy(() => import('@/pages/Optimization'));
 const Security = lazy(() => import('@/pages/Security'));
 const Firewall = lazy(() => import('@/pages/Firewall'));
 const Logs = lazy(() => import('@/pages/Logs'));
@@ -61,6 +62,7 @@ const router = createBrowserRouter([
       { path: 'files', element: <Files /> },
       { path: 'docker', element: <Docker /> },
       { path: 'monitor', element: <Monitor /> },
+      { path: 'optimization', element: <Optimization /> },
       { path: 'security', element: <Security /> },
       { path: 'firewall', element: <Firewall /> },
       { path: 'logs', element: <Logs /> },
