@@ -40,6 +40,8 @@ nohup.out
 # Publish artifacts
 publish/v1/*.tar.gz
 publish/v1/*.sha256
+publish/v*/itdlupanel-v*.tar.gz
+publish/v*/itdlupanel-v*.sha256
 itdlupanel
 
 # Test artifacts (sensitive token + temporary output)
